@@ -16,12 +16,12 @@ export const reportPackIds = [
   "accountant-close-pack",
 ] as const;
 export const reportPackCadences = ["weekly", "monthly", "quarterly"] as const;
-export const reportPackChannels = ["email", "whatsapp", "both"] as const;
+export const reportPackChannels = ["email"] as const;
 
 export type ReportPackId = (typeof reportPackIds)[number];
 export type ReportPackCadence = (typeof reportPackCadences)[number];
 export type ReportPackChannel = (typeof reportPackChannels)[number];
-export type ReportPackDeliveryChannel = "email" | "whatsapp";
+export type ReportPackDeliveryChannel = "email";
 export type ReportPackDeliveryStatus = "sent" | "queued" | "failed";
 export type ReportPackRecommendationPriority = "high" | "medium" | "low";
 
@@ -210,7 +210,7 @@ export const reportPackManifests: Record<ReportPackId, ReportPackManifest> = {
       "Month-End Close Status",
       "Audit Trail",
     ],
-    automationActions: ["Close month", "Chase documents", "Review anomalies"],
+    automationActions: ["Close month", "Review close tasks", "Review anomalies"],
   },
 };
 
@@ -250,9 +250,7 @@ export function compatibleReportPackRecipientCount(
 ): number {
   return recipients.filter((recipient) => {
     const classified = classifyReportPackRecipient(recipient);
-    if (channel === "email") return classified.kind === "email";
-    if (channel === "whatsapp") return classified.kind === "phone";
-    return classified.kind === "email" || classified.kind === "phone";
+    return channel === "email" && classified.kind === "email";
   }).length;
 }
 
@@ -736,6 +734,7 @@ export function parseReportPackSchedules(
         ...schedules[packId],
         ...schedule,
         packId,
+        channel: "email",
         recipients: Array.isArray(schedule.recipients) ? schedule.recipients.filter(Boolean) : [],
         nextRunDate: schedule.nextRunDate ?? null,
         updatedAt: schedule.updatedAt ?? null,
@@ -1151,10 +1150,6 @@ function metadataBoolean(metadata: Record<string, unknown>, key: string): boolea
   return typeof value === "boolean" ? value : null;
 }
 
-function deliveryChannelFromCommunication(value: string): ReportPackDeliveryChannel {
-  return value === "whatsapp" ? "whatsapp" : "email";
-}
-
 export async function getReportPackDeliveryHistory(
   companyId: string,
   limit = 50
@@ -1186,7 +1181,8 @@ export async function getReportPackDeliveryHistory(
     .where(
       and(
         eq(clientCommunications.companyId, companyId),
-        eq(clientCommunications.templateType, "report_pack")
+        eq(clientCommunications.templateType, "report_pack"),
+        eq(clientCommunications.channel, "email")
       )
     )
     .orderBy(desc(clientCommunications.sentAt))
@@ -1204,9 +1200,9 @@ export async function getReportPackDeliveryHistory(
       runId: metadataString(metadata, "runId"),
       packId,
       packTitle: packId ? reportPackTitles[packId] : "Report Pack",
-      channel: deliveryChannelFromCommunication(row.channel),
+      channel: "email",
       status: row.status,
-      recipient: row.recipientEmail ?? row.recipientPhone ?? "Unknown recipient",
+      recipient: row.recipientEmail ?? "Unknown recipient",
       subject: row.subject,
       sentAt: row.sentAt,
       preparedAt: metadataString(metadata, "preparedAt"),
@@ -1425,14 +1421,8 @@ function deliveryTargetsForRecipient(
   recipient: string
 ): Array<{ channel: ReportPackDeliveryChannel; recipient: string }> {
   const classified = classifyReportPackRecipient(recipient);
-  if (classified.kind === "email" && (scheduleChannel === "email" || scheduleChannel === "both")) {
+  if (classified.kind === "email" && scheduleChannel === "email") {
     return [{ channel: "email", recipient: classified.value }];
-  }
-  if (
-    classified.kind === "phone" &&
-    (scheduleChannel === "whatsapp" || scheduleChannel === "both")
-  ) {
-    return [{ channel: "whatsapp", recipient: classified.value }];
   }
   return [];
 }
@@ -1454,8 +1444,8 @@ async function recordReportPackCommunication(input: {
       userId: input.userId,
       channel: input.channel,
       direction: "outbound",
-      recipientEmail: input.channel === "email" ? input.recipient : null,
-      recipientPhone: input.channel === "whatsapp" ? input.recipient : null,
+      recipientEmail: input.recipient,
+      recipientPhone: null,
       subject: input.subject ?? null,
       body: input.body,
       status: input.status,
@@ -1487,66 +1477,38 @@ async function deliverPreparedReportPack(
   for (const recipient of schedule.recipients) {
     const targets = deliveryTargetsForRecipient(schedule.channel, recipient);
     for (const target of targets) {
-      if (target.channel === "email") {
-        const result = await sendEmail(target.recipient, subject, body, {
-          fromName: companyName,
-        });
-        const status: ReportPackDeliveryStatus = result.sent ? "sent" : "failed";
-        const communicationId = await recordReportPackCommunication({
-          companyId,
-          userId: preparedBy,
-          channel: "email",
-          recipient: target.recipient,
-          subject,
-          body,
-          status,
-          metadata: {
-            packId,
-            runId,
-            preparedAt,
-            reportNames: reportPackManifests[packId].reportNames,
-            automationActions: reportPackManifests[packId].automationActions,
-            cadence: schedule.cadence,
-            scheduleChannel: schedule.channel,
-            includeComparison: schedule.includeComparison,
-            provider: result.provider ?? null,
-            error: result.error ?? null,
-          },
-        });
-        deliveries.push({
-          recipient: target.recipient,
-          channel: "email",
-          status,
-          communicationId,
-          ...(result.error ? { error: result.error } : {}),
-        });
-      } else {
-        const communicationId = await recordReportPackCommunication({
-          companyId,
-          userId: preparedBy,
-          channel: "whatsapp",
-          recipient: target.recipient,
-          body,
-          status: "queued",
-          metadata: {
-            packId,
-            runId,
-            preparedAt,
-            reportNames: reportPackManifests[packId].reportNames,
-            automationActions: reportPackManifests[packId].automationActions,
-            cadence: schedule.cadence,
-            scheduleChannel: schedule.channel,
-            includeComparison: schedule.includeComparison,
-            deliveryMode: "manual_whatsapp",
-          },
-        });
-        deliveries.push({
-          recipient: target.recipient,
-          channel: "whatsapp",
-          status: "queued",
-          communicationId,
-        });
-      }
+      const result = await sendEmail(target.recipient, subject, body, {
+        fromName: companyName,
+      });
+      const status: ReportPackDeliveryStatus = result.sent ? "sent" : "failed";
+      const communicationId = await recordReportPackCommunication({
+        companyId,
+        userId: preparedBy,
+        channel: "email",
+        recipient: target.recipient,
+        subject,
+        body,
+        status,
+        metadata: {
+          packId,
+          runId,
+          preparedAt,
+          reportNames: reportPackManifests[packId].reportNames,
+          automationActions: reportPackManifests[packId].automationActions,
+          cadence: schedule.cadence,
+          scheduleChannel: schedule.channel,
+          includeComparison: schedule.includeComparison,
+          provider: result.provider ?? null,
+          error: result.error ?? null,
+        },
+      });
+      deliveries.push({
+        recipient: target.recipient,
+        channel: "email",
+        status,
+        communicationId,
+        ...(result.error ? { error: result.error } : {}),
+      });
     }
   }
 

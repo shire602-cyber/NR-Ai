@@ -32,6 +32,14 @@ describe("Document chasing surface boundary", () => {
     expect(sidebarSource).toContain('url: "/firm/document-chasing"');
   });
 
+  it("keeps SaaS report packs from linking to document chasing", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+    const reportPackSource = readRepoFile("server/services/report-pack-schedules.service.ts");
+
+    expect(reportsSource).not.toMatch(/document chasing|document-chasing|Chase documents/i);
+    expect(reportPackSource).not.toMatch(/document chasing|document-chasing|Chase documents/i);
+  });
+
   it("firm-gates backend document requirement and chasing APIs", () => {
     const routeSource = readRepoFile("server/routes/document-chasing.routes.ts");
 

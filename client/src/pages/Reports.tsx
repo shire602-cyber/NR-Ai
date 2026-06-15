@@ -934,7 +934,7 @@ interface ReportPackSummary extends ReportPackDefinition {
 }
 
 type ReportPackCadence = "weekly" | "monthly" | "quarterly";
-type ReportPackChannel = "email" | "whatsapp" | "both";
+type ReportPackChannel = "email";
 
 interface ReportPackSchedule {
   packId: string;
@@ -971,7 +971,7 @@ interface ReportPackDeliveryHistoryItem {
   runId: string | null;
   packId: string | null;
   packTitle: string;
-  channel: "email" | "whatsapp";
+  channel: string;
   status: string;
   recipient: string;
   subject: string | null;
@@ -1082,8 +1082,6 @@ const reportPackCadenceOptions: Array<{ id: ReportPackCadence; label: string }> 
 
 const reportPackChannelOptions: Array<{ id: ReportPackChannel; label: string }> = [
   { id: "email", label: "Email" },
-  { id: "whatsapp", label: "WhatsApp" },
-  { id: "both", label: "Both" },
 ];
 
 const reportCatalog: ReportCatalogItem[] = [
@@ -1415,7 +1413,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
     persona: "owner",
     summary: "Cash, profit, receivables, taxes, and spend in one repeatable pack.",
     cadence: "Weekly cash review, monthly close, quarterly tax",
-    delivery: "Excel now; scheduled email/WhatsApp queued",
+    delivery: "Excel now; scheduled email queued",
     reportNames: [
       "Profit & Loss",
       "Balance Sheet",
@@ -1497,7 +1495,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
     ],
     actions: [
       { label: "Close month", href: "/month-end" },
-      { label: "Chase documents", href: "/firm/document-chasing" },
+      { label: "Review close tasks", href: "/task-center" },
       { label: "Review anomalies", href: "/anomaly-detection" },
     ],
   },
@@ -2529,9 +2527,7 @@ function classifyRecipient(value: string): "email" | "phone" | "invalid" {
 function compatibleRecipientCount(channel: ReportPackChannel, recipients: string[]): number {
   return recipients.filter((recipient) => {
     const kind = classifyRecipient(recipient);
-    if (channel === "email") return kind === "email";
-    if (channel === "whatsapp") return kind === "phone";
-    return kind === "email" || kind === "phone";
+    return channel === "email" && kind === "email";
   }).length;
 }
 
@@ -2673,6 +2669,10 @@ export default function Reports() {
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-pack-deliveries?limit=12`),
     enabled: !!selectedCompanyId,
   });
+  const visibleReportPackDeliveries = useMemo(
+    () => (reportPackDeliveries ?? []).filter((delivery) => delivery.channel === "email"),
+    [reportPackDeliveries]
+  );
 
   const {
     data: reportPackRuns,
@@ -3779,7 +3779,7 @@ export default function Reports() {
       toast({
         variant: "destructive",
         title: "Recipient required",
-        description: "Add at least one email or WhatsApp recipient before enabling this pack.",
+        description: "Add at least one email recipient before enabling this pack.",
       });
       return;
     }
@@ -3788,12 +3788,7 @@ export default function Reports() {
       toast({
         variant: "destructive",
         title: "Recipient does not match channel",
-        description:
-          draft.channel === "email"
-            ? "Add at least one email address for email delivery."
-            : draft.channel === "whatsapp"
-              ? "Add at least one WhatsApp phone number for WhatsApp delivery."
-              : "Add at least one email address or WhatsApp phone number.",
+        description: "Add at least one email address for email delivery.",
       });
       return;
     }
@@ -4808,7 +4803,7 @@ export default function Reports() {
                         <div>
                           <div className="text-xs font-medium">Scheduled delivery</div>
                           <div className="text-xs text-muted-foreground">
-                            Save this pack for recurring email or WhatsApp delivery.
+                            Save this pack for recurring email delivery.
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -4881,7 +4876,7 @@ export default function Reports() {
                               recipientsText: event.target.value,
                             })
                           }
-                          placeholder="email or WhatsApp, comma separated"
+                          placeholder="email addresses, comma separated"
                           data-testid={`input-report-pack-recipients-${pack.id}`}
                         />
                         {draftRecipients.length > 0 && (
@@ -5135,19 +5130,19 @@ export default function Reports() {
               <div>
                 <CardTitle className="text-base">Recent pack deliveries</CardTitle>
                 <CardDescription>
-                  Email sends, WhatsApp queues, and failed delivery attempts from prepared packs.
+                  Email sends and failed delivery attempts from prepared packs.
                 </CardDescription>
               </div>
               <Badge variant="outline">
                 {reportPackDeliveriesLoading
                   ? "Loading"
-                  : `${reportPackDeliveries?.length ?? 0} records`}
+                  : `${visibleReportPackDeliveries.length} records`}
               </Badge>
             </CardHeader>
             <CardContent>
               {reportPackDeliveriesLoading ? (
                 <div className="text-sm text-muted-foreground">Loading delivery history...</div>
-              ) : !reportPackDeliveries?.length ? (
+              ) : !visibleReportPackDeliveries.length ? (
                 <div className="text-sm text-muted-foreground">
                   No report-pack delivery history yet.
                 </div>
@@ -5165,7 +5160,7 @@ export default function Reports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {reportPackDeliveries.map((delivery) => (
+                      {visibleReportPackDeliveries.map((delivery) => (
                         <TableRow
                           key={delivery.id}
                           data-testid={`row-report-pack-delivery-${delivery.id}`}
