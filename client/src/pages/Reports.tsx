@@ -185,6 +185,33 @@ interface CashFlowForecastReport {
   insights: string[];
 }
 
+interface MonthEndCloseChecklistItem {
+  id: number;
+  title: string;
+  description: string;
+  status: "complete" | "incomplete";
+  details?: string;
+}
+
+interface MonthEndCloseReport {
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  checklist: MonthEndCloseChecklistItem[];
+}
+
+interface MonthEndCloseRecord {
+  id: string;
+  companyId: string;
+  periodEnd: string;
+  status: string;
+  closedBy: string | null;
+  closedByEmail?: string | null;
+  closedAt: string | null;
+  closingEntryId: string | null;
+  createdAt: string;
+}
+
 interface AgingItem {
   id: string;
   name: string;
@@ -662,6 +689,7 @@ type ReportTab =
   | "fixedAssets"
   | "depreciation"
   | "inventoryValuation"
+  | "monthEndClose"
   | "comparison"
   | "fx";
 type ReportPeriod = "month" | "quarter" | "year";
@@ -1149,12 +1177,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Month-End Close Status",
     category: "Accountant Tools",
-    status: "workspace",
+    status: "live",
     personas: ["accountant"],
     comparison: "Close period",
     automation: "Close checklist",
     icon: ClipboardCheck,
-    href: "/month-end",
+    tab: "monthEndClose",
   },
   {
     name: "Audit Trail",
@@ -1502,6 +1530,69 @@ function prepareCashFlowForecastForExport(report: CashFlowForecastReport): Expor
         projectedBalance: "",
         risk: insight.toLowerCase().includes("warning") ? "Risk" : "Info",
         insight,
+      })),
+    ],
+  };
+}
+
+function prepareMonthEndCloseForExport(
+  report: MonthEndCloseReport,
+  history: MonthEndCloseRecord[] = []
+): ExportData {
+  const periodHistory = history.filter((record) =>
+    formatDateForExport(record.periodEnd).startsWith(report.period)
+  );
+
+  return {
+    sheetName: "Month-End Close",
+    columns: [
+      { header: "Section", key: "section", width: 16 },
+      { header: "Period", key: "period", width: 14 },
+      { header: "Item", key: "item", width: 34 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "Details", key: "details", width: 52 },
+      { header: "Closed By", key: "closedBy", width: 28 },
+      { header: "Closed At", key: "closedAt", width: 18 },
+      { header: "Closing Entry", key: "closingEntry", width: 18 },
+    ],
+    rows: [
+      ...report.checklist.map((item) => ({
+        section: "Checklist",
+        period: report.period,
+        item: item.title,
+        status: item.status,
+        details: item.details || item.description,
+        closedBy: "",
+        closedAt: "",
+        closingEntry: "",
+      })),
+      ...(periodHistory.length
+        ? periodHistory
+        : [
+            {
+              id: "current-open",
+              companyId: "",
+              periodEnd: report.periodEnd,
+              status: "open",
+              closedBy: null,
+              closedByEmail: null,
+              closedAt: null,
+              closingEntryId: null,
+              createdAt: "",
+            },
+          ]
+      ).map((record) => ({
+        section: "Close History",
+        period: formatDateForExport(record.periodEnd).slice(0, 7) || report.period,
+        item: "Period status",
+        status: record.status,
+        details:
+          record.status === "locked"
+            ? "Period locked against further posting"
+            : "No locked close record for this period",
+        closedBy: record.closedByEmail || record.closedBy || "",
+        closedAt: formatDateForExport(record.closedAt),
+        closingEntry: record.closingEntryId || "",
       })),
     ],
   };
@@ -2088,6 +2179,9 @@ export default function Reports() {
   const [savingReportPackId, setSavingReportPackId] = useState<string | null>(null);
   const [preparingReportPackId, setPreparingReportPackId] = useState<string | null>(null);
   const hasDateRange = Boolean(dateRange.from && dateRange.to);
+  const closePeriodDate = dateRange.to ?? new Date();
+  const closePeriod = format(closePeriodDate, "yyyy-MM");
+  const closePeriodLabel = format(closePeriodDate, "MMMM yyyy");
 
   const filteredReports = useMemo(() => {
     const query = reportSearch.trim().toLowerCase();
@@ -2254,6 +2348,24 @@ export default function Reports() {
         apiRequest("GET", `/api/companies/${selectedCompanyId}/cashflow/forecast?days=90`),
       enabled: !!selectedCompanyId,
     });
+
+  const { data: monthEndClose, isLoading: monthEndCloseLoading } = useQuery<MonthEndCloseReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "month-end", "checklist", closePeriod],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/month-end/checklist?period=${closePeriod}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: monthEndCloseHistory, isLoading: monthEndCloseHistoryLoading } = useQuery<
+    MonthEndCloseRecord[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "month-end", "history"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/month-end/history`),
+    enabled: !!selectedCompanyId,
+  });
 
   const { data: agingData, isLoading: agingLoading } = useQuery<AgingItem[]>({
     queryKey: ["/api/reports", selectedCompanyId, "aging"],
@@ -2569,6 +2681,27 @@ export default function Reports() {
     };
   }, [cashFlowForecast]);
 
+  const monthEndCloseSummary = useMemo(() => {
+    const checklist = monthEndClose?.checklist ?? [];
+    const completedCount = checklist.filter((item) => item.status === "complete").length;
+    const incompleteItems = checklist.filter((item) => item.status === "incomplete");
+    const totalCount = checklist.length;
+    const lockedRecord = (monthEndCloseHistory ?? []).find(
+      (record) =>
+        record.status === "locked" && formatDateForExport(record.periodEnd).startsWith(closePeriod)
+    );
+
+    return {
+      completedCount,
+      totalCount,
+      incompleteCount: incompleteItems.length,
+      incompleteItems,
+      completionPercent: totalCount ? Math.round((completedCount / totalCount) * 100) : 0,
+      lockedRecord,
+      isLocked: Boolean(lockedRecord),
+    };
+  }, [closePeriod, monthEndClose, monthEndCloseHistory]);
+
   const agingSummary = useMemo(() => {
     const empty = { current: 0, overdue: 0, total: 0 };
     const totals = {
@@ -2675,6 +2808,9 @@ export default function Reports() {
   const depreciationPostingQueue = depreciationSchedule?.totals.postingQueue ?? 0;
   const inventoryReorderQueue = inventoryValuation?.totals.reorderSuggestions ?? 0;
   const inventoryNegativeStockQueue = inventoryValuation?.totals.negativeStockCount ?? 0;
+  const monthEndCloseQueue = monthEndCloseSummary.isLocked
+    ? 0
+    : monthEndCloseSummary.incompleteCount;
   const automationQueueItems = useMemo<AutomationQueueItem[]>(() => {
     const vatExposure = Math.abs(vatSummary?.netVATPayable ?? 0);
     const taxPayable = corporateTaxEstimate?.totals.taxPayable ?? 0;
@@ -2921,6 +3057,19 @@ export default function Reports() {
         href: "/inventory",
         actionLabel: "Open inventory",
       },
+      {
+        id: "month-end-close",
+        title: "Complete month-end close",
+        description: "The selected close period has unresolved checklist items before lock.",
+        source: "Month-End Close Status",
+        personas: ["accountant"],
+        priority: monthEndCloseQueue > 0 ? "medium" : "low",
+        count: monthEndCloseQueue,
+        impact: 0,
+        tab: "monthEndClose",
+        href: "/month-end",
+        actionLabel: "Open close",
+      },
     ];
 
     return items
@@ -2954,6 +3103,7 @@ export default function Reports() {
     inventoryValuation,
     invoiceReminderQueue,
     invoiceStatus,
+    monthEndCloseQueue,
     payrollAutomationQueue,
     payrollSummary,
     profitLoss,
@@ -3155,6 +3305,8 @@ export default function Reports() {
       return prepareDepreciationScheduleForExport(depreciationSchedule);
     if (tab === "inventoryValuation" && inventoryValuation)
       return prepareInventoryValuationForExport(inventoryValuation);
+    if (tab === "monthEndClose" && monthEndClose)
+      return prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? []);
     if (tab === "comparison" && comparisonData)
       return preparePeriodComparisonForExport(comparisonData);
     return null;
@@ -3365,6 +3517,15 @@ export default function Reports() {
           title: "Export successful",
           description: "Inventory Valuation exported to Excel",
         });
+      } else if (activeTab === "monthEndClose" && monthEndClose) {
+        await exportToExcel(
+          [prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? [])],
+          `month_end_close_${closePeriod}`
+        );
+        toast({
+          title: "Export successful",
+          description: "Month-End Close Status exported to Excel",
+        });
       } else if (activeTab === "comparison" && comparisonData) {
         await exportToExcel(
           [preparePeriodComparisonForExport(comparisonData)],
@@ -3540,6 +3701,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareInventoryValuationForExport(inventoryValuation)],
         `Inventory Valuation${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "monthEndClose" && monthEndClose) {
+      result = await exportToGoogleSheets(
+        [prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? [])],
+        `Month-End Close ${closePeriod}`,
         selectedCompanyId
       );
     } else if (activeTab === "comparison" && comparisonData) {
@@ -4505,6 +4672,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="inventoryValuation" data-testid="tab-inventory-valuation">
             Inventory
+          </TabsTrigger>
+          <TabsTrigger value="monthEndClose" data-testid="tab-month-end-close">
+            Close
           </TabsTrigger>
           <TabsTrigger value="comparison" data-testid="tab-comparison">
             Compare
@@ -7955,6 +8125,204 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No inventory products found.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="monthEndClose" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Close Progress
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(monthEndCloseSummary.completionPercent, locale)}%
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(monthEndCloseSummary.completedCount, locale)}/
+                      {formatNumber(monthEndCloseSummary.totalCount, locale)} checks complete
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Open Items
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${monthEndCloseQueue > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}
+                  >
+                    {formatNumber(monthEndCloseQueue, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Period Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseHistoryLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={monthEndCloseSummary.isLocked ? "success" : "warning"} dot>
+                      {monthEndCloseSummary.isLocked ? "Locked" : "Open"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">{closePeriodLabel}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Close Actions
+                </CardTitle>
+                <Badge variant={monthEndCloseQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(monthEndCloseQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {monthEndCloseSummary.isLocked ? "Period locked" : "Ready to route"}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Month-End Close Status</CardTitle>
+              <CardDescription>
+                Close checklist for {closePeriodLabel}, driven by reconciliation, posting, AI
+                review, depreciation, and VAT readiness.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {monthEndCloseLoading ? (
+                <Skeleton className="h-96" />
+              ) : monthEndClose?.checklist?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[900px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Check</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Details</TableHead>
+                        <TableHead className="text-right">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {monthEndClose.checklist.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div className="font-medium">{item.title}</div>
+                            <div className="text-xs text-muted-foreground">Step {item.id}</div>
+                          </TableCell>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.details || "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge
+                              variant={item.status === "complete" ? "success" : "warning"}
+                              className="capitalize"
+                            >
+                              {item.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No close checklist found for {closePeriodLabel}.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Close History</CardTitle>
+              <CardDescription>
+                Recent locked or open month-end records for this company.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {monthEndCloseHistoryLoading ? (
+                <Skeleton className="h-64" />
+              ) : monthEndCloseHistory?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[780px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Closed By</TableHead>
+                        <TableHead>Closed At</TableHead>
+                        <TableHead>Closing Entry</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {monthEndCloseHistory.slice(0, 8).map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell className="font-mono">
+                            {formatDateForExport(record.periodEnd).slice(0, 7) || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={record.status === "locked" ? "success" : "outline"}
+                              className="capitalize"
+                            >
+                              {record.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{record.closedByEmail || record.closedBy || "-"}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {record.closedAt ? formatDeliveryDate(record.closedAt) : "-"}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {record.closingEntryId || "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No month-end close history recorded yet.
                 </div>
               )}
             </CardContent>
