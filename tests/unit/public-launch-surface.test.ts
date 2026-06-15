@@ -11,6 +11,7 @@ function readRepoFile(path: string): string {
 const publicLaunchFiles = [
   "client/index.html",
   "client/src/pages/LandingPage.tsx",
+  "client/src/pages/Landing.tsx",
   "client/src/pages/Pricing.tsx",
   "client/src/pages/PrivacyPolicy.tsx",
   "client/src/pages/TrustSecurity.tsx",
@@ -24,10 +25,14 @@ const bannedLaunchClaims = [
   /bank-level/i,
   /full compliance/i,
   /fully automated/i,
+  /Automated VAT\/CIT filing/i,
   /SLA guarantee/i,
   /SLA-backed/i,
+  /24\/7 support/i,
   /direct EmaraTax/i,
+  /FTA filing/i,
   /FTA Accredited/i,
+  /FTA compliance is automatic/i,
   /regular security audits/i,
   /encrypted storage at rest/i,
   /Generate and submit/i,
@@ -103,6 +108,18 @@ describe("Public SaaS launch surface", () => {
     ]) {
       expect(migrationSource).toContain(expectedMigrationTopic);
     }
+  });
+
+  it("keeps buyer-readiness audit trail reporting live and exportable", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+
+    expect(reportsSource).toContain('name: "Audit Trail"');
+    expect(reportsSource).toContain('status: "live"');
+    expect(reportsSource).toContain('tab: "auditTrail"');
+    expect(reportsSource).toContain('<TabsTrigger value="auditTrail"');
+    expect(reportsSource).toContain('<TabsContent value="auditTrail"');
+    expect(reportsSource).toContain("prepareAuditTrailForExport");
+    expect(reportsSource).toContain("/activity-logs?limit=200");
   });
 
   it("keeps WhatsApp and internal document chasing out of the public launch pages", () => {

@@ -212,6 +212,20 @@ interface MonthEndCloseRecord {
   createdAt: string;
 }
 
+interface AuditTrailLog {
+  id: string;
+  userId: string | null;
+  companyId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  description: string;
+  metadata: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
 interface AgingItem {
   id: string;
   name: string;
@@ -690,6 +704,7 @@ type ReportTab =
   | "depreciation"
   | "inventoryValuation"
   | "monthEndClose"
+  | "auditTrail"
   | "comparison"
   | "fx";
 type ReportPeriod = "month" | "quarter" | "year";
@@ -1187,12 +1202,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Audit Trail",
     category: "Accountant Tools",
-    status: "workspace",
+    status: "live",
     personas: ["accountant"],
     comparison: "Activity period",
     automation: "Risk summary",
     icon: ClipboardCheck,
-    href: "/history",
+    tab: "auditTrail",
   },
   {
     name: "Consolidated Statements",
@@ -1595,6 +1610,34 @@ function prepareMonthEndCloseForExport(
         closingEntry: record.closingEntryId || "",
       })),
     ],
+  };
+}
+
+function prepareAuditTrailForExport(logs: AuditTrailLog[]): ExportData {
+  return {
+    sheetName: "Audit Trail",
+    columns: [
+      { header: "Date", key: "date", width: 14 },
+      { header: "Time", key: "time", width: 12 },
+      { header: "Action", key: "action", width: 18 },
+      { header: "Entity Type", key: "entityType", width: 18 },
+      { header: "Entity ID", key: "entityId", width: 28 },
+      { header: "Description", key: "description", width: 54 },
+      { header: "Sensitive", key: "sensitive", width: 12 },
+      { header: "Metadata", key: "metadata", width: 48 },
+      { header: "IP Address", key: "ipAddress", width: 18 },
+    ],
+    rows: logs.map((log) => ({
+      date: formatDateForExport(log.createdAt),
+      time: log.createdAt ? format(new Date(log.createdAt), "HH:mm") : "",
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId || "",
+      description: log.description,
+      sensitive: isSensitiveAuditAction(log.action, log.entityType) ? "Yes" : "No",
+      metadata: auditMetadataSummary(log.metadata),
+      ipAddress: log.ipAddress || "",
+    })),
   };
 }
 
@@ -2095,6 +2138,33 @@ function formatDateForExport(value: string | null | undefined): string {
   return value ? format(new Date(value), "yyyy-MM-dd") : "";
 }
 
+function auditMetadataSummary(metadata: string | null | undefined): string {
+  if (!metadata) return "";
+  try {
+    const parsed = JSON.parse(metadata);
+    if (Array.isArray(parsed?.changes)) return parsed.changes.join(", ");
+    if (typeof parsed?.reason === "string") return parsed.reason;
+    if (typeof parsed?.status === "string") return parsed.status;
+    return JSON.stringify(parsed);
+  } catch {
+    return metadata;
+  }
+}
+
+function isSensitiveAuditAction(action: string, entityType: string): boolean {
+  const normalizedAction = action.toLowerCase();
+  const normalizedEntity = entityType.toLowerCase();
+  return (
+    normalizedAction.includes("delete") ||
+    normalizedAction.includes("void") ||
+    normalizedAction.includes("unlock") ||
+    normalizedAction.includes("lock") ||
+    normalizedAction.includes("backup") ||
+    normalizedAction.includes("invite") ||
+    ["user", "period", "backup", "journal_entry"].includes(normalizedEntity)
+  );
+}
+
 function recipientsFromText(value: string): string[] {
   return value
     .split(/[,\n]/u)
@@ -2364,6 +2434,12 @@ export default function Reports() {
   >({
     queryKey: ["/api/companies", selectedCompanyId, "month-end", "history"],
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/month-end/history`),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: auditTrailLogs, isLoading: auditTrailLoading } = useQuery<AuditTrailLog[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "activity-logs", 200],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/activity-logs?limit=200`),
     enabled: !!selectedCompanyId,
   });
 
@@ -2702,6 +2778,43 @@ export default function Reports() {
     };
   }, [closePeriod, monthEndClose, monthEndCloseHistory]);
 
+  const filteredAuditTrailLogs = useMemo(() => {
+    const rows = auditTrailLogs ?? [];
+    if (!dateRange.from || !dateRange.to) return rows;
+
+    const fromTime = dateRange.from.getTime();
+    const toTime = new Date(dateRange.to).setHours(23, 59, 59, 999);
+    return rows.filter((log) => {
+      const createdAt = new Date(log.createdAt).getTime();
+      return createdAt >= fromTime && createdAt <= toTime;
+    });
+  }, [auditTrailLogs, dateRange.from, dateRange.to]);
+
+  const auditTrailSummary = useMemo(() => {
+    const actionCounts = new Map<string, number>();
+    const entityCounts = new Map<string, number>();
+    let sensitiveCount = 0;
+
+    for (const log of filteredAuditTrailLogs) {
+      actionCounts.set(log.action, (actionCounts.get(log.action) ?? 0) + 1);
+      entityCounts.set(log.entityType, (entityCounts.get(log.entityType) ?? 0) + 1);
+      if (isSensitiveAuditAction(log.action, log.entityType)) sensitiveCount += 1;
+    }
+
+    const topAction = [...actionCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topEntity = [...entityCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      totalCount: filteredAuditTrailLogs.length,
+      sensitiveCount,
+      createCount: actionCounts.get("create") ?? 0,
+      updateCount: actionCounts.get("update") ?? 0,
+      deleteCount: actionCounts.get("delete") ?? 0,
+      topAction: topAction?.[0] ?? "-",
+      topEntity: topEntity?.[0] ?? "-",
+    };
+  }, [filteredAuditTrailLogs]);
+
   const agingSummary = useMemo(() => {
     const empty = { current: 0, overdue: 0, total: 0 };
     const totals = {
@@ -2811,6 +2924,7 @@ export default function Reports() {
   const monthEndCloseQueue = monthEndCloseSummary.isLocked
     ? 0
     : monthEndCloseSummary.incompleteCount;
+  const auditTrailRiskQueue = auditTrailSummary.sensitiveCount;
   const automationQueueItems = useMemo<AutomationQueueItem[]>(() => {
     const vatExposure = Math.abs(vatSummary?.netVATPayable ?? 0);
     const taxPayable = corporateTaxEstimate?.totals.taxPayable ?? 0;
@@ -3070,6 +3184,19 @@ export default function Reports() {
         href: "/month-end",
         actionLabel: "Open close",
       },
+      {
+        id: "audit-trail-review",
+        title: "Review sensitive audit events",
+        description: "Audit trail contains sensitive changes such as locks, deletes, or journals.",
+        source: "Audit Trail",
+        personas: ["accountant"],
+        priority: auditTrailRiskQueue > 0 ? "medium" : "low",
+        count: auditTrailRiskQueue,
+        impact: 0,
+        tab: "auditTrail",
+        href: "/history",
+        actionLabel: "Open history",
+      },
     ];
 
     return items
@@ -3082,6 +3209,7 @@ export default function Reports() {
       );
   }, [
     apAgingOverdue,
+    auditTrailRiskQueue,
     budgetVarianceQueue,
     budgetVsActual,
     cashFlowSummary,
@@ -3307,6 +3435,8 @@ export default function Reports() {
       return prepareInventoryValuationForExport(inventoryValuation);
     if (tab === "monthEndClose" && monthEndClose)
       return prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? []);
+    if (tab === "auditTrail" && auditTrailLogs)
+      return prepareAuditTrailForExport(filteredAuditTrailLogs);
     if (tab === "comparison" && comparisonData)
       return preparePeriodComparisonForExport(comparisonData);
     return null;
@@ -3526,6 +3656,12 @@ export default function Reports() {
           title: "Export successful",
           description: "Month-End Close Status exported to Excel",
         });
+      } else if (activeTab === "auditTrail" && auditTrailLogs) {
+        await exportToExcel(
+          [prepareAuditTrailForExport(filteredAuditTrailLogs)],
+          `audit_trail${dateRangeStr}`
+        );
+        toast({ title: "Export successful", description: "Audit Trail exported to Excel" });
       } else if (activeTab === "comparison" && comparisonData) {
         await exportToExcel(
           [preparePeriodComparisonForExport(comparisonData)],
@@ -3707,6 +3843,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? [])],
         `Month-End Close ${closePeriod}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "auditTrail" && auditTrailLogs) {
+      result = await exportToGoogleSheets(
+        [prepareAuditTrailForExport(filteredAuditTrailLogs)],
+        `Audit Trail${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "comparison" && comparisonData) {
@@ -4675,6 +4817,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="monthEndClose" data-testid="tab-month-end-close">
             Close
+          </TabsTrigger>
+          <TabsTrigger value="auditTrail" data-testid="tab-audit-trail">
+            Audit
           </TabsTrigger>
           <TabsTrigger value="comparison" data-testid="tab-comparison">
             Compare
@@ -8323,6 +8468,161 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No month-end close history recorded yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="auditTrail" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Audit Events
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {auditTrailLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(auditTrailSummary.totalCount, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Create / Update
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {auditTrailLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(
+                      auditTrailSummary.createCount + auditTrailSummary.updateCount,
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Sensitive Events
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {auditTrailLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${auditTrailRiskQueue > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}
+                  >
+                    {formatNumber(auditTrailRiskQueue, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Audit Actions
+                </CardTitle>
+                <Badge variant={auditTrailRiskQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {auditTrailLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(auditTrailRiskQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Top: {auditTrailSummary.topEntity.replace(/_/g, " ")}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Audit Trail</CardTitle>
+              <CardDescription>
+                Company activity log for the selected reporting period, including sensitive-change
+                flags for accountant review.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {auditTrailLoading ? (
+                <Skeleton className="h-96" />
+              ) : filteredAuditTrailLogs.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1040px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Entity</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Metadata</TableHead>
+                        <TableHead className="text-right">Risk</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredAuditTrailLogs.slice(0, 100).map((log) => {
+                        const sensitive = isSensitiveAuditAction(log.action, log.entityType);
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell>
+                              <div className="font-mono text-sm">
+                                {formatDateForExport(log.createdAt)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {log.createdAt ? format(new Date(log.createdAt), "HH:mm") : ""}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={sensitive ? "warning" : "outline"}>
+                                {log.action}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="capitalize">{log.entityType.replace(/_/g, " ")}</div>
+                              <div className="max-w-[180px] truncate font-mono text-xs text-muted-foreground">
+                                {log.entityId || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="min-w-[260px]">{log.description}</TableCell>
+                            <TableCell className="max-w-[260px] truncate text-sm text-muted-foreground">
+                              {auditMetadataSummary(log.metadata) || "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {sensitive ? (
+                                <Badge variant="warning">Review</Badge>
+                              ) : (
+                                <Badge variant="outline">Standard</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No audit trail events found for this period.
                 </div>
               )}
             </CardContent>

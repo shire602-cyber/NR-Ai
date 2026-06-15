@@ -188,8 +188,8 @@ export default function Landing() {
       title: locale === "en" ? "Real-Time Reports" : "تقارير فورية",
       description:
         locale === "en"
-          ? "Access P&L, balance sheets, and VAT summaries instantly. Export for FTA filing."
-          : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر للتقديم للهيئة.",
+          ? "Access P&L, balance sheets, and VAT summaries instantly. Export review workpapers for your filing process."
+          : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر أوراق عمل للمراجعة ضمن عملية التقديم.",
       color: "from-orange-500 to-amber-600",
       bgColor: "bg-orange-500/10",
     },
@@ -248,8 +248,8 @@ export default function Landing() {
         "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face",
       quote:
         locale === "en"
-          ? "As a freelancer, I needed something simple but professional. The OCR receipt scanner is magic - I just snap photos and AI does the rest. FTA compliance is automatic. Worth every dirham."
-          : "كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات سحري - ألتقط صوراً والذكاء الاصطناعي يقوم بالباقي. الامتثال للهيئة تلقائي. يستحق كل درهم.",
+          ? "As a freelancer, I needed something simple but professional. The OCR receipt scanner keeps receipt capture quick, and VAT review is easier to control."
+          : "كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات يسرّع التقاط المستندات، ومراجعة ضريبة القيمة المضافة أصبحت أسهل في المتابعة.",
       rating: 5,
       industry: locale === "en" ? "Consulting" : "الاستشارات",
     },
@@ -286,7 +286,7 @@ export default function Landing() {
       features: [
         locale === "en" ? "Unlimited invoices & transactions" : "فواتير ومعاملات غير محدودة",
         locale === "en" ? "AI CFO financial advisor" : "مستشار مالي ذكي",
-        locale === "en" ? "Automated VAT/CIT filing" : "تقديم ضريبة القيمة المضافة/الشركات آلي",
+        locale === "en" ? "VAT/CIT working papers" : "أوراق عمل ضريبة القيمة المضافة/الشركات",
         locale === "en" ? "Multi-currency support" : "دعم متعدد العملات",
         locale === "en" ? "Bank reconciliation" : "مطابقة بنكية",
         locale === "en" ? "Priority phone support" : "دعم هاتفي أولوية",
@@ -310,7 +310,9 @@ export default function Landing() {
         locale === "en" ? "Dedicated accountant" : "محاسب مخصص",
         locale === "en" ? "API access & integrations" : "وصول API وتكاملات",
         locale === "en" ? "White-label options" : "خيارات العلامة البيضاء",
-        locale === "en" ? "SLA & 24/7 support" : "اتفاقية مستوى خدمة ودعم 24/7",
+        locale === "en"
+          ? "Enterprise support terms during setup"
+          : "شروط دعم المؤسسات أثناء الإعداد",
       ],
       cta: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
       popular: false,
@@ -318,7 +320,7 @@ export default function Landing() {
     },
   ];
 
-  const logos = ["Emirates NBD", "ADNOC", "Etisalat", "Dubai Holding", "Majid Al Futtaim", "Emaar"];
+  const logos = ["Trading", "Services", "Real Estate", "E-commerce", "Consulting", "Clinics"];
 
   return (
     <div
