@@ -8458,15 +8458,18 @@ export default function Reports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Net Quantity
+                  Movement Change
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {inventoryMovementLoading ? (
                   <Skeleton className="h-8 w-24" />
                 ) : (
-                  <div className="text-2xl font-semibold font-mono">
-                    {formatNumber(inventoryMovement?.totals.netQuantity ?? 0, locale)}
+                  <div
+                    className={`text-2xl font-semibold font-mono ${(inventoryMovement?.totals.netQuantityChange ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  >
+                    {(inventoryMovement?.totals.netQuantityChange ?? 0) >= 0 ? "+" : ""}
+                    {formatNumber(inventoryMovement?.totals.netQuantityChange ?? 0, locale)}
                   </div>
                 )}
               </CardContent>
