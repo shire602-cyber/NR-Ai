@@ -75,6 +75,8 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/bank-reconciliation-import.test.ts` after bank statement import
   or reconciliation import-flow changes to keep CSV and PDF imports on the managed bank-statement
   path.
+- Use `npx vitest run tests/unit/onboarding-demo-data.test.ts` after SaaS onboarding demo-data
+  or sample-workspace changes to keep sample records guarded and buyer-useful.
 - Document chasing is also an NR firm-management-only feature. Keep its UI under
   `/firm/document-chasing` and do not expose document-chasing navigation or routes in customer SaaS
   areas.

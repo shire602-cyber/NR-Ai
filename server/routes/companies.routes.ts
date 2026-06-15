@@ -1,11 +1,32 @@
 import type { Express, Request, Response } from "express";
+import { eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertCompanySchema, companyPreferencesSchema } from "../../shared/schema";
+import {
+  insertCompanySchema,
+  companyPreferencesSchema,
+  bankAccounts as bankAccountsTable,
+  bankTransactions as bankTransactionsTable,
+  customerContacts as customerContactsTable,
+  invoiceLines as invoiceLinesTable,
+  invoices as invoicesTable,
+  journalEntries as journalEntriesTable,
+  journalLines as journalLinesTable,
+  receipts as receiptsTable,
+  type Account,
+} from "../../shared/schema";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from '../config/logger';
+import { db } from "../db";
+import { ACCOUNT_CODES } from "../constants";
+import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
+import {
+  demoDataBlockedMessage,
+  hasTransactionalActivity,
+  type DemoActivityCounts,
+} from "../services/demo-workspace.service";
 
 const log = createLogger('companies');
 
@@ -116,6 +137,57 @@ async function seedChartOfAccounts(companyId: string): Promise<{ created: number
     }
     throw error;
   }
+}
+
+function demoDate(daysFromToday: number): Date {
+  const date = new Date();
+  date.setUTCHours(12, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + daysFromToday);
+  return date;
+}
+
+function money(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function requireDemoAccounts(accounts: Account[]): {
+  bank: Account;
+  ar: Account;
+  inputVat: Account;
+  outputVat: Account;
+  capital: Account;
+  revenue: Account;
+  officeSupplies: Account;
+} {
+  const byCode = new Map(accounts.map((account) => [account.code, account]));
+  const required = {
+    bank: byCode.get("1020"),
+    ar: byCode.get(ACCOUNT_CODES.AR),
+    inputVat: byCode.get("1050"),
+    outputVat: byCode.get(ACCOUNT_CODES.VAT_OUTPUT),
+    capital: byCode.get("3010"),
+    revenue: byCode.get(ACCOUNT_CODES.REVENUE) ?? byCode.get(ACCOUNT_CODES.REVENUE_ALT),
+    officeSupplies: byCode.get("5050"),
+  };
+
+  const missing = Object.entries(required)
+    .filter(([, account]) => !account)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw Object.assign(new Error(`Demo seed missing required accounts: ${missing.join(", ")}`), {
+      status: 500,
+    });
+  }
+
+  return required as {
+    bank: Account;
+    ar: Account;
+    inputVat: Account;
+    outputVat: Account;
+    capital: Account;
+    revenue: Account;
+    officeSupplies: Account;
+  };
 }
 
 export function registerCompanyRoutes(app: Express) {
@@ -284,6 +356,342 @@ export function registerCompanyRoutes(app: Express) {
     const company = await storage.updateCompany(id, updateData as any);
     log.info({ id: company.id }, 'Company preferences updated');
     res.json(company);
+  }));
+
+  // Seed a buyer-friendly demo workspace for first-time SaaS onboarding.
+  // Guarded so sample data cannot be mixed into books that already have real
+  // transactional activity.
+  app.post("/api/companies/:id/onboarding/demo-data", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const company = await storage.getCompany(id);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const [existingInvoices, existingReceipts, existingJournalEntries, existingBankTransactions] =
+      await Promise.all([
+        storage.getInvoicesByCompanyId(id),
+        storage.getReceiptsByCompanyId(id),
+        storage.getJournalEntriesByCompanyId(id),
+        storage.getBankTransactionsByCompanyId(id),
+      ]);
+    const activityCounts: DemoActivityCounts = {
+      invoices: existingInvoices.length,
+      receipts: existingReceipts.length,
+      journalEntries: existingJournalEntries.length,
+      bankTransactions: existingBankTransactions.length,
+    };
+
+    if (hasTransactionalActivity(activityCounts)) {
+      return res.status(409).json({
+        message: demoDataBlockedMessage(activityCounts),
+        counts: activityCounts,
+      });
+    }
+
+    await seedChartOfAccounts(id);
+    const accounts = await storage.getAccountsByCompanyId(id);
+    const demoAccounts = requireDemoAccounts(accounts);
+    const existingBankAccounts = await storage.getBankAccountsByCompanyId(id);
+
+    const openingDate = demoDate(-30);
+    const invoiceDate = demoDate(-18);
+    const receiptDate = demoDate(-12);
+    const paymentDate = demoDate(-7);
+    const bankFeeDate = demoDate(-4);
+    const dueDate = demoDate(12);
+
+    const invoiceSubtotal = 8000;
+    const invoiceVat = money(invoiceSubtotal * 0.05);
+    const invoiceTotal = money(invoiceSubtotal + invoiceVat);
+    const expenseSubtotal = 750;
+    const expenseVat = money(expenseSubtotal * 0.05);
+    const expenseTotal = money(expenseSubtotal + expenseVat);
+
+    const openingEntryNumber = await storage.generateEntryNumber(id, openingDate);
+    const invoiceEntryNumber = await storage.generateEntryNumber(id, invoiceDate);
+    const receiptEntryNumber = await storage.generateEntryNumber(id, receiptDate);
+
+    const seeded = await db.transaction(async (tx: typeof db) => {
+      const [customer] = await tx.insert(customerContactsTable).values({
+        companyId: id,
+        name: "Banyan Cafe LLC",
+        email: "accounts@banyancafe.example",
+        phone: "+971 4 555 0190",
+        trnNumber: "100234567800003",
+        address: "Al Quoz, Dubai, UAE",
+        city: "Dubai",
+        country: "UAE",
+        paymentTerms: 30,
+        isActive: true,
+      }).returning();
+
+      const [vendor] = await tx.insert(customerContactsTable).values({
+        companyId: id,
+        name: "Palm Office Supplies LLC",
+        email: "billing@palmoffice.example",
+        phone: "+971 4 555 0144",
+        trnNumber: "100345678900003",
+        address: "Deira, Dubai, UAE",
+        city: "Dubai",
+        country: "UAE",
+        paymentTerms: 15,
+        notes: "Demo supplier contact",
+        isActive: true,
+      }).returning();
+
+      const bankAccount = existingBankAccounts[0] ?? (await tx.insert(bankAccountsTable).values({
+        companyId: id,
+        nameEn: "Demo Trading Main AED",
+        bankName: "Emirates NBD",
+        accountNumber: "001234567890",
+        iban: "AE070331234567890123456",
+        currency: "AED",
+        glAccountId: demoAccounts.bank.id,
+        isActive: true,
+      }).returning())[0];
+
+      const invoiceNumber = await allocateInvoiceNumber(id, "invoice", invoiceDate, tx);
+      const [invoice] = await tx.insert(invoicesTable).values({
+        companyId: id,
+        number: invoiceNumber,
+        customerName: customer.name,
+        customerTrn: customer.trnNumber,
+        customerAddress: customer.address,
+        date: invoiceDate,
+        dueDate,
+        paymentTerms: "net30",
+        currency: "AED",
+        exchangeRate: 1,
+        baseCurrencyAmount: invoiceTotal,
+        subtotal: invoiceSubtotal,
+        vatAmount: invoiceVat,
+        total: invoiceTotal,
+        status: "sent",
+        invoiceType: "invoice",
+        reverseCharge: false,
+        contactId: customer.id,
+      }).returning();
+
+      await tx.insert(invoiceLinesTable).values({
+        invoiceId: invoice.id,
+        description: "Monthly bookkeeping and VAT review package",
+        quantity: 1,
+        unitPrice: invoiceSubtotal,
+        vatRate: 0.05,
+        vatSupplyType: "standard_rated",
+      });
+
+      const [openingEntry] = await tx.insert(journalEntriesTable).values({
+        companyId: id,
+        entryNumber: openingEntryNumber,
+        date: openingDate,
+        memo: "Demo opening owner funding",
+        status: "posted",
+        source: "system",
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: openingDate,
+      }).returning();
+
+      await tx.insert(journalLinesTable).values([
+        {
+          entryId: openingEntry.id,
+          accountId: demoAccounts.bank.id,
+          debit: 20000,
+          credit: 0,
+          description: "Demo owner funding deposited to bank",
+        },
+        {
+          entryId: openingEntry.id,
+          accountId: demoAccounts.capital.id,
+          debit: 0,
+          credit: 20000,
+          description: "Demo owner capital",
+        },
+      ]);
+
+      const [invoiceEntry] = await tx.insert(journalEntriesTable).values({
+        companyId: id,
+        entryNumber: invoiceEntryNumber,
+        date: invoiceDate,
+        memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
+        status: "posted",
+        source: "invoice",
+        sourceId: invoice.id,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: invoiceDate,
+      }).returning();
+
+      await tx.insert(journalLinesTable).values([
+        {
+          entryId: invoiceEntry.id,
+          accountId: demoAccounts.ar.id,
+          debit: invoiceTotal,
+          credit: 0,
+          description: `Invoice ${invoice.number} - ${invoice.customerName}`,
+        },
+        {
+          entryId: invoiceEntry.id,
+          accountId: demoAccounts.revenue.id,
+          debit: 0,
+          credit: invoiceSubtotal,
+          description: `Sales revenue - Invoice ${invoice.number}`,
+        },
+        {
+          entryId: invoiceEntry.id,
+          accountId: demoAccounts.outputVat.id,
+          debit: 0,
+          credit: invoiceVat,
+          description: `VAT output - Invoice ${invoice.number}`,
+        },
+      ]);
+
+      const [receipt] = await tx.insert(receiptsTable).values({
+        companyId: id,
+        merchant: vendor.name,
+        date: receiptDate,
+        amount: expenseSubtotal,
+        vatAmount: expenseVat,
+        currency: "AED",
+        exchangeRate: 1,
+        baseCurrencyAmount: expenseSubtotal,
+        category: "Office Supplies",
+        accountId: demoAccounts.officeSupplies.id,
+        paymentAccountId: demoAccounts.bank.id,
+        posted: true,
+        autoPosted: false,
+        reverseCharge: false,
+        rawText: "Demo receipt for onboarding sample data",
+        uploadedBy: userId,
+      }).returning();
+
+      const [receiptEntry] = await tx.insert(journalEntriesTable).values({
+        companyId: id,
+        entryNumber: receiptEntryNumber,
+        date: receiptDate,
+        memo: `Expense Receipt - ${receipt.merchant}`,
+        status: "posted",
+        source: "receipt",
+        sourceId: receipt.id,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: receiptDate,
+      }).returning();
+
+      await tx.insert(journalLinesTable).values([
+        {
+          entryId: receiptEntry.id,
+          accountId: demoAccounts.officeSupplies.id,
+          debit: expenseSubtotal,
+          credit: 0,
+          description: `Expense - ${receipt.merchant}`,
+        },
+        {
+          entryId: receiptEntry.id,
+          accountId: demoAccounts.inputVat.id,
+          debit: expenseVat,
+          credit: 0,
+          description: `Input VAT - ${receipt.merchant}`,
+        },
+        {
+          entryId: receiptEntry.id,
+          accountId: demoAccounts.bank.id,
+          debit: 0,
+          credit: expenseTotal,
+          description: `Paid expense - ${receipt.merchant}`,
+        },
+      ]);
+
+      await tx
+        .update(receiptsTable)
+        .set({ journalEntryId: receiptEntry.id })
+        .where(eq(receiptsTable.id, receipt.id));
+
+      const bankTransactions = await tx.insert(bankTransactionsTable).values([
+        {
+          companyId: id,
+          bankAccountId: demoAccounts.bank.id,
+          bankStatementAccountId: bankAccount.id,
+          transactionDate: openingDate,
+          description: "Owner funding transfer",
+          amount: 20000,
+          balance: 20000,
+          reference: "DEMO-CAPITAL",
+          matchStatus: "unmatched",
+          isReconciled: false,
+          importSource: "demo",
+        },
+        {
+          companyId: id,
+          bankAccountId: demoAccounts.bank.id,
+          bankStatementAccountId: bankAccount.id,
+          transactionDate: paymentDate,
+          description: `Customer payment - ${invoice.number}`,
+          amount: invoiceTotal,
+          balance: 28400,
+          reference: "DEMO-CUST-PAY",
+          matchStatus: "suggested",
+          matchedInvoiceId: invoice.id,
+          matchConfidence: 0.94,
+          isReconciled: false,
+          importSource: "demo",
+        },
+        {
+          companyId: id,
+          bankAccountId: demoAccounts.bank.id,
+          bankStatementAccountId: bankAccount.id,
+          transactionDate: receiptDate,
+          description: `Supplier payment - ${receipt.merchant}`,
+          amount: -expenseTotal,
+          balance: 27612.5,
+          reference: "DEMO-SUP-PAY",
+          matchStatus: "suggested",
+          matchedReceiptId: receipt.id,
+          matchConfidence: 0.91,
+          isReconciled: false,
+          importSource: "demo",
+        },
+        {
+          companyId: id,
+          bankAccountId: demoAccounts.bank.id,
+          bankStatementAccountId: bankAccount.id,
+          transactionDate: bankFeeDate,
+          description: "Monthly bank charges",
+          amount: -25,
+          balance: 27587.5,
+          reference: "DEMO-BANK-FEE",
+          matchStatus: "unmatched",
+          isReconciled: false,
+          importSource: "demo",
+        },
+      ]).returning();
+
+      return {
+        contacts: 2,
+        bankAccounts: existingBankAccounts.length > 0 ? 0 : 1,
+        invoices: 1,
+        invoiceLines: 1,
+        receipts: 1,
+        journalEntries: 3,
+        bankTransactions: bankTransactions.length,
+        bankAccountId: bankAccount.id,
+      };
+    });
+
+    log.info({ companyId: id, userId, seeded }, 'Demo onboarding workspace seeded');
+    res.status(201).json({
+      message: 'Demo workspace created with sample invoices, receipts, journals, and bank statement lines.',
+      created: seeded,
+    });
   }));
 
   // Mark company onboarding as complete

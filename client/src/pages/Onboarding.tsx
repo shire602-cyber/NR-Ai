@@ -253,6 +253,25 @@ function CustomerOnboarding() {
     },
   });
 
+  const seedDemoDataMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/companies/${company!.id}/onboarding/demo-data`, {}),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({
+        title: "Demo workspace created",
+        description:
+          data?.message ?? "Sample invoices, receipts, journals, and bank lines are ready.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Could not create demo workspace",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const completeMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${company!.id}/onboarding/complete`, {}),
     onSuccess: () => {
@@ -385,6 +404,11 @@ function CustomerOnboarding() {
   async function handleComplete() {
     await completeMutation.mutateAsync();
     goTo("complete", 1);
+  }
+
+  async function handleCreateDemoWorkspace() {
+    await seedDemoDataMutation.mutateAsync();
+    await handleComplete();
   }
 
   if (companiesLoading) {
@@ -530,8 +554,10 @@ function CustomerOnboarding() {
               {currentStep === "first-doc" && (
                 <FirstDocStep
                   onComplete={handleComplete}
+                  onCreateDemoWorkspace={handleCreateDemoWorkspace}
                   onBack={goBack}
                   completing={completeMutation.isPending}
+                  demoSeeding={seedDemoDataMutation.isPending}
                 />
               )}
               {currentStep === "complete" && (
@@ -1013,12 +1039,16 @@ function BankStep({
 
 function FirstDocStep({
   onComplete,
+  onCreateDemoWorkspace,
   onBack,
   completing,
+  demoSeeding,
 }: {
   onComplete: () => void;
+  onCreateDemoWorkspace: () => void;
   onBack: () => void;
   completing: boolean;
+  demoSeeding: boolean;
 }) {
   const [, setLocation] = useLocation();
 
@@ -1052,12 +1082,34 @@ function FirstDocStep({
         description="Kick off your bookkeeping by creating an invoice or uploading an expense receipt."
       />
 
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1 text-left">
+            <p className="text-sm font-semibold">Explore with sample books</p>
+            <p className="text-xs text-muted-foreground">
+              Add demo invoices, receipts, posted journals, and bank statement lines to this new
+              workspace.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={onCreateDemoWorkspace}
+            disabled={completing || demoSeeding}
+            className="gap-2 sm:w-auto"
+            data-testid="onboarding-create-demo-workspace"
+          >
+            <Sparkles className="h-4 w-4" />
+            {demoSeeding ? "Creating demo…" : "Create demo workspace"}
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {options.map(({ icon: Icon, title, description, action, testId }) => (
           <button
             key={title}
             onClick={() => handleOptionClick(action)}
-            disabled={completing}
+            disabled={completing || demoSeeding}
             data-testid={testId}
             className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           >
@@ -1081,7 +1133,7 @@ function FirstDocStep({
         <Button
           variant="ghost"
           onClick={onComplete}
-          disabled={completing}
+          disabled={completing || demoSeeding}
           className="flex-1 text-muted-foreground"
           data-testid="onboarding-skip-doc"
         >
