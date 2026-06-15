@@ -41,6 +41,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { extractedTransactionsToBankCsv, rowsToCsv } from "@/lib/bankImport";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Tesseract from "tesseract.js";
@@ -422,7 +423,7 @@ export default function BankReconciliation() {
       ["2026-01-05", "Office supplies", "POS260105009", "315.00", "", "24935.00"],
       ["2026-01-08", "Bank charges", "CHG260108001", "25.00", "", "24910.00"],
     ];
-    const csv = rows.map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
+    const csv = rowsToCsv(rows);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
@@ -504,15 +505,8 @@ export default function BankReconciliation() {
           return;
         }
 
-        // For PDFs, fall back to old JSON import endpoint
-        await apiRequest("POST", `/api/companies/${companyId}/bank-transactions/import`, {
-          transactions: txns,
-          bankAccountId: selectedBankAccount,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/companies", companyId, "bank-statements"],
-        });
-        toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
+        const csvContent = extractedTransactionsToBankCsv(txns);
+        await importMutation.mutateAsync({ bankAccountId: selectedBankAccount, csvContent });
         setImportDialogOpen(false);
         setImportFile(null);
       } else {
