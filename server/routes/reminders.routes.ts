@@ -44,11 +44,9 @@ export function registerReminderRoutes(app: Express) {
       sendEmail: z.boolean().optional(),
       sendSms: z.boolean().optional(),
       sendInApp: z.boolean().optional(),
-      sendWhatsapp: z.boolean().optional(),
       emailSubject: z.string().max(200).optional(),
       emailTemplate: z.string().max(5000).optional(),
       smsTemplate: z.string().max(5000).optional(),
-      whatsappTemplate: z.string().max(5000).optional(),
     });
 
     const validated = validationSchema.parse(req.body);
@@ -79,7 +77,13 @@ export function registerReminderRoutes(app: Express) {
     }
 
     // Strip companyId/id so the client can't reassign tenancy via body.
-    const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+    const {
+      companyId: _ignoredCompanyId,
+      id: _ignoredId,
+      sendWhatsapp: _ignoredSendWhatsapp,
+      whatsappTemplate: _ignoredWhatsappTemplate,
+      ...updateData
+    } = req.body ?? {};
     const setting = await storage.updateReminderSetting(id, existing.companyId, updateData);
     res.json(setting);
   }));

@@ -20,7 +20,8 @@ export function registerNotificationRoutes(app: Express) {
   // Mark notification as read
   app.patch("/api/notifications/:id/read", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.markNotificationAsRead(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.markNotificationAsRead(id, userId);
     res.json(notification);
   }));
 
@@ -34,7 +35,8 @@ export function registerNotificationRoutes(app: Express) {
   // Dismiss notification
   app.patch("/api/notifications/:id/dismiss", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.dismissNotification(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.dismissNotification(id, userId);
     res.json(notification);
   }));
 

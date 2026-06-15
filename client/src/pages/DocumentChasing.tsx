@@ -10,7 +10,6 @@ import {
   Send,
   Sparkles,
 } from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
 
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -70,7 +69,6 @@ interface ChaseQueueItem {
   requirement: Requirement;
   nextLevel: 'friendly' | 'follow_up' | 'urgent' | 'final';
   message: string;
-  whatsappLink: string | null;
   daysOverdue: number;
 }
 
@@ -140,11 +138,10 @@ export default function DocumentChasing() {
     mutationFn: (input: { requirementId: string; overrideMessage?: string; channel?: string }) =>
       apiRequest('POST', `/api/companies/${companyId}/document-chases/send/${input.requirementId}`, {
         overrideMessage: input.overrideMessage,
-        channel: input.channel ?? 'whatsapp',
+        channel: input.channel ?? 'email',
       }),
-    onSuccess: (data: { whatsappLink?: string | null }) => {
+    onSuccess: () => {
       toast({ title: 'Chase recorded', description: 'Marked as sent.' });
-      if (data?.whatsappLink) window.open(data.whatsappLink, '_blank', 'noopener,noreferrer');
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'effectiveness'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-requirements'] });
@@ -261,9 +258,7 @@ export default function DocumentChasing() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Send {queue.length} chase reminder{queue.length === 1 ? '' : 's'}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will record a chase event for every queued requirement and may
-                  trigger outbound WhatsApp/email messages depending on your channel
-                  configuration. This action can&apos;t be undone.
+                  This will record a chase event for every queued requirement. This action can&apos;t be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -420,12 +415,12 @@ export default function DocumentChasing() {
                       <Button
                         size="sm"
                         onClick={() =>
-                          sendChaseMutation.mutate({ requirementId: item.requirement.id, channel: 'whatsapp' })
+                          sendChaseMutation.mutate({ requirementId: item.requirement.id, channel: 'email' })
                         }
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
                       >
-                        <SiWhatsapp className="w-4 h-4 mr-2" /> Send
+                        <Send className="w-4 h-4 mr-2" /> Send
                       </Button>
                     </div>
                   ))}
@@ -525,7 +520,7 @@ export default function DocumentChasing() {
           <DialogHeader>
             <DialogTitle>Preview chase message</DialogTitle>
             <DialogDescription>
-              Edit the message if you like. Sending opens WhatsApp and records the chase.
+              Edit the message if you like. Sending records the chase.
             </DialogDescription>
           </DialogHeader>
           {previewItem && (
@@ -620,7 +615,7 @@ function PreviewBody(props: {
           Cancel
         </Button>
         <Button onClick={() => props.onSend(draft)} disabled={props.sending}>
-          <SiWhatsapp className="w-4 h-4 mr-2" /> Send via WhatsApp
+          <Send className="w-4 h-4 mr-2" /> Send
         </Button>
       </DialogFooter>
     </div>

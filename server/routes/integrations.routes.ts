@@ -57,12 +57,6 @@ export function registerIntegrationRoutes(app: Express) {
         description: 'Sync with QuickBooks',
         comingSoon: true,
       },
-      whatsapp: {
-        connected: false,
-        name: 'WhatsApp',
-        description: 'Extract receipts from chats',
-        comingSoon: true,
-      },
     });
   }));
 

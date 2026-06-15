@@ -22,7 +22,6 @@ export const customerOnlyRoutes = [
   '/auto-reconcile',
   '/ai-inbox',
   '/month-end',
-  '/whatsapp',
   '/integrations',
   '/integrations-hub',
   '/team',

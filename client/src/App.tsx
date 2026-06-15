@@ -100,7 +100,6 @@ const SmartAssistant = lazy(() => import('@/pages/SmartAssistant'));
 const CustomerContacts = lazy(() => import('@/pages/CustomerContacts'));
 const Integrations = lazy(() => import('@/pages/Integrations'));
 const IntegrationsHub = lazy(() => import('@/pages/IntegrationsHub'));
-const WhatsAppDashboard = lazy(() => import('@/pages/WhatsAppDashboard'));
 const Notifications = lazy(() => import('@/pages/Notifications'));
 const Reminders = lazy(() => import('@/pages/Reminders'));
 const DocumentChasing = lazy(() => import('@/pages/DocumentChasing'));
@@ -510,7 +509,6 @@ function Router() {
           <Route path="/advanced-analytics" component={AdvancedAnalytics} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations-hub" component={IntegrationsHub} />
-          <Route path="/whatsapp" component={WhatsAppDashboard} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/document-chasing" component={DocumentChasing} />

@@ -1,6 +1,7 @@
 import { type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
+import { requireFirmRole } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 
@@ -15,7 +16,7 @@ const log = createLogger('whatsapp');
 export function registerWhatsAppRoutes(app: Express) {
 
   // Log a message that was sent via wa.me link
-  app.post("/api/integrations/whatsapp/log-message", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/whatsapp/log-message", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -51,7 +52,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp message history
-  app.get("/api/integrations/whatsapp/messages", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/messages", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -68,7 +69,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp config — always return configured:true since personal WhatsApp needs no setup
-  app.get("/api/integrations/whatsapp/config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/config", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     res.json({
       configured: true,
       isActive: true,
@@ -77,7 +78,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp integration status (for dashboard/integrations page)
-  app.get("/api/integrations/whatsapp/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/status", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     res.json({
       connected: true,
       configured: true,
@@ -86,7 +87,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Save WhatsApp reminder rules (stored per company via admin settings)
-  app.post("/api/integrations/whatsapp/save-rules", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/whatsapp/save-rules", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -118,7 +119,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp reminder rules
-  app.get("/api/integrations/whatsapp/rules", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/rules", authMiddleware, requireFirmRole(), asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });

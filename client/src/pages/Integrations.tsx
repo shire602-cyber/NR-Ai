@@ -3,9 +3,6 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -20,17 +17,13 @@ import {
   Loader2, 
   ExternalLink,
   Clock,
-  MessageSquare,
   Calculator,
   Wallet,
-  RefreshCw,
   Zap,
   Link2,
   History,
-  Settings,
-  Power
 } from 'lucide-react';
-import { SiGoogle, SiWhatsapp, SiQuickbooks } from 'react-icons/si';
+import { SiGoogle, SiQuickbooks } from 'react-icons/si';
 import {
   Dialog,
   DialogContent,
@@ -38,7 +31,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -60,7 +52,6 @@ interface IntegrationsStatusResponse {
   googleSheets: IntegrationStatus;
   xero: IntegrationStatus;
   quickbooks: IntegrationStatus;
-  whatsapp: IntegrationStatus;
 }
 
 export default function Integrations() {
@@ -117,12 +108,9 @@ export default function Integrations() {
     quickbooksDesc: locale === 'en'
       ? 'Sync transactions, invoices, and accounts with QuickBooks Online'
       : 'مزامنة المعاملات والفواتير والحسابات مع QuickBooks Online',
-    whatsappDesc: locale === 'en'
-      ? 'Send messages, invoices and reminders via your personal WhatsApp'
-      : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي',
   };
 
-  const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationsStatusResponse>({
+  const { data: integrationStatus } = useQuery<IntegrationsStatusResponse>({
     queryKey: ['/api/integrations/status'],
   });
 
@@ -390,47 +378,6 @@ export default function Integrations() {
                     : 'يجب تكوين تكامل Google Sheets في إعدادات Replit.'}
                 </p>
               )}
-            </CardContent>
-          </Card>
-
-          {/* WhatsApp Integration */}
-          <Card className="relative overflow-hidden" data-testid="integration-whatsapp">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
-            <CardHeader className="flex flex-row items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg">
-                <SiWhatsapp className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">WhatsApp</CardTitle>
-                  <Badge variant="default" className="bg-green-500" data-testid="whatsapp-status">
-                    <Check className="w-3 h-3 mr-1" /> {locale === 'en' ? 'Ready' : 'جاهز'}
-                  </Badge>
-                </div>
-                <CardDescription className="mt-1">
-                  {locale === 'en'
-                    ? 'Send messages, invoices, and reminders via your personal WhatsApp'
-                    : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي'}
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {locale === 'en'
-                    ? 'No setup needed — messages open directly in your WhatsApp app.'
-                    : 'لا حاجة لإعداد — الرسائل تفتح مباشرة في تطبيق واتساب.'}
-                </p>
-                <Button
-                  variant="default"
-                  className="gap-2 w-full bg-green-600 hover:bg-green-700"
-                  onClick={() => window.location.href = '/whatsapp'}
-                  data-testid="button-go-whatsapp"
-                >
-                  <SiWhatsapp className="w-4 h-4" />
-                  {locale === 'en' ? 'Go to WhatsApp' : 'الذهاب إلى واتساب'}
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>

@@ -17,16 +17,11 @@ import {
   BarChart3,
   FileArchive,
 } from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
-import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
 
 export default function ClientDashboard() {
   const user = getStoredUser();
   const userName = user?.name || user?.email || 'Client';
-  const { company, companyId } = useDefaultCompany();
-  const contactPhone = company?.contactPhone?.trim() || '';
-  const contactPhoneFormatted = contactPhone ? formatPhoneForWhatsApp(contactPhone) : '';
-  const contactPhoneAvailable = contactPhoneFormatted.length >= 8;
+  const { companyId } = useDefaultCompany();
 
   // Fetch documents count
   const { data: documents = [], isLoading: docsLoading } = useQuery<any[]>({
@@ -238,33 +233,6 @@ export default function ClientDashboard() {
               <span className="font-medium">View Tax Returns</span>
             </Button>
           </Link>
-          {contactPhoneAvailable ? (
-            <a
-              href={`https://wa.me/${contactPhoneFormatted}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="link-contact-whatsapp"
-            >
-              <Button
-                variant="outline"
-                className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
-              >
-                <SiWhatsapp className="w-7 h-7 text-emerald-600" />
-                <span className="font-medium">Contact NR Team</span>
-              </Button>
-            </a>
-          ) : (
-            <Button
-              variant="outline"
-              disabled
-              title="WhatsApp contact not configured for this company"
-              className="w-full h-auto py-6 flex flex-col gap-3 opacity-60"
-              data-testid="button-contact-whatsapp-disabled"
-            >
-              <SiWhatsapp className="w-7 h-7 text-emerald-600" />
-              <span className="font-medium">Contact NR Team</span>
-            </Button>
-          )}
         </div>
       </div>
 

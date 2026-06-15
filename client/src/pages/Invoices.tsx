@@ -31,11 +31,9 @@ import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableSkeleton } from '@/components/ui/loading-skeletons';
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
-import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
-import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
-import type { Invoice, Company, CustomerContact, InvoicePayment } from '@shared/schema';
-import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whatsapp-templates';
-import { WhatsAppComposer } from '@/components/WhatsAppComposer';
+import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
+import { SiGooglesheets } from 'react-icons/si';
+import type { Invoice, CustomerContact, InvoicePayment } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
 
@@ -106,13 +104,6 @@ export default function Invoices() {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState('');
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
-
-  // WhatsApp composer state. We open this with a pre-filled message rather
-  // than redirecting to wa.me directly, so the user can review/edit before
-  // sending — important when share links are baked into the body.
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [composerRecipient, setComposerRecipient] = useState<{ name?: string | null; phone?: string | null; whatsappNumber?: string | null } | null>(null);
-  const [composerMessage, setComposerMessage] = useState('');
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -1042,69 +1033,6 @@ export default function Invoices() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-green-600 hover:text-green-700"
-                            title="Send via WhatsApp"
-                            onClick={async () => {
-                              try {
-                                const customer = customers.find(c => c.name === invoice.customerName);
-                                const recipientNumber = customer ? pickWhatsAppNumber(customer) : null;
-                                if (!customer || !recipientNumber) {
-                                  toast({
-                                    title: 'No WhatsApp number',
-                                    description: `No phone or WhatsApp number found for ${invoice.customerName}. Add one in Customer Contacts.`,
-                                    variant: 'destructive',
-                                  });
-                                  return;
-                                }
-
-                                const shareResult = await apiRequest('POST', `/api/invoices/${invoice.id}/share`);
-                                const shareUrl = `${window.location.origin}${shareResult.shareUrl}`;
-
-                                const invoiceDate = new Date(invoice.date);
-                                const paymentTerms = customer.paymentTerms || 30;
-                                const dueDate = new Date(invoiceDate);
-                                dueDate.setDate(dueDate.getDate() + paymentTerms);
-
-                                const tpl = MESSAGE_TEMPLATES.find(t => t.id === 'invoice_with_link');
-                                const templateStr = locale === 'en' ? (tpl?.template || '') : (tpl?.templateAr || '');
-                                const message = fillTemplate(templateStr, {
-                                  customer_name: invoice.customerName,
-                                  invoice_number: invoice.number,
-                                  amount: `${invoice.currency} ${invoice.total.toFixed(2)}`,
-                                  due_date: dueDate.toLocaleDateString(locale === 'en' ? 'en-AE' : 'ar-AE'),
-                                  link: shareUrl,
-                                  company_name: company?.name || '',
-                                });
-
-                                setComposerRecipient({
-                                  name: customer.name,
-                                  phone: customer.phone,
-                                  whatsappNumber: customer.whatsappNumber,
-                                });
-                                setComposerMessage(message);
-                                setComposerOpen(true);
-
-                                // Mark drafts as sent — opening composer is intent enough.
-                                if (invoice.status === 'draft') {
-                                  apiRequest('PATCH', `/api/invoices/${invoice.id}/status`, { status: 'sent' })
-                                    .then(() => queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] }))
-                                    .catch(() => {});
-                                }
-                              } catch (error: any) {
-                                toast({
-                                  title: 'Error',
-                                  description: error?.message || 'Failed to prepare WhatsApp message',
-                                  variant: 'destructive',
-                                });
-                              }
-                            }}
-                            data-testid={`button-whatsapp-invoice-${invoice.id}`}
-                          >
-                            <SiWhatsapp className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
                             onClick={async () => {
                               try {
                                 const result = await apiRequest('POST', `/api/invoices/${invoice.id}/generate-einvoice`);
@@ -1909,20 +1837,6 @@ export default function Invoices() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <WhatsAppComposer
-        open={composerOpen}
-        onOpenChange={(open) => {
-          setComposerOpen(open);
-          if (!open) {
-            setComposerMessage('');
-            setComposerRecipient(null);
-          }
-        }}
-        recipient={composerRecipient}
-        defaultMessage={composerMessage}
-        allowedCategories={["invoice", "payment", "alert"]}
-      />
     </div>
   );
 }

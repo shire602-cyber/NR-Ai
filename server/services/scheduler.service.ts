@@ -19,9 +19,7 @@ const log = createLogger('scheduler');
  * Background scheduler for the Client Engagement Automation Engine.
  *
  * Scans for engagement triggers (overdue invoices, upcoming due dates)
- * and creates in-app notifications prompting the user to send WhatsApp
- * messages. No messages are sent automatically -- all WhatsApp sends
- * remain manual via wa.me links.
+ * and creates in-app notifications prompting the user to send reminders.
  *
  * 5-Level Escalation Engine:
  *   Level 1 (Day -3): Gentle reminder — normal priority
@@ -123,46 +121,6 @@ function skipUAEWeekend(date: Date): Date {
  */
 function formatDate(date: Date): string {
   return date.toLocaleDateString('en-AE');
-}
-
-/**
- * Normalize a phone number for wa.me links. Mirrors the client-side
- * formatter in client/src/lib/whatsapp-templates.ts so links generated
- * server-side and client-side stay consistent.
- *
- * Rules:
- *   - 10 digits starting "05"  → strip leading 0, prefix "971" (UAE mobile)
- *   - 9 digits starting "5"    → prefix "971" (UAE mobile w/o 0)
- *   - leading "00"             → drop (international prefix)
- *   - leading "0"              → drop (national prefix)
- *   - result must be 8..15 digits (E.164); otherwise return ""
- */
-function normalizePhone(phone: string): string {
-  let cleaned = (phone || '').replace(/[^\d]/g, '');
-  if (!cleaned) return '';
-  if (cleaned.length === 10 && cleaned.startsWith('05')) {
-    cleaned = '971' + cleaned.substring(1);
-  } else if (cleaned.length === 9 && cleaned.startsWith('5')) {
-    cleaned = '971' + cleaned;
-  } else if (cleaned.startsWith('00')) {
-    cleaned = cleaned.substring(2);
-  } else if (cleaned.startsWith('0')) {
-    cleaned = cleaned.substring(1);
-  }
-  if (cleaned.length < 8 || cleaned.length > 15) return '';
-  return cleaned;
-}
-
-/**
- * Build a pre-filled wa.me link for the given phone and message text.
- * Returns null if phone is not available.
- */
-function buildWhatsAppLink(phone: string | undefined | null, message: string): string | null {
-  if (!phone || phone.trim() === '') return null;
-  const normalized = normalizePhone(phone);
-  // normalizePhone returns "" for unusable inputs (too short/long, invalid).
-  if (!normalized || normalized.length < 8) return null;
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,14 +300,6 @@ async function scanCompanyPaymentReminders(companyId: string) {
       const title = level.titleFn(invoiceInfo, overdueDays);
       const baseMessage = level.messageFn(invoiceInfo, dueDateStart);
 
-      // Build the WhatsApp wa.me link if the customer has a phone number.
-      // Prefer the dedicated WhatsApp number when set; fall back to phone.
-      const customerPhone = customer?.whatsappNumber?.trim() || customer?.phone;
-      const waLink = buildWhatsAppLink(customerPhone, baseMessage);
-      const message = waLink
-        ? `${baseMessage}\n\nSend reminder: ${waLink}`
-        : baseMessage;
-
       await maybeCreateReminder({
         companyId,
         companyUsers,
@@ -357,7 +307,7 @@ async function scanCompanyPaymentReminders(companyId: string) {
         ruleType: level.ruleType,
         sentKeys,
         title,
-        message,
+        message: baseMessage,
         priority: level.priority,
       });
     }

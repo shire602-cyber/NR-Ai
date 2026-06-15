@@ -6,7 +6,7 @@
  *   - loads invoices / payments / contacts from storage
  *   - asks the service to compute aging + recommended levels
  *   - writes paymentChases rows + updates invoice.chaseLevel when sending
- *   - returns wa.me deep links for the client to open
+ *   - records the generated reminder text for manual follow-up
  *
  * All endpoints are companyId-scoped via `hasCompanyAccess`. The customer
  * /firm middleware split mirrors invoices.routes.ts.
@@ -30,9 +30,7 @@ import {
   contextForInvoice,
   renderTemplate,
   groupByClient,
-  renderGroupedMessage,
   computeEffectiveness,
-  buildWaMeLink,
 } from '../services/payment-chasing.service';
 
 const log = createLogger('chasing');
@@ -103,7 +101,7 @@ function parseDoNotChaseList(raw: string | null | undefined): string[] {
 const sendChaseSchema = z.object({
   level: z.number().int().min(1).max(4).optional(),
   language: z.enum(['en', 'ar']).optional(),
-  method: z.enum(['whatsapp', 'email', 'manual']).default('whatsapp'),
+  method: z.enum(['email', 'manual']).default('manual'),
   paymentLink: z.string().url().optional().or(z.literal('')),
   senderName: z.string().min(1).max(200).optional(),
 });
@@ -116,7 +114,7 @@ const BULK_SEND_MAX = 200;
 
 const bulkSendSchema = z.object({
   language: z.enum(['en', 'ar']).optional(),
-  method: z.enum(['whatsapp', 'email', 'manual']).default('whatsapp'),
+  method: z.enum(['email', 'manual']).default('manual'),
   paymentLink: z.string().url().optional().or(z.literal('')),
   senderName: z.string().min(1).max(200).optional(),
   invoiceIds: z.array(z.string().uuid()).max(BULK_SEND_MAX).optional(),
@@ -126,7 +124,7 @@ const updateConfigSchema = z.object({
   autoChaseEnabled: z.boolean().optional(),
   chaseFrequencyDays: z.number().int().min(1).max(365).optional(),
   maxLevel: z.number().int().min(1).max(4).optional(),
-  preferredMethod: z.enum(['whatsapp', 'email']).optional(),
+  preferredMethod: z.literal('email').optional(),
   doNotChaseContactIds: z.array(z.string().uuid()).optional(),
   defaultLanguage: z.enum(['en', 'ar']).optional(),
 });
@@ -199,7 +197,7 @@ export function registerChasingRoutes(app: Express) {
         config: {
           frequencyDays: frequency,
           maxLevel,
-          preferredMethod: config?.preferredMethod ?? 'whatsapp',
+          preferredMethod: config?.preferredMethod === 'whatsapp' ? 'email' : (config?.preferredMethod ?? 'email'),
           autoChaseEnabled: config?.autoChaseEnabled ?? false,
         },
       });
@@ -294,26 +292,6 @@ export function registerChasingRoutes(app: Express) {
         triggeredBy: userId,
       });
 
-      // Mirror in WhatsApp message log (only when method = whatsapp)
-      let waLink: string | null = null;
-      if (body.method === 'whatsapp' && contact?.phone) {
-        waLink = buildWaMeLink(contact.phone, messageText);
-        try {
-          await storage.createWhatsappMessage({
-            companyId: invoice.companyId,
-            waMessageId: `chase_${chase.id}`,
-            from: 'personal',
-            to: contact.phone,
-            messageType: 'text',
-            content: messageText.slice(0, 5000),
-            direction: 'outbound',
-            status: 'sent',
-          });
-        } catch (e) {
-          log.warn(`WhatsApp log failed for chase ${chase.id}: ${(e as Error).message}`);
-        }
-      }
-
       await recordAudit({
         userId,
         companyId: invoice.companyId,
@@ -325,7 +303,7 @@ export function registerChasingRoutes(app: Express) {
       });
 
       log.info(`Chase L${level} (${language}/${body.method}) sent for invoice ${invoice.number} (company=${invoice.companyId})`);
-      res.json({ chase, subject, message: messageText, waLink });
+      res.json({ chase, subject, message: messageText });
     }),
   );
 
@@ -381,7 +359,7 @@ export function registerChasingRoutes(app: Express) {
         return c ?? null;
       };
 
-      const results: Array<{ invoiceId: string; level: number; status: string; waLink?: string | null; error?: string }> = [];
+      const results: Array<{ invoiceId: string; level: number; status: string; error?: string }> = [];
       for (const row of candidates) {
         const level = nextLevelFor(row, { maxLevel });
         if (!level) {
@@ -421,8 +399,7 @@ export function registerChasingRoutes(app: Express) {
             sentAt,
             triggeredBy: userId,
           });
-          const waLink = body.method === 'whatsapp' && contact?.phone ? buildWaMeLink(contact.phone, messageText) : null;
-          results.push({ invoiceId: row.invoice.id, level, status: 'sent', waLink });
+          results.push({ invoiceId: row.invoice.id, level, status: 'sent' });
           log.info(`Bulk chase L${level} for invoice ${row.invoice.number} (chase=${chase.id})`);
         } catch (e) {
           log.error(`Bulk chase failed for invoice ${row.invoice.id}: ${(e as Error).message}`);
@@ -593,7 +570,7 @@ export function registerChasingRoutes(app: Express) {
         autoChaseEnabled: false,
         chaseFrequencyDays: 7,
         maxLevel: 4,
-        preferredMethod: 'whatsapp',
+        preferredMethod: 'email',
         doNotChaseContactIds: '[]',
         defaultLanguage: 'en',
       });

@@ -409,9 +409,9 @@ export interface IStorage {
   getNotificationsByUserId(userId: string): Promise<Notification[]>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<Notification>;
+  markNotificationAsRead(id: string, userId: string): Promise<Notification>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
-  dismissNotification(id: string): Promise<Notification>;
+  dismissNotification(id: string, userId: string): Promise<Notification>;
   
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
@@ -2274,12 +2274,16 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(id: string): Promise<Notification> {
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification> {
+    // Tenant scope is per-user (notifications belong to a specific user, not a
+    // company): scope by userId so user A can't dismiss user B's notification
+    // by guessing the id.
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
+    if (!notification) throw new NotFoundError('Notification');
     return notification;
   }
 
@@ -2290,12 +2294,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(notifications.userId, userId));
   }
 
-  async dismissNotification(id: string): Promise<Notification> {
+  async dismissNotification(id: string, userId: string): Promise<Notification> {
     const [notification] = await db
       .update(notifications)
       .set({ isDismissed: true })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
+    if (!notification) throw new NotFoundError('Notification');
     return notification;
   }
 

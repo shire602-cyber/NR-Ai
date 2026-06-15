@@ -13,17 +13,11 @@ import {
   Plus,
   Trash2,
   Edit2,
-  ToggleLeft,
-  ToggleRight,
   RefreshCw,
   Search,
   Download,
   BarChart3,
-  TrendingUp,
-  AlertTriangle,
   CheckCircle,
-  XCircle,
-  Clock,
   FileText,
   Building2,
   CreditCard,
@@ -52,7 +46,6 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
-  const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   
@@ -64,7 +57,6 @@ export default function Admin() {
     trialPeriod: '14',
     aiCategorization: true,
     ocrScanning: true,
-    whatsappIntegration: false,
     smartAssistant: true,
     referralProgram: true,
     supportEmail: '',
@@ -97,9 +89,6 @@ export default function Admin() {
       ocrScanning: 'feature.ocrScanning' in settingsMap
         ? settingsMap['feature.ocrScanning'] === 'true'
         : prev.ocrScanning,
-      whatsappIntegration: 'feature.whatsappIntegration' in settingsMap
-        ? settingsMap['feature.whatsappIntegration'] === 'true'
-        : prev.whatsappIntegration,
       smartAssistant: 'feature.smartAssistant' in settingsMap
         ? settingsMap['feature.smartAssistant'] === 'true'
         : prev.smartAssistant,
@@ -145,21 +134,6 @@ export default function Admin() {
     queryKey: ['/api/admin/stats'],
   });
 
-  // Mutations
-  const updateSettingMutation = useMutation({
-    mutationFn: async (setting: { key: string; value: string }) => {
-      return apiRequest('PUT', '/api/admin/settings', setting);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
-      toast({ title: 'Setting updated successfully' });
-      setEditSettingDialog(null);
-    },
-    onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update setting' });
-    },
-  });
-
   // Save all system settings
   const saveSystemSettingsMutation = useMutation({
     mutationFn: async (settingsToSave: typeof systemSettings) => {
@@ -170,7 +144,6 @@ export default function Admin() {
         { key: 'system.trialPeriod', value: settingsToSave.trialPeriod },
         { key: 'feature.aiCategorization', value: settingsToSave.aiCategorization.toString() },
         { key: 'feature.ocrScanning', value: settingsToSave.ocrScanning.toString() },
-        { key: 'feature.whatsappIntegration', value: settingsToSave.whatsappIntegration.toString() },
         { key: 'feature.smartAssistant', value: settingsToSave.smartAssistant.toString() },
         { key: 'feature.referralProgram', value: settingsToSave.referralProgram.toString() },
         { key: 'notification.supportEmail', value: settingsToSave.supportEmail },
@@ -275,15 +248,6 @@ export default function Admin() {
   const filteredCompanies = companies.filter(company =>
     company.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Group settings by category
-  const settingsByCategory = settings.reduce((acc, setting) => {
-    if (!acc[setting.category]) {
-      acc[setting.category] = [];
-    }
-    acc[setting.category].push(setting);
-    return acc;
-  }, {} as Record<string, AdminSetting[]>);
 
   return (
     <div className="space-y-6">
@@ -417,13 +381,6 @@ export default function Admin() {
                     <span>AI Services (OpenAI)</span>
                   </div>
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Connected</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    <span>WhatsApp Integration</span>
-                  </div>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Needs Config</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -604,10 +561,6 @@ export default function Admin() {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">AI Credits/Month</span>
                         <span>{plan.aiCreditsPerMonth}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">WhatsApp Integration</span>
-                        <span>{plan.hasWhatsappIntegration ? 'Yes' : 'No'}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -932,18 +885,6 @@ export default function Admin() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">WhatsApp Integration</p>
-                      <p className="text-sm text-muted-foreground">Allow WhatsApp receipt ingestion</p>
-                    </div>
-                    <Switch 
-                      checked={systemSettings.whatsappIntegration}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, whatsappIntegration: checked }))}
-                      data-testid="switch-whatsapp-integration" 
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
                       <p className="font-medium">Smart Assistant</p>
                       <p className="text-sm text-muted-foreground">Natural language financial queries</p>
                     </div>
@@ -1151,35 +1092,6 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-8 h-8 bg-[#25D366] rounded flex items-center justify-center">
-                    <Bell className="w-4 h-4 text-white" />
-                  </div>
-                  WhatsApp
-                </CardTitle>
-                <CardDescription>Send messages via your personal WhatsApp</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Active</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  WhatsApp messaging works through your personal WhatsApp — no API setup needed.
-                  Go to the WhatsApp page to send messages and invoice reminders directly.
-                </p>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => window.location.href = '/whatsapp'}
-                >
-                  Go to WhatsApp
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
                   <div className="w-8 h-8 bg-black rounded flex items-center justify-center">
                     <Activity className="w-4 h-4 text-white" />
                   </div>
@@ -1355,7 +1267,6 @@ function PlanForm({
     maxCompanies: 1,
     maxUsers: 1,
     aiCreditsPerMonth: 100,
-    hasWhatsappIntegration: false,
     hasAdvancedReports: false,
     hasApiAccess: false,
     isActive: true,
@@ -1465,14 +1376,6 @@ function PlanForm({
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label>WhatsApp Integration</Label>
-          <Switch
-            checked={formData.hasWhatsappIntegration || false}
-            onCheckedChange={(checked) => setFormData({ ...formData, hasWhatsappIntegration: checked })}
-            data-testid="switch-plan-whatsapp"
-          />
-        </div>
         <div className="flex items-center justify-between">
           <Label>Advanced Reports</Label>
           <Switch

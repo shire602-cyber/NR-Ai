@@ -4,7 +4,6 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
-  CHASE_CHANNELS,
   CHASE_LEVELS,
   COMPLIANCE_EVENT_TYPES,
   DOCUMENT_TYPES,
@@ -24,7 +23,6 @@ import {
   recordChaseSend,
   renderChaseMessage,
   updateRequirement,
-  whatsappDeepLink,
   daysUntil,
   nextChaseLevel,
 } from "../services/document-chasing.service";
@@ -52,7 +50,7 @@ async function requireCompanyAccess(req: Request, res: Response, companyId: stri
 
 const documentTypeSchema = z.enum(DOCUMENT_TYPES);
 const requirementStatusSchema = z.enum(REQUIREMENT_STATUSES);
-const chaseChannelSchema = z.enum(CHASE_CHANNELS);
+const chaseChannelSchema = z.enum(["email", "sms", "in_app"]);
 const chaseLevelSchema = z.enum(CHASE_LEVELS);
 const complianceEventTypeSchema = z.enum(COMPLIANCE_EVENT_TYPES);
 
@@ -76,7 +74,7 @@ const updateRequirementSchema = z.object({
 });
 
 const sendChaseSchema = z.object({
-  channel: chaseChannelSchema.optional().default("whatsapp"),
+  channel: chaseChannelSchema.optional().default("email"),
   recipientPhone: z.string().max(40).nullable().optional(),
   recipientEmail: z.string().email().max(200).nullable().optional(),
   overrideMessage: z.string().max(5000).optional(),
@@ -208,7 +206,7 @@ export function registerDocumentChasingRoutes(app: Express) {
         company.name,
         { phone: company.contactPhone ?? null, email: company.contactEmail ?? null },
       );
-      res.json(queue);
+      res.json(queue.map(({ whatsappLink: _ignoredLink, ...item }) => item));
     }),
   );
 
@@ -241,7 +239,6 @@ export function registerDocumentChasingRoutes(app: Express) {
         res.status(404).json({ message: "Requirement not found" });
         return;
       }
-      const phone = validated.recipientPhone ?? company.contactPhone ?? null;
       const email = validated.recipientEmail ?? company.contactEmail ?? null;
       const dUntil = daysUntil(requirement.dueDate);
       const overdue = dUntil < 0 ? -dUntil : 0;
@@ -252,17 +249,16 @@ export function registerDocumentChasingRoutes(app: Express) {
       const message =
         validated.overrideMessage ??
         renderChaseMessage(level, requirement.documentType, requirement.dueDate, company.name, overdue);
-      const wa = whatsappDeepLink(phone, message);
       const chase = await recordChaseSend({
         companyId,
         requirementId,
         chaseLevel: level,
         sentVia: validated.channel,
         messageContent: message,
-        recipientPhone: phone,
+        recipientPhone: null,
         recipientEmail: email,
       });
-      res.status(201).json({ chase, whatsappLink: wa });
+      res.status(201).json({ chase });
     }),
   );
 
@@ -280,21 +276,20 @@ export function registerDocumentChasingRoutes(app: Express) {
         company.name,
         { phone: company.contactPhone ?? null, email: company.contactEmail ?? null },
       );
-      const sent = [] as Array<{ requirementId: string; chaseLevel: string; whatsappLink: string | null }>;
+      const sent = [] as Array<{ requirementId: string; chaseLevel: string }>;
       for (const item of queue) {
         await recordChaseSend({
           companyId,
           requirementId: item.requirement.id,
           chaseLevel: item.nextLevel,
-          sentVia: "whatsapp",
+          sentVia: "email",
           messageContent: item.message,
-          recipientPhone: company.contactPhone ?? null,
+          recipientPhone: null,
           recipientEmail: company.contactEmail ?? null,
         });
         sent.push({
           requirementId: item.requirement.id,
           chaseLevel: item.nextLevel,
-          whatsappLink: item.whatsappLink,
         });
       }
       res.json({ sentCount: sent.length, sent });

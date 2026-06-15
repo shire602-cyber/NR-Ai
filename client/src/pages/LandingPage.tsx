@@ -94,7 +94,7 @@ const features = [
     icon: FileText,
     title: 'Invoice Management',
     description:
-      'Create FTA-compliant tax invoices, send via email or WhatsApp, and track payment status automatically.',
+      'Create FTA-compliant tax invoices, send via email, and track payment status automatically.',
     color: 'text-cyan-500',
     bg: 'bg-cyan-500/10',
   },
@@ -168,7 +168,7 @@ const plans = [
       'Arabic + English UI',
       'WPS Payroll (SIF)',
       'Real-time dashboard',
-      'WhatsApp notifications',
+      'Automated notifications',
       'Priority support',
     ],
   },

@@ -27,23 +27,12 @@ import {
   ArrowRight,
   Shield,
   Globe,
-  MessageSquare,
   Sparkles,
   Star,
-  ChevronRight,
   Phone,
   Lock,
-  CreditCard,
-  Users,
-  Brain,
-  BarChart3,
-  Receipt,
-  FileText,
   Calculator,
-  Briefcase,
   TrendingUp,
-  Bot,
-  Gem,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useI18n } from '@/lib/i18n';
@@ -184,7 +173,6 @@ const featureMatrix: FeatureCategory[] = [
   {
     categoryKey: 'communication',
     features: [
-      { key: 'whatsappTemplates', free: false, starter: true, professional: true, enterprise: true },
       { key: 'clientPortal', free: false, starter: false, professional: true, enterprise: true },
     ],
   },
@@ -219,7 +207,6 @@ const competitorData: CompetitorRow[] = [
   { featureKey: 'corporateTaxComp', muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: 'aiCategorization', muhasib: true, digits: true, wafeq: false, zoho: false },
   { featureKey: 'aiCFOComp', muhasib: true, digits: false, wafeq: false, zoho: false },
-  { featureKey: 'whatsappInteg', muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: 'eInvoicingComp', muhasib: true, digits: false, wafeq: true, zoho: false },
   { featureKey: 'wpsPayroll', muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: 'freeTier', muhasib: true, digits: false, wafeq: false, zoho: true },
@@ -291,8 +278,8 @@ export default function Pricing() {
       },
       starter: {
         features: locale === 'en'
-          ? ['1 company, 3 users', '200 invoices/month', '100 receipts/month', 'AI OCR scanning', 'AI categorization', 'Recurring invoices', 'Bill pay', 'Inventory management', 'WhatsApp templates']
-          : ['شركة واحدة، 3 مستخدمين', '200 فاتورة/شهر', '100 إيصال/شهر', 'مسح OCR بالذكاء الاصطناعي', 'تصنيف ذكي', 'فواتير متكررة', 'دفع الفواتير', 'إدارة المخزون', 'قوالب واتساب'],
+          ? ['1 company, 3 users', '200 invoices/month', '100 receipts/month', 'AI OCR scanning', 'AI categorization', 'Recurring invoices', 'Bill pay', 'Inventory management']
+          : ['شركة واحدة، 3 مستخدمين', '200 فاتورة/شهر', '100 إيصال/شهر', 'مسح OCR بالذكاء الاصطناعي', 'تصنيف ذكي', 'فواتير متكررة', 'دفع الفواتير', 'إدارة المخزون'],
       },
       professional: {
         header: locale === 'en' ? 'Everything in Starter, plus:' : 'كل ميزات المبتدئ، بالإضافة إلى:',
@@ -343,7 +330,6 @@ export default function Pricing() {
       vatFilingCompliance: locale === 'en' ? 'VAT Filing (5%)' : 'ضريبة القيمة المضافة (5%)',
       corporateTax: locale === 'en' ? 'Corporate Tax (9%)' : 'ضريبة الشركات (9%)',
       eInvoicing: locale === 'en' ? 'E-Invoicing (PINT AE)' : 'الفوترة الإلكترونية (PINT AE)',
-      whatsappTemplates: locale === 'en' ? 'WhatsApp Templates' : 'قوالب واتساب',
       clientPortal: locale === 'en' ? 'Client Portal' : 'بوابة العميل',
       multiCompany: locale === 'en' ? 'Multi-Company' : 'شركات متعددة',
       dedicatedManager: locale === 'en' ? 'Dedicated Account Manager' : 'مدير حساب مخصص',
@@ -369,7 +355,6 @@ export default function Pricing() {
       corporateTaxComp: locale === 'en' ? 'Corporate Tax (9%)' : 'ضريبة الشركات (9%)',
       aiCategorization: locale === 'en' ? 'AI Categorization' : 'تصنيف ذكي',
       aiCFOComp: locale === 'en' ? 'AI CFO Advisor' : 'مستشار مالي ذكي',
-      whatsappInteg: locale === 'en' ? 'WhatsApp Integration' : 'تكامل واتساب',
       eInvoicingComp: locale === 'en' ? 'E-Invoicing (FTA)' : 'الفوترة الإلكترونية (الهيئة)',
       wpsPayroll: locale === 'en' ? 'WPS Payroll' : 'رواتب حماية الأجور',
       freeTier: locale === 'en' ? 'Free Tier Available' : 'خطة مجانية متاحة',
@@ -854,7 +839,7 @@ export default function Pricing() {
                       <ArrowRight className="h-4 w-4 ms-2" />
                     </Button>
                   </Link>
-                  <a href="https://wa.me/971552564788?text=I'd%20like%20a%20demo%20of%20Muhasib.ai" target="_blank" rel="noopener noreferrer">
+                  <a href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request">
                     <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 min-w-[180px]">
                       <Phone className="h-4 w-4 me-2" />
                       {t.footerCta.bookDemo}
