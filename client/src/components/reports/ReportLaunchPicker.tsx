@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, FileSpreadsheet, Pin, Search, Send, Sparkles } from "lucide-react";
+import { ArrowRight, FileSpreadsheet, Pin, RotateCcw, Search, Send, Sparkles } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,6 +52,7 @@ export interface ReportLaunchDeliveryPreview {
   summary?: string;
   latestRunStatus?: string;
   latestRunStatusVariant?: BadgeProps["variant"];
+  latestRunId?: string;
   latestRunLabel?: string;
   latestRunDetail?: string;
   latestRunError?: string | null;
@@ -62,8 +63,11 @@ interface ReportLaunchPickerProps {
   persona?: ReportPersona;
   mode?: "general" | "delivery";
   onQueueDeliverySubscription?: (subscriptionId: string) => void;
+  onRetryDeliveryRun?: (runId: string) => void;
   queueingDeliverySubscriptionId?: string | null;
+  retryingDeliveryRunId?: string | null;
   deliveryQueueDisabled?: boolean;
+  deliveryRetryDisabled?: boolean;
   deliverySubscriptionPreviewById?: Record<string, ReportLaunchDeliveryPreview | undefined>;
   preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
   companyId?: string | null;
@@ -116,8 +120,11 @@ export function ReportLaunchPicker({
   persona = "owner",
   mode = "general",
   onQueueDeliverySubscription,
+  onRetryDeliveryRun,
   queueingDeliverySubscriptionId = null,
+  retryingDeliveryRunId = null,
   deliveryQueueDisabled = false,
+  deliveryRetryDisabled = false,
   deliverySubscriptionPreviewById = {},
   preferredDeliveryAutomationCommand,
   companyId = null,
@@ -207,6 +214,10 @@ export function ReportLaunchPicker({
   const primaryDeliveryPreview = primaryDeliverySubscription
     ? deliverySubscriptionPreviewById[primaryDeliverySubscription.id]
     : undefined;
+  const primaryDeliveryRetryRunId =
+    primaryDeliveryPreview?.latestRunStatus === "failed"
+      ? (primaryDeliveryPreview.latestRunId ?? null)
+      : null;
   const pinnedDeliveryCommandHref = useMemo(() => {
     if (!pinnedDeliveryAutomationCommand) return workspaceHref(workspace);
     if (pinnedDeliveryAutomationCommand === "retry") {
@@ -230,6 +241,7 @@ export function ReportLaunchPicker({
     primaryDeliveryPreview?.queueDisabled ||
     primaryDeliveryPreview?.enabled === false ||
     !primaryDeliverySubscription;
+  const isPinnedRetryCommandDisabled = deliveryRetryDisabled || !primaryDeliveryRetryRunId;
   const isDeliveryMode = mode === "delivery";
 
   return (
@@ -371,6 +383,23 @@ export function ReportLaunchPicker({
                             ? "Queueing"
                             : "Queue pinned pack"}
                         </Button>
+                      ) : pinnedDeliveryAutomationCommand === "retry" &&
+                        onRetryDeliveryRun &&
+                        primaryDeliveryRetryRunId ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          disabled={isPinnedRetryCommandDisabled}
+                          onClick={() => onRetryDeliveryRun(primaryDeliveryRetryRunId)}
+                          data-testid="report-launch-pinned-command-retry"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          {retryingDeliveryRunId === primaryDeliveryRetryRunId
+                            ? "Retrying"
+                            : "Retry pinned delivery"}
+                        </Button>
                       ) : (
                         <Button asChild size="sm" variant="outline" className="h-7 px-2">
                           <Link
@@ -404,6 +433,10 @@ export function ReportLaunchPicker({
                           deliveryQueueDisabled ||
                           deliveryPreview?.queueDisabled ||
                           deliveryPreview?.enabled === false;
+                        const retryLatestDeliveryRunId =
+                          deliveryPreview?.latestRunStatus === "failed"
+                            ? (deliveryPreview.latestRunId ?? null)
+                            : null;
 
                         return (
                           <div
@@ -476,6 +509,22 @@ export function ReportLaunchPicker({
                                   <div className="mt-1 text-destructive">
                                     {deliveryPreview.latestRunError}
                                   </div>
+                                ) : null}
+                                {retryLatestDeliveryRunId && onRetryDeliveryRun ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="mt-2 h-7 px-2"
+                                    disabled={deliveryRetryDisabled}
+                                    onClick={() => onRetryDeliveryRun(retryLatestDeliveryRunId)}
+                                    data-testid={`report-launch-retry-delivery-${subscription.id}`}
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    {retryingDeliveryRunId === retryLatestDeliveryRunId
+                                      ? "Retrying"
+                                      : "Retry delivery"}
+                                  </Button>
                                 ) : null}
                               </div>
                             ) : null}

@@ -206,6 +206,7 @@ describe("report discoverability", () => {
     );
     expect(dashboardSource).toContain('data-testid="dashboard-report-catalog-sync"');
     expect(dashboardSource).toContain("ReportLaunchPicker");
+    expect(dashboardSource).toContain("ReportLaunchDeliveryPreview");
     expect(dashboardSource).toContain("companyId={selectedCompanyId}");
     expect(dashboardSource).toContain('data-testid="dashboard-report-launch-picker"');
     expect(dashboardSource).toContain("syncedLiveReports");
@@ -275,6 +276,11 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("dashboardPersonaDeliveryRuns");
     expect(dashboardSource).toContain("dashboardLatestDeliveryRun");
     expect(dashboardSource).toContain("dashboardLatestDeliveryRunSubscription");
+    expect(dashboardSource).toContain("dashboardReportDeliveryLauncherPreviewById");
+    expect(dashboardSource).toContain("Record<string, ReportLaunchDeliveryPreview | undefined>");
+    expect(dashboardSource).toContain("latestRunId: latestRun?.id");
+    expect(dashboardSource).toContain("latestRunDetail: latestRun");
+    expect(dashboardSource).toContain("latestRunError:");
     expect(dashboardSource).toContain("dashboardPinnedDeliveryAutomationCommand");
     expect(dashboardSource).toContain("dashboardLatestFailedDeliveryRun");
     expect(dashboardSource).toContain("dashboardDeliveryRunStatusSummary");
@@ -313,6 +319,17 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("dashboard-report-delivery-subscription-${subscription.id}");
     expect(dashboardSource).toContain(
       "preferredDeliveryAutomationCommand={dashboardPinnedDeliveryAutomationCommand}"
+    );
+    expect(dashboardSource).toContain("onQueueDeliverySubscription");
+    expect(dashboardSource).toContain("queueDashboardReportDeliverySubscription.mutate");
+    expect(dashboardSource).toContain("onRetryDeliveryRun");
+    expect(dashboardSource).toContain("retryDashboardReportDeliveryRun.mutate");
+    expect(dashboardSource).toContain("queueingDeliverySubscriptionId");
+    expect(dashboardSource).toContain("retryingDeliveryRunId");
+    expect(dashboardSource).toContain("deliveryQueueDisabled");
+    expect(dashboardSource).toContain("deliveryRetryDisabled");
+    expect(dashboardSource).toContain(
+      "deliverySubscriptionPreviewById={dashboardReportDeliveryLauncherPreviewById}"
     );
     expect(dashboardSource).toContain("preferredAutomationNextAction");
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-action"');
@@ -1079,8 +1096,12 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('mode="delivery"');
     expect(reportsSource).toContain("onQueueDeliverySubscription");
     expect(reportsSource).toContain("queueReportDeliverySubscription.mutate(subscriptionId)");
+    expect(reportsSource).toContain("onRetryDeliveryRun");
+    expect(reportsSource).toContain("retryReportDeliveryRun.mutate(runId)");
     expect(reportsSource).toContain("queueingDeliverySubscriptionId");
+    expect(reportsSource).toContain("retryingDeliveryRunId");
     expect(reportsSource).toContain("deliveryQueueDisabled");
+    expect(reportsSource).toContain("deliveryRetryDisabled");
     expect(reportsSource).toContain(
       "preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}"
     );
@@ -1092,6 +1113,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("const latestRun = subscription.latestDeliveryRun");
     expect(reportsSource).toContain("latestRunStatus: latestRun?.status");
     expect(reportsSource).toContain("latestRunStatusVariant");
+    expect(reportsSource).toContain("latestRunId: latestRun?.id");
     expect(reportsSource).toContain("latestRunLabel");
     expect(reportsSource).toContain("latestRunDetail");
     expect(reportsSource).toContain("latestRunError");
@@ -1403,17 +1425,24 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("reportLaunchPinnedCommandLabels");
     expect(reportLaunchPickerSource).toContain("report-delivery-launch-picker");
     expect(reportLaunchPickerSource).toContain("onQueueDeliverySubscription");
+    expect(reportLaunchPickerSource).toContain("onRetryDeliveryRun");
     expect(reportLaunchPickerSource).toContain("queueingDeliverySubscriptionId");
+    expect(reportLaunchPickerSource).toContain("retryingDeliveryRunId");
     expect(reportLaunchPickerSource).toContain("deliveryQueueDisabled");
+    expect(reportLaunchPickerSource).toContain("deliveryRetryDisabled");
     expect(reportLaunchPickerSource).toContain("ReportLaunchDeliveryPreview");
     expect(reportLaunchPickerSource).toContain("deliverySubscriptionPreviewById");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.summary");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.nextRunLabel");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.deliveryGuardrail");
     expect(reportLaunchPickerSource).toContain("latestRunStatus");
+    expect(reportLaunchPickerSource).toContain("latestRunId");
     expect(reportLaunchPickerSource).toContain("latestRunDetail");
     expect(reportLaunchPickerSource).toContain("latestRunError");
+    expect(reportLaunchPickerSource).toContain("report-launch-retry-delivery-${subscription.id}");
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-pinned-command-retry"');
     expect(reportLaunchPickerSource).toContain("isQueueDisabled");
+    expect(reportLaunchPickerSource).toContain("isPinnedRetryCommandDisabled");
     expect(reportLaunchPickerSource).toContain("isPinnedQueueCommandDisabled");
     expect(reportLaunchPickerSource).toContain("report-launch-picker");
     expect(reportLaunchPickerSource).toContain("report-launch-pinned-command");

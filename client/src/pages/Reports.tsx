@@ -4202,6 +4202,7 @@ export default function Reports() {
           latestRunStatusVariant: latestRun
             ? deliveryRunStatusVariant(latestRun.status)
             : undefined,
+          latestRunId: latestRun?.id,
           latestRunLabel: latestRun ? formatDeliveryRunTimestamp(latestRun.createdAt) : undefined,
           latestRunDetail: latestRun
             ? `Scheduled ${formatDeliveryRunTimestamp(latestRun.scheduledFor)} - ${latestRun.readyReportCount}/${latestRun.reportCount} reports - ${latestRun.channel}`
@@ -6687,12 +6688,17 @@ export default function Reports() {
           onQueueDeliverySubscription={(subscriptionId) =>
             queueReportDeliverySubscription.mutate(subscriptionId)
           }
+          onRetryDeliveryRun={(runId) => retryReportDeliveryRun.mutate(runId)}
           queueingDeliverySubscriptionId={
             queueReportDeliverySubscription.isPending
               ? (queueReportDeliverySubscription.variables ?? null)
               : null
           }
+          retryingDeliveryRunId={
+            retryReportDeliveryRun.isPending ? (retryReportDeliveryRun.variables ?? null) : null
+          }
           deliveryQueueDisabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
+          deliveryRetryDisabled={!selectedCompanyId || retryReportDeliveryRun.isPending}
           deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
           preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}
           companyId={selectedCompanyId}

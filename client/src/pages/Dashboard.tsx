@@ -4,7 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge, StatusBadge, type BadgeProps } from "@/components/ui/badge";
-import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
+import {
+  ReportLaunchPicker,
+  type ReportLaunchDeliveryPreview,
+} from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
@@ -916,6 +919,40 @@ function CustomerDashboard() {
         (subscription) => subscription.id === dashboardLatestDeliveryRun.subscriptionId
       ) ?? null)
     : null;
+  const dashboardReportDeliveryLauncherPreviewById = useMemo(() => {
+    return preferredReportDeliverySubscriptions.reduce<
+      Record<string, ReportLaunchDeliveryPreview | undefined>
+    >((previews, subscription) => {
+      const latestRun =
+        dashboardPersonaDeliveryRuns.find((run) => run.subscriptionId === subscription.id) ?? null;
+      previews[subscription.id] = {
+        status: latestRun ? dashboardDeliveryRunStatusLabel(latestRun.status) : "Scheduled",
+        statusVariant: latestRun ? dashboardDeliveryRunStatusVariant(latestRun.status) : "info",
+        nextRunLabel: subscription.cadence,
+        channel: latestRun?.channel ?? subscription.channel,
+        format: latestRun?.format ?? subscription.format,
+        recipients: latestRun?.recipients ?? subscription.recipients,
+        deliveryGuardrail: latestRun?.deliveryGuardrail ?? subscription.deliveryGuardrail,
+        summary: `${subscription.reportIds.length} reports · ${subscription.triggerRuleIds.length} guardrails`,
+        latestRunStatus: latestRun?.status,
+        latestRunStatusVariant: latestRun
+          ? dashboardDeliveryRunStatusVariant(latestRun.status)
+          : undefined,
+        latestRunId: latestRun?.id,
+        latestRunLabel: latestRun
+          ? formatDashboardDeliveryRunTime(latestRun.createdAt, locale)
+          : undefined,
+        latestRunDetail: latestRun
+          ? `Scheduled ${formatDashboardDeliveryRunTime(latestRun.scheduledFor, locale)} · ${latestRun.readyReportCount}/${latestRun.reportCount} reports · ${latestRun.channel}`
+          : undefined,
+        latestRunError:
+          latestRun?.status === "failed"
+            ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
+            : null,
+      };
+      return previews;
+    }, {});
+  }, [dashboardPersonaDeliveryRuns, locale, preferredReportDeliverySubscriptions]);
   const dashboardDeliveryRunStatusSummary = useMemo(() => {
     if (!dashboardLatestDeliveryRun) return null;
 
@@ -2493,6 +2530,25 @@ function CustomerDashboard() {
           persona={preferredReportWorkspace.persona}
           companyId={selectedCompanyId}
           preferredDeliveryAutomationCommand={dashboardPinnedDeliveryAutomationCommand}
+          onQueueDeliverySubscription={(subscriptionId) =>
+            queueDashboardReportDeliverySubscription.mutate(subscriptionId)
+          }
+          onRetryDeliveryRun={(runId) => retryDashboardReportDeliveryRun.mutate(runId)}
+          queueingDeliverySubscriptionId={
+            queueDashboardReportDeliverySubscription.isPending
+              ? (queueDashboardReportDeliverySubscription.variables ?? null)
+              : null
+          }
+          retryingDeliveryRunId={
+            retryDashboardReportDeliveryRun.isPending
+              ? (retryDashboardReportDeliveryRun.variables ?? null)
+              : null
+          }
+          deliveryQueueDisabled={
+            !selectedCompanyId || queueDashboardReportDeliverySubscription.isPending
+          }
+          deliveryRetryDisabled={!selectedCompanyId || retryDashboardReportDeliveryRun.isPending}
+          deliverySubscriptionPreviewById={dashboardReportDeliveryLauncherPreviewById}
         />
       </section>
 
