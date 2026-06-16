@@ -77,8 +77,9 @@ Scope: this file applies to the whole repository.
   fresh user, promotes it through Postgres, crawls workspace routes, and posts a balanced journal.
 - `npm run e2e:customer` requires a running app and optional `BASE_URL`; it registers a fresh
   SaaS customer without Postgres role promotion, crawls public/launch-critical customer routes,
-  exercises journal/invoice/bank-import flows, and verifies NR-only WhatsApp/document-chasing,
-  firm, and admin surfaces stay blocked.
+  reruns mobile checks for invoices, receipts, banking, reports, and VAT, exercises
+  journal/invoice/bank-import flows, and verifies NR-only WhatsApp/document-chasing, firm, and
+  admin surfaces stay blocked.
 - Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO,
   trust, help, migration, or public-route changes to catch unsupported compliance/security claims.
 - Keep the public sample-data demo workspace routed at `/demo`; after demo, onboarding, or

@@ -5,7 +5,8 @@
  *   2. registers a fresh customer account and completes express onboarding
  *   3. crawls launch-critical SaaS customer routes with no admin/firm role promotion
  *   4. posts customer-owned accounting artifacts: balanced journal, invoice, bank CSV import
- *   5. verifies NR-only surfaces stay blocked, including WhatsApp and document chasing
+ *   5. reruns mobile checks for invoices, receipts, banking, reports, and VAT
+ *   6. verifies NR-only surfaces stay blocked, including WhatsApp and document chasing
  *
  * Env: BASE_URL (default http://127.0.0.1:5000), CHROMIUM_PATH (optional browser override).
  * Exit code 0 = every check passed. Screenshots of failures land in tests/e2e/.artifacts/.
@@ -36,6 +37,8 @@ const CUSTOMER_ROUTES = [
   "/document-vault",
   "/subscription",
 ];
+
+const MOBILE_ROUTES = ["/invoices", "/receipts", "/bank-reconciliation", "/reports", "/vat-filing"];
 
 const FORBIDDEN_ROUTES = [
   "/whatsapp",
@@ -129,6 +132,25 @@ async function main() {
     return bodyText;
   }
 
+  async function crawlMobileRoute(route) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await crawlRoute(route, { expectPrefix: true, waitMs: 1900 });
+    const overflow = await page.evaluate(() => {
+      const doc = document.documentElement;
+      const body = document.body;
+      const scrollWidth = Math.max(doc.scrollWidth, body?.scrollWidth ?? 0);
+      const clientWidth = Math.max(doc.clientWidth, window.innerWidth);
+      return {
+        clientWidth,
+        scrollWidth,
+        overflowing: scrollWidth > clientWidth + 8,
+      };
+    });
+    if (overflow.overflowing) {
+      await fail(`mobile overflow ${route}`, overflow);
+    }
+  }
+
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
     await crawlRoute(route);
@@ -177,6 +199,13 @@ async function main() {
   for (const route of CUSTOMER_ROUTES) {
     await crawlRoute(route, { expectPrefix: true });
   }
+
+  // Mobile launch QA: the routes most likely to be opened from ads, email, or
+  // on-the-go bookkeeping must render without document-level horizontal scroll.
+  for (const route of MOBILE_ROUTES) {
+    await crawlMobileRoute(route);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   if (companyId) {
     // Core bookkeeping: balanced journal posts through the same customer API used by the UI.
@@ -322,7 +351,7 @@ async function main() {
   await browser.close();
 
   console.log(
-    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS routes · ${failures.length} failure(s) ===`
+    `\n=== Customer launch E2E: ${PUBLIC_ROUTES.length} public + ${CUSTOMER_ROUTES.length} SaaS + ${MOBILE_ROUTES.length} mobile routes · ${failures.length} failure(s) ===`
   );
   for (const f of failures) console.log(JSON.stringify(f));
   if (failures.length > 0) {

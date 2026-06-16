@@ -33,18 +33,36 @@ describe("customer launch E2E surface", () => {
   it("crawls only public and SaaS customer routes as allowed routes", () => {
     const publicRoutes = extractStringArray(scriptSource, "PUBLIC_ROUTES");
     const customerRoutes = extractStringArray(scriptSource, "CUSTOMER_ROUTES");
+    const mobileRoutes = extractStringArray(scriptSource, "MOBILE_ROUTES");
     const allowedRoutes = [...publicRoutes, ...customerRoutes];
 
     expect(allowedRoutes).toEqual(expect.arrayContaining(["/demo", "/trust", "/help"]));
     expect(allowedRoutes).toEqual(
       expect.arrayContaining(["/invoices", "/receipts", "/bank-reconciliation", "/vat-filing"])
     );
+    expect(mobileRoutes).toEqual([
+      "/invoices",
+      "/receipts",
+      "/bank-reconciliation",
+      "/reports",
+      "/vat-filing",
+    ]);
 
     for (const forbidden of ["/whatsapp", "/document-chasing", "/admin", "/firm"]) {
       expect(allowedRoutes, `${forbidden} must not be an allowed customer route`).not.toContain(
         forbidden
       );
+      expect(mobileRoutes, `${forbidden} must not be a mobile customer route`).not.toContain(
+        forbidden
+      );
     }
+  });
+
+  it("checks customer mobile routes for document-level horizontal overflow", () => {
+    expect(scriptSource).toContain("async function crawlMobileRoute(route)");
+    expect(scriptSource).toContain("page.setViewportSize({ width: 390, height: 844 })");
+    expect(scriptSource).toContain("scrollWidth > clientWidth + 8");
+    expect(scriptSource).toContain("mobile overflow");
   });
 
   it("actively probes NR-only and admin surfaces as forbidden for customers", () => {
