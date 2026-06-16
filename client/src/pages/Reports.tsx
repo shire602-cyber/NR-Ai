@@ -25,7 +25,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
-import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
+import {
+  ReportLaunchPicker,
+  type ReportLaunchDeliveryPreview,
+} from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
@@ -3917,6 +3920,40 @@ export default function Reports() {
     );
   }, [personaFilter, reportDeliverySubscriptionSummaries]);
 
+  const reportDeliveryLauncherPreviewById = useMemo(() => {
+    return reportDeliverySubscriptionSummaries.reduce<Record<string, ReportLaunchDeliveryPreview>>(
+      (previews, subscription) => {
+        const latestRun = subscription.latestDeliveryRun;
+        previews[subscription.id] = {
+          status: subscription.status,
+          statusVariant: subscription.statusVariant,
+          enabled: subscription.enabled,
+          nextRunLabel: subscription.nextRunLabel,
+          channel: subscription.channel,
+          format: subscription.format,
+          recipients: subscription.recipients,
+          deliveryGuardrail: subscription.deliveryGuardrail,
+          summary: subscription.preview.summary,
+          latestRunStatus: latestRun?.status,
+          latestRunStatusVariant: latestRun
+            ? deliveryRunStatusVariant(latestRun.status)
+            : undefined,
+          latestRunLabel: latestRun ? formatDeliveryRunTimestamp(latestRun.createdAt) : undefined,
+          latestRunDetail: latestRun
+            ? `Scheduled ${formatDeliveryRunTimestamp(latestRun.scheduledFor)} - ${latestRun.readyReportCount}/${latestRun.reportCount} reports - ${latestRun.channel}`
+            : undefined,
+          latestRunError:
+            latestRun?.status === "failed"
+              ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
+              : null,
+          queueDisabled: !subscription.enabled,
+        };
+        return previews;
+      },
+      {}
+    );
+  }, [reportDeliverySubscriptionSummaries]);
+
   const startEditingReportDeliverySubscription = useCallback(
     (subscription: (typeof reportDeliverySubscriptionSummaries)[number]) => {
       setEditingReportDeliverySubscriptionId(subscription.id);
@@ -6392,6 +6429,7 @@ export default function Reports() {
               : null
           }
           deliveryQueueDisabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
+          deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
           className="shadow-none"
         />
 

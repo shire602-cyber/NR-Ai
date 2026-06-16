@@ -10,7 +10,8 @@ Scope: this file applies to the whole repository.
   preference storage, and command-palette report shortcuts; avoid duplicating report labels or deep
   links elsewhere.
 - `client/src/components/reports/ReportLaunchPicker.tsx` is the shared catalog launcher for
-  dashboard/report surfaces; keep delivery mutations owned by the page and pass queue handlers in.
+  dashboard/report surfaces; keep delivery mutations owned by the page and pass queue handlers and
+  preview data in.
 - `server/` contains the Express API, middleware, routes, services, and startup code.
 - `shared/` contains the Drizzle schema and shared validators. The alias `@shared` points here.
 - `migrations/` contains Drizzle migrations. Treat `migrations/meta/` as Drizzle-managed output.

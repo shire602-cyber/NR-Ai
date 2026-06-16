@@ -953,6 +953,17 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("queueReportDeliverySubscription.mutate(subscriptionId)");
     expect(reportsSource).toContain("queueingDeliverySubscriptionId");
     expect(reportsSource).toContain("deliveryQueueDisabled");
+    expect(reportsSource).toContain("ReportLaunchDeliveryPreview");
+    expect(reportsSource).toContain("reportDeliveryLauncherPreviewById");
+    expect(reportsSource).toContain("deliverySubscriptionPreviewById");
+    expect(reportsSource).toContain("summary: subscription.preview.summary");
+    expect(reportsSource).toContain("const latestRun = subscription.latestDeliveryRun");
+    expect(reportsSource).toContain("latestRunStatus: latestRun?.status");
+    expect(reportsSource).toContain("latestRunStatusVariant");
+    expect(reportsSource).toContain("latestRunLabel");
+    expect(reportsSource).toContain("latestRunDetail");
+    expect(reportsSource).toContain("latestRunError");
+    expect(reportsSource).toContain("queueDisabled: !subscription.enabled");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");
@@ -1246,12 +1257,25 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("onQueueDeliverySubscription");
     expect(reportLaunchPickerSource).toContain("queueingDeliverySubscriptionId");
     expect(reportLaunchPickerSource).toContain("deliveryQueueDisabled");
+    expect(reportLaunchPickerSource).toContain("ReportLaunchDeliveryPreview");
+    expect(reportLaunchPickerSource).toContain("deliverySubscriptionPreviewById");
+    expect(reportLaunchPickerSource).toContain("deliveryPreview?.summary");
+    expect(reportLaunchPickerSource).toContain("deliveryPreview?.nextRunLabel");
+    expect(reportLaunchPickerSource).toContain("deliveryPreview?.deliveryGuardrail");
+    expect(reportLaunchPickerSource).toContain("latestRunStatus");
+    expect(reportLaunchPickerSource).toContain("latestRunDetail");
+    expect(reportLaunchPickerSource).toContain("latestRunError");
+    expect(reportLaunchPickerSource).toContain("isQueueDisabled");
     expect(reportLaunchPickerSource).toContain("report-launch-picker");
     expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search"');
     expect(reportLaunchPickerSource).toContain("report-launch-persona-${item}");
     expect(reportLaunchPickerSource).toContain("report-launch-report-${report.id}");
     expect(reportLaunchPickerSource).toContain(
       "report-launch-delivery-subscription-${subscription.id}"
+    );
+    expect(reportLaunchPickerSource).toContain("report-launch-delivery-preview-${subscription.id}");
+    expect(reportLaunchPickerSource).toContain(
+      "report-launch-latest-delivery-run-${subscription.id}"
     );
     expect(reportLaunchPickerSource).toContain("report-launch-queue-delivery-${subscription.id}");
   });

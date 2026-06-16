@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, FileSpreadsheet, Search, Send, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,12 +32,31 @@ import {
 } from "@/lib/reportCatalog";
 import { cn } from "@/lib/utils";
 
+export interface ReportLaunchDeliveryPreview {
+  status?: string;
+  statusVariant?: BadgeProps["variant"];
+  enabled?: boolean;
+  nextRunLabel?: string;
+  channel?: string;
+  format?: string;
+  recipients?: string;
+  deliveryGuardrail?: string;
+  summary?: string;
+  latestRunStatus?: string;
+  latestRunStatusVariant?: BadgeProps["variant"];
+  latestRunLabel?: string;
+  latestRunDetail?: string;
+  latestRunError?: string | null;
+  queueDisabled?: boolean;
+}
+
 interface ReportLaunchPickerProps {
   persona?: ReportPersona;
   mode?: "general" | "delivery";
   onQueueDeliverySubscription?: (subscriptionId: string) => void;
   queueingDeliverySubscriptionId?: string | null;
   deliveryQueueDisabled?: boolean;
+  deliverySubscriptionPreviewById?: Record<string, ReportLaunchDeliveryPreview | undefined>;
   className?: string;
 }
 
@@ -69,6 +88,7 @@ export function ReportLaunchPicker({
   onQueueDeliverySubscription,
   queueingDeliverySubscriptionId = null,
   deliveryQueueDisabled = false,
+  deliverySubscriptionPreviewById = {},
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
@@ -226,41 +246,120 @@ export function ReportLaunchPicker({
                       <FileSpreadsheet className="h-3.5 w-3.5" /> Delivery subscriptions
                     </div>
                     <div className="mt-3 space-y-2">
-                      {deliverySubscriptions.slice(0, 2).map((subscription) => (
-                        <div
-                          key={subscription.id}
-                          className="rounded-md bg-muted/30 p-2 text-xs"
-                          data-testid={`report-launch-delivery-subscription-${subscription.id}`}
-                        >
-                          <div className="font-medium text-foreground">{subscription.title}</div>
-                          <div className="mt-1 text-muted-foreground">
-                            {subscription.cadence} · {subscription.channel}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
-                              <Link href={deliveryHref(subscription)}>
-                                Open <ArrowRight className="h-3.5 w-3.5" />
-                              </Link>
-                            </Button>
-                            {onQueueDeliverySubscription ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2"
-                                disabled={deliveryQueueDisabled}
-                                onClick={() => onQueueDeliverySubscription(subscription.id)}
-                                data-testid={`report-launch-queue-delivery-${subscription.id}`}
-                              >
-                                <Send className="h-3.5 w-3.5" />
-                                {queueingDeliverySubscriptionId === subscription.id
-                                  ? "Queueing"
-                                  : "Queue"}
-                              </Button>
+                      {deliverySubscriptions.slice(0, 2).map((subscription) => {
+                        const deliveryPreview = deliverySubscriptionPreviewById[subscription.id];
+                        const subscriptionChannel =
+                          deliveryPreview?.channel ?? subscription.channel;
+                        const subscriptionFormat = deliveryPreview?.format ?? subscription.format;
+                        const subscriptionRecipients =
+                          deliveryPreview?.recipients ?? subscription.recipients;
+                        const subscriptionGuardrail =
+                          deliveryPreview?.deliveryGuardrail ?? subscription.deliveryGuardrail;
+                        const isQueueDisabled =
+                          deliveryQueueDisabled ||
+                          deliveryPreview?.queueDisabled ||
+                          deliveryPreview?.enabled === false;
+
+                        return (
+                          <div
+                            key={subscription.id}
+                            className="rounded-md bg-muted/30 p-2 text-xs"
+                            data-testid={`report-launch-delivery-subscription-${subscription.id}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-medium text-foreground">
+                                {subscription.title}
+                              </div>
+                              {deliveryPreview?.status ? (
+                                <Badge
+                                  variant={deliveryPreview.statusVariant ?? "neutral"}
+                                  dot
+                                  className="shrink-0"
+                                >
+                                  {deliveryPreview.status}
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {deliveryPreview?.summary ? (
+                              <div className="mt-1 text-muted-foreground">
+                                {deliveryPreview.summary}
+                              </div>
                             ) : null}
+                            <div
+                              className="mt-2 space-y-1 text-muted-foreground"
+                              data-testid={`report-launch-delivery-preview-${subscription.id}`}
+                            >
+                              <div>
+                                <span className="font-medium text-foreground">Next:</span>{" "}
+                                {deliveryPreview?.nextRunLabel || subscription.cadence}
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">Channel:</span>{" "}
+                                {subscriptionChannel} · {subscriptionFormat}
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">To:</span>{" "}
+                                {subscriptionRecipients}
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                                {subscriptionGuardrail}
+                              </div>
+                            </div>
+                            {deliveryPreview?.latestRunStatus ? (
+                              <div
+                                className="mt-2 rounded-md border border-border/70 bg-background/60 p-2 text-muted-foreground"
+                                data-testid={`report-launch-latest-delivery-run-${subscription.id}`}
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant={deliveryPreview.latestRunStatusVariant ?? "info"}
+                                    dot
+                                  >
+                                    {deliveryPreview.latestRunStatus}
+                                  </Badge>
+                                  {deliveryPreview.latestRunLabel ? (
+                                    <span className="font-medium text-foreground">
+                                      {deliveryPreview.latestRunLabel}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {deliveryPreview.latestRunDetail ? (
+                                  <div className="mt-1">{deliveryPreview.latestRunDetail}</div>
+                                ) : null}
+                                {deliveryPreview.latestRunError ? (
+                                  <div className="mt-1 text-destructive">
+                                    {deliveryPreview.latestRunError}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                                <Link href={deliveryHref(subscription)}>
+                                  Open <ArrowRight className="h-3.5 w-3.5" />
+                                </Link>
+                              </Button>
+                              {onQueueDeliverySubscription ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2"
+                                  disabled={isQueueDisabled}
+                                  onClick={() => onQueueDeliverySubscription(subscription.id)}
+                                  data-testid={`report-launch-queue-delivery-${subscription.id}`}
+                                >
+                                  <Send className="h-3.5 w-3.5" />
+                                  {queueingDeliverySubscriptionId === subscription.id
+                                    ? "Queueing"
+                                    : "Queue"}
+                                </Button>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {deliverySubscriptions.length === 0 ? (
                         <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
                           No delivery subscriptions match this role yet.
