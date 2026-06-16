@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
   buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   liveReportCatalog,
@@ -9,7 +11,15 @@ import {
   REPORT_AUTOMATION_HEALTH_HISTORY_KEY,
   parseReportPersona,
   reportAutomationPlaybookHref,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
   reportCatalog,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportHref,
   reportPersonas,
   reportPersonaWorkspaces,
@@ -81,6 +91,12 @@ describe("report discoverability", () => {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
     }
 
+    for (const report of liveReportCatalog) {
+      expect(report.decisionQuestion).toBeTruthy();
+      expect(report.decisionQuestion).toMatch(/\?$/);
+      expect(report.decisionQuestion.length).toBeGreaterThan(25);
+    }
+
     expect(reportPersonas).toEqual(["owner", "freelancer", "accountant"]);
 
     for (const persona of reportPersonas) {
@@ -96,6 +112,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("liveReportCatalog.map");
     expect(commandSource).toContain("id: `report-${report.id}`");
     expect(commandSource).toContain("href: reportHref(report)");
+    expect(commandSource).toContain("report.decisionQuestion");
 
     for (const report of liveReportCatalog) {
       expect(reportHref(report)).toBeTruthy();
@@ -137,9 +154,25 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain('data-testid="dashboard-report-role-switcher"');
     expect(dashboardSource).toContain("dashboard-report-mode-${workspace.persona}");
     expect(dashboardSource).toContain("Reporting mode");
+    expect(dashboardSource).toContain("solo entrepreneur");
     expect(dashboardSource).toContain("preferredWorkspaceCatalogReports");
     expect(dashboardSource).toContain("preferredWorkspaceReports");
     expect(dashboardSource).toContain("preferredReportPackReadiness");
+    expect(dashboardSource).toContain("preferredReportDecisionShortcuts");
+    expect(dashboardSource).toContain("reportDecisionShortcuts");
+    expect(dashboardSource).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-decision-shortcuts"');
+    expect(dashboardSource).toContain("dashboard-report-decision-shortcut-${shortcut.id}");
+    expect(dashboardSource).toContain("preferredReportAutomationStarters");
+    expect(dashboardSource).toContain("reportAutomationStarters");
+    expect(dashboardSource).toContain("reportAutomationStarterHref(starter)");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-automation-starters"');
+    expect(dashboardSource).toContain("dashboard-report-automation-starter-${starter.id}");
+    expect(dashboardSource).toContain("preferredReportPackTemplates");
+    expect(dashboardSource).toContain("reportPackTemplates");
+    expect(dashboardSource).toContain("reportPackTemplateHref(template)");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-pack-templates"');
+    expect(dashboardSource).toContain("dashboard-report-pack-template-${template.id}");
     expect(dashboardSource).toContain("dashboardComparisonRows");
     expect(dashboardSource).toContain("dashboardPercentChange");
     expect(dashboardSource).toContain("formatDashboardComparisonPercent");
@@ -147,6 +180,11 @@ describe("report discoverability", () => {
     expect(catalogSource).toContain("calculateReportAutomationHealth");
     expect(dashboardSource).toContain("calculateReportAutomationHealth({");
     expect(dashboardSource).toContain("reportAutomationHealth");
+    expect(dashboardSource).toContain("preferredReportTriggerRules");
+    expect(dashboardSource).toContain("reportAutomationTriggerRules");
+    expect(dashboardSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-trigger-rules"');
+    expect(dashboardSource).toContain("dashboard-report-trigger-rule-${rule.id}");
     expect(dashboardSource).toContain("preferredAutomationNextAction");
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-action"');
     expect(dashboardSource).toContain("Next automation action");
@@ -183,7 +221,16 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain('data-testid="dashboard-report-pack-readiness"');
     expect(dashboardSource).toContain("reportWorkspaceHref(preferredReportWorkspace)");
     expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "decision-shortcuts")'
+    );
+    expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "pack-readiness")'
+    );
+    expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "automation-starters")'
+    );
+    expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "trigger-rules")'
     );
     expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "automation-command-center")'
@@ -195,6 +242,9 @@ describe("report discoverability", () => {
       'reportSectionHref(preferredReportWorkspace, "pack-automation")'
     );
     expect(dashboardSource).toContain("Open automation center");
+    expect(dashboardSource).toContain("Open decision shortcuts");
+    expect(dashboardSource).toContain("Open automation starters");
+    expect(dashboardSource).toContain("Open trigger rules");
     expect(dashboardSource).toContain("Open automation rules");
     expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
     expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
@@ -203,19 +253,46 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.cadence");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.delivery");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.automation");
+    expect(dashboardSource).toContain("preferredReportWorkspace.automationOutcome");
     expect(catalogSource).toContain("REPORT_PERSONA_PREFERENCE_KEY");
     expect(catalogSource).toContain("getPreferredReportPersona");
     expect(catalogSource).toContain("setPreferredReportPersona");
     expect(catalogSource).toContain("clearPreferredReportPersona");
     expect(catalogSource).toContain("automationNavLabel");
+    expect(catalogSource).toContain("automationOutcome");
+    expect(catalogSource).toContain("Owner / Solo Reports");
+    expect(catalogSource).toContain("Owner / Solo Automations");
+    expect(catalogSource).toContain("solo entrepreneur");
+    expect(catalogSource).toContain("weekly owner actions");
+    expect(catalogSource).toContain("monthly tax-close actions");
+    expect(catalogSource).toContain("reviewer queues");
     expect(mobileNavSource).toContain("reportPersonaWorkspaces.map");
     expect(mobileNavSource).toContain("workspace.navLabel");
     expect(mobileNavSource).toContain("workspace.automationNavLabel");
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
+    expect(mobileNavSource).toContain("reportDecisionShortcuts.map");
+    expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(mobileNavSource).toContain("reportAutomationTriggerRules.map");
+    expect(mobileNavSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(mobileNavSource).toContain("reportAutomationStarters.map");
+    expect(mobileNavSource).toContain("reportAutomationStarterHref(starter)");
+    expect(mobileNavSource).toContain("reportPackTemplates.map");
+    expect(mobileNavSource).toContain("reportPackTemplateHref(template)");
+    expect(mobileNavSource).toContain("reportComparisonPresets.map");
+    expect(mobileNavSource).toContain("reportComparisonPresetHref(preset)");
     expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
     expect(onboardingSource).toContain("workspace.navLabel");
     expect(onboardingSource).toContain("selectedWorkspace.automationNavLabel");
+    expect(onboardingSource).toContain("workspace.automationOutcome");
+    expect(onboardingSource).toContain("selectedDecisionShortcuts");
+    expect(onboardingSource).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(onboardingSource).toContain("selectedTriggerRules");
+    expect(onboardingSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(onboardingSource).toContain("selectedAutomationStarters");
+    expect(onboardingSource).toContain("reportAutomationStarterHref(starter)");
+    expect(onboardingSource).toContain("selectedReportPackTemplates");
+    expect(onboardingSource).toContain("reportPackTemplateHref(template)");
     expect(onboardingSource).toContain("getPreferredReportPersona() ??");
     expect(onboardingSource).toContain('?? "owner"');
     expect(onboardingSource).toContain("setSelectedPersona(workspace.persona)");
@@ -223,6 +300,14 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain("setPreferredReportPersona(selectedWorkspace.persona)");
     expect(onboardingSource).toContain('data-testid="onboarding-report-workspaces"');
     expect(onboardingSource).toContain("onboarding-report-workspace-${workspace.persona}");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-decision-shortcuts"');
+    expect(onboardingSource).toContain("onboarding-report-decision-shortcut-${shortcut.id}");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-trigger-rules"');
+    expect(onboardingSource).toContain("onboarding-report-trigger-rule-${rule.id}");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-automation-starters"');
+    expect(onboardingSource).toContain("onboarding-report-automation-starter-${starter.id}");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-pack-templates"');
+    expect(onboardingSource).toContain("onboarding-report-pack-template-${template.id}");
     expect(onboardingSource).toContain('data-testid="onboarding-open-report-workspace"');
     expect(onboardingSource).toContain('data-testid="onboarding-open-automation-center"');
     expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
@@ -233,6 +318,21 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
     expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
     expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-command-center")');
+    expect(sidebarSource).toContain("reportDecisionShortcuts.map");
+    expect(sidebarSource).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(sidebarSource).toContain("reportAutomationTriggerRules.map");
+    expect(sidebarSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(sidebarSource).toContain("reportAutomationStarters.map");
+    expect(sidebarSource).toContain("reportAutomationStarterHref(starter)");
+    expect(sidebarSource).toContain("reportPackTemplates.map");
+    expect(sidebarSource).toContain("reportPackTemplateHref(template)");
+    expect(sidebarSource).toContain("reportComparisonPresets.map");
+    expect(sidebarSource).toContain("reportComparisonPresetHref(preset)");
+    expect(sidebarSource).toContain("testId: `report-pack-template-${template.id}`");
+    expect(sidebarSource).toContain("testId: `report-decision-shortcut-${shortcut.id}`");
+    expect(sidebarSource).toContain("testId: `report-trigger-rule-${rule.id}`");
+    expect(sidebarSource).toContain("testId: `report-automation-starter-${starter.id}`");
+    expect(sidebarSource).toContain("testId: `report-comparison-preset-${preset.id}`");
     expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
     expect(sidebarSource).toContain("reportAutomationCenterTitleKeys[workspace.persona]");
     expect(i18nSource).toContain("ownerReports");
@@ -268,16 +368,45 @@ describe("report discoverability", () => {
   });
 
   it("exposes persona pack workflows through global search", () => {
+    expect(commandSource).toContain('reportSectionHref(workspace, "decision-shortcuts")');
     expect(commandSource).toContain('reportSectionHref(workspace, "recommendations")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "automation-starters")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "trigger-rules")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-readiness")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-rules")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-automation")');
+    expect(commandSource).toContain("reportDecisionShortcuts.map");
+    expect(commandSource).toContain("id: `report-decision-shortcut-${shortcut.id}`");
+    expect(commandSource).toContain("href: reportDecisionShortcutHref(shortcut)");
+    expect(commandSource).toContain("decision question report shortcut");
+    expect(commandSource).toContain("reportAutomationTriggerRules.map");
+    expect(commandSource).toContain("id: `report-trigger-rule-${rule.id}`");
+    expect(commandSource).toContain("href: reportAutomationTriggerRuleHref(rule)");
+    expect(commandSource).toContain("trigger rule threshold report automation alert");
+    expect(commandSource).toContain("reportAutomationStarters.map");
+    expect(commandSource).toContain("id: `report-automation-starter-${starter.id}`");
+    expect(commandSource).toContain("href: reportAutomationStarterHref(starter)");
+    expect(commandSource).toContain("automation starter autopilot report pack");
+    expect(commandSource).toContain("reportPackTemplates.map");
+    expect(commandSource).toContain("id: `report-pack-template-${template.id}`");
+    expect(commandSource).toContain("href: reportPackTemplateHref(template)");
+    expect(commandSource).toContain("ready made report pack template");
+    expect(commandSource).toContain("reportComparisonPresets.map");
+    expect(commandSource).toContain("id: `report-comparison-preset-${preset.id}`");
+    expect(commandSource).toContain("href: reportComparisonPresetHref(preset)");
+    expect(commandSource).toContain("comparison preset report pack");
+    expect(commandSource).toContain("id: `report-decision-shortcuts-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-trigger-rules-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-automation-starters-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-recommendations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-readiness-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-automation-rules-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-automation-command-center-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
+    expect(commandSource).toContain("Decision shortcuts - ${workspace.title}");
+    expect(commandSource).toContain("Trigger rules - ${workspace.title}");
+    expect(commandSource).toContain("Automation starters - ${workspace.title}");
     expect(commandSource).toContain("Recommended reports - ${workspace.title}");
     expect(commandSource).toContain("Report pack readiness - ${workspace.title}");
     expect(commandSource).toContain("Report automation rules - ${workspace.title}");
@@ -285,8 +414,17 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("Report pack automation - ${workspace.title}");
 
     for (const workspace of reportPersonaWorkspaces) {
+      expect(reportSectionHref(workspace, "decision-shortcuts")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#decision-shortcuts-title`
+      );
       expect(reportSectionHref(workspace, "recommendations")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#recommended-reports-title`
+      );
+      expect(reportSectionHref(workspace, "automation-starters")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#automation-starters-title`
+      );
+      expect(reportSectionHref(workspace, "trigger-rules")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#trigger-rules-title`
       );
       expect(reportSectionHref(workspace, "pack-readiness")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-readiness-title`
@@ -300,6 +438,171 @@ describe("report discoverability", () => {
       expect(reportSectionHref(workspace, "pack-automation")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-automation-title`
       );
+    }
+
+    const allReportIds = new Set(reportCatalog.map((report) => report.id));
+    const comparisonMetricIds = new Set([
+      "revenue",
+      "net-profit",
+      "invoice-value",
+      "expense-spend",
+      "vat-due",
+      "payroll-cost",
+      "inventory-movement",
+      "depreciation-estimate",
+      "consolidated-net-profit",
+      "ledger-activity",
+    ]);
+    expect(reportDecisionShortcuts).toHaveLength(9);
+    expect(reportAutomationTriggerRules).toHaveLength(9);
+    expect(reportAutomationStarters).toHaveLength(6);
+    expect(reportPackTemplates).toHaveLength(6);
+    expect(reportComparisonPresets).toHaveLength(6);
+
+    for (const workspace of reportPersonaWorkspaces) {
+      expect(
+        reportDecisionShortcuts.filter((shortcut) => shortcut.persona === workspace.persona)
+      ).toHaveLength(3);
+      expect(
+        reportAutomationTriggerRules.filter((rule) => rule.persona === workspace.persona)
+      ).toHaveLength(3);
+      expect(
+        reportAutomationStarters.filter((starter) => starter.persona === workspace.persona)
+      ).toHaveLength(2);
+      expect(
+        reportPackTemplates.filter((template) => template.persona === workspace.persona)
+      ).toHaveLength(2);
+      expect(
+        reportComparisonPresets.filter((preset) => preset.persona === workspace.persona)
+      ).toHaveLength(2);
+    }
+
+    for (const rule of reportAutomationTriggerRules) {
+      expect(reportPersonas).toContain(rule.persona);
+      expect(["critical", "review", "info"]).toContain(rule.severity);
+      expect(reportAutomationTriggerRuleHref(rule)).toContain(
+        `persona=${rule.persona}#report-trigger-rule-${rule.id}`
+      );
+      expect(rule.reportIds.length).toBeGreaterThanOrEqual(3);
+      expect(rule.condition).toBeTruthy();
+      expect(rule.threshold).toBeTruthy();
+      expect(rule.cadence).toBeTruthy();
+      expect(rule.actionLabel).toBeTruthy();
+
+      for (const reportId of rule.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(rule.persona);
+      }
+
+      const starter = reportAutomationStarters.find((item) => item.id === rule.automationStarterId);
+      expect(starter?.persona).toBe(rule.persona);
+
+      const shortcut = reportDecisionShortcuts.find((item) => item.id === rule.decisionShortcutId);
+      expect(shortcut?.persona).toBe(rule.persona);
+    }
+
+    for (const shortcut of reportDecisionShortcuts) {
+      expect(reportPersonas).toContain(shortcut.persona);
+      expect(reportDecisionShortcutHref(shortcut)).toContain(
+        `persona=${shortcut.persona}#report-decision-shortcut-${shortcut.id}`
+      );
+      expect(shortcut.question).toMatch(/\?$/);
+      expect(shortcut.answer).toBeTruthy();
+      expect(shortcut.reportIds).toContain(shortcut.primaryReportId);
+      expect(shortcut.reportIds.length).toBeGreaterThanOrEqual(4);
+
+      const primaryReport = reportCatalog.find((report) => report.id === shortcut.primaryReportId);
+      expect(primaryReport?.personas).toContain(shortcut.persona);
+
+      for (const reportId of shortcut.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(shortcut.persona);
+      }
+
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === shortcut.comparisonPresetId
+      );
+      expect(comparisonPreset?.persona).toBe(shortcut.persona);
+
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === shortcut.automationStarterId
+      );
+      expect(automationStarter?.persona).toBe(shortcut.persona);
+    }
+
+    for (const starter of reportAutomationStarters) {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === starter.persona);
+      expect(reportPersonas).toContain(starter.persona);
+      expect(reportAutomationStarterHref(starter)).toBe(
+        `/reports?tab=${workspace?.primaryTab}&persona=${starter.persona}#report-automation-starter-${starter.id}`
+      );
+      expect(starter.reportIds.length).toBeGreaterThanOrEqual(4);
+      expect(starter.playbookIds.length).toBeGreaterThanOrEqual(1);
+      expect(starter.queueIds.length).toBeGreaterThanOrEqual(2);
+      expect(starter.setupSteps.length).toBeGreaterThanOrEqual(3);
+      expect(starter.outcome).toBeTruthy();
+      expect(starter.setupTime).toMatch(/setup$/);
+      expect(starter.primaryAction).toBeTruthy();
+
+      for (const reportId of starter.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(starter.persona);
+      }
+
+      for (const playbookId of starter.playbookIds) {
+        expect(workspace?.automations.some((playbook) => playbook.id === playbookId)).toBe(true);
+      }
+
+      for (const queueId of starter.queueIds) {
+        expect(reportsSource).toContain(`id: "${queueId}"`);
+      }
+    }
+
+    for (const template of reportPackTemplates) {
+      expect(reportPersonas).toContain(template.persona);
+      expect(reportPackTemplateHref(template)).toContain(
+        `/reports?tab=${
+          reportPersonaWorkspaces.find((workspace) => workspace.persona === template.persona)
+            ?.primaryTab
+        }&persona=${template.persona}#report-pack-template-${template.id}`
+      );
+      expect(template.reportIds.length).toBeGreaterThanOrEqual(5);
+      expect(template.audience).toBeTruthy();
+      expect(template.outcome).toBeTruthy();
+      expect(template.comparisonFocus).toBeTruthy();
+      expect(template.automationTrigger).toBeTruthy();
+
+      for (const reportId of template.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(template.persona);
+      }
+    }
+
+    for (const preset of reportComparisonPresets) {
+      expect(reportPersonas).toContain(preset.persona);
+      expect(reportTabs).toContain(preset.primaryTab);
+      expect(reportComparisonPresetHref(preset)).toBe(
+        `/reports?tab=${preset.primaryTab}&persona=${preset.persona}#period-comparison-title`
+      );
+      expect(preset.reportIds.length).toBeGreaterThanOrEqual(3);
+      expect(preset.metricIds.length).toBeGreaterThanOrEqual(3);
+      expect(preset.question).toMatch(/\?$/);
+      expect(preset.baseline).toBeTruthy();
+      expect(preset.automationTrigger).toBeTruthy();
+
+      for (const reportId of preset.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(preset.persona);
+      }
+
+      for (const metricId of preset.metricIds) {
+        expect(comparisonMetricIds.has(metricId)).toBe(true);
+      }
     }
   });
 
@@ -392,6 +695,29 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
     expect(reportsSource).toContain("Pack Index");
     expect(reportsSource).toContain("Pack Summary");
+    expect(reportsSource).toContain("Pack automation outcome");
+    expect(reportsSource).toContain("Coverage Map");
+    expect(reportsSource).toContain("Coverage categories");
+    expect(reportsSource).toContain("Workbook Sheets");
+    expect(reportsSource).toContain("Decision Question");
+    expect(reportsSource).toContain("Decision Questions");
+    expect(reportsSource).toContain("decisionQuestion: report.decisionQuestion");
+    expect(reportsSource).toContain("Pack Templates");
+    expect(reportsSource).toContain("Pack templates");
+    expect(reportsSource).toContain("Decision Shortcuts");
+    expect(reportsSource).toContain("Decision shortcuts");
+    expect(reportsSource).toContain("decisionShortcutsSheet");
+    expect(reportsSource).toContain("packDecisionShortcuts");
+    expect(reportsSource).toContain("Trigger Rules");
+    expect(reportsSource).toContain("Trigger rules");
+    expect(reportsSource).toContain("triggerRulesSheet");
+    expect(reportsSource).toContain("packTriggerRules");
+    expect(reportsSource).toContain("Automation Starters");
+    expect(reportsSource).toContain("Automation starters");
+    expect(reportsSource).toContain("automationStartersSheet");
+    expect(reportsSource).toContain("packAutomationStarters");
+    expect(reportsSource).toContain("Comparison Focus");
+    expect(reportsSource).toContain("Automation Trigger");
     expect(reportsSource).toContain("Recommended Actions");
     expect(reportsSource).toContain("Report Roadmap");
     expect(reportsSource).toContain("Automation Command Center");
@@ -400,18 +726,29 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Delivery Checklist");
     expect(reportsSource).toContain("Report pack readiness");
     expect(reportsSource).toContain("Comparison Snapshot");
+    expect(reportsSource).toContain("Comparison Presets");
+    expect(reportsSource).toContain("comparisonPresetsSheet");
     expect(reportsSource).toContain("Pack Cadence");
     expect(reportsSource).toContain("Pack Automation Status");
     expect(reportsSource).toContain("Automation Playbooks");
+    expect(reportsSource).toContain("value: workspace.automationOutcome");
     expect(reportsSource).toContain("comparisonCurrentLabel");
     expect(reportsSource).toContain("comparisonPreviousLabel");
     expect(reportsSource).toContain("packComparisonRows");
+    expect(reportsSource).toContain("packComparisonPresets");
+    expect(reportsSource).toContain("reportComparisonPresetSummaries");
     expect(reportsSource).toContain("packRecommendations");
+    expect(reportsSource).toContain("packCoverageMap");
+    expect(reportsSource).toContain("packTemplates");
+    expect(reportsSource).toContain("reportPackTemplateSummaries");
+    expect(reportsSource).toContain("buildReportCoverageMap(workspace.reports, workbookReportIds)");
     expect(reportsSource).toContain("Recommended actions");
     expect(reportsSource).toContain("Auto-send coverage");
     expect(reportsSource).toContain("Ready auto-send rules");
     expect(reportsSource).toContain("Rules needing review");
     expect(reportsSource).toContain("Setup-needed rules");
+    expect(reportsSource).toContain("Setup Steps");
+    expect(reportsSource).toContain("Primary Action");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");
@@ -478,6 +815,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
     expect(reportsSource).toContain("button-open-automation-center-${workspace.persona}");
+    expect(reportsSource).toContain("workspace.automationOutcome");
+    expect(reportsSource).toContain("Automation outcome");
     expect(reportsSource).toContain("button-export-workspace-pack-${workspace.persona}");
     expect(reportsSource).toContain("button-export-workspace-pack-sheets-${workspace.persona}");
     expect(reportsSource).toContain("exportToGoogleSheets(");
@@ -750,6 +1089,11 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Comparison snapshots");
     expect(reportsSource).toContain("Current vs prior period");
     expect(reportsSource).toContain("buildComparisonRanges(dateRange)");
+    expect(reportsSource).toContain("reportComparisonPresetSummaries");
+    expect(reportsSource).toContain("visibleReportComparisonPresets");
+    expect(reportsSource).toContain("data-testid={`report-comparison-preset-${preset.id}`}");
+    expect(reportsSource).toContain("Open preset");
+    expect(reportsSource).toContain("reportComparisonPresetHref(preset)");
 
     for (const metricId of [
       "revenue",
@@ -799,6 +1143,33 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("function matchesReportPersona");
     expect(reportsSource).toContain("Role focus");
     expect(reportsSource).toContain("Reporting role focus");
+    expect(reportsSource).toContain("Owner / Solo");
+    expect(reportsSource).toContain("solo entrepreneurs");
+    expect(reportsSource).toContain("Report coverage map");
+    expect(reportsSource).toContain("Category-level view of report depth");
+    expect(reportsSource).toContain("reportCoverageMap");
+    expect(reportsSource).toContain("buildReportCoverageMap(filteredReports)");
+    expect(reportsSource).toContain("data-testid={`report-coverage-${categoryId}`}");
+    expect(reportsSource).toContain("Decision question, status, comparison mode");
+    expect(reportsSource).toContain("{report.decisionQuestion}");
+    expect(reportsSource).toContain("Report pack templates");
+    expect(reportsSource).toContain("Decision shortcuts");
+    expect(reportsSource).toContain("visibleReportDecisionShortcuts");
+    expect(reportsSource).toContain("data-testid={`report-decision-shortcut-${shortcut.id}`}");
+    expect(reportsSource).toContain("Open comparison");
+    expect(reportsSource).toContain("Open automation");
+    expect(reportsSource).toContain("Trigger rules");
+    expect(reportsSource).toContain("visibleReportAutomationTriggerRules");
+    expect(reportsSource).toContain("data-testid={`report-trigger-rule-${rule.id}`}");
+    expect(reportsSource).toContain("triggerSeverityMeta[rule.severity]");
+    expect(reportsSource).toContain("Open question");
+    expect(reportsSource).toContain("Automation starters");
+    expect(reportsSource).toContain("visibleReportAutomationStarters");
+    expect(reportsSource).toContain("data-testid={`report-automation-starter-${starter.id}`}");
+    expect(reportsSource).toContain("starter.primaryAction");
+    expect(reportsSource).toContain("visibleReportPackTemplates");
+    expect(reportsSource).toContain("data-testid={`report-pack-template-${template.id}`}");
+    expect(reportsSource).toContain("Open template");
     expect(reportsSource).toContain("personaScopeDescription");
     expect(reportsSource).toContain("visibleComparisonRows");
     expect(reportsSource).toContain("visibleAutomationQueue");

@@ -61,6 +61,16 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportWorkspaceHref,
@@ -72,6 +82,8 @@ import {
 interface SubItem {
   titleKey: string;
   url: string;
+  title?: string;
+  testId?: string;
 }
 
 interface NavGroup {
@@ -151,6 +163,36 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: reportAutomationCenterTitleKeys[workspace.persona],
         url: reportSectionHref(workspace, "automation-command-center"),
+      })),
+      ...reportDecisionShortcuts.map((shortcut) => ({
+        titleKey: shortcut.question,
+        title: shortcut.question,
+        url: reportDecisionShortcutHref(shortcut),
+        testId: `report-decision-shortcut-${shortcut.id}`,
+      })),
+      ...reportAutomationTriggerRules.map((rule) => ({
+        titleKey: rule.title,
+        title: rule.title,
+        url: reportAutomationTriggerRuleHref(rule),
+        testId: `report-trigger-rule-${rule.id}`,
+      })),
+      ...reportAutomationStarters.map((starter) => ({
+        titleKey: starter.title,
+        title: starter.title,
+        url: reportAutomationStarterHref(starter),
+        testId: `report-automation-starter-${starter.id}`,
+      })),
+      ...reportPackTemplates.map((template) => ({
+        titleKey: template.title,
+        title: template.title,
+        url: reportPackTemplateHref(template),
+        testId: `report-pack-template-${template.id}`,
+      })),
+      ...reportComparisonPresets.map((preset) => ({
+        titleKey: preset.title,
+        title: preset.title,
+        url: reportComparisonPresetHref(preset),
+        testId: `report-comparison-preset-${preset.id}`,
       })),
       { titleKey: "financialStatements", url: "/financial-statements" },
       { titleKey: "vatFiling", url: "/vat-filing" },
@@ -366,13 +408,14 @@ export function AppSidebar() {
               <SidebarMenuSub>
                 {group.items.map((item) => {
                   const isActive = location === item.url || location.startsWith(item.url + "/");
-                  const label = (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
+                  const label =
+                    item.title ?? (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
                   return (
                     <SidebarMenuSubItem key={item.url}>
                       <SidebarMenuSubButton
                         asChild
                         isActive={isActive}
-                        data-testid={`link-${item.titleKey}`}
+                        data-testid={`link-${item.testId ?? item.titleKey}`}
                       >
                         <button type="button" onClick={() => setLocation(item.url)}>
                           {label}

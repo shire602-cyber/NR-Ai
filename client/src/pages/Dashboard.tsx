@@ -9,11 +9,19 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
   calculateReportAutomationHealth,
   getPreferredReportPersona,
   reportAutomationPlaybookHref,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
   reportCatalog,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
   reportHref,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportsHref,
@@ -481,6 +489,89 @@ function CustomerDashboard() {
         : 0,
     };
   }, [preferredReportWorkspace.automations.length, preferredWorkspaceCatalogReports]);
+  const preferredReportPackTemplates = useMemo(() => {
+    return reportPackTemplates
+      .filter((template) => template.persona === preferredReportWorkspace.persona)
+      .map((template) => {
+        const reports = template.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const readyReports = reports.filter((report) => report.status !== "planned").length;
+
+        return {
+          ...template,
+          reports,
+          readyReports,
+          href: reportPackTemplateHref(template),
+        };
+      });
+  }, [preferredReportWorkspace.persona]);
+  const preferredReportAutomationStarters = useMemo(() => {
+    return reportAutomationStarters
+      .filter((starter) => starter.persona === preferredReportWorkspace.persona)
+      .map((starter) => {
+        const reports = starter.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const readyReports = reports.filter((report) => report.status !== "planned").length;
+        const playbooks = starter.playbookIds
+          .map((playbookId) =>
+            preferredReportWorkspace.automations.find((playbook) => playbook.id === playbookId)
+          )
+          .filter((playbook): playbook is (typeof preferredReportWorkspace.automations)[number] =>
+            Boolean(playbook)
+          );
+
+        return {
+          ...starter,
+          reports,
+          readyReports,
+          playbooks,
+          href: reportAutomationStarterHref(starter),
+        };
+      });
+  }, [preferredReportWorkspace]);
+  const preferredReportDecisionShortcuts = useMemo(() => {
+    return reportDecisionShortcuts
+      .filter((shortcut) => shortcut.persona === preferredReportWorkspace.persona)
+      .map((shortcut) => {
+        const reports = shortcut.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const primaryReport =
+          reports.find((report) => report.id === shortcut.primaryReportId) ?? reports[0];
+
+        return {
+          ...shortcut,
+          reports,
+          primaryReport,
+          href: reportDecisionShortcutHref(shortcut),
+          primaryReportHref: primaryReport
+            ? (reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut))
+            : reportDecisionShortcutHref(shortcut),
+        };
+      });
+  }, [preferredReportWorkspace.persona]);
+  const preferredReportTriggerRules = useMemo(() => {
+    return reportAutomationTriggerRules
+      .filter((rule) => rule.persona === preferredReportWorkspace.persona)
+      .map((rule) => {
+        const reports = rule.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const primaryReport = reports[0] ?? null;
+
+        return {
+          ...rule,
+          reports,
+          primaryReport,
+          href: reportAutomationTriggerRuleHref(rule),
+          primaryReportHref: primaryReport
+            ? (reportHref(primaryReport) ?? reportAutomationTriggerRuleHref(rule))
+            : reportAutomationTriggerRuleHref(rule),
+        };
+      });
+  }, [preferredReportWorkspace.persona]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
@@ -1036,8 +1127,8 @@ function CustomerDashboard() {
                     Reporting mode
                   </div>
                   <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    Switch the daily report workspace for owner, freelancer, or accountant
-                    workflows.
+                    Switch the daily report workspace for owner, solo entrepreneur, freelancer, or
+                    accountant workflows.
                   </p>
                 </div>
                 <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-3xl">
@@ -1137,6 +1228,11 @@ function CustomerDashboard() {
                       Open automation center <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "automation-starters")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open automation starters <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                       Open automation rules <ArrowRight className="w-3.5 h-3.5" />
@@ -1181,6 +1277,134 @@ function CustomerDashboard() {
               </div>
             </div>
 
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-trigger-rules"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Trigger rules
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Thresholds that turn {preferredReportWorkspace.navLabel} report movement into
+                    automated follow-up.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "trigger-rules")}>
+                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
+                    Open trigger rules <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                {preferredReportTriggerRules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-trigger-rule-${rule.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">{rule.title}</div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {rule.threshold}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          rule.severity === "critical"
+                            ? "danger"
+                            : rule.severity === "review"
+                              ? "warning"
+                              : "info"
+                        }
+                        dot
+                      >
+                        {rule.severity === "critical"
+                          ? "Critical"
+                          : rule.severity === "review"
+                            ? "Review"
+                            : "Monitor"}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      <Badge variant="outline">{rule.reports.length} reports</Badge>
+                      <Badge variant="outline">{rule.cadence}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={rule.primaryReportHref}>
+                        <Button variant="outline" size="sm">
+                          {rule.actionLabel}
+                        </Button>
+                      </Link>
+                      <Link href={rule.href}>
+                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                          View rule <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-decision-shortcuts"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Business questions
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Start with practical questions for {preferredReportWorkspace.navLabel}, then
+                    open the matching report bundle.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "decision-shortcuts")}>
+                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
+                    Open decision shortcuts <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                {preferredReportDecisionShortcuts.map((shortcut) => (
+                  <div
+                    key={shortcut.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-decision-shortcut-${shortcut.id}`}
+                  >
+                    <div className="text-sm font-semibold text-foreground">{shortcut.question}</div>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {shortcut.answer}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      <Badge variant="outline">{shortcut.reports.length} reports</Badge>
+                      {shortcut.primaryReport ? (
+                        <Badge variant="outline">{shortcut.primaryReport.name}</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={shortcut.primaryReportHref}>
+                        <Button variant="outline" size="sm">
+                          Open report
+                        </Button>
+                      </Link>
+                      <Link href={shortcut.href}>
+                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                          View shortcut <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border/60">
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -1191,6 +1415,10 @@ function CustomerDashboard() {
                     <p className="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">
                       {preferredReportWorkspace.focus}
                     </p>
+                    <div className="mt-3 rounded-md border border-border/70 p-3 text-xs leading-relaxed text-muted-foreground">
+                      <span className="font-semibold text-foreground">Automation outcome:</span>{" "}
+                      {preferredReportWorkspace.automationOutcome}
+                    </div>
                   </div>
                   <Badge variant="info" dot>
                     {preferredWorkspaceReports.length} ready reports
@@ -1356,6 +1584,122 @@ function CustomerDashboard() {
                     Open pack automation <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
+              </div>
+            </div>
+
+            <div
+              className="border-t border-border/60 p-5"
+              data-testid="dashboard-report-automation-starters"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Automation starters
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Launch setup checklists for the workflows that fit{" "}
+                    {preferredReportWorkspace.navLabel}.
+                  </p>
+                </div>
+                <Badge variant="outline">{preferredReportAutomationStarters.length} starters</Badge>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportAutomationStarters.map((starter) => (
+                  <div
+                    key={starter.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-automation-starter-${starter.id}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm font-semibold text-foreground">
+                            {starter.title}
+                          </div>
+                          <Badge variant="info">{starter.setupTime}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {starter.outcome}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="outline">
+                            {starter.readyReports}/{starter.reports.length} reports
+                          </Badge>
+                          <Badge variant="outline">{starter.playbooks.length} playbooks</Badge>
+                          <Badge variant="outline">{starter.setupSteps.length} steps</Badge>
+                        </div>
+                      </div>
+                      <Link href={starter.href}>
+                        <Button variant="outline" size="sm" className="shrink-0">
+                          {starter.primaryAction}
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {starter.setupSteps.map((step) => (
+                        <div
+                          key={step}
+                          className="flex gap-2 rounded-md bg-muted/30 p-2 text-xs text-muted-foreground"
+                        >
+                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="border-t border-border/60 p-5"
+              data-testid="dashboard-report-pack-templates"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Ready-made report packs
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Start from recurring packs tailored to {preferredReportWorkspace.navLabel}.
+                  </p>
+                </div>
+                <Badge variant="outline">{preferredReportPackTemplates.length} templates</Badge>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportPackTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-pack-template-${template.id}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">
+                          {template.title}
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {template.outcome}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="outline">{template.cadence}</Badge>
+                          <Badge variant="outline">
+                            {template.readyReports}/{template.reports.length} reports
+                          </Badge>
+                        </div>
+                      </div>
+                      <Link href={template.href}>
+                        <Button variant="outline" size="sm" className="shrink-0">
+                          Open template
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </CardContent>

@@ -31,9 +31,19 @@ import {
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
   liveReportCatalog,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
   reportAutomationPlaybookHref,
   reportHref,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportWorkspaceHref,
@@ -146,7 +156,120 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         })
       )
     ),
+    ...reportAutomationStarters.map((starter): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === starter.persona);
+      return {
+        id: `report-automation-starter-${starter.id}`,
+        label: starter.title,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
+        href: reportAutomationStarterHref(starter),
+        keywords: [
+          starter.commandKeywords,
+          starter.audience,
+          starter.outcome,
+          starter.trigger,
+          starter.setupSteps.join(" "),
+          "automation starter autopilot report pack",
+        ].join(" "),
+      };
+    }),
+    ...reportDecisionShortcuts.map((shortcut): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === shortcut.persona);
+      return {
+        id: `report-decision-shortcut-${shortcut.id}`,
+        label: shortcut.question,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
+        href: reportDecisionShortcutHref(shortcut),
+        keywords: [
+          shortcut.commandKeywords,
+          shortcut.answer,
+          shortcut.reportIds.join(" "),
+          shortcut.comparisonPresetId,
+          shortcut.automationStarterId,
+          "decision question report shortcut",
+        ].join(" "),
+      };
+    }),
+    ...reportAutomationTriggerRules.map((rule): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === rule.persona);
+      return {
+        id: `report-trigger-rule-${rule.id}`,
+        label: rule.title,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
+        href: reportAutomationTriggerRuleHref(rule),
+        keywords: [
+          rule.commandKeywords,
+          rule.condition,
+          rule.threshold,
+          rule.cadence,
+          rule.actionLabel,
+          "trigger rule threshold report automation alert",
+        ].join(" "),
+      };
+    }),
+    ...reportPackTemplates.map((template): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === template.persona);
+      return {
+        id: `report-pack-template-${template.id}`,
+        label: template.title,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
+        href: reportPackTemplateHref(template),
+        keywords: [
+          template.commandKeywords,
+          template.audience,
+          template.outcome,
+          template.comparisonFocus,
+          template.automationTrigger,
+          "ready made report pack template",
+        ].join(" "),
+      };
+    }),
+    ...reportComparisonPresets.map((preset): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find((item) => item.persona === preset.persona);
+      return {
+        id: `report-comparison-preset-${preset.id}`,
+        label: preset.title,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
+        href: reportComparisonPresetHref(preset),
+        keywords: [
+          preset.commandKeywords,
+          preset.question,
+          preset.baseline,
+          preset.automationTrigger,
+          "comparison preset report pack",
+        ].join(" "),
+      };
+    }),
     ...reportPersonaWorkspaces.flatMap((workspace): PaletteItem[] => [
+      {
+        id: `report-decision-shortcuts-${workspace.persona}`,
+        label: `Decision shortcuts - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "decision-shortcuts"),
+        keywords: `${workspace.commandKeywords} decision questions report shortcuts what should I open`,
+      },
+      {
+        id: `report-trigger-rules-${workspace.persona}`,
+        label: `Trigger rules - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "trigger-rules"),
+        keywords: `${workspace.commandKeywords} trigger rules thresholds report automation alerts`,
+      },
+      {
+        id: `report-automation-starters-${workspace.persona}`,
+        label: `Automation starters - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "automation-starters"),
+        keywords: `${workspace.commandKeywords} automation starters autopilot quick setup checklist`,
+      },
       {
         id: `report-recommendations-${workspace.persona}`,
         label: `Recommended reports - ${workspace.title}`,
@@ -195,7 +318,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportCommandIcons[report.commandIcon],
         href: reportHref(report),
-        keywords: report.commandKeywords,
+        keywords: `${report.commandKeywords} ${report.decisionQuestion}`,
       })
     ),
     {

@@ -48,14 +48,24 @@ import {
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
   buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   clearPreferredReportPersona,
   getPreferredReportPersona,
   getReportAutomationHealthHistory,
   recordReportAutomationHealthSnapshots,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
   reportCatalog,
   reportAutomationPlaybookHref,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonas,
   reportPersonaWorkspaces,
   reportSectionHref,
@@ -64,6 +74,8 @@ import {
   reportsHref,
   reportWorkspaceHref,
   setPreferredReportPersona,
+  type ReportCatalogItem,
+  type ReportAutomationTriggerSeverity,
   type ReportPersona,
   type ReportStatus,
   type ReportTab,
@@ -736,6 +748,18 @@ interface ComparisonMetricRow {
   tab: ReportTab;
 }
 
+interface ReportCoverageCategory {
+  category: string;
+  reports: ReportCatalogItem[];
+  liveCount: number;
+  apiReadyCount: number;
+  plannedCount: number;
+  workbookCount: number;
+  comparisonTypes: string[];
+  automationHooks: string[];
+  personas: ReportPersona[];
+}
+
 const reportStatusMeta: Record<ReportStatus, { label: string; variant: BadgeProps["variant"] }> = {
   live: { label: "Live", variant: "success" },
   api: { label: "API ready", variant: "info" },
@@ -748,9 +772,18 @@ const roadmapImpactMeta = {
   low: { label: "Low impact", variant: "neutral" },
 } as const satisfies Record<string, { label: string; variant: BadgeProps["variant"] }>;
 
+const triggerSeverityMeta = {
+  critical: { label: "Critical", variant: "danger" },
+  review: { label: "Review", variant: "warning" },
+  info: { label: "Monitor", variant: "info" },
+} as const satisfies Record<
+  ReportAutomationTriggerSeverity,
+  { label: string; variant: BadgeProps["variant"] }
+>;
+
 const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "owner", label: "Owner" },
+  { id: "owner", label: "Owner / Solo" },
   { id: "freelancer", label: "Freelancer" },
   { id: "accountant", label: "Accountant" },
 ];
@@ -1332,6 +1365,73 @@ function matchesReportPersona(personas: ReportPersona[], persona: PersonaFilter)
   return persona === "all" || personas.includes(persona);
 }
 
+function uniqueSorted<T extends string>(values: Iterable<T>): T[] {
+  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+}
+
+function buildReportCoverageMap(
+  reports: readonly ReportCatalogItem[],
+  workbookReportIds: ReadonlySet<string> = new Set<string>()
+): ReportCoverageCategory[] {
+  const byCategory = new Map<
+    string,
+    {
+      category: string;
+      reports: ReportCatalogItem[];
+      liveCount: number;
+      apiReadyCount: number;
+      plannedCount: number;
+      workbookCount: number;
+      comparisonTypes: Set<string>;
+      automationHooks: Set<string>;
+      personas: Set<ReportPersona>;
+    }
+  >();
+
+  for (const report of reports) {
+    const bucket = byCategory.get(report.category) ?? {
+      category: report.category,
+      reports: [],
+      liveCount: 0,
+      apiReadyCount: 0,
+      plannedCount: 0,
+      workbookCount: 0,
+      comparisonTypes: new Set<string>(),
+      automationHooks: new Set<string>(),
+      personas: new Set<ReportPersona>(),
+    };
+
+    bucket.reports.push(report);
+    if (report.status === "live") bucket.liveCount += 1;
+    if (report.status === "api") bucket.apiReadyCount += 1;
+    if (report.status === "planned") bucket.plannedCount += 1;
+    if (workbookReportIds.has(report.id)) bucket.workbookCount += 1;
+    bucket.comparisonTypes.add(report.comparison);
+    bucket.automationHooks.add(report.automation);
+    report.personas.forEach((persona) => bucket.personas.add(persona));
+    byCategory.set(report.category, bucket);
+  }
+
+  return Array.from(byCategory.values())
+    .map((bucket) => ({
+      category: bucket.category,
+      reports: bucket.reports,
+      liveCount: bucket.liveCount,
+      apiReadyCount: bucket.apiReadyCount,
+      plannedCount: bucket.plannedCount,
+      workbookCount: bucket.workbookCount,
+      comparisonTypes: uniqueSorted(bucket.comparisonTypes),
+      automationHooks: uniqueSorted(bucket.automationHooks),
+      personas: uniqueSorted(bucket.personas),
+    }))
+    .sort(
+      (a, b) =>
+        b.reports.length - a.reports.length ||
+        b.workbookCount - a.workbookCount ||
+        a.category.localeCompare(b.category)
+    );
+}
+
 function startOfLocalDay(date: Date): Date {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
@@ -1471,6 +1571,10 @@ export default function Reports() {
     );
   }, [filteredReports]);
 
+  const reportCoverageMap = useMemo(() => {
+    return buildReportCoverageMap(filteredReports);
+  }, [filteredReports]);
+
   const reportStats = useMemo(() => {
     const live = reportCatalog.filter((report) => report.status === "live").length;
     const ready = reportCatalog.filter((report) => report.status !== "planned").length;
@@ -1497,6 +1601,80 @@ export default function Reports() {
       };
     });
   }, []);
+
+  const reportPackTemplateSummaries = useMemo(() => {
+    return reportPackTemplates.flatMap((template) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === template.persona);
+      if (!workspace) return [];
+
+      const reports = template.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const readyCount = reports.filter((report) => report.status !== "planned").length;
+
+      return [
+        {
+          ...template,
+          workspace,
+          reports,
+          readyCount,
+          href: reportPackTemplateHref(template),
+          categories: uniqueSorted(reports.map((report) => report.category)),
+          comparisonTypes: uniqueSorted(reports.map((report) => report.comparison)),
+          automationHooks: uniqueSorted(reports.map((report) => report.automation)),
+        },
+      ];
+    });
+  }, [workspaceSummaries]);
+
+  const visibleReportPackTemplates = useMemo(() => {
+    return reportPackTemplateSummaries.filter((template) =>
+      matchesReportPersona([template.persona], personaFilter)
+    );
+  }, [personaFilter, reportPackTemplateSummaries]);
+
+  const reportDecisionShortcutSummaries = useMemo(() => {
+    return reportDecisionShortcuts.flatMap((shortcut) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === shortcut.persona);
+      const primaryReport = reportCatalog.find((report) => report.id === shortcut.primaryReportId);
+      if (!workspace || !primaryReport) return [];
+
+      const reports = shortcut.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === shortcut.comparisonPresetId
+      );
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === shortcut.automationStarterId
+      );
+
+      return [
+        {
+          ...shortcut,
+          workspace,
+          primaryReport,
+          reports,
+          comparisonPreset,
+          automationStarter,
+          href: reportDecisionShortcutHref(shortcut),
+          primaryReportHref: reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut),
+          comparisonHref: comparisonPreset
+            ? reportComparisonPresetHref(comparisonPreset)
+            : reportDecisionShortcutHref(shortcut),
+          automationHref: automationStarter
+            ? reportAutomationStarterHref(automationStarter)
+            : reportDecisionShortcutHref(shortcut),
+        },
+      ];
+    });
+  }, [workspaceSummaries]);
+
+  const visibleReportDecisionShortcuts = useMemo(() => {
+    return reportDecisionShortcutSummaries.filter((shortcut) =>
+      matchesReportPersona([shortcut.persona], personaFilter)
+    );
+  }, [personaFilter, reportDecisionShortcutSummaries]);
 
   const dateParams =
     dateRange.from && dateRange.to
@@ -2698,6 +2876,40 @@ export default function Reports() {
     return comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter));
   }, [comparisonRows, personaFilter]);
 
+  const reportComparisonPresetSummaries = useMemo(() => {
+    return reportComparisonPresets.flatMap((preset) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === preset.persona);
+      if (!workspace) return [];
+
+      const reports = preset.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const metrics = preset.metricIds
+        .map((metricId) => comparisonRows.find((row) => row.id === metricId))
+        .filter((row): row is ComparisonMetricRow => Boolean(row));
+      const warningCount = metrics.filter(
+        (row) => comparisonBadgeVariant(row) === "warning"
+      ).length;
+
+      return [
+        {
+          ...preset,
+          workspace,
+          reports,
+          metrics,
+          warningCount,
+          href: reportComparisonPresetHref(preset),
+        },
+      ];
+    });
+  }, [comparisonRows, workspaceSummaries]);
+
+  const visibleReportComparisonPresets = useMemo(() => {
+    return reportComparisonPresetSummaries.filter((preset) =>
+      matchesReportPersona([preset.persona], personaFilter)
+    );
+  }, [personaFilter, reportComparisonPresetSummaries]);
+
   const comparisonLoading =
     comparisonCurrentPlLoading ||
     comparisonPreviousPlLoading ||
@@ -3315,6 +3527,102 @@ export default function Reports() {
 
   const automationQueueCount = visibleAutomationQueue.reduce((sum, item) => sum + item.count, 0);
 
+  const reportAutomationStarterSummaries = useMemo(() => {
+    return reportAutomationStarters.flatMap((starter) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === starter.persona);
+      if (!workspace) return [];
+
+      const reports = starter.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const playbooks = starter.playbookIds
+        .map((playbookId) => workspace.automations.find((playbook) => playbook.id === playbookId))
+        .filter((playbook): playbook is (typeof workspace.automations)[number] =>
+          Boolean(playbook)
+        );
+      const queueSignals = automationQueue.filter((item) => starter.queueIds.includes(item.id));
+      const openSignals = queueSignals.filter((item) => item.count > 0);
+      const openWorkItemCount = openSignals.reduce((sum, item) => sum + item.count, 0);
+      const amountAtRisk = openSignals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+      const readyCount = reports.filter((report) => report.status !== "planned").length;
+
+      return [
+        {
+          ...starter,
+          workspace,
+          reports,
+          playbooks,
+          queueSignals,
+          openSignals,
+          openWorkItemCount,
+          amountAtRisk,
+          readyCount,
+          href: reportAutomationStarterHref(starter),
+        },
+      ];
+    });
+  }, [automationQueue, workspaceSummaries]);
+
+  const visibleReportAutomationStarters = useMemo(() => {
+    return reportAutomationStarterSummaries.filter((starter) =>
+      matchesReportPersona([starter.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationStarterSummaries]);
+
+  const reportAutomationTriggerRuleSummaries = useMemo(() => {
+    return reportAutomationTriggerRules.flatMap((rule) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === rule.persona);
+      if (!workspace) return [];
+
+      const reports = rule.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const primaryReport = reports[0] ?? null;
+      const automationStarter =
+        reportAutomationStarterSummaries.find(
+          (starter) => starter.id === rule.automationStarterId
+        ) ?? null;
+      const decisionShortcut =
+        reportDecisionShortcutSummaries.find(
+          (shortcut) => shortcut.id === rule.decisionShortcutId
+        ) ?? null;
+      const queueSignals =
+        automationStarter?.queueSignals.filter((signal) =>
+          matchesReportPersona(signal.personas, rule.persona)
+        ) ?? [];
+      const openSignals = queueSignals.filter((signal) => signal.count > 0);
+      const openWorkItemCount = queueSignals.reduce((sum, signal) => sum + signal.count, 0);
+      const amountAtRisk = queueSignals.reduce((sum, signal) => sum + (signal.amount ?? 0), 0);
+
+      return [
+        {
+          ...rule,
+          workspace,
+          reports,
+          primaryReport,
+          automationStarter,
+          decisionShortcut,
+          queueSignals,
+          openSignals,
+          openWorkItemCount,
+          amountAtRisk,
+          href: reportAutomationTriggerRuleHref(rule),
+          primaryReportHref: primaryReport
+            ? (reportHref(primaryReport) ?? reportAutomationTriggerRuleHref(rule))
+            : reportAutomationTriggerRuleHref(rule),
+          automationStarterHref: automationStarter?.href ?? reportAutomationTriggerRuleHref(rule),
+          decisionShortcutHref: decisionShortcut?.href ?? reportAutomationTriggerRuleHref(rule),
+        },
+      ];
+    });
+  }, [reportAutomationStarterSummaries, reportDecisionShortcutSummaries, workspaceSummaries]);
+
+  const visibleReportAutomationTriggerRules = useMemo(() => {
+    return reportAutomationTriggerRuleSummaries.filter((rule) =>
+      matchesReportPersona([rule.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationTriggerRuleSummaries]);
+
   const reportPackAutomationQueue = useMemo(() => {
     return workspaceSummaries.map((workspace) => {
       const signals = automationQueue.filter((item) =>
@@ -3844,6 +4152,19 @@ export default function Reports() {
       preparePlanningReportsForExport(planningReport)
     );
 
+    const packCoverageMap = buildReportCoverageMap(workspace.reports, workbookReportIds);
+    const packDecisionShortcuts = reportDecisionShortcutSummaries.filter(
+      (shortcut) => shortcut.persona === workspace.persona
+    );
+    const packTemplates = reportPackTemplateSummaries.filter(
+      (template) => template.persona === workspace.persona
+    );
+    const packAutomationStarters = reportAutomationStarterSummaries.filter(
+      (starter) => starter.persona === workspace.persona
+    );
+    const packTriggerRules = reportAutomationTriggerRuleSummaries.filter(
+      (rule) => rule.persona === workspace.persona
+    );
     const packSignals = automationQueue.filter((item) =>
       matchesReportPersona(item.personas, workspace.persona)
     );
@@ -3852,6 +4173,9 @@ export default function Reports() {
     const packAmountAtRisk = packSignals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
     const packComparisonRows = comparisonRows.filter((row) =>
       matchesReportPersona(row.personas, workspace.persona)
+    );
+    const packComparisonPresets = reportComparisonPresetSummaries.filter(
+      (preset) => preset.persona === workspace.persona
     );
     const packRecommendations =
       personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
@@ -3904,6 +4228,7 @@ export default function Reports() {
       sheetName: "Pack Index",
       columns: [
         { header: "Report", key: "report", width: 32 },
+        { header: "Decision Question", key: "decisionQuestion", width: 58 },
         { header: "Status", key: "status", width: 14 },
         { header: "Comparison", key: "comparison", width: 24 },
         { header: "Automation", key: "automation", width: 28 },
@@ -3912,6 +4237,7 @@ export default function Reports() {
       ],
       rows: workspace.reports.map((report) => ({
         report: report.name,
+        decisionQuestion: report.decisionQuestion,
         status: reportStatusMeta[report.status].label,
         comparison: report.comparison,
         automation: report.automation,
@@ -3929,6 +4255,7 @@ export default function Reports() {
       rows: [
         { metric: "Workspace", value: workspace.title },
         { metric: "Persona", value: workspace.persona },
+        { metric: "Pack automation outcome", value: workspace.automationOutcome },
         { metric: "Current period", value: comparisonCurrentLabel },
         { metric: "Prior period", value: comparisonPreviousLabel },
         {
@@ -3937,6 +4264,11 @@ export default function Reports() {
         },
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
+        { metric: "Coverage categories", value: packCoverageMap.length },
+        { metric: "Decision shortcuts", value: packDecisionShortcuts.length },
+        { metric: "Automation starters", value: packAutomationStarters.length },
+        { metric: "Trigger rules", value: packTriggerRules.length },
+        { metric: "Pack templates", value: packTemplates.length },
         { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
         { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
         { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
@@ -3948,6 +4280,7 @@ export default function Reports() {
         },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
+        { metric: "Comparison presets", value: packComparisonPresets.length },
         { metric: "Recommended actions", value: packRecommendations.length },
         { metric: "Auto-send coverage", value: `${packAutoSendCoveragePercent}%` },
         { metric: "Ready auto-send rules", value: packReadyAutomationRules },
@@ -3975,6 +4308,158 @@ export default function Reports() {
         { metric: "Open work items", value: openPackWorkItemCount },
         { metric: "Amount at risk", value: `AED ${packAmountAtRisk.toFixed(2)}` },
       ],
+    };
+
+    const coverageMap: ExportData = {
+      sheetName: "Coverage Map",
+      columns: [
+        { header: "Category", key: "category", width: 24 },
+        { header: "Reports", key: "reports", width: 14 },
+        { header: "Live", key: "live", width: 10 },
+        { header: "API Ready", key: "apiReady", width: 12 },
+        { header: "Planned", key: "planned", width: 12 },
+        { header: "Workbook Sheets", key: "workbookSheets", width: 16 },
+        { header: "Comparison Types", key: "comparisonTypes", width: 58 },
+        { header: "Automation Hooks", key: "automationHooks", width: 72 },
+        { header: "Personas", key: "personas", width: 30 },
+        { header: "Report List", key: "reportList", width: 72 },
+        { header: "Decision Questions", key: "decisionQuestions", width: 90 },
+      ],
+      rows: packCoverageMap.map((coverage) => ({
+        category: coverage.category,
+        reports: coverage.reports.length,
+        live: coverage.liveCount,
+        apiReady: coverage.apiReadyCount,
+        planned: coverage.plannedCount,
+        workbookSheets: coverage.workbookCount,
+        comparisonTypes: coverage.comparisonTypes.join(", "),
+        automationHooks: coverage.automationHooks.join(", "),
+        personas: coverage.personas.join(", "),
+        reportList: coverage.reports.map((report) => report.name).join(", "),
+        decisionQuestions: coverage.reports.map((report) => report.decisionQuestion).join(" | "),
+      })),
+    };
+
+    const packTemplatesSheet: ExportData = {
+      sheetName: "Pack Templates",
+      columns: [
+        { header: "Template", key: "template", width: 34 },
+        { header: "Audience", key: "audience", width: 42 },
+        { header: "Outcome", key: "outcome", width: 70 },
+        { header: "Cadence", key: "cadence", width: 34 },
+        { header: "Delivery", key: "delivery", width: 38 },
+        { header: "Reports", key: "reports", width: 72 },
+        { header: "Ready Reports", key: "readyReports", width: 16 },
+        { header: "Categories", key: "categories", width: 34 },
+        { header: "Comparison Focus", key: "comparisonFocus", width: 58 },
+        { header: "Automation Trigger", key: "automationTrigger", width: 70 },
+        { header: "Workflow", key: "workflow", width: 42 },
+      ],
+      rows: packTemplates.map((template) => ({
+        template: template.title,
+        audience: template.audience,
+        outcome: template.outcome,
+        cadence: template.cadence,
+        delivery: template.delivery,
+        reports: template.reports.map((report) => report.name).join(", "),
+        readyReports: `${template.readyCount}/${template.reports.length}`,
+        categories: template.categories.join(", "),
+        comparisonFocus: template.comparisonFocus,
+        automationTrigger: template.automationTrigger,
+        workflow: template.href,
+      })),
+    };
+
+    const decisionShortcutsSheet: ExportData = {
+      sheetName: "Decision Shortcuts",
+      columns: [
+        { header: "Question", key: "question", width: 46 },
+        { header: "Answer", key: "answer", width: 80 },
+        { header: "Primary Report", key: "primaryReport", width: 30 },
+        { header: "Reports", key: "reports", width: 72 },
+        { header: "Comparison Preset", key: "comparisonPreset", width: 36 },
+        { header: "Automation Starter", key: "automationStarter", width: 38 },
+        { header: "Report Workflow", key: "reportWorkflow", width: 42 },
+        { header: "Shortcut Workflow", key: "shortcutWorkflow", width: 42 },
+      ],
+      rows: packDecisionShortcuts.map((shortcut) => ({
+        question: shortcut.question,
+        answer: shortcut.answer,
+        primaryReport: shortcut.primaryReport.name,
+        reports: shortcut.reports.map((report) => report.name).join(", "),
+        comparisonPreset: shortcut.comparisonPreset?.title ?? "",
+        automationStarter: shortcut.automationStarter?.title ?? "",
+        reportWorkflow: shortcut.primaryReportHref,
+        shortcutWorkflow: shortcut.href,
+      })),
+    };
+
+    const automationStartersSheet: ExportData = {
+      sheetName: "Automation Starters",
+      columns: [
+        { header: "Starter", key: "starter", width: 34 },
+        { header: "Audience", key: "audience", width: 42 },
+        { header: "Outcome", key: "outcome", width: 72 },
+        { header: "Setup Time", key: "setupTime", width: 18 },
+        { header: "Trigger", key: "trigger", width: 60 },
+        { header: "Ready Reports", key: "readyReports", width: 16 },
+        { header: "Reports", key: "reports", width: 72 },
+        { header: "Playbooks", key: "playbooks", width: 56 },
+        { header: "Queue Signals", key: "queueSignals", width: 56 },
+        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
+        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
+        { header: "Setup Steps", key: "setupSteps", width: 72 },
+        { header: "Primary Action", key: "primaryAction", width: 28 },
+        { header: "Workflow", key: "workflow", width: 42 },
+      ],
+      rows: packAutomationStarters.map((starter) => ({
+        starter: starter.title,
+        audience: starter.audience,
+        outcome: starter.outcome,
+        setupTime: starter.setupTime,
+        trigger: starter.trigger,
+        readyReports: `${starter.readyCount}/${starter.reports.length}`,
+        reports: starter.reports.map((report) => report.name).join(", "),
+        playbooks: starter.playbooks.map((playbook) => playbook.title).join(", "),
+        queueSignals: starter.queueSignals.map((signal) => signal.title).join(", "),
+        openWorkItemCount: starter.openWorkItemCount,
+        amountAtRisk: `AED ${starter.amountAtRisk.toFixed(2)}`,
+        setupSteps: starter.setupSteps.join(" | "),
+        primaryAction: starter.primaryAction,
+        workflow: starter.href,
+      })),
+    };
+
+    const triggerRulesSheet: ExportData = {
+      sheetName: "Trigger Rules",
+      columns: [
+        { header: "Rule", key: "rule", width: 34 },
+        { header: "Severity", key: "severity", width: 16 },
+        { header: "Condition", key: "condition", width: 70 },
+        { header: "Threshold", key: "threshold", width: 74 },
+        { header: "Cadence", key: "cadence", width: 42 },
+        { header: "Reports", key: "reports", width: 72 },
+        { header: "Decision Shortcut", key: "decisionShortcut", width: 42 },
+        { header: "Automation Starter", key: "automationStarter", width: 42 },
+        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
+        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
+        { header: "Action", key: "action", width: 28 },
+        { header: "Workflow", key: "workflow", width: 42 },
+      ],
+      rows: packTriggerRules.map((rule) => ({
+        rule: rule.title,
+        severity: triggerSeverityMeta[rule.severity].label,
+        condition: rule.condition,
+        threshold: rule.threshold,
+        cadence: rule.cadence,
+        reports: rule.reports.map((report) => report.name).join(", "),
+        decisionShortcut: rule.decisionShortcut?.question ?? "",
+        automationStarter: rule.automationStarter?.title ?? "",
+        openWorkItemCount: rule.openWorkItemCount,
+        amountAtRisk: `AED ${rule.amountAtRisk.toFixed(2)}`,
+        action: rule.actionLabel,
+        workflow: rule.href,
+      })),
     };
 
     const recommendedActions: ExportData = {
@@ -4056,6 +4541,7 @@ export default function Reports() {
       rows: [
         { metric: "Workspace", value: workspace.title },
         { metric: "Persona", value: workspace.persona },
+        { metric: "Automation outcome", value: workspace.automationOutcome },
         { metric: "Total automation rules", value: packAutomationRules.length },
         { metric: "Ready auto-send rules", value: packReadyAutomationRules },
         { metric: "Rules needing review", value: packReviewAutomationRules },
@@ -4191,6 +4677,30 @@ export default function Reports() {
       }),
     };
 
+    const comparisonPresetsSheet: ExportData = {
+      sheetName: "Comparison Presets",
+      columns: [
+        { header: "Preset", key: "preset", width: 34 },
+        { header: "Question", key: "question", width: 70 },
+        { header: "Baseline", key: "baseline", width: 56 },
+        { header: "Metrics", key: "metrics", width: 56 },
+        { header: "Warnings", key: "warnings", width: 12 },
+        { header: "Reports", key: "reports", width: 72 },
+        { header: "Automation Trigger", key: "automationTrigger", width: 70 },
+        { header: "Workflow", key: "workflow", width: 42 },
+      ],
+      rows: packComparisonPresets.map((preset) => ({
+        preset: preset.title,
+        question: preset.question,
+        baseline: preset.baseline,
+        metrics: preset.metrics.map((row) => row.label).join(", "),
+        warnings: preset.warningCount,
+        reports: preset.reports.map((report) => report.name).join(", "),
+        automationTrigger: preset.automationTrigger,
+        workflow: preset.href,
+      })),
+    };
+
     const automationPlaybooks: ExportData = {
       sheetName: "Automation Playbooks",
       columns: [
@@ -4259,12 +4769,18 @@ export default function Reports() {
         { field: "Recipients", value: workspace.packSchedule.recipients },
         { field: "Refresh trigger", value: workspace.packSchedule.trigger },
         { field: "Automation rule", value: workspace.packSchedule.automation },
+        { field: "Automation outcome", value: workspace.automationOutcome },
       ],
     };
 
     return [
       packIndex,
       packSummary,
+      coverageMap,
+      decisionShortcutsSheet,
+      packTemplatesSheet,
+      automationStartersSheet,
+      triggerRulesSheet,
       recommendedActions,
       reportRoadmapSheet,
       automationCommandCenter,
@@ -4272,6 +4788,7 @@ export default function Reports() {
       automationHealthTrend,
       deliveryChecklist,
       comparisonSnapshot,
+      comparisonPresetsSheet,
       packCadence,
       packAutomationStatus,
       automationPlaybooks,
@@ -4574,6 +5091,349 @@ export default function Reports() {
         </div>
       </section>
 
+      <section className="space-y-4" aria-labelledby="decision-shortcuts-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="decision-shortcuts-title" className="text-xl font-semibold">
+              Decision shortcuts
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Business questions that route owners, freelancers, and accountants to the right
+              reports, comparisons, and automation starter. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportDecisionShortcuts.length} questions
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          {visibleReportDecisionShortcuts.map((shortcut) => {
+            const WorkspaceIcon = shortcut.workspace.icon;
+
+            return (
+              <Card
+                key={shortcut.id}
+                id={`report-decision-shortcut-${shortcut.id}`}
+                data-testid={`report-decision-shortcut-${shortcut.id}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">
+                          {shortcut.question}
+                        </CardTitle>
+                        <CardDescription>{shortcut.workspace.title}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="capitalize">
+                      {shortcut.persona}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">{shortcut.answer}</p>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Primary report</div>
+                      <div className="mt-1 font-medium text-foreground">
+                        {shortcut.primaryReport.name}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Report bundle</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {shortcut.reports.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {shortcut.reports.slice(0, 4).map((report) => (
+                      <Badge key={report.id} variant="outline">
+                        {report.name}
+                      </Badge>
+                    ))}
+                    {shortcut.reports.length > 4 ? (
+                      <Badge variant="neutral">+{shortcut.reports.length - 4}</Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    {shortcut.comparisonPreset ? (
+                      <div>
+                        <span className="font-medium text-foreground">Comparison:</span>{" "}
+                        {shortcut.comparisonPreset.title}
+                      </div>
+                    ) : null}
+                    {shortcut.automationStarter ? (
+                      <div>
+                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        {shortcut.automationStarter.title}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <Link href={shortcut.primaryReportHref}>Open report</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={shortcut.comparisonHref}>Open comparison</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={shortcut.automationHref}>Open automation</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="automation-starters-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="automation-starters-title" className="text-xl font-semibold">
+              Automation starters
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Persona-specific setup paths for turning report packs, comparisons, and open queues
+              into automated workflows. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportAutomationStarters.length} starters
+          </Badge>
+        </div>
+
+        {automationLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleReportAutomationStarters.map((starter) => {
+              const WorkspaceIcon = starter.workspace.icon;
+
+              return (
+                <Card
+                  key={starter.id}
+                  id={`report-automation-starter-${starter.id}`}
+                  data-testid={`report-automation-starter-${starter.id}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">{starter.title}</CardTitle>
+                          <CardDescription>{starter.audience}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={starter.openWorkItemCount > 0 ? "warning" : "success"} dot>
+                        {starter.openWorkItemCount > 0
+                          ? `${starter.openWorkItemCount} open`
+                          : "Ready"}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">{starter.outcome}</p>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Setup</div>
+                        <div className="font-medium text-foreground">{starter.setupTime}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Ready reports</div>
+                        <div className="font-mono text-base font-semibold">
+                          {starter.readyCount}/{starter.reports.length}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Playbooks</div>
+                        <div className="font-mono text-base font-semibold">
+                          {starter.playbooks.length}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">At risk</div>
+                        <div className="truncate font-mono text-sm font-semibold">
+                          {formatCurrency(starter.amountAtRisk, "AED", locale)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Trigger:</span>{" "}
+                      {starter.trigger}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Setup checklist
+                      </div>
+                      {starter.setupSteps.map((step) => (
+                        <div key={step} className="flex gap-2 text-xs text-muted-foreground">
+                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {starter.reports.slice(0, 4).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {starter.reports.length > 4 ? (
+                        <Badge variant="neutral">+{starter.reports.length - 4}</Badge>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm">
+                        <Link href={starter.href}>{starter.primaryAction}</Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setReportPersonaFilter(starter.persona)}
+                      >
+                        Filter workspace
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="trigger-rules-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="trigger-rules-title" className="text-xl font-semibold">
+              Trigger rules
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Report-driven thresholds that route cash, tax, close, and advisory signals into
+              automation. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportAutomationTriggerRules.length} rules
+          </Badge>
+        </div>
+
+        {automationLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleReportAutomationTriggerRules.map((rule) => {
+              const WorkspaceIcon = rule.workspace.icon;
+              const severity = triggerSeverityMeta[rule.severity];
+
+              return (
+                <Card
+                  key={rule.id}
+                  id={`report-trigger-rule-${rule.id}`}
+                  data-testid={`report-trigger-rule-${rule.id}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">{rule.title}</CardTitle>
+                          <CardDescription>{rule.workspace.title}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={severity.variant} dot>
+                        {severity.label}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>{rule.condition}</p>
+                      <div className="rounded-md border p-3 text-xs">
+                        <span className="font-medium text-foreground">Threshold:</span>{" "}
+                        {rule.threshold}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="mt-1 font-medium text-foreground">{rule.cadence}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Open work</div>
+                        <div className="mt-1 font-mono text-base font-semibold">
+                          {rule.openWorkItemCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {rule.reports.slice(0, 4).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {rule.reports.length > 4 ? (
+                        <Badge variant="neutral">+{rule.reports.length - 4}</Badge>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      {rule.decisionShortcut ? (
+                        <div>
+                          <span className="font-medium text-foreground">Question:</span>{" "}
+                          {rule.decisionShortcut.question}
+                        </div>
+                      ) : null}
+                      {rule.automationStarter ? (
+                        <div>
+                          <span className="font-medium text-foreground">Automation:</span>{" "}
+                          {rule.automationStarter.title}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm">
+                        <Link href={rule.primaryReportHref}>{rule.actionLabel}</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={rule.decisionShortcutHref}>Open question</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={rule.automationStarterHref}>Open automation</Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4" aria-labelledby="recommended-reports-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -4819,6 +5679,70 @@ export default function Reports() {
               : personaFilterLabel}
           </Badge>
         </div>
+
+        {visibleReportComparisonPresets.length ? (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleReportComparisonPresets.map((preset) => (
+              <Card
+                key={preset.id}
+                id={`report-comparison-preset-${preset.id}`}
+                data-testid={`report-comparison-preset-${preset.id}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="text-base font-semibold">{preset.title}</CardTitle>
+                      <CardDescription>{preset.baseline}</CardDescription>
+                    </div>
+                    <Badge variant={preset.warningCount > 0 ? "warning" : "success"} dot>
+                      {preset.warningCount > 0 ? `${preset.warningCount} review` : "Clear"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">{preset.question}</p>
+
+                  <div className="space-y-2">
+                    {preset.metrics.map((metric) => (
+                      <div
+                        key={metric.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground">{metric.label}</div>
+                          <div className="text-muted-foreground">{metric.signal}</div>
+                        </div>
+                        <Badge variant={comparisonBadgeVariant(metric)}>
+                          {formatComparisonPercent(metric.percentChange)}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {preset.reports.slice(0, 4).map((report) => (
+                      <Badge key={report.id} variant="outline">
+                        {report.name}
+                      </Badge>
+                    ))}
+                    {preset.reports.length > 4 ? (
+                      <Badge variant="neutral">+{preset.reports.length - 4}</Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs leading-relaxed text-muted-foreground">
+                      {preset.automationTrigger}
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={preset.href}>Open preset</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : null}
 
         {comparisonLoading ? (
           <Skeleton className="h-48 w-full" />
@@ -5867,7 +6791,8 @@ export default function Reports() {
               Workspaces
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-focused report coverage for owners, freelancers, and accountants.
+              Role-focused report coverage for owners, solo entrepreneurs, freelancers, and
+              accountants.
             </p>
           </div>
           <Badge variant="outline">{workspaceSummaries.length} roles</Badge>
@@ -5934,6 +6859,15 @@ export default function Reports() {
                     <div className="text-sm font-medium">{workspace.topReadyReport?.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {workspace.topReadyReport?.automation}
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Automation outcome
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {workspace.automationOutcome}
                     </div>
                   </div>
 
@@ -6054,6 +6988,103 @@ export default function Reports() {
         </div>
       </section>
 
+      <section className="space-y-4" aria-labelledby="report-pack-templates-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-pack-templates-title" className="text-xl font-semibold">
+              Report pack templates
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Ready-made packs for recurring owner, freelancer, and accountant decisions.
+            </p>
+          </div>
+          <Badge variant="outline">{visibleReportPackTemplates.length} templates</Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {visibleReportPackTemplates.map((template) => {
+            const TemplateIcon = template.workspace.icon;
+
+            return (
+              <Card
+                key={template.id}
+                id={`report-pack-template-${template.id}`}
+                data-testid={`report-pack-template-${template.id}`}
+              >
+                <CardHeader className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">{template.title}</CardTitle>
+                      <CardDescription>{template.audience}</CardDescription>
+                    </div>
+                    <TemplateIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  </div>
+                  <Badge variant="outline" className="w-fit capitalize">
+                    {template.persona}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">{template.outcome}</p>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md border p-3">
+                      <div className="font-medium text-foreground">Cadence</div>
+                      <div className="mt-1 text-muted-foreground">{template.cadence}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="font-medium text-foreground">Ready reports</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {template.readyCount}/{template.reports.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">Comparisons:</span>{" "}
+                      {template.comparisonFocus}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Automation:</span>{" "}
+                      {template.automationTrigger}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      {template.delivery}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {template.reports.slice(0, 5).map((report) => (
+                      <Badge key={report.id} variant="outline">
+                        {report.name}
+                      </Badge>
+                    ))}
+                    {template.reports.length > 5 ? (
+                      <Badge variant="neutral">+{template.reports.length - 5}</Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <Link href={template.href}>Open template</Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setReportPersonaFilter(template.persona)}
+                    >
+                      Filter library
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="space-y-4" aria-labelledby="report-center-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -6118,15 +7149,102 @@ export default function Reports() {
         </div>
 
         <Card>
+          <CardHeader className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle>Report coverage map</CardTitle>
+                <CardDescription>
+                  Category-level view of report depth, comparison coverage, and automation hooks.
+                </CardDescription>
+              </div>
+              <Badge variant="outline">{reportCoverageMap.length} categories</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              {reportCoverageMap.map((coverage) => {
+                const categoryId = coverage.category
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-")
+                  .replace(/^-|-$/g, "");
+                const readyCount = coverage.liveCount + coverage.apiReadyCount;
+
+                return (
+                  <div
+                    key={coverage.category}
+                    className="space-y-3 rounded-md border p-4"
+                    data-testid={`report-coverage-${categoryId}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{coverage.category}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {coverage.reports.length} reports for {coverage.personas.join(", ")}
+                        </div>
+                      </div>
+                      <Badge variant={coverage.plannedCount > 0 ? "warning" : "success"} dot>
+                        {readyCount} ready
+                      </Badge>
+                    </div>
+
+                    <dl className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-md bg-muted/40 p-2">
+                        <dt className="text-muted-foreground">Live</dt>
+                        <dd className="font-mono text-base font-semibold">{coverage.liveCount}</dd>
+                      </div>
+                      <div className="rounded-md bg-muted/40 p-2">
+                        <dt className="text-muted-foreground">API</dt>
+                        <dd className="font-mono text-base font-semibold">
+                          {coverage.apiReadyCount}
+                        </dd>
+                      </div>
+                      <div className="rounded-md bg-muted/40 p-2">
+                        <dt className="text-muted-foreground">Planned</dt>
+                        <dd className="font-mono text-base font-semibold">
+                          {coverage.plannedCount}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <div className="break-words">
+                        <span className="font-medium text-foreground">Comparisons:</span>{" "}
+                        {coverage.comparisonTypes.slice(0, 3).join(", ")}
+                      </div>
+                      <div className="break-words">
+                        <span className="font-medium text-foreground">Automations:</span>{" "}
+                        {coverage.automationHooks.slice(0, 3).join(", ")}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {coverage.reports.slice(0, 4).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {coverage.reports.length > 4 ? (
+                        <Badge variant="neutral">+{coverage.reports.length - 4}</Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader>
             <CardTitle>Report library</CardTitle>
             <CardDescription>
-              Status, comparison mode, and automation hook for each report family.
+              Decision question, status, comparison mode, and automation hook for each report
+              family.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <Table className="min-w-[860px]">
+              <Table className="min-w-[960px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Report</TableHead>
@@ -6144,6 +7262,9 @@ export default function Reports() {
                       <TableRow key={report.name}>
                         <TableCell>
                           <div className="font-medium">{report.name}</div>
+                          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {report.decisionQuestion}
+                          </div>
                           <div className="flex flex-wrap gap-1 pt-1">
                             {report.personas.map((persona) => (
                               <Badge key={persona} variant="outline" className="capitalize">

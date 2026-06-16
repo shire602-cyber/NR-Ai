@@ -48,6 +48,16 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("workspace.automationNavLabel");
     expect(source).toContain("reportWorkspaceHref(workspace)");
     expect(source).toContain('reportSectionHref(workspace, "automation-command-center")');
+    expect(source).toContain("reportDecisionShortcuts.map");
+    expect(source).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(source).toContain("reportAutomationTriggerRules.map");
+    expect(source).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(source).toContain("reportAutomationStarters.map");
+    expect(source).toContain("reportAutomationStarterHref(starter)");
+    expect(source).toContain("reportPackTemplates.map");
+    expect(source).toContain("reportPackTemplateHref(template)");
+    expect(source).toContain("reportComparisonPresets.map");
+    expect(source).toContain("reportComparisonPresetHref(preset)");
     expect(source).toContain('location.startsWith(href + "?")');
   });
 });

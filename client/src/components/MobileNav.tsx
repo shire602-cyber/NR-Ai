@@ -3,6 +3,16 @@ import { motion } from "framer-motion";
 import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
 import { useState, useCallback } from "react";
 import {
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportWorkspaceHref,
@@ -32,6 +42,26 @@ const moreLinks = [
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.automationNavLabel,
     href: reportSectionHref(workspace, "automation-command-center"),
+  })),
+  ...reportDecisionShortcuts.map((shortcut) => ({
+    label: shortcut.question,
+    href: reportDecisionShortcutHref(shortcut),
+  })),
+  ...reportAutomationTriggerRules.map((rule) => ({
+    label: rule.title,
+    href: reportAutomationTriggerRuleHref(rule),
+  })),
+  ...reportAutomationStarters.map((starter) => ({
+    label: starter.title,
+    href: reportAutomationStarterHref(starter),
+  })),
+  ...reportPackTemplates.map((template) => ({
+    label: template.title,
+    href: reportPackTemplateHref(template),
+  })),
+  ...reportComparisonPresets.map((preset) => ({
+    label: preset.title,
+    href: reportComparisonPresetHref(preset),
   })),
   { label: "Accounts", href: "/chart-of-accounts" },
   { label: "Journal", href: "/journal" },

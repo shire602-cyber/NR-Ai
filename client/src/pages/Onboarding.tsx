@@ -21,6 +21,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import {
   getPreferredReportPersona,
+  reportAutomationTriggerRuleHref,
+  reportAutomationTriggerRules,
+  reportAutomationStarterHref,
+  reportAutomationStarters,
+  reportDecisionShortcutHref,
+  reportDecisionShortcuts,
+  reportPackTemplateHref,
+  reportPackTemplates,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportWorkspaceHref,
@@ -1192,6 +1200,18 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const selectedWorkspace =
     reportPersonaWorkspaces.find((workspace) => workspace.persona === selectedPersona) ??
     reportPersonaWorkspaces[0];
+  const selectedReportPackTemplates = reportPackTemplates.filter(
+    (template) => template.persona === selectedWorkspace.persona
+  );
+  const selectedDecisionShortcuts = reportDecisionShortcuts.filter(
+    (shortcut) => shortcut.persona === selectedWorkspace.persona
+  );
+  const selectedTriggerRules = reportAutomationTriggerRules.filter(
+    (rule) => rule.persona === selectedWorkspace.persona
+  );
+  const selectedAutomationStarters = reportAutomationStarters.filter(
+    (starter) => starter.persona === selectedWorkspace.persona
+  );
 
   const features = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -1252,12 +1272,135 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {workspace.focus}
                 </p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  {workspace.automationOutcome}
+                </p>
                 <p className="mt-3 text-[11px] font-medium text-primary">
                   {workspace.automations.length} automation lanes
                 </p>
               </button>
             );
           })}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          data-testid="onboarding-report-decision-shortcuts"
+        >
+          {selectedDecisionShortcuts.map((shortcut) => (
+            <button
+              key={shortcut.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportDecisionShortcutHref(shortcut));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-decision-shortcut-${shortcut.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{shortcut.question}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {shortcut.answer}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {shortcut.reportIds.length} linked reports
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          data-testid="onboarding-report-trigger-rules"
+        >
+          {selectedTriggerRules.map((rule) => (
+            <button
+              key={rule.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportAutomationTriggerRuleHref(rule));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-trigger-rule-${rule.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{rule.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {rule.threshold}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {rule.cadence} · {rule.reportIds.length} reports
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-automation-starters"
+        >
+          {selectedAutomationStarters.map((starter) => (
+            <button
+              key={starter.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportAutomationStarterHref(starter));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-automation-starter-${starter.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{starter.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {starter.outcome}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {starter.setupTime} · {starter.setupSteps.length} setup steps
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-pack-templates"
+        >
+          {selectedReportPackTemplates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportPackTemplateHref(template));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-pack-template-${template.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{template.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {template.outcome}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {template.cadence} · {template.reportIds.length} reports
+              </p>
+            </button>
+          ))}
         </div>
         <div className="flex flex-col justify-center gap-2 sm:flex-row">
           <Button
