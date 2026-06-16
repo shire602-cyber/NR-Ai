@@ -387,9 +387,18 @@ interface DashboardReportDeliveryRun {
   id: string;
   subscriptionId: string;
   status: string;
+  readinessStatus: "ready" | "setup" | "paused";
   scheduledFor: string;
   createdAt: string;
   errorMessage: string | null;
+  channel: string;
+  format: string;
+  recipients: string;
+  deliveryGuardrail: string;
+  reportCount: number;
+  readyReportCount: number;
+  triggerRuleCount: number;
+  retriedFromRunId: string | null;
 }
 
 function dashboardPercentChange(current: number, previous: number): number | null {
@@ -406,6 +415,39 @@ function dashboardComparisonBadgeVariant(row: DashboardComparisonRow): BadgeProp
   if (row.percentChange === null || Math.abs(row.delta) < 0.005) return "neutral";
   const improved = row.favorable === "increase" ? row.delta > 0 : row.delta < 0;
   return improved ? "success" : "warning";
+}
+
+function dashboardDeliveryRunReadinessVariant(status: string): BadgeProps["variant"] {
+  if (status === "ready") return "success";
+  if (status === "paused") return "neutral";
+  return "warning";
+}
+
+function formatDashboardDeliveryRunTime(
+  value: string | Date | null | undefined,
+  locale: string
+): string {
+  if (!value) return "No delivery time";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function dashboardDeliveryRunStatusVariant(status: string): BadgeProps["variant"] {
+  if (status === "sent") return "success";
+  if (status === "failed") return "danger";
+  if (status === "cancelled") return "neutral";
+  return "info";
+}
+
+function dashboardDeliveryRunStatusLabel(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 // ─── Quick action ────────────────────────────────────────────────────────────
@@ -857,14 +899,53 @@ function CustomerDashboard() {
     });
   }, [dashboardComparisonRows, preferredReportPackReadiness]);
 
-  const dashboardLatestFailedDeliveryRun = useMemo(() => {
+  const dashboardPersonaDeliveryRuns = useMemo(() => {
     const subscriptionIds = new Set(
       preferredReportDeliverySubscriptions.map((subscription) => subscription.id)
     );
-    return (dashboardReportDeliveryRunsQuery.data?.runs ?? []).find(
-      (run) => run.status === "failed" && subscriptionIds.has(run.subscriptionId)
-    );
+    return (dashboardReportDeliveryRunsQuery.data?.runs ?? [])
+      .filter((run) => subscriptionIds.has(run.subscriptionId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [dashboardReportDeliveryRunsQuery.data?.runs, preferredReportDeliverySubscriptions]);
+
+  const dashboardLatestDeliveryRun = dashboardPersonaDeliveryRuns[0] ?? null;
+  const dashboardLatestFailedDeliveryRun =
+    dashboardPersonaDeliveryRuns.find((run) => run.status === "failed") ?? null;
+  const dashboardLatestDeliveryRunSubscription = dashboardLatestDeliveryRun
+    ? (preferredReportDeliverySubscriptions.find(
+        (subscription) => subscription.id === dashboardLatestDeliveryRun.subscriptionId
+      ) ?? null)
+    : null;
+  const dashboardDeliveryRunStatusSummary = useMemo(() => {
+    if (!dashboardLatestDeliveryRun) return null;
+
+    const subscriptionTitle = dashboardLatestDeliveryRunSubscription?.title ?? "Report delivery";
+    const scheduledLabel = formatDashboardDeliveryRunTime(
+      dashboardLatestDeliveryRun.scheduledFor,
+      locale
+    );
+    const statusLabel = dashboardDeliveryRunStatusLabel(dashboardLatestDeliveryRun.status);
+    const statusVariant = dashboardDeliveryRunStatusVariant(dashboardLatestDeliveryRun.status);
+    const detail =
+      dashboardLatestDeliveryRun.status === "failed"
+        ? `${subscriptionTitle} failed before ${scheduledLabel}${
+            dashboardLatestDeliveryRun.errorMessage
+              ? `: ${dashboardLatestDeliveryRun.errorMessage}`
+              : "."
+          }`
+        : dashboardLatestDeliveryRun.status === "sent"
+          ? `${subscriptionTitle} was sent for ${scheduledLabel}.`
+          : dashboardLatestDeliveryRun.status === "queued"
+            ? `${subscriptionTitle} is queued for ${scheduledLabel}.`
+            : `${subscriptionTitle} is ${dashboardLatestDeliveryRun.status} for ${scheduledLabel}.`;
+
+    return {
+      status: dashboardLatestDeliveryRun.status,
+      statusLabel,
+      statusVariant,
+      detail,
+    };
+  }, [dashboardLatestDeliveryRun, dashboardLatestDeliveryRunSubscription, locale]);
 
   const dashboardPinnedAutomationAction = useMemo<DashboardAutomationAction | null>(() => {
     if (!dashboardPinnedDeliveryAutomationCommand) return null;
@@ -1540,6 +1621,110 @@ function CustomerDashboard() {
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {preferredAutomationNextAction.detail}
                     </p>
+                    {dashboardDeliveryRunStatusSummary && dashboardLatestDeliveryRun ? (
+                      <div
+                        className="mt-3 rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground"
+                        data-testid="dashboard-report-delivery-run-feedback"
+                      >
+                        <div
+                          className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+                          data-testid="dashboard-next-automation-run-status"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={dashboardDeliveryRunStatusSummary.statusVariant}
+                                dot
+                                data-testid={`dashboard-next-automation-run-status-${dashboardDeliveryRunStatusSummary.status}`}
+                              >
+                                {dashboardDeliveryRunStatusSummary.statusLabel}
+                              </Badge>
+                              <Badge
+                                variant={dashboardDeliveryRunReadinessVariant(
+                                  dashboardLatestDeliveryRun.readinessStatus
+                                )}
+                                data-testid="dashboard-report-delivery-run-readiness"
+                              >
+                                {dashboardLatestDeliveryRun.readinessStatus}
+                              </Badge>
+                            </div>
+                            <p className="mt-2 min-w-0 break-words">
+                              {dashboardDeliveryRunStatusSummary.detail}
+                            </p>
+                          </div>
+                          <Link
+                            href={
+                              dashboardLatestDeliveryRunSubscription?.href ??
+                              reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")
+                            }
+                          >
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2 text-accent hover:text-accent"
+                              data-testid="dashboard-report-delivery-run-open"
+                            >
+                              Open delivery <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-md bg-background/70 p-2">
+                            <div className="text-muted-foreground">Scheduled</div>
+                            <div
+                              className="mt-1 font-medium text-foreground"
+                              data-testid="dashboard-report-delivery-run-scheduled"
+                            >
+                              {formatDashboardDeliveryRunTime(
+                                dashboardLatestDeliveryRun.scheduledFor,
+                                locale
+                              )}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-background/70 p-2">
+                            <div className="text-muted-foreground">Reports</div>
+                            <div
+                              className="mt-1 font-mono font-semibold text-foreground"
+                              data-testid="dashboard-report-delivery-run-report-count"
+                            >
+                              {dashboardLatestDeliveryRun.readyReportCount}/
+                              {dashboardLatestDeliveryRun.reportCount}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-background/70 p-2">
+                            <div className="text-muted-foreground">Channel</div>
+                            <div
+                              className="mt-1 font-medium text-foreground"
+                              data-testid="dashboard-report-delivery-run-channel"
+                            >
+                              {dashboardLatestDeliveryRun.channel}
+                            </div>
+                          </div>
+                        </div>
+                        <p
+                          className="mt-3 leading-relaxed"
+                          data-testid="dashboard-report-delivery-run-guardrail"
+                        >
+                          {dashboardLatestDeliveryRun.deliveryGuardrail}
+                        </p>
+                        {dashboardLatestDeliveryRun.errorMessage ? (
+                          <p
+                            className="mt-2 text-destructive"
+                            data-testid="dashboard-report-delivery-run-error"
+                          >
+                            {dashboardLatestDeliveryRun.errorMessage}
+                          </p>
+                        ) : null}
+                        {dashboardLatestDeliveryRun.retriedFromRunId ? (
+                          <p
+                            className="mt-2 text-muted-foreground"
+                            data-testid="dashboard-report-delivery-run-retried-from"
+                          >
+                            Requeued from a failed delivery run.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   {preferredAutomationNextAction.actionType === "queue" ? (
                     <Button

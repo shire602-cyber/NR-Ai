@@ -125,8 +125,8 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/report-catalog-routes.test.ts` after the authenticated report
   catalog discovery API, typed client, contract guard, or persona catalog filtering changes.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after shared report launcher/picker
-  changes, dashboard next-action ranking/queue/retry actions, or dashboard/report-surface
-  integrations that consume the catalog API.
+  changes, dashboard next-action ranking, queue/retry actions, delivery-run feedback, or
+  dashboard/report-surface integrations that consume the catalog API.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery

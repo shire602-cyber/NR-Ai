@@ -239,6 +239,11 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("actionType?:");
     expect(dashboardSource).toContain("subscriptionId?:");
     expect(dashboardSource).toContain("runId?:");
+    expect(dashboardSource).toContain('readinessStatus: "ready" | "setup" | "paused"');
+    expect(dashboardSource).toContain("deliveryGuardrail: string");
+    expect(dashboardSource).toContain("readyReportCount: number");
+    expect(dashboardSource).toContain("triggerRuleCount: number");
+    expect(dashboardSource).toContain("retriedFromRunId: string | null");
     expect(dashboardSource).toContain("reportAutomationPreferencesQuery");
     expect(dashboardSource).toContain(
       "/api/companies/${selectedCompanyId}/report-delivery/preferences"
@@ -249,8 +254,16 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("/report-delivery/runs?limit=30");
     expect(dashboardSource).toContain("retryDashboardReportDeliveryRun");
     expect(dashboardSource).toContain("/report-delivery/runs/${runId}/retry");
+    expect(dashboardSource).toContain("dashboardPersonaDeliveryRuns");
+    expect(dashboardSource).toContain("dashboardLatestDeliveryRun");
+    expect(dashboardSource).toContain("dashboardLatestDeliveryRunSubscription");
     expect(dashboardSource).toContain("dashboardPinnedDeliveryAutomationCommand");
     expect(dashboardSource).toContain("dashboardLatestFailedDeliveryRun");
+    expect(dashboardSource).toContain("dashboardDeliveryRunStatusSummary");
+    expect(dashboardSource).toContain("dashboardDeliveryRunStatusVariant");
+    expect(dashboardSource).toContain("dashboardDeliveryRunReadinessVariant");
+    expect(dashboardSource).toContain("dashboardDeliveryRunStatusLabel");
+    expect(dashboardSource).toContain("formatDashboardDeliveryRunTime");
     expect(dashboardSource).toContain("dashboardPinnedAutomationAction");
     expect(dashboardSource).toContain(
       "if (dashboardPinnedAutomationAction) return dashboardPinnedAutomationAction"
@@ -266,6 +279,17 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain('actionType: primaryDeliverySubscription ? "queue" : "link"');
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-queue"');
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-retry"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-feedback"');
+    expect(dashboardSource).toContain('data-testid="dashboard-next-automation-run-status"');
+    expect(dashboardSource).toContain("dashboard-next-automation-run-status-${");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-readiness"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-open"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-scheduled"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-report-count"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-channel"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-guardrail"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-error"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-run-retried-from"');
     expect(dashboardSource).toContain("dashboard-next-automation-command-${");
     expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-subscriptions"');
     expect(dashboardSource).toContain("dashboard-report-delivery-subscription-${subscription.id}");
