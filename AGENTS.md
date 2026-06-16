@@ -101,6 +101,8 @@ Scope: this file applies to the whole repository.
   `npx playwright-core install chromium` or set `CHROMIUM_PATH` to an existing browser binary.
 - Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO,
   trust, help, migration, or public-route changes to catch unsupported compliance/security claims.
+- Use `npx vitest run tests/unit/command-palette-a11y.test.ts` after command palette dialog or
+  shortcut shell changes.
 - Keep the public sample-data demo workspace routed at `/demo`; after demo, onboarding, or
   claim-copy changes, include `tests/unit/public-launch-surface.test.ts` in the focused run.
 - Use `npx vitest run tests/unit/vat201-export.test.ts` after VAT 201 export mapping or workbook
@@ -118,6 +120,8 @@ Scope: this file applies to the whole repository.
   coverage maps, report pack templates/exports, or report deep-link behavior changes.
 - Use `npx vitest run tests/unit/report-catalog-routes.test.ts` after the authenticated report
   catalog discovery API, typed client, contract guard, or persona catalog filtering changes.
+- Use `npx vitest run tests/unit/report-discovery.test.ts` after shared report launcher/picker
+  changes or dashboard/report-surface integrations that consume the catalog API.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery
