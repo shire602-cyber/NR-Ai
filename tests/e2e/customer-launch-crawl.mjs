@@ -36,12 +36,18 @@ const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
 const PUBLIC_ROUTES = [
   "/",
+  "/register",
+  "/login",
+  "/forgot-password",
   "/demo",
   "/trust",
   "/help",
   "/migration-guides",
   "/pricing",
   "/services",
+  "/privacy",
+  "/terms",
+  "/cookies",
 ];
 
 const CUSTOMER_ROUTES = [

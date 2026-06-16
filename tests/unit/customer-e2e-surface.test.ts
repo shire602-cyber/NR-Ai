@@ -95,7 +95,18 @@ describe("customer launch E2E surface", () => {
     const allowedRoutes = [...publicRoutes, ...customerRoutes];
 
     expect(allowedRoutes).toEqual(
-      expect.arrayContaining(["/demo", "/trust", "/help", "/services"])
+      expect.arrayContaining([
+        "/register",
+        "/login",
+        "/forgot-password",
+        "/demo",
+        "/trust",
+        "/help",
+        "/services",
+        "/privacy",
+        "/terms",
+        "/cookies",
+      ])
     );
     expect(allowedRoutes).toEqual(
       expect.arrayContaining(["/invoices", "/receipts", "/bank-reconciliation", "/vat-filing"])

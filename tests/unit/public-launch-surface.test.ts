@@ -64,10 +64,21 @@ const bannedLaunchClaims = [
 ];
 
 describe("Public SaaS launch surface", () => {
-  it("keeps the core trust/help/migration pages publicly routable", () => {
+  it("keeps the core launch, auth, and legal pages publicly routable", () => {
     const appSource = readRepoFile("client/src/App.tsx");
 
-    for (const path of ["/trust", "/help", "/migration-guides", "/demo"]) {
+    for (const path of [
+      "/register",
+      "/login",
+      "/forgot-password",
+      "/trust",
+      "/help",
+      "/migration-guides",
+      "/demo",
+      "/privacy",
+      "/terms",
+      "/cookies",
+    ]) {
       expect(appSource, `${path} should be included in the public-route gate`).toContain(
         `pathname === "${path}"`
       );

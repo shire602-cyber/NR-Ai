@@ -1442,6 +1442,19 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             size="lg"
             onClick={() => {
               setPreferredReportPersona(selectedWorkspace.persona);
+              setLocation(reportSectionHref(selectedWorkspace, "automation-operations"));
+            }}
+            className="gap-2 px-8"
+            data-testid="onboarding-open-report-operations"
+          >
+            Open report operations
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              setPreferredReportPersona(selectedWorkspace.persona);
               setLocation(reportWorkspaceHref(selectedWorkspace));
             }}
             className="gap-2 px-8"

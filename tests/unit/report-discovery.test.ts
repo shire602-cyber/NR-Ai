@@ -352,8 +352,13 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain("onboarding-report-automation-starter-${starter.id}");
     expect(onboardingSource).toContain('data-testid="onboarding-report-pack-templates"');
     expect(onboardingSource).toContain("onboarding-report-pack-template-${template.id}");
+    expect(onboardingSource).toContain('data-testid="onboarding-open-report-operations"');
     expect(onboardingSource).toContain('data-testid="onboarding-open-report-workspace"');
     expect(onboardingSource).toContain('data-testid="onboarding-open-automation-center"');
+    expect(onboardingSource).toContain(
+      'reportSectionHref(selectedWorkspace, "automation-operations")'
+    );
+    expect(onboardingSource).toContain("Open report operations");
     expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
     expect(onboardingSource).toContain(
       'reportSectionHref(selectedWorkspace, "automation-command-center")'

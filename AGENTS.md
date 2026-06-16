@@ -93,8 +93,8 @@ Scope: this file applies to the whole repository.
   writes the created customer/company IDs to `tests/e2e/.artifacts/customer-launch-last-run.json`.
 - For read-only production/ad-route customer launch QA, run
   `BASE_URL=<url> npm run e2e:customer:public`; it crawls only public launch routes and does not
-  register users or create accounting records. The crawl includes public ad routes such as
-  `/services` and fails rendered unsupported launch claims.
+  register users or create accounting records. The crawl includes public ad, auth, and legal routes
+  such as `/services`, `/register`, and `/privacy`, and fails rendered unsupported launch claims.
   If Playwright cannot find Chromium, install the project browser once with
   `npx playwright-core install chromium` or set `CHROMIUM_PATH` to an existing browser binary.
 - Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO,
