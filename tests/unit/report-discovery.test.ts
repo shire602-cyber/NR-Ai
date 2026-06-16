@@ -140,6 +140,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("handleExportWorkspacePack");
     expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
     expect(reportsSource).toContain("Pack Index");
+    expect(reportsSource).toContain("Pack Cadence");
     expect(reportsSource).toContain("Automation Playbooks");
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");
@@ -155,6 +156,11 @@ describe("report discoverability", () => {
       expect(
         reportCatalog.filter((report) => report.personas.includes(workspace.persona)).length
       ).toBeGreaterThan(0);
+      expect(workspace.packSchedule.cadence).toBeTruthy();
+      expect(workspace.packSchedule.delivery).toBeTruthy();
+      expect(workspace.packSchedule.recipients).toBeTruthy();
+      expect(workspace.packSchedule.trigger).toBeTruthy();
+      expect(workspace.packSchedule.automation).toBeTruthy();
       expect(workspace.automations).toHaveLength(3);
     }
   });

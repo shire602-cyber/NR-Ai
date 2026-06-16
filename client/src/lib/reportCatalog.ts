@@ -50,6 +50,14 @@ export interface ReportAutomationPlaybook {
   href?: string;
 }
 
+export interface ReportPackSchedule {
+  cadence: string;
+  delivery: string;
+  recipients: string;
+  trigger: string;
+  automation: string;
+}
+
 export interface ReportPersonaWorkspace {
   persona: ReportPersona;
   title: string;
@@ -57,6 +65,7 @@ export interface ReportPersonaWorkspace {
   primaryTab: ReportTab;
   icon: ReportWorkspaceIcon;
   commandKeywords: string;
+  packSchedule: ReportPackSchedule;
   automations: ReportAutomationPlaybook[];
 }
 
@@ -68,6 +77,13 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "balances",
     icon: "briefcase",
     commandKeywords: "reports owner cash profit receivables tax automation",
+    packSchedule: {
+      cadence: "Weekly Monday morning plus month-end close",
+      delivery: "Excel or Google Sheets pack",
+      recipients: "Business owner and finance admin",
+      trigger: "Refresh after bank, invoices, bills, receipts, and VAT reports are updated.",
+      automation: "Send when collections, VAT, or cash warnings are open.",
+    },
     automations: [
       {
         id: "owner-cash-collections",
@@ -102,6 +118,13 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "sales",
     icon: "users",
     commandKeywords: "reports freelancer invoices clients expenses vat automation",
+    packSchedule: {
+      cadence: "Weekly client follow-up plus monthly tax close",
+      delivery: "Google Sheets pack for mobile review",
+      recipients: "Freelancer or solo operator",
+      trigger: "Refresh after invoice activity, receipt posting, and VAT summary update.",
+      automation: "Send when unpaid invoices, unposted receipts, or runway alerts are open.",
+    },
     automations: [
       {
         id: "freelancer-invoice-followup",
@@ -136,6 +159,13 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "trial",
     icon: "clipboardCheck",
     commandKeywords: "reports accountant close ledger trial balance tax automation",
+    packSchedule: {
+      cadence: "Month-end close plus client advisory review",
+      delivery: "Excel workpaper pack and Google Sheets advisory pack",
+      recipients: "Accountant, reviewer, and client owner",
+      trigger: "Refresh after journals, trial balance, VAT, and comparison reports are reviewed.",
+      automation: "Send when close review, tax workpaper, or advisory-pack checks are open.",
+    },
     automations: [
       {
         id: "accountant-close-review",

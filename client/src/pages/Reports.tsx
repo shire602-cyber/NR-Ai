@@ -1440,6 +1440,37 @@ export default function Reports() {
 
   const automationQueueCount = visibleAutomationQueue.reduce((sum, item) => sum + item.count, 0);
 
+  const reportPackAutomationQueue = useMemo(() => {
+    return workspaceSummaries.map((workspace) => {
+      const signals = automationQueue.filter((item) =>
+        matchesReportPersona(item.personas, workspace.persona)
+      );
+      const openSignals = signals.filter((item) => item.count > 0);
+      const openWorkItemCount = signals.reduce((sum, item) => sum + item.count, 0);
+      const amountAtRisk = signals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+
+      return {
+        workspace,
+        signals,
+        openSignals,
+        openSignalCount: openSignals.length,
+        openWorkItemCount,
+        amountAtRisk,
+        status: openSignals.length > 0 ? "Review before send" : "Ready to send",
+      };
+    });
+  }, [automationQueue, workspaceSummaries]);
+
+  const visibleReportPackAutomation = useMemo(() => {
+    return reportPackAutomationQueue.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportPackAutomationQueue]);
+
+  const reportPacksNeedingReview = visibleReportPackAutomation.filter(
+    (item) => item.openSignalCount > 0
+  ).length;
+
   const exportDateRangeSuffix =
     dateRange.from && dateRange.to
       ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -1524,7 +1555,24 @@ export default function Reports() {
       })),
     };
 
-    return [packIndex, automationPlaybooks, ...workbookSheets];
+    const packCadence: ExportData = {
+      sheetName: "Pack Cadence",
+      columns: [
+        { header: "Field", key: "field", width: 24 },
+        { header: "Value", key: "value", width: 80 },
+      ],
+      rows: [
+        { field: "Workspace", value: workspace.title },
+        { field: "Persona", value: workspace.persona },
+        { field: "Cadence", value: workspace.packSchedule.cadence },
+        { field: "Delivery", value: workspace.packSchedule.delivery },
+        { field: "Recipients", value: workspace.packSchedule.recipients },
+        { field: "Refresh trigger", value: workspace.packSchedule.trigger },
+        { field: "Automation rule", value: workspace.packSchedule.automation },
+      ],
+    };
+
+    return [packIndex, packCadence, automationPlaybooks, ...workbookSheets];
   };
 
   const handleExportWorkspacePack = async (workspace: (typeof workspaceSummaries)[number]) => {
@@ -2078,6 +2126,26 @@ export default function Reports() {
                     <div className="text-sm font-medium">{workspace.topReadyReport?.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {workspace.topReadyReport?.automation}
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Report pack cadence
+                    </div>
+                    <div className="mt-2 space-y-2 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        {workspace.packSchedule.cadence}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">Delivery:</span>{" "}
+                        {workspace.packSchedule.delivery}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        {workspace.packSchedule.automation}
+                      </div>
                     </div>
                   </div>
 
