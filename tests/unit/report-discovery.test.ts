@@ -141,6 +141,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
     expect(reportsSource).toContain("Pack Index");
     expect(reportsSource).toContain("Pack Summary");
+    expect(reportsSource).toContain("Recommended Actions");
+    expect(reportsSource).toContain("Delivery Checklist");
+    expect(reportsSource).toContain("Report pack readiness");
     expect(reportsSource).toContain("Comparison Snapshot");
     expect(reportsSource).toContain("Pack Cadence");
     expect(reportsSource).toContain("Pack Automation Status");
@@ -148,6 +151,15 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("comparisonCurrentLabel");
     expect(reportsSource).toContain("comparisonPreviousLabel");
     expect(reportsSource).toContain("packComparisonRows");
+    expect(reportsSource).toContain("packRecommendations");
+    expect(reportsSource).toContain("Recommended actions");
+    expect(reportsSource).toContain("reportPackDeliveryReadiness");
+    expect(reportsSource).toContain("visibleReportPackReadiness");
+    expect(reportsSource).toContain("reportPackReadinessNeedingReview");
+    expect(reportsSource).toContain("reportPackReviewCount");
+    expect(reportsSource).toContain("pack-readiness-${workspace.persona}");
+    expect(reportsSource).toContain("Delivery checks");
+    expect(reportsSource).toContain("Checks needing review");
     expect(reportsSource).toContain("Amount at risk");
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");

@@ -1585,6 +1585,87 @@ export default function Reports() {
     );
   }, [personaFilter, personaReportRecommendations]);
 
+  const reportPackDeliveryReadiness = useMemo(() => {
+    return reportPackAutomationQueue.map((pack) => {
+      const workspace = pack.workspace;
+      const comparisonCount = comparisonRows.filter((row) =>
+        matchesReportPersona(row.personas, workspace.persona)
+      ).length;
+      const recommendationCount =
+        personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
+          ?.recommendations.length ?? 0;
+      const checks = [
+        {
+          id: "ready-reports",
+          label: "Report data refreshed",
+          detail: `${workspace.readyReports} ready/API-backed reports for ${workspace.title}.`,
+          status: workspace.readyReports > 0 ? "Ready" : "Review",
+          workflow: reportWorkspaceHref(workspace),
+        },
+        {
+          id: "comparison-snapshot",
+          label: "Comparison snapshot attached",
+          detail: `${comparisonCount} current-vs-prior signals in the pack.`,
+          status: comparisonCount > 0 ? "Ready" : "Review",
+          workflow: reportsHref({ tab: workspace.primaryTab, persona: workspace.persona }),
+        },
+        {
+          id: "recommended-actions",
+          label: "Recommended actions ranked",
+          detail: `${recommendationCount} next-best report actions included.`,
+          status: recommendationCount > 0 ? "Ready" : "Review",
+          workflow: reportWorkspaceHref(workspace),
+        },
+        {
+          id: "automation-review",
+          label: "Automation exceptions reviewed",
+          detail:
+            pack.openWorkItemCount > 0
+              ? `${pack.openWorkItemCount} open work items before delivery.`
+              : "No open automation work items.",
+          status: pack.openWorkItemCount > 0 ? "Review" : "Ready",
+          workflow: reportWorkspaceHref(workspace),
+        },
+        {
+          id: "delivery-cadence",
+          label: "Delivery cadence configured",
+          detail: workspace.packSchedule.cadence,
+          status: workspace.packSchedule.cadence ? "Ready" : "Review",
+          workflow: reportWorkspaceHref(workspace),
+        },
+        {
+          id: "recipients",
+          label: "Recipients configured",
+          detail: workspace.packSchedule.recipients,
+          status: workspace.packSchedule.recipients ? "Ready" : "Review",
+          workflow: reportWorkspaceHref(workspace),
+        },
+      ];
+      const reviewCount = checks.filter((check) => check.status === "Review").length;
+
+      return {
+        workspace,
+        checks,
+        reviewCount,
+        status: reviewCount > 0 ? "Review before send" : "Ready to send",
+      };
+    });
+  }, [comparisonRows, personaReportRecommendations, reportPackAutomationQueue]);
+
+  const visibleReportPackReadiness = useMemo(() => {
+    return reportPackDeliveryReadiness.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportPackDeliveryReadiness]);
+
+  const reportPackReadinessNeedingReview = visibleReportPackReadiness.filter(
+    (item) => item.reviewCount > 0
+  ).length;
+  const reportPackReviewCount = Math.max(
+    reportPacksNeedingReview,
+    reportPackReadinessNeedingReview
+  );
+
   const exportDateRangeSuffix =
     dateRange.from && dateRange.to
       ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -1637,6 +1718,12 @@ export default function Reports() {
     const packComparisonRows = comparisonRows.filter((row) =>
       matchesReportPersona(row.personas, workspace.persona)
     );
+    const packRecommendations =
+      personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
+        ?.recommendations ?? [];
+    const packReadiness =
+      reportPackDeliveryReadiness.find((item) => item.workspace.persona === workspace.persona) ??
+      null;
 
     const packIndex: ExportData = {
       sheetName: "Pack Index",
@@ -1677,10 +1764,57 @@ export default function Reports() {
         { metric: "Ready reports", value: workspace.readyReports },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
+        { metric: "Recommended actions", value: packRecommendations.length },
+        { metric: "Delivery checks", value: packReadiness?.checks.length ?? 0 },
+        { metric: "Checks needing review", value: packReadiness?.reviewCount ?? 0 },
         { metric: "Open automation signals", value: openPackSignals.length },
         { metric: "Open work items", value: openPackWorkItemCount },
         { metric: "Amount at risk", value: `AED ${packAmountAtRisk.toFixed(2)}` },
       ],
+    };
+
+    const recommendedActions: ExportData = {
+      sheetName: "Recommended Actions",
+      columns: [
+        { header: "Priority", key: "priority", width: 12 },
+        { header: "Action", key: "action", width: 32 },
+        { header: "Trigger", key: "trigger", width: 60 },
+        { header: "Signal", key: "signal", width: 20 },
+        { header: "Amount", key: "amount", width: 18 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: packRecommendations.map((recommendation, index) => ({
+        priority: index + 1,
+        action: recommendation.title,
+        trigger: recommendation.detail,
+        signal: recommendation.badge,
+        amount:
+          typeof recommendation.amount === "number"
+            ? `AED ${recommendation.amount.toFixed(2)}`
+            : "",
+        workflow:
+          recommendation.href ??
+          (recommendation.tab
+            ? reportsHref({ tab: recommendation.tab, persona: workspace.persona })
+            : reportWorkspaceHref(workspace)),
+      })),
+    };
+
+    const deliveryChecklist: ExportData = {
+      sheetName: "Delivery Checklist",
+      columns: [
+        { header: "Check", key: "check", width: 34 },
+        { header: "Status", key: "status", width: 18 },
+        { header: "Detail", key: "detail", width: 70 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows:
+        packReadiness?.checks.map((check) => ({
+          check: check.label,
+          status: check.status,
+          detail: check.detail,
+          workflow: check.workflow,
+        })) ?? [],
     };
 
     const comparisonSnapshot: ExportData = {
@@ -1783,6 +1917,8 @@ export default function Reports() {
     return [
       packIndex,
       packSummary,
+      recommendedActions,
+      deliveryChecklist,
       comparisonSnapshot,
       packCadence,
       packAutomationStatus,
@@ -2098,6 +2234,79 @@ export default function Reports() {
         )}
       </section>
 
+      <section className="space-y-4" aria-labelledby="report-pack-readiness-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-pack-readiness-title" className="text-xl font-semibold">
+              Report pack readiness
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Delivery checks for scheduled packs before they reach owners, freelancers, or
+              accountants. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge
+            variant={
+              visibleReportPackReadiness.some((item) => item.reviewCount > 0)
+                ? "warning"
+                : "success"
+            }
+            dot
+          >
+            {visibleReportPackReadiness.reduce((sum, item) => sum + item.reviewCount, 0)} review
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleReportPackReadiness.map((item) => {
+            const workspace = item.workspace;
+            const WorkspaceIcon = workspace.icon;
+
+            return (
+              <Card key={workspace.persona} data-testid={`pack-readiness-${workspace.persona}`}>
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{workspace.title}</CardTitle>
+                        <CardDescription>{workspace.packSchedule.delivery}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant={item.reviewCount > 0 ? "warning" : "success"} dot>
+                      {item.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {item.checks.map((check) => (
+                    <div
+                      key={check.id}
+                      className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="text-sm font-medium">{check.label}</div>
+                        <div className="text-xs text-muted-foreground">{check.detail}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant={check.status === "Ready" ? "success" : "warning"} dot>
+                          {check.status}
+                        </Badge>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={check.workflow}>Open</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="space-y-4" aria-labelledby="period-comparison-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -2405,8 +2614,8 @@ export default function Reports() {
               {personaScopeDescription}
             </p>
           </div>
-          <Badge variant={reportPacksNeedingReview > 0 ? "warning" : "success"} dot>
-            {reportPacksNeedingReview} need review
+          <Badge variant={reportPackReviewCount > 0 ? "warning" : "success"} dot>
+            {reportPackReviewCount} need review
           </Badge>
         </div>
 
@@ -2414,6 +2623,9 @@ export default function Reports() {
           {visibleReportPackAutomation.map((item) => {
             const workspace = item.workspace;
             const WorkspaceIcon = workspace.icon;
+            const readiness = visibleReportPackReadiness.find(
+              (entry) => entry.workspace.persona === workspace.persona
+            );
 
             return (
               <Card key={workspace.persona}>
@@ -2428,8 +2640,8 @@ export default function Reports() {
                         <CardDescription>{workspace.packSchedule.cadence}</CardDescription>
                       </div>
                     </div>
-                    <Badge variant={item.openSignalCount > 0 ? "warning" : "success"} dot>
-                      {item.status}
+                    <Badge variant={(readiness?.reviewCount ?? 0) > 0 ? "warning" : "success"} dot>
+                      {readiness?.status ?? item.status}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -2465,6 +2677,29 @@ export default function Reports() {
                   </div>
 
                   <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Report pack readiness
+                    </div>
+                    {readiness?.checks.slice(0, 4).map((check) => (
+                      <div
+                        key={check.id}
+                        className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium">{check.label}</div>
+                          <div className="text-xs text-muted-foreground">{check.detail}</div>
+                        </div>
+                        <Badge variant={check.status === "Ready" ? "success" : "warning"} dot>
+                          {check.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Live signals
+                    </div>
                     {item.signals.slice(0, 3).map((signal) => (
                       <div
                         key={signal.id}
