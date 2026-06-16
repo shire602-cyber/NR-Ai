@@ -9,6 +9,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  calculateReportAutomationHealth,
   getPreferredReportPersona,
   reportAutomationPlaybookHref,
   reportCatalog,
@@ -362,15 +363,6 @@ function dashboardComparisonBadgeVariant(row: DashboardComparisonRow): BadgeProp
   return improved ? "success" : "warning";
 }
 
-function dashboardAutomationHealthLabel(score: number): {
-  label: string;
-  variant: BadgeProps["variant"];
-} {
-  if (score >= 85) return { label: "Ready to automate", variant: "success" };
-  if (score >= 65) return { label: "Review signals", variant: "warning" };
-  return { label: "Needs setup", variant: "danger" };
-}
-
 // ─── Quick action ────────────────────────────────────────────────────────────
 
 function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
@@ -585,31 +577,13 @@ function CustomerDashboard() {
     const comparisonWarnings = dashboardComparisonRows.filter(
       (row) => dashboardComparisonBadgeVariant(row) === "warning"
     ).length;
-    const comparisonScore = dashboardComparisonRows.length
-      ? Math.round(
-          ((dashboardComparisonRows.length - comparisonWarnings) / dashboardComparisonRows.length) *
-            100
-        )
-      : 100;
-    const automationLaneScore = Math.min(
-      100,
-      Math.round((preferredReportPackReadiness.automationLanes / 3) * 100)
-    );
-    const score = Math.round(
-      preferredReportPackReadiness.readinessPercent * 0.6 +
-        automationLaneScore * 0.2 +
-        comparisonScore * 0.2
-    );
-    const status = dashboardAutomationHealthLabel(score);
-
-    return {
-      ...status,
-      score,
-      automationLaneScore,
-      comparisonScore,
-      comparisonWarnings,
-      reviewSignals: comparisonWarnings + preferredReportPackReadiness.plannedReports,
-    };
+    return calculateReportAutomationHealth({
+      readinessPercent: preferredReportPackReadiness.readinessPercent,
+      automationLaneCount: preferredReportPackReadiness.automationLanes,
+      comparisonMetricCount: dashboardComparisonRows.length,
+      comparisonWarningCount: comparisonWarnings,
+      plannedReportCount: preferredReportPackReadiness.plannedReports,
+    });
   }, [dashboardComparisonRows, preferredReportPackReadiness]);
 
   const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });

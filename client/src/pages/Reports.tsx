@@ -43,6 +43,7 @@ import {
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
 import {
+  calculateReportAutomationHealth,
   clearPreferredReportPersona,
   getPreferredReportPersona,
   reportCatalog,
@@ -1610,12 +1611,16 @@ export default function Reports() {
   const reportPackDeliveryReadiness = useMemo(() => {
     return reportPackAutomationQueue.map((pack) => {
       const workspace = pack.workspace;
-      const comparisonCount = comparisonRows.filter((row) =>
+      const packComparisonRows = comparisonRows.filter((row) =>
         matchesReportPersona(row.personas, workspace.persona)
+      );
+      const comparisonWarnings = packComparisonRows.filter(
+        (row) => comparisonBadgeVariant(row) === "warning"
       ).length;
       const recommendationCount =
         personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
           ?.recommendations.length ?? 0;
+      const plannedReportCount = workspace.reports.length - workspace.readyReports;
       const checks = [
         {
           id: "ready-reports",
@@ -1627,8 +1632,8 @@ export default function Reports() {
         {
           id: "comparison-snapshot",
           label: "Comparison snapshot attached",
-          detail: `${comparisonCount} current-vs-prior signals in the pack.`,
-          status: comparisonCount > 0 ? "Ready" : "Review",
+          detail: `${packComparisonRows.length} current-vs-prior signals in the pack.`,
+          status: packComparisonRows.length > 0 ? "Ready" : "Review",
           workflow: reportsHref({ tab: workspace.primaryTab, persona: workspace.persona }),
         },
         {
@@ -1664,11 +1669,20 @@ export default function Reports() {
         },
       ];
       const reviewCount = checks.filter((check) => check.status === "Review").length;
+      const automationHealth = calculateReportAutomationHealth({
+        readinessPercent: workspace.readiness,
+        automationLaneCount: workspace.automationCount,
+        comparisonMetricCount: packComparisonRows.length,
+        comparisonWarningCount: comparisonWarnings,
+        plannedReportCount,
+        reviewSignalCount: reviewCount + comparisonWarnings + plannedReportCount,
+      });
 
       return {
         workspace,
         checks,
         reviewCount,
+        automationHealth,
         status: reviewCount > 0 ? "Review before send" : "Ready to send",
       };
     });
@@ -1789,6 +1803,16 @@ export default function Reports() {
         { metric: "Recommended actions", value: packRecommendations.length },
         { metric: "Delivery checks", value: packReadiness?.checks.length ?? 0 },
         { metric: "Checks needing review", value: packReadiness?.reviewCount ?? 0 },
+        {
+          metric: "Automation health",
+          value: packReadiness
+            ? `${packReadiness.automationHealth.score}/100 - ${packReadiness.automationHealth.label}`
+            : "Not available",
+        },
+        {
+          metric: "Automation health review signals",
+          value: packReadiness?.automationHealth.reviewSignals ?? 0,
+        },
         { metric: "Open automation signals", value: openPackSignals.length },
         { metric: "Open work items", value: openPackWorkItemCount },
         { metric: "Amount at risk", value: `AED ${packAmountAtRisk.toFixed(2)}` },
@@ -1820,6 +1844,44 @@ export default function Reports() {
             ? reportsHref({ tab: recommendation.tab, persona: workspace.persona })
             : reportWorkspaceHref(workspace)),
       })),
+    };
+
+    const automationHealth: ExportData = {
+      sheetName: "Automation Health",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 42 },
+      ],
+      rows: packReadiness
+        ? [
+            { metric: "Workspace", value: workspace.title },
+            {
+              metric: "Score",
+              value: `${packReadiness.automationHealth.score}/100`,
+            },
+            { metric: "Status", value: packReadiness.automationHealth.label },
+            {
+              metric: "Pack readiness score",
+              value: `${packReadiness.automationHealth.readinessScore}/100`,
+            },
+            {
+              metric: "Automation lane score",
+              value: `${packReadiness.automationHealth.automationLaneScore}/100`,
+            },
+            {
+              metric: "Comparison signal score",
+              value: `${packReadiness.automationHealth.comparisonScore}/100`,
+            },
+            {
+              metric: "Comparison warnings",
+              value: packReadiness.automationHealth.comparisonWarnings,
+            },
+            {
+              metric: "Review signals",
+              value: packReadiness.automationHealth.reviewSignals,
+            },
+          ]
+        : [],
     };
 
     const deliveryChecklist: ExportData = {
@@ -1940,6 +2002,7 @@ export default function Reports() {
       packIndex,
       packSummary,
       recommendedActions,
+      automationHealth,
       deliveryChecklist,
       comparisonSnapshot,
       packCadence,
@@ -2329,6 +2392,46 @@ export default function Reports() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <div
+                    className="rounded-md border p-3"
+                    data-testid={`pack-automation-health-${workspace.persona}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-medium uppercase text-muted-foreground">
+                          Automation health
+                        </div>
+                        <div className="mt-1 font-mono text-2xl font-semibold">
+                          {item.automationHealth.score}
+                          <span className="text-xs font-normal text-muted-foreground">/100</span>
+                        </div>
+                      </div>
+                      <Badge variant={item.automationHealth.variant} dot>
+                        {item.automationHealth.label}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <div className="text-muted-foreground">Pack</div>
+                        <div className="font-mono font-semibold">
+                          {item.automationHealth.readinessScore}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Lanes</div>
+                        <div className="font-mono font-semibold">
+                          {item.automationHealth.automationLaneScore}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Review</div>
+                        <div className="font-mono font-semibold">
+                          {item.automationHealth.reviewSignals}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {item.checks.map((check) => (
                     <div
                       key={check.id}
@@ -2674,6 +2777,7 @@ export default function Reports() {
             const readiness = visibleReportPackReadiness.find(
               (entry) => entry.workspace.persona === workspace.persona
             );
+            const automationHealth = readiness?.automationHealth;
 
             return (
               <Card key={workspace.persona}>
@@ -2694,7 +2798,13 @@ export default function Reports() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Health</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {automationHealth?.score ?? 0}
+                      </div>
+                    </div>
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">Open signals</div>
                       <div className="font-mono text-lg font-semibold">{item.openSignalCount}</div>

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  calculateReportAutomationHealth,
   liveReportCatalog,
   parseReportPersona,
   reportAutomationPlaybookHref,
@@ -112,14 +113,20 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("dashboardPercentChange");
     expect(dashboardSource).toContain("formatDashboardComparisonPercent");
     expect(dashboardSource).toContain("dashboardComparisonBadgeVariant");
-    expect(dashboardSource).toContain("dashboardAutomationHealthLabel");
+    expect(catalogSource).toContain("calculateReportAutomationHealth");
+    expect(dashboardSource).toContain("calculateReportAutomationHealth({");
     expect(dashboardSource).toContain("reportAutomationHealth");
     expect(dashboardSource).toContain('data-testid="dashboard-report-automation-health"');
     expect(dashboardSource).toContain("Automation health");
     expect(dashboardSource).toContain("Review automation health");
     expect(dashboardSource).toContain("comparisonWarnings");
     expect(dashboardSource).toContain("reviewSignals");
-    expect(dashboardSource).toContain("preferredReportPackReadiness.readinessPercent * 0.6");
+    expect(dashboardSource).toContain(
+      "readinessPercent: preferredReportPackReadiness.readinessPercent"
+    );
+    expect(dashboardSource).toContain(
+      "automationLaneCount: preferredReportPackReadiness.automationLanes"
+    );
     expect(dashboardSource).toContain('data-testid="dashboard-comparison-snapshot"');
     expect(dashboardSource).toContain("Current vs prior month for this workspace.");
     expect(dashboardSource).toContain("comparisonOrder");
@@ -269,6 +276,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Pack Index");
     expect(reportsSource).toContain("Pack Summary");
     expect(reportsSource).toContain("Recommended Actions");
+    expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Delivery Checklist");
     expect(reportsSource).toContain("Report pack readiness");
     expect(reportsSource).toContain("Comparison Snapshot");
@@ -283,6 +291,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportPackDeliveryReadiness");
     expect(reportsSource).toContain("visibleReportPackReadiness");
     expect(reportsSource).toContain("reportPackReadinessNeedingReview");
+    expect(reportsSource).toContain("calculateReportAutomationHealth");
+    expect(reportsSource).toContain("automationHealth");
+    expect(reportsSource).toContain("pack-automation-health-${workspace.persona}");
+    expect(reportsSource).toContain("Automation health review signals");
     expect(reportsSource).toContain("reportPackReviewCount");
     expect(reportsSource).toContain("pack-readiness-${workspace.persona}");
     expect(reportsSource).toContain("Delivery checks");
@@ -315,6 +327,31 @@ describe("report discoverability", () => {
       expect(workspace.packSchedule.automation).toBeTruthy();
       expect(workspace.automations).toHaveLength(3);
     }
+  });
+
+  it("calculates shared report automation health for packs and dashboards", () => {
+    const ready = calculateReportAutomationHealth({
+      readinessPercent: 100,
+      automationLaneCount: 3,
+      comparisonMetricCount: 3,
+      comparisonWarningCount: 0,
+    });
+
+    expect(ready.score).toBe(100);
+    expect(ready.label).toBe("Ready to automate");
+    expect(ready.variant).toBe("success");
+
+    const needsReview = calculateReportAutomationHealth({
+      readinessPercent: 50,
+      automationLaneCount: 1,
+      comparisonMetricCount: 4,
+      comparisonWarningCount: 2,
+      plannedReportCount: 3,
+    });
+
+    expect(needsReview.score).toBeLessThan(65);
+    expect(needsReview.variant).toBe("danger");
+    expect(needsReview.reviewSignals).toBe(5);
   });
 
   it("keeps report tab deep links bounded to known Reports tabs", () => {

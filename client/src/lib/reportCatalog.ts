@@ -16,6 +16,7 @@ export type ReportTab = (typeof reportTabs)[number];
 export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportSection = "recommendations" | "pack-readiness" | "pack-automation";
 export type ReportStatus = "live" | "api" | "planned";
+export type ReportAutomationHealthVariant = "success" | "warning" | "danger";
 export type ReportCommandIcon =
   | "barChart"
   | "book"
@@ -69,6 +70,27 @@ export interface ReportPersonaWorkspace {
   commandKeywords: string;
   packSchedule: ReportPackSchedule;
   automations: ReportAutomationPlaybook[];
+}
+
+export interface ReportAutomationHealthInput {
+  readinessPercent: number;
+  automationLaneCount: number;
+  comparisonMetricCount?: number;
+  comparisonWarningCount?: number;
+  plannedReportCount?: number;
+  reviewSignalCount?: number;
+  automationLaneTarget?: number;
+}
+
+export interface ReportAutomationHealth {
+  score: number;
+  label: string;
+  variant: ReportAutomationHealthVariant;
+  readinessScore: number;
+  automationLaneScore: number;
+  comparisonScore: number;
+  comparisonWarnings: number;
+  reviewSignals: number;
 }
 
 export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
@@ -663,4 +685,50 @@ export function reportAutomationPlaybookHref(
   persona?: ReportPersona
 ): string {
   return playbook.href ?? reportsHref({ tab: playbook.tab, persona });
+}
+
+function clampReportScore(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export function calculateReportAutomationHealth(
+  input: ReportAutomationHealthInput
+): ReportAutomationHealth {
+  const comparisonMetricCount = Math.max(0, input.comparisonMetricCount ?? 0);
+  const comparisonWarnings = Math.max(0, input.comparisonWarningCount ?? 0);
+  const automationLaneTarget = Math.max(1, input.automationLaneTarget ?? 3);
+  const readinessScore = clampReportScore(input.readinessPercent);
+  const automationLaneScore = clampReportScore(
+    (Math.max(0, input.automationLaneCount) / automationLaneTarget) * 100
+  );
+  const comparisonScore = comparisonMetricCount
+    ? clampReportScore(
+        ((comparisonMetricCount - Math.min(comparisonWarnings, comparisonMetricCount)) /
+          comparisonMetricCount) *
+          100
+      )
+    : 100;
+  const score = clampReportScore(
+    readinessScore * 0.6 + automationLaneScore * 0.2 + comparisonScore * 0.2
+  );
+  const variant: ReportAutomationHealthVariant =
+    score >= 85 ? "success" : score >= 65 ? "warning" : "danger";
+
+  return {
+    score,
+    label:
+      variant === "success"
+        ? "Ready to automate"
+        : variant === "warning"
+          ? "Review signals"
+          : "Needs setup",
+    variant,
+    readinessScore,
+    automationLaneScore,
+    comparisonScore,
+    comparisonWarnings,
+    reviewSignals:
+      input.reviewSignalCount ?? comparisonWarnings + Math.max(0, input.plannedReportCount ?? 0),
+  };
 }
