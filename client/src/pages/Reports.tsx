@@ -1514,6 +1514,16 @@ export default function Reports() {
       preparePlanningReportsForExport(planningReport)
     );
 
+    const packSignals = automationQueue.filter((item) =>
+      matchesReportPersona(item.personas, workspace.persona)
+    );
+    const openPackSignals = packSignals.filter((item) => item.count > 0);
+    const openPackWorkItemCount = packSignals.reduce((sum, item) => sum + item.count, 0);
+    const packAmountAtRisk = packSignals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+    const packComparisonRows = comparisonRows.filter((row) =>
+      matchesReportPersona(row.personas, workspace.persona)
+    );
+
     const packIndex: ExportData = {
       sheetName: "Pack Index",
       columns: [
@@ -1532,6 +1542,63 @@ export default function Reports() {
         delivery: workbookReportIds.has(report.id) ? "Included in workbook" : "Open workflow",
         workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
       })),
+    };
+
+    const packSummary: ExportData = {
+      sheetName: "Pack Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 80 },
+      ],
+      rows: [
+        { metric: "Workspace", value: workspace.title },
+        { metric: "Persona", value: workspace.persona },
+        { metric: "Current period", value: comparisonCurrentLabel },
+        { metric: "Prior period", value: comparisonPreviousLabel },
+        { metric: "Pack status", value: openPackSignals.length > 0 ? "Review before send" : "Ready to send" },
+        { metric: "Workspace reports", value: workspace.reports.length },
+        { metric: "Ready reports", value: workspace.readyReports },
+        { metric: "Workbook sheets", value: workbookSheets.length },
+        { metric: "Comparison metrics", value: packComparisonRows.length },
+        { metric: "Open automation signals", value: openPackSignals.length },
+        { metric: "Open work items", value: openPackWorkItemCount },
+        { metric: "Amount at risk", value: `AED ${packAmountAtRisk.toFixed(2)}` },
+      ],
+    };
+
+    const comparisonSnapshot: ExportData = {
+      sheetName: "Comparison Snapshot",
+      columns: [
+        { header: "Metric", key: "metric", width: 28 },
+        { header: "Signal", key: "signal", width: 22 },
+        { header: "Current", key: "current", width: 18 },
+        { header: "Prior", key: "prior", width: 18 },
+        { header: "Change", key: "change", width: 18 },
+        { header: "Change %", key: "changePercent", width: 16 },
+        { header: "Status", key: "status", width: 18 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: packComparisonRows.map((row) => {
+        const status =
+          Math.abs(row.delta) < 0.005
+            ? "Stable"
+            : row.favorable === "neutral"
+              ? "Context"
+              : (row.favorable === "increase" ? row.delta > 0 : row.delta < 0)
+                ? "Favorable"
+                : "Review";
+
+        return {
+          metric: row.label,
+          signal: row.signal,
+          current: `${row.currency} ${row.current.toFixed(2)}`,
+          prior: `${row.currency} ${row.previous.toFixed(2)}`,
+          change: `${row.currency} ${row.delta.toFixed(2)}`,
+          changePercent: formatComparisonPercent(row.percentChange),
+          status,
+          workflow: reportsHref({ tab: row.tab, persona: workspace.persona }),
+        };
+      }),
     };
 
     const automationPlaybooks: ExportData = {
@@ -1555,6 +1622,30 @@ export default function Reports() {
       })),
     };
 
+    const packAutomationStatus: ExportData = {
+      sheetName: "Pack Automation Status",
+      columns: [
+        { header: "Signal", key: "signal", width: 26 },
+        { header: "Detail", key: "detail", width: 54 },
+        { header: "Open Count", key: "count", width: 14 },
+        { header: "Amount", key: "amount", width: 18 },
+        { header: "Status", key: "status", width: 20 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: packSignals.map((item) => ({
+        signal: item.title,
+        detail: item.detail,
+        count: item.count,
+        amount:
+          typeof item.amount === "number"
+            ? `${item.currency ?? "AED"} ${item.amount.toFixed(2)}`
+            : "",
+        status: item.count > 0 ? "Review before send" : "Clear",
+        workflow:
+          item.href ?? (item.tab ? reportsHref({ tab: item.tab, persona: workspace.persona }) : ""),
+      })),
+    };
+
     const packCadence: ExportData = {
       sheetName: "Pack Cadence",
       columns: [
@@ -1572,7 +1663,15 @@ export default function Reports() {
       ],
     };
 
-    return [packIndex, packCadence, automationPlaybooks, ...workbookSheets];
+    return [
+      packIndex,
+      packSummary,
+      comparisonSnapshot,
+      packCadence,
+      packAutomationStatus,
+      automationPlaybooks,
+      ...workbookSheets,
+    ];
   };
 
   const handleExportWorkspacePack = async (workspace: (typeof workspaceSummaries)[number]) => {
@@ -1955,6 +2054,120 @@ export default function Reports() {
             })}
           </div>
         )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-pack-automation-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-pack-automation-title" className="text-xl font-semibold">
+              Report pack automation
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Scheduled workspace packs with live report signals before delivery.{" "}
+              {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant={reportPacksNeedingReview > 0 ? "warning" : "success"} dot>
+            {reportPacksNeedingReview} need review
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleReportPackAutomation.map((item) => {
+            const workspace = item.workspace;
+            const WorkspaceIcon = workspace.icon;
+
+            return (
+              <Card key={workspace.persona}>
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{workspace.title}</CardTitle>
+                        <CardDescription>{workspace.packSchedule.cadence}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant={item.openSignalCount > 0 ? "warning" : "success"} dot>
+                      {item.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Open signals</div>
+                      <div className="font-mono text-lg font-semibold">{item.openSignalCount}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Work items</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {item.openWorkItemCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Amount</div>
+                      <div className="truncate font-mono text-sm font-semibold">
+                        {formatCurrency(item.amountAtRisk, "AED", locale)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      {workspace.packSchedule.delivery}
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-medium text-foreground">Recipients:</span>{" "}
+                      {workspace.packSchedule.recipients}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {item.signals.slice(0, 3).map((signal) => (
+                      <div
+                        key={signal.id}
+                        className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium">{signal.title}</div>
+                          <div className="text-xs text-muted-foreground">{signal.detail}</div>
+                        </div>
+                        <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
+                          {signal.count > 0 ? signal.count : "Clear"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(reportWorkspaceHref(workspace))}
+                    >
+                      Open workspace
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isExporting || !selectedCompanyId}
+                      onClick={() => handleExportWorkspacePackToSheets(workspace)}
+                    >
+                      <SiGooglesheets className="mr-2 h-4 w-4" />
+                      Send pack
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="comparison-snapshots-title">

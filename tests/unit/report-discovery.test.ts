@@ -141,6 +141,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
     expect(reportsSource).toContain("Pack Index");
     expect(reportsSource).toContain("Pack Cadence");
+    expect(reportsSource).toContain("Pack Automation Status");
     expect(reportsSource).toContain("Automation Playbooks");
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");
@@ -151,6 +152,12 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("exportToGoogleSheets(");
     expect(reportsSource).toContain("Export pack");
     expect(reportsSource).toContain("Sheets pack");
+    expect(reportsSource).toContain("Report pack automation");
+    expect(reportsSource).toContain("reportPackAutomationQueue");
+    expect(reportsSource).toContain("visibleReportPackAutomation");
+    expect(reportsSource).toContain("reportPacksNeedingReview");
+    expect(reportsSource).toContain("Review before send");
+    expect(reportsSource).toContain("Send pack");
 
     for (const workspace of reportPersonaWorkspaces) {
       expect(
