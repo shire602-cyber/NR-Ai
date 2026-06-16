@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, FileSpreadsheet, Search, Sparkles } from "lucide-react";
+import { ArrowRight, FileSpreadsheet, Search, Send, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +35,9 @@ import { cn } from "@/lib/utils";
 interface ReportLaunchPickerProps {
   persona?: ReportPersona;
   mode?: "general" | "delivery";
+  onQueueDeliverySubscription?: (subscriptionId: string) => void;
+  queueingDeliverySubscriptionId?: string | null;
+  deliveryQueueDisabled?: boolean;
   className?: string;
 }
 
@@ -63,6 +66,9 @@ function workspaceHref(workspace: ReportPersonaWorkspace & { href?: string | nul
 export function ReportLaunchPicker({
   persona = "owner",
   mode = "general",
+  onQueueDeliverySubscription,
+  queueingDeliverySubscriptionId = null,
+  deliveryQueueDisabled = false,
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
@@ -221,18 +227,45 @@ export function ReportLaunchPicker({
                     </div>
                     <div className="mt-3 space-y-2">
                       {deliverySubscriptions.slice(0, 2).map((subscription) => (
-                        <Link key={subscription.id} href={deliveryHref(subscription)}>
-                          <div
-                            className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
-                            data-testid={`report-launch-delivery-subscription-${subscription.id}`}
-                          >
-                            <div className="font-medium text-foreground">{subscription.title}</div>
-                            <div className="mt-1 text-muted-foreground">
-                              {subscription.cadence} · {subscription.channel}
-                            </div>
+                        <div
+                          key={subscription.id}
+                          className="rounded-md bg-muted/30 p-2 text-xs"
+                          data-testid={`report-launch-delivery-subscription-${subscription.id}`}
+                        >
+                          <div className="font-medium text-foreground">{subscription.title}</div>
+                          <div className="mt-1 text-muted-foreground">
+                            {subscription.cadence} · {subscription.channel}
                           </div>
-                        </Link>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                              <Link href={deliveryHref(subscription)}>
+                                Open <ArrowRight className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                            {onQueueDeliverySubscription ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                disabled={deliveryQueueDisabled}
+                                onClick={() => onQueueDeliverySubscription(subscription.id)}
+                                data-testid={`report-launch-queue-delivery-${subscription.id}`}
+                              >
+                                <Send className="h-3.5 w-3.5" />
+                                {queueingDeliverySubscriptionId === subscription.id
+                                  ? "Queueing"
+                                  : "Queue"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
                       ))}
+                      {deliverySubscriptions.length === 0 ? (
+                        <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
+                          No delivery subscriptions match this role yet.
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

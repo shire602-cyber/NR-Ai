@@ -949,6 +949,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("ReportLaunchPicker");
     expect(reportsSource).toContain("reportDeliveryLauncherPersona");
     expect(reportsSource).toContain('mode="delivery"');
+    expect(reportsSource).toContain("onQueueDeliverySubscription");
+    expect(reportsSource).toContain("queueReportDeliverySubscription.mutate(subscriptionId)");
+    expect(reportsSource).toContain("queueingDeliverySubscriptionId");
+    expect(reportsSource).toContain("deliveryQueueDisabled");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");
@@ -1239,6 +1243,9 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptions");
     expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptionHref");
     expect(reportLaunchPickerSource).toContain("report-delivery-launch-picker");
+    expect(reportLaunchPickerSource).toContain("onQueueDeliverySubscription");
+    expect(reportLaunchPickerSource).toContain("queueingDeliverySubscriptionId");
+    expect(reportLaunchPickerSource).toContain("deliveryQueueDisabled");
     expect(reportLaunchPickerSource).toContain("report-launch-picker");
     expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search"');
     expect(reportLaunchPickerSource).toContain("report-launch-persona-${item}");
@@ -1246,6 +1253,7 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain(
       "report-launch-delivery-subscription-${subscription.id}"
     );
+    expect(reportLaunchPickerSource).toContain("report-launch-queue-delivery-${subscription.id}");
   });
 
   it("serves report delivery subscriptions through an authenticated queue endpoint", () => {

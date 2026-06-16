@@ -6383,6 +6383,15 @@ export default function Reports() {
         <ReportLaunchPicker
           persona={reportDeliveryLauncherPersona}
           mode="delivery"
+          onQueueDeliverySubscription={(subscriptionId) =>
+            queueReportDeliverySubscription.mutate(subscriptionId)
+          }
+          queueingDeliverySubscriptionId={
+            queueReportDeliverySubscription.isPending
+              ? (queueReportDeliverySubscription.variables ?? null)
+              : null
+          }
+          deliveryQueueDisabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
           className="shadow-none"
         />
 
