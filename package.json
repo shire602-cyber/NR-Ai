@@ -33,7 +33,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "check:migrations": "bash tools/check-migrations-no-secrets.sh",
     "e2e": "node tests/e2e/full-crawl.mjs",
-    "e2e:customer": "node tests/e2e/customer-launch-crawl.mjs"
+    "e2e:customer": "node tests/e2e/customer-launch-crawl.mjs",
+    "e2e:customer:public": "cross-env CUSTOMER_E2E_PUBLIC_ONLY=true node tests/e2e/customer-launch-crawl.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

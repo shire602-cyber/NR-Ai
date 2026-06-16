@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
@@ -21,6 +22,9 @@ describe("customer launch E2E surface", () => {
     const packageJson = JSON.parse(readRepoFile("package.json"));
 
     expect(packageJson.scripts["e2e:customer"]).toBe("node tests/e2e/customer-launch-crawl.mjs");
+    expect(packageJson.scripts["e2e:customer:public"]).toBe(
+      "cross-env CUSTOMER_E2E_PUBLIC_ONLY=true node tests/e2e/customer-launch-crawl.mjs"
+    );
   });
 
   it("does not promote the test account into admin or NR firm roles", () => {
@@ -28,6 +32,48 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).not.toMatch(/UPDATE\s+users/i);
     expect(scriptSource).not.toMatch(/firm_owner|firm_admin|is_admin/i);
     expect(scriptSource).toContain("no admin/firm role promotion");
+  });
+
+  it("refuses remote mutation unless explicitly approved and supports public-only mode", () => {
+    expect(scriptSource).toContain("CUSTOMER_E2E_PUBLIC_ONLY");
+    expect(scriptSource).toContain("CUSTOMER_E2E_ALLOW_REMOTE_MUTATION");
+    expect(scriptSource).toContain("function assertFullModeMayMutate()");
+    expect(scriptSource).toContain(
+      "Refusing to run full customer E2E against a non-local BASE_URL"
+    );
+    expect(scriptSource).toContain(
+      "This script registers a customer and creates accounting records"
+    );
+    expect(scriptSource).toContain("All public customer-launch checks passed.");
+  });
+
+  it("does not fail public-route QA on expected anonymous refresh misses", () => {
+    expect(scriptSource).toContain("function isExpectedAnonymousAuthFailure(response)");
+    expect(scriptSource).toContain('response.url().includes("/api/auth/refresh")');
+    expect(scriptSource).toContain("status === 400 || status === 401");
+    expect(scriptSource).toContain("if (isExpectedAnonymousAuthFailure(r)) return;");
+  });
+
+  it("fails before browser launch when full mode points at a remote URL without approval", () => {
+    const result = spawnSync(
+      process.execPath,
+      [join(repoRoot, "tests/e2e/customer-launch-crawl.mjs")],
+      {
+        env: {
+          ...process.env,
+          BASE_URL: "https://example.com",
+          CUSTOMER_E2E_PUBLIC_ONLY: "false",
+          CUSTOMER_E2E_ALLOW_REMOTE_MUTATION: "false",
+        },
+        encoding: "utf8",
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "Refusing to run full customer E2E against a non-local BASE_URL"
+    );
+    expect(result.stderr).toContain("registers a customer and creates accounting records");
   });
 
   it("crawls only public and SaaS customer routes as allowed routes", () => {

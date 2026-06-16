@@ -8,7 +8,11 @@
  *   5. reruns mobile checks for invoices, receipts, banking, reports, and VAT
  *   6. verifies NR-only surfaces stay blocked, including WhatsApp and document chasing
  *
- * Env: BASE_URL (default http://127.0.0.1:5000), CHROMIUM_PATH (optional browser override).
+ * Env:
+ *   BASE_URL (default http://127.0.0.1:5000)
+ *   CUSTOMER_E2E_PUBLIC_ONLY=true to run the read-only public launch crawl
+ *   CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true to allow full mode against a non-local URL
+ *   CHROMIUM_PATH (optional browser override)
  * Exit code 0 = every check passed. Screenshots of failures land in tests/e2e/.artifacts/.
  */
 import fs from "node:fs";
@@ -17,6 +21,8 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
+const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
+const ALLOW_REMOTE_MUTATION = process.env.CUSTOMER_E2E_ALLOW_REMOTE_MUTATION === "true";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 
@@ -62,6 +68,7 @@ const FORBIDDEN_API_STATUS_PATHS = [
 
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const PRIVATE_TEXT = /WhatsApp|Document Chasing|Firm Command|NR Accountant|Value Ops/i;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
@@ -76,7 +83,34 @@ function cleanPath(url) {
   return url.replace(BASE, "").split("?")[0];
 }
 
+function isExpectedAnonymousAuthFailure(response) {
+  const status = response.status();
+  return response.url().includes("/api/auth/refresh") && (status === 400 || status === 401);
+}
+
+function isLocalBaseUrl() {
+  try {
+    const url = new URL(BASE);
+    return LOCAL_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function assertFullModeMayMutate() {
+  if (PUBLIC_ONLY || isLocalBaseUrl() || ALLOW_REMOTE_MUTATION) return;
+  throw new Error(
+    [
+      "Refusing to run full customer E2E against a non-local BASE_URL.",
+      "This script registers a customer and creates accounting records.",
+      "Use CUSTOMER_E2E_PUBLIC_ONLY=true for a read-only public launch crawl,",
+      "or run against staging/local. Set CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true only for an approved disposable target.",
+    ].join(" ")
+  );
+}
+
 async function main() {
+  assertFullModeMayMutate();
   fs.mkdirSync(SHOT_DIR, { recursive: true });
   const browser = await chromium.launch({
     executablePath: await resolveExecutablePath(),
@@ -92,6 +126,7 @@ async function main() {
   page.on("pageerror", (e) => routeErrors.push(`JS: ${e.message.slice(0, 200)}`));
   page.on("response", (r) => {
     const url = r.url();
+    if (isExpectedAnonymousAuthFailure(r)) return;
     if (!url.includes("/api/") || r.status() < 400 || r.status() === 401) return;
     apiFailures.push(`${r.request().method()} ${cleanPath(url)} -> ${r.status()}`);
   });
@@ -154,6 +189,20 @@ async function main() {
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
     await crawlRoute(route);
+  }
+
+  if (PUBLIC_ONLY) {
+    await browser.close();
+    console.log(
+      `\n=== Customer launch public E2E: ${PUBLIC_ROUTES.length} public routes · ${failures.length} failure(s) ===`
+    );
+    for (const f of failures) console.log(JSON.stringify(f));
+    if (failures.length > 0) {
+      console.log(`Screenshots: ${SHOT_DIR}`);
+      process.exit(1);
+    }
+    console.log("All public customer-launch checks passed.");
+    return;
   }
 
   // Fresh SaaS customer registration. No direct database promotion is used in

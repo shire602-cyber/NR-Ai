@@ -5,6 +5,8 @@ Scope: this file applies to the whole repository.
 ## Project Layout
 
 - `client/` contains the React/Vite frontend. Vite aliases `@` to `client/src`.
+- `client/src/lib/reportCatalog.ts` is the shared source for Reports catalog/workspace metadata
+  and command-palette report shortcuts; avoid duplicating report labels or deep links elsewhere.
 - `server/` contains the Express API, middleware, routes, services, and startup code.
 - `shared/` contains the Drizzle schema and shared validators. The alias `@shared` points here.
 - `migrations/` contains Drizzle migrations. Treat `migrations/meta/` as Drizzle-managed output.
@@ -79,7 +81,11 @@ Scope: this file applies to the whole repository.
   SaaS customer without Postgres role promotion, crawls public/launch-critical customer routes,
   reruns mobile checks for invoices, receipts, banking, reports, and VAT, exercises
   journal/invoice/bank-import flows, and verifies NR-only WhatsApp/document-chasing, firm, and
-  admin surfaces stay blocked.
+  admin surfaces stay blocked. Full mode refuses non-local `BASE_URL` unless
+  `CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true` is set for an approved disposable target.
+- For read-only production/ad-route customer launch QA, run
+  `BASE_URL=<url> npm run e2e:customer:public`; it crawls only public launch routes and does not
+  register users or create accounting records.
 - Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO,
   trust, help, migration, or public-route changes to catch unsupported compliance/security claims.
 - Keep the public sample-data demo workspace routed at `/demo`; after demo, onboarding, or

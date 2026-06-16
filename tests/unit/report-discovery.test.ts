@@ -5,7 +5,10 @@ import {
   liveReportCatalog,
   reportCatalog,
   reportHref,
+  reportPersonas,
+  reportPersonaWorkspaces,
   reportTabs,
+  reportWorkspaceHref,
 } from "../../client/src/lib/reportCatalog";
 
 function read(path: string): string {
@@ -47,9 +50,12 @@ describe("report discoverability", () => {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
     }
 
-    for (const persona of ["owner", "freelancer", "accountant"] as const) {
+    expect(reportPersonas).toEqual(["owner", "freelancer", "accountant"]);
+
+    for (const persona of reportPersonas) {
       expect(reportCatalog.some((report) => report.personas.includes(persona))).toBe(true);
-      expect(reportsSource).toContain(`persona: "${persona}"`);
+      expect(reportPersonaWorkspaces.some((workspace) => workspace.persona === persona)).toBe(true);
+      expect(catalogSource).toContain(`persona: "${persona}"`);
       expect(reportsSource).toContain(`id: "${persona}"`);
     }
   });
@@ -76,6 +82,26 @@ describe("report discoverability", () => {
       "/reports?tab=planning",
     ]) {
       expect(liveReportCatalog.map((report) => reportHref(report))).toContain(href);
+    }
+  });
+
+  it("exposes persona report workspaces through deep links and global search", () => {
+    expect(reportPersonaWorkspaces.map((workspace) => workspace.persona)).toEqual([
+      "owner",
+      "freelancer",
+      "accountant",
+    ]);
+    expect(commandSource).toContain("reportPersonaWorkspaces.map");
+    expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
+    expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
+    expect(reportsSource).toContain("function personaFilterFromSearch(search: string)");
+    expect(reportsSource).toContain("return reportPersonas.includes(persona as ReportPersona)");
+    expect(reportsSource).toContain("navigate(reportWorkspaceHref(workspace))");
+
+    for (const workspace of reportPersonaWorkspaces) {
+      expect(reportWorkspaceHref(workspace)).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}`
+      );
     }
   });
 

@@ -26,10 +26,18 @@ import {
   Settings,
   Plus,
   Sparkles,
+  ClipboardCheck,
 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
-import { liveReportCatalog, reportHref, type ReportCommandIcon } from "@/lib/reportCatalog";
+import {
+  liveReportCatalog,
+  reportHref,
+  reportPersonaWorkspaces,
+  reportWorkspaceHref,
+  type ReportCommandIcon,
+  type ReportWorkspaceIcon,
+} from "@/lib/reportCatalog";
 
 interface PaletteItem {
   id: string;
@@ -56,6 +64,12 @@ const reportCommandIcons: Record<ReportCommandIcon, PaletteItem["icon"]> = {
   receipt: Receipt,
   users: Users,
   wallet: Wallet,
+};
+
+const reportWorkspaceIcons: Record<ReportWorkspaceIcon, PaletteItem["icon"]> = {
+  briefcase: Briefcase,
+  clipboardCheck: ClipboardCheck,
+  users: Users,
 };
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
@@ -102,6 +116,16 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       href: "/reports",
       shortcut: "g r",
     },
+    ...reportPersonaWorkspaces.map(
+      (workspace): PaletteItem => ({
+        id: `report-workspace-${workspace.persona}`,
+        label: workspace.title,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportWorkspaceHref(workspace),
+        keywords: workspace.commandKeywords,
+      })
+    ),
     ...liveReportCatalog.map(
       (report): PaletteItem => ({
         id: `report-${report.id}`,

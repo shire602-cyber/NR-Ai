@@ -43,10 +43,15 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import {
   reportCatalog,
+  reportPersonas,
+  reportPersonaWorkspaces,
   reportTabs,
+  reportsHref,
+  reportWorkspaceHref,
   type ReportPersona,
   type ReportStatus,
   type ReportTab,
+  type ReportWorkspaceIcon,
 } from "@/lib/reportCatalog";
 import {
   AlertTriangle,
@@ -361,14 +366,6 @@ interface BalanceSummaryReport {
 
 type PersonaFilter = "all" | ReportPersona;
 
-interface PersonaWorkspace {
-  persona: ReportPersona;
-  title: string;
-  focus: string;
-  icon: LucideIcon;
-  primaryTab: ReportTab;
-}
-
 interface AutomationQueueItem {
   id: string;
   title: string;
@@ -416,29 +413,11 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "accountant", label: "Accountant" },
 ];
 
-const personaWorkspaces: PersonaWorkspace[] = [
-  {
-    persona: "owner",
-    title: "Owner workspace",
-    focus: "Cash, profit, receivables, tax, and payroll decisions.",
-    icon: Briefcase,
-    primaryTab: "balances",
-  },
-  {
-    persona: "freelancer",
-    title: "Freelancer workspace",
-    focus: "Client income, unpaid invoices, expenses, and monthly tax readiness.",
-    icon: Users,
-    primaryTab: "sales",
-  },
-  {
-    persona: "accountant",
-    title: "Accountant workspace",
-    focus: "Close workpapers, ledgers, audit trails, tax, and consolidation.",
-    icon: ClipboardCheck,
-    primaryTab: "trial",
-  },
-];
+const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
+  briefcase: Briefcase,
+  clipboardCheck: ClipboardCheck,
+  users: Users,
+};
 
 const invoiceStatusLabels: Record<string, string> = {
   draft: "Draft",
@@ -528,6 +507,11 @@ function reportTabFromSearch(search: string): ReportTab {
   return reportTabs.includes(tab as ReportTab) ? (tab as ReportTab) : "pl";
 }
 
+function personaFilterFromSearch(search: string): PersonaFilter {
+  const persona = new URLSearchParams(search).get("persona");
+  return reportPersonas.includes(persona as ReportPersona) ? (persona as ReportPersona) : "all";
+}
+
 function startOfLocalDay(date: Date): Date {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
@@ -608,14 +592,27 @@ export default function Reports() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [location, navigate] = useLocation();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
-  const [personaFilter, setPersonaFilter] = useState<PersonaFilter>("all");
   const [isExporting, setIsExporting] = useState(false);
 
-  const activeTab = useMemo(() => {
-    const locationSearch = location.includes("?") ? location.slice(location.indexOf("?")) : "";
-    return reportTabFromSearch(locationSearch || window.location.search);
+  const locationSearch = useMemo(() => {
+    return location.includes("?") ? location.slice(location.indexOf("?")) : "";
   }, [location]);
-  const setActiveTab = (tab: ReportTab) => navigate(`/reports?tab=${tab}`);
+
+  const activeTab = useMemo(() => {
+    return reportTabFromSearch(locationSearch || window.location.search);
+  }, [locationSearch]);
+
+  const personaFilter = useMemo(() => {
+    return personaFilterFromSearch(locationSearch || window.location.search);
+  }, [locationSearch]);
+
+  const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
+    navigate(reportsHref({ tab, persona }));
+  };
+
+  const setReportPersonaFilter = (persona: PersonaFilter) => {
+    navigate(reportsHref({ tab: activeTab, persona }));
+  };
 
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
@@ -631,13 +628,14 @@ export default function Reports() {
   }, []);
 
   const workspaceSummaries = useMemo(() => {
-    return personaWorkspaces.map((workspace) => {
+    return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
       const readyReports = reports.filter((report) => report.status !== "planned").length;
       const automationCount = reports.filter((report) => report.automation).length;
       const topReadyReport = reports.find((report) => report.tab) ?? reports[0];
       return {
         ...workspace,
+        icon: reportWorkspaceIcons[workspace.icon],
         reports,
         readyReports,
         automationCount,
@@ -1879,8 +1877,7 @@ export default function Reports() {
                       type="button"
                       size="sm"
                       onClick={() => {
-                        setPersonaFilter(workspace.persona);
-                        setActiveTab(workspace.primaryTab);
+                        navigate(reportWorkspaceHref(workspace));
                       }}
                       data-testid={`button-open-workspace-${workspace.persona}`}
                     >
@@ -1890,7 +1887,7 @@ export default function Reports() {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => setPersonaFilter(workspace.persona)}
+                      onClick={() => setReportPersonaFilter(workspace.persona)}
                     >
                       Filter library
                     </Button>
@@ -1920,7 +1917,7 @@ export default function Reports() {
                 type="button"
                 size="sm"
                 variant={personaFilter === filter.id ? "default" : "outline"}
-                onClick={() => setPersonaFilter(filter.id)}
+                onClick={() => setReportPersonaFilter(filter.id)}
                 data-testid={`button-report-filter-${filter.id}`}
               >
                 {filter.label}

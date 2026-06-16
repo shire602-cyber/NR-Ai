@@ -10,8 +10,10 @@ export const reportTabs = [
   "planning",
 ] as const;
 
+export const reportPersonas = ["owner", "freelancer", "accountant"] as const;
+
 export type ReportTab = (typeof reportTabs)[number];
-export type ReportPersona = "owner" | "freelancer" | "accountant";
+export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportStatus = "live" | "api" | "planned";
 export type ReportCommandIcon =
   | "barChart"
@@ -22,6 +24,7 @@ export type ReportCommandIcon =
   | "receipt"
   | "users"
   | "wallet";
+export type ReportWorkspaceIcon = "briefcase" | "clipboardCheck" | "users";
 
 export interface ReportCatalogItem {
   id: string;
@@ -36,6 +39,42 @@ export interface ReportCatalogItem {
   tab?: ReportTab;
   href?: string;
 }
+
+export interface ReportPersonaWorkspace {
+  persona: ReportPersona;
+  title: string;
+  focus: string;
+  primaryTab: ReportTab;
+  icon: ReportWorkspaceIcon;
+  commandKeywords: string;
+}
+
+export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
+  {
+    persona: "owner",
+    title: "Owner workspace",
+    focus: "Cash, profit, receivables, tax, and payroll decisions.",
+    primaryTab: "balances",
+    icon: "briefcase",
+    commandKeywords: "reports owner cash profit receivables tax automation",
+  },
+  {
+    persona: "freelancer",
+    title: "Freelancer workspace",
+    focus: "Client income, unpaid invoices, expenses, and monthly tax readiness.",
+    primaryTab: "sales",
+    icon: "users",
+    commandKeywords: "reports freelancer invoices clients expenses vat automation",
+  },
+  {
+    persona: "accountant",
+    title: "Accountant workspace",
+    focus: "Close workpapers, ledgers, audit trails, tax, and consolidation.",
+    primaryTab: "trial",
+    icon: "clipboardCheck",
+    commandKeywords: "reports accountant close ledger trial balance tax automation",
+  },
+];
 
 export const reportCatalog: ReportCatalogItem[] = [
   {
@@ -426,6 +465,26 @@ export const reportCatalog: ReportCatalogItem[] = [
 
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
+export function reportsHref(
+  options: {
+    tab?: ReportTab;
+    persona?: ReportPersona | "all";
+  } = {}
+): string {
+  const params = new URLSearchParams();
+  if (options.tab) params.set("tab", options.tab);
+  if (options.persona && options.persona !== "all") params.set("persona", options.persona);
+
+  const query = params.toString();
+  return query ? `/reports?${query}` : "/reports";
+}
+
 export function reportHref(report: Pick<ReportCatalogItem, "href" | "tab">): string | undefined {
-  return report.href ?? (report.tab ? `/reports?tab=${report.tab}` : undefined);
+  return report.href ?? (report.tab ? reportsHref({ tab: report.tab }) : undefined);
+}
+
+export function reportWorkspaceHref(
+  workspace: Pick<ReportPersonaWorkspace, "persona" | "primaryTab">
+): string {
+  return reportsHref({ tab: workspace.primaryTab, persona: workspace.persona });
 }
