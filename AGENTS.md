@@ -108,9 +108,9 @@ Scope: this file applies to the whole repository.
   receipts, banking, VAT, or other launch-critical SaaS screens.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command
   palette shortcuts, persona workspaces, report decision-question metadata, decision shortcut
-  paths, automation starter paths, report trigger-rule paths, delivery subscription paths,
-  comparison presets, report coverage maps, report pack templates/exports, or report deep-link
-  behavior changes.
+  paths, automation starter paths, report trigger-rule paths, delivery subscription paths/settings
+  controls, comparison presets, report coverage maps, report pack templates/exports, or report
+  deep-link behavior changes.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery

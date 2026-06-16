@@ -6,6 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -98,6 +101,9 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
+  Pencil,
+  Save,
+  X,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -137,6 +143,24 @@ interface ConsolidatedCompanyStatementSource {
   comparisonCurrentProfitLoss: ProfitLossReport | null;
   comparisonPreviousProfitLoss: ProfitLossReport | null;
   error: string | null;
+}
+
+interface ReportDeliverySettingsDraft {
+  cadence: string;
+  channel: string;
+  format: string;
+  recipients: string;
+  deliveryGuardrail: string;
+}
+
+interface SaveReportDeliverySubscriptionSettingsInput {
+  subscriptionId: string;
+  enabled?: boolean;
+  cadence?: string | null;
+  channel?: string | null;
+  format?: string | null;
+  recipients?: string | null;
+  deliveryGuardrail?: string | null;
 }
 
 type ConsolidatedStatementStatus = "included" | "unbalanced" | "multi_currency" | "failed";
@@ -1508,6 +1532,11 @@ function makeComparisonMetric(
   };
 }
 
+function normalizeDeliverySetting(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export default function Reports() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -1518,6 +1547,17 @@ export default function Reports() {
   const [reportAutomationHealthHistory, setReportAutomationHealthHistory] = useState(() =>
     getReportAutomationHealthHistory()
   );
+  const [editingReportDeliverySubscriptionId, setEditingReportDeliverySubscriptionId] = useState<
+    string | null
+  >(null);
+  const [reportDeliverySettingsDraft, setReportDeliverySettingsDraft] =
+    useState<ReportDeliverySettingsDraft>({
+      cadence: "",
+      channel: "",
+      format: "",
+      recipients: "",
+      deliveryGuardrail: "",
+    });
 
   const locationSearch = useMemo(() => {
     return location.includes("?") ? location.slice(location.indexOf("?")) : "";
@@ -3742,6 +3782,27 @@ export default function Reports() {
     );
   }, [personaFilter, reportDeliverySubscriptionSummaries]);
 
+  const startEditingReportDeliverySubscription = useCallback(
+    (subscription: (typeof reportDeliverySubscriptionSummaries)[number]) => {
+      setEditingReportDeliverySubscriptionId(subscription.id);
+      setReportDeliverySettingsDraft({
+        cadence: subscription.cadence,
+        channel: subscription.channel,
+        format: subscription.format,
+        recipients: subscription.recipients,
+        deliveryGuardrail: subscription.deliveryGuardrail,
+      });
+    },
+    []
+  );
+
+  const updateReportDeliverySettingsDraft = useCallback(
+    (field: keyof ReportDeliverySettingsDraft, value: string) => {
+      setReportDeliverySettingsDraft((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const reportPackAutomationQueue = useMemo(() => {
     return workspaceSummaries.map((workspace) => {
       const signals = automationQueue.filter((item) =>
@@ -4205,19 +4266,33 @@ export default function Reports() {
   );
 
   const saveReportDeliverySubscriptionSettings = useMutation({
-    mutationFn: ({ subscriptionId, enabled }: { subscriptionId: string; enabled: boolean }) => {
+    mutationFn: ({ subscriptionId, ...settings }: SaveReportDeliverySubscriptionSettingsInput) => {
       if (!selectedCompanyId) throw new Error("Select a company before updating delivery.");
       return apiRequest(
         "PATCH",
         `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/settings`,
-        { enabled }
+        settings
       );
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, variables) => {
       reportDeliveryPlansQuery.refetch();
+      if (variables.subscriptionId === editingReportDeliverySubscriptionId) {
+        setEditingReportDeliverySubscriptionId(null);
+      }
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const onlyToggledEnabled =
+        variables.enabled !== undefined &&
+        variables.cadence === undefined &&
+        variables.channel === undefined &&
+        variables.format === undefined &&
+        variables.recipients === undefined &&
+        variables.deliveryGuardrail === undefined;
       toast({
-        title: result?.subscription?.enabled ? "Report delivery enabled" : "Report delivery paused",
+        title: onlyToggledEnabled
+          ? result?.subscription?.enabled
+            ? "Report delivery enabled"
+            : "Report delivery paused"
+          : "Report delivery settings saved",
         description: `${subscriptionTitle} now uses company delivery settings.`,
       });
     },
@@ -5678,6 +5753,12 @@ export default function Reports() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {visibleReportDeliverySubscriptions.map((subscription) => {
               const WorkspaceIcon = subscription.workspace.icon;
+              const isEditingDeliverySettings =
+                editingReportDeliverySubscriptionId === subscription.id;
+              const isSavingThisDeliverySubscription =
+                saveReportDeliverySubscriptionSettings.isPending &&
+                saveReportDeliverySubscriptionSettings.variables?.subscriptionId ===
+                  subscription.id;
 
               return (
                 <Card
@@ -5748,20 +5829,161 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                      <div>
-                        <span className="font-medium text-foreground">Format:</span>{" "}
-                        {subscription.format}
+                    {isEditingDeliverySettings ? (
+                      <div
+                        className="rounded-md border p-3"
+                        data-testid={`report-delivery-settings-editor-${subscription.id}`}
+                      >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`report-delivery-cadence-${subscription.id}`}
+                              className="text-xs"
+                            >
+                              Cadence
+                            </Label>
+                            <Input
+                              id={`report-delivery-cadence-${subscription.id}`}
+                              data-testid={`report-delivery-cadence-${subscription.id}`}
+                              maxLength={500}
+                              value={reportDeliverySettingsDraft.cadence}
+                              onChange={(event) =>
+                                updateReportDeliverySettingsDraft("cadence", event.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`report-delivery-channel-${subscription.id}`}
+                              className="text-xs"
+                            >
+                              Channel
+                            </Label>
+                            <Input
+                              id={`report-delivery-channel-${subscription.id}`}
+                              data-testid={`report-delivery-channel-${subscription.id}`}
+                              maxLength={500}
+                              value={reportDeliverySettingsDraft.channel}
+                              onChange={(event) =>
+                                updateReportDeliverySettingsDraft("channel", event.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`report-delivery-format-${subscription.id}`}
+                              className="text-xs"
+                            >
+                              Format
+                            </Label>
+                            <Input
+                              id={`report-delivery-format-${subscription.id}`}
+                              data-testid={`report-delivery-format-${subscription.id}`}
+                              maxLength={500}
+                              value={reportDeliverySettingsDraft.format}
+                              onChange={(event) =>
+                                updateReportDeliverySettingsDraft("format", event.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`report-delivery-recipients-${subscription.id}`}
+                              className="text-xs"
+                            >
+                              Recipients
+                            </Label>
+                            <Input
+                              id={`report-delivery-recipients-${subscription.id}`}
+                              data-testid={`report-delivery-recipients-${subscription.id}`}
+                              maxLength={500}
+                              value={reportDeliverySettingsDraft.recipients}
+                              onChange={(event) =>
+                                updateReportDeliverySettingsDraft("recipients", event.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5 sm:col-span-2">
+                            <Label
+                              htmlFor={`report-delivery-guardrail-${subscription.id}`}
+                              className="text-xs"
+                            >
+                              Guardrail
+                            </Label>
+                            <Textarea
+                              id={`report-delivery-guardrail-${subscription.id}`}
+                              data-testid={`report-delivery-guardrail-${subscription.id}`}
+                              maxLength={500}
+                              rows={3}
+                              value={reportDeliverySettingsDraft.deliveryGuardrail}
+                              onChange={(event) =>
+                                updateReportDeliverySettingsDraft(
+                                  "deliveryGuardrail",
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!selectedCompanyId || isSavingThisDeliverySubscription}
+                            onClick={() =>
+                              saveReportDeliverySubscriptionSettings.mutate({
+                                subscriptionId: subscription.id,
+                                enabled: subscription.enabled,
+                                cadence: normalizeDeliverySetting(
+                                  reportDeliverySettingsDraft.cadence
+                                ),
+                                channel: normalizeDeliverySetting(
+                                  reportDeliverySettingsDraft.channel
+                                ),
+                                format: normalizeDeliverySetting(
+                                  reportDeliverySettingsDraft.format
+                                ),
+                                recipients: normalizeDeliverySetting(
+                                  reportDeliverySettingsDraft.recipients
+                                ),
+                                deliveryGuardrail: normalizeDeliverySetting(
+                                  reportDeliverySettingsDraft.deliveryGuardrail
+                                ),
+                              })
+                            }
+                          >
+                            <Save className="h-4 w-4" />
+                            Save delivery settings
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSavingThisDeliverySubscription}
+                            onClick={() => setEditingReportDeliverySubscriptionId(null)}
+                          >
+                            <X className="h-4 w-4" />
+                            Cancel
+                          </Button>
+                        </div>
                       </div>
-                      <div className="mt-1">
-                        <span className="font-medium text-foreground">Recipients:</span>{" "}
-                        {subscription.recipients}
+                    ) : (
+                      <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                        <div>
+                          <span className="font-medium text-foreground">Format:</span>{" "}
+                          {subscription.format}
+                        </div>
+                        <div className="mt-1">
+                          <span className="font-medium text-foreground">Recipients:</span>{" "}
+                          {subscription.recipients}
+                        </div>
+                        <div className="mt-1">
+                          <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                          {subscription.deliveryGuardrail}
+                        </div>
                       </div>
-                      <div className="mt-1">
-                        <span className="font-medium text-foreground">Guardrail:</span>{" "}
-                        {subscription.deliveryGuardrail}
-                      </div>
-                    </div>
+                    )}
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
@@ -5804,6 +6026,20 @@ export default function Reports() {
                       >
                         Queue delivery
                       </Button>
+                      {!isEditingDeliverySettings ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            !selectedCompanyId || saveReportDeliverySubscriptionSettings.isPending
+                          }
+                          onClick={() => startEditingReportDeliverySubscription(subscription)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit settings
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"

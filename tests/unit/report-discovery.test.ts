@@ -852,6 +852,14 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("/report-delivery/subscriptions/${subscriptionId}/settings");
     expect(reportsSource).toContain("reportDeliveryPlansQuery");
     expect(reportsSource).toContain("Queue delivery");
+    expect(reportsSource).toContain("report-delivery-settings-editor-${subscription.id}");
+    expect(reportsSource).toContain("Edit settings");
+    expect(reportsSource).toContain("Save delivery settings");
+    expect(reportsSource).toContain("reportDeliverySettingsDraft.cadence");
+    expect(reportsSource).toContain("reportDeliverySettingsDraft.channel");
+    expect(reportsSource).toContain("reportDeliverySettingsDraft.format");
+    expect(reportsSource).toContain("reportDeliverySettingsDraft.recipients");
+    expect(reportsSource).toContain("reportDeliverySettingsDraft.deliveryGuardrail");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");

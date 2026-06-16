@@ -191,6 +191,9 @@ describe("report delivery subscriptions", () => {
       {
         enabled: false,
         cadence: "Daily at 8:00 AM",
+        channel: "Email and Google Sheets",
+        format: "Executive PDF pack",
+        recipients: "Owner and accountant",
         deliveryGuardrail: "Manual approval required",
       }
     );
@@ -202,6 +205,9 @@ describe("report delivery subscriptions", () => {
         subscriptionId: "owner-weekly-executive-delivery",
         enabled: false,
         cadenceOverride: "Daily at 8:00 AM",
+        channelOverride: "Email and Google Sheets",
+        formatOverride: "Executive PDF pack",
+        recipientsOverride: "Owner and accountant",
         deliveryGuardrailOverride: "Manual approval required",
         createdBy: userId,
         updatedBy: userId,
