@@ -1248,10 +1248,15 @@ function CustomerDashboard() {
 
               <div className="mt-4">
                 <div className="flex flex-wrap gap-2">
+                  <Link href={reportSectionHref(preferredReportWorkspace, "automation-operations")}>
+                    <Button variant="outline" size="sm">
+                      Open operations <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
                   <Link
                     href={reportSectionHref(preferredReportWorkspace, "automation-command-center")}
                   >
-                    <Button variant="outline" size="sm">
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                       Open automation center <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>

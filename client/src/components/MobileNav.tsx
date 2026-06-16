@@ -42,6 +42,10 @@ const moreLinks = [
     href: reportWorkspaceHref(workspace),
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Report operations - ${workspace.title}`,
+    href: reportSectionHref(workspace, "automation-operations"),
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.automationNavLabel,
     href: reportSectionHref(workspace, "automation-command-center"),
   })),

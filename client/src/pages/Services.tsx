@@ -77,10 +77,10 @@ export default function Services() {
         locale === "en" ? "Licensed & Registered in Dubai, UAE" : "مرخص ومسجل في دبي، الإمارات",
     },
     stats: {
-      clients: locale === "en" ? "Clients Served" : "عملاء تم خدمتهم",
-      yearsExp: locale === "en" ? "Years Experience" : "سنوات خبرة",
-      accuracy: locale === "en" ? "Accuracy Rate" : "نسبة الدقة",
-      satisfaction: locale === "en" ? "Satisfaction" : "رضا العملاء",
+      clients: locale === "en" ? "VAT Workflows" : "سير عمل ضريبة القيمة المضافة",
+      yearsExp: locale === "en" ? "CT Schedules" : "جداول ضريبة الشركات",
+      accuracy: locale === "en" ? "CSV Bank Imports" : "استيراد كشوف البنك CSV",
+      satisfaction: locale === "en" ? "Guided Support" : "دعم موجه",
     },
     services: {
       badge: locale === "en" ? "Our Services" : "خدماتنا",
@@ -287,8 +287,8 @@ export default function Services() {
       title: locale === "en" ? "Smart Expense Categorization" : "تصنيف المصروفات الذكي",
       description:
         locale === "en"
-          ? "AI automatically categorizes expenses into the correct chart of accounts with 95%+ accuracy."
-          : "الذكاء الاصطناعي يصنف المصروفات تلقائياً في الحسابات الصحيحة بدقة تتجاوز 95%.",
+          ? "AI-assisted categorisation prompts help your team review expenses against the chart of accounts."
+          : "تساعد تنبيهات التصنيف المدعومة بالذكاء الاصطناعي فريقك على مراجعة المصروفات مقابل دليل الحسابات.",
       bgColor: "bg-purple-500/10",
       iconColor: "text-purple-500",
     },
@@ -378,10 +378,10 @@ export default function Services() {
   ];
 
   const stats = [
-    { value: "500+", label: t.stats.clients, icon: Users },
-    { value: "7+", label: t.stats.yearsExp, icon: Clock },
-    { value: "99.8%", label: t.stats.accuracy, icon: TrendingUp },
-    { value: "98%", label: t.stats.satisfaction, icon: Star },
+    { value: "VAT", label: t.stats.clients, icon: Users },
+    { value: "CT", label: t.stats.yearsExp, icon: Clock },
+    { value: "CSV", label: t.stats.accuracy, icon: TrendingUp },
+    { value: "Help", label: t.stats.satisfaction, icon: Star },
   ];
 
   return (

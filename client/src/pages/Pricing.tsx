@@ -597,8 +597,8 @@ export default function Pricing() {
       title: locale === "en" ? "Ready to automate your accounting?" : "مستعد لأتمتة محاسبتك؟",
       subtitle:
         locale === "en"
-          ? "Join hundreds of UAE businesses saving 20+ hours per month with AI-powered accounting."
-          : "انضم لمئات الشركات الإماراتية التي توفر 20+ ساعة شهرياً مع المحاسبة المدعومة بالذكاء الاصطناعي.",
+          ? "Start with guided onboarding, VAT-ready workflows, and support options matched to your plan."
+          : "ابدأ بإعداد موجه وسير عمل جاهز لضريبة القيمة المضافة وخيارات دعم مناسبة لخطتك.",
       startFree: locale === "en" ? "Start Free" : "ابدأ مجاناً",
       bookDemo: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
       guarantee:
@@ -688,7 +688,9 @@ export default function Pricing() {
           <ScrollReveal>
             <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
               <Sparkles className="h-3.5 w-3.5 me-1.5" />
-              {locale === "en" ? "Trusted by 500+ UAE businesses" : "موثوق من 500+ شركة إماراتية"}
+              {locale === "en"
+                ? "Launch pricing for UAE SMEs"
+                : "أسعار الإطلاق للشركات الصغيرة والمتوسطة في الإمارات"}
             </Badge>
           </ScrollReveal>
           <ScrollReveal delay={0.1}>

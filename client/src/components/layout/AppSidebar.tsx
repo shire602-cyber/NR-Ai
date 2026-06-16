@@ -163,6 +163,12 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         url: reportWorkspaceHref(workspace),
       })),
       ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportOperations-${workspace.persona}`,
+        title: `Report operations - ${workspace.title}`,
+        url: reportSectionHref(workspace, "automation-operations"),
+        testId: `report-automation-operations-${workspace.persona}`,
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: reportAutomationCenterTitleKeys[workspace.persona],
         url: reportSectionHref(workspace, "automation-command-center"),
       })),

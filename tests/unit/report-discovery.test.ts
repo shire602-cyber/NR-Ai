@@ -247,6 +247,9 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain('data-testid="dashboard-report-pack-readiness"');
     expect(dashboardSource).toContain("reportWorkspaceHref(preferredReportWorkspace)");
     expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "automation-operations")'
+    );
+    expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "decision-shortcuts")'
     );
     expect(dashboardSource).toContain(
@@ -270,6 +273,7 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "pack-automation")'
     );
+    expect(dashboardSource).toContain("Open operations");
     expect(dashboardSource).toContain("Open automation center");
     expect(dashboardSource).toContain("Open decision shortcuts");
     expect(dashboardSource).toContain("Open automation starters");
@@ -300,6 +304,8 @@ describe("report discoverability", () => {
     expect(mobileNavSource).toContain("workspace.navLabel");
     expect(mobileNavSource).toContain("workspace.automationNavLabel");
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
+    expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-operations")');
+    expect(mobileNavSource).toContain("Report operations - ${workspace.title}");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(mobileNavSource).toContain("reportDecisionShortcuts.map");
     expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
@@ -355,6 +361,9 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain("workspace.automations.length");
     expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
     expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
+    expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-operations")');
+    expect(sidebarSource).toContain("Report operations - ${workspace.title}");
+    expect(sidebarSource).toContain("report-automation-operations-${workspace.persona}");
     expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(sidebarSource).toContain("reportDecisionShortcuts.map");
     expect(sidebarSource).toContain("reportDecisionShortcutHref(shortcut)");

@@ -108,10 +108,10 @@ export default function Landing() {
         locale === "en" ? "UAE tax workflow support" : "دعم سير عمل الضرائب الإماراتية",
     },
     stats: {
-      invoices: locale === "en" ? "Invoices Generated" : "فواتير أُنشئت",
-      accuracy: locale === "en" ? "AI Accuracy Rate" : "دقة الذكاء الاصطناعي",
-      timeSaved: locale === "en" ? "Time Saved" : "وقت موفر",
-      businesses: locale === "en" ? "Happy Businesses" : "شركات سعيدة",
+      invoices: locale === "en" ? "VAT-ready invoices" : "فواتير جاهزة لضريبة القيمة المضافة",
+      accuracy: locale === "en" ? "Review prompts" : "تنبيهات المراجعة",
+      timeSaved: locale === "en" ? "CSV bank imports" : "استيراد كشوف البنك CSV",
+      businesses: locale === "en" ? "CT schedules" : "جداول ضريبة الشركات",
     },
     features: {
       badge: locale === "en" ? "Powerful Features" : "ميزات قوية",
@@ -144,8 +144,8 @@ export default function Landing() {
       title: locale === "en" ? "Ready to Transform Your Business?" : "مستعد لتحويل عملك؟",
       subtitle:
         locale === "en"
-          ? "Join 500+ UAE businesses already saving time and money"
-          : "انضم لـ 500+ شركة إماراتية توفر الوقت والمال",
+          ? "Start with guided onboarding, VAT-ready workflows, and sample data"
+          : "ابدأ بإعداد موجه وسير عمل جاهز لضريبة القيمة المضافة وبيانات تجريبية",
       primary: locale === "en" ? "Start Your Free Trial" : "ابدأ تجربتك المجانية",
       secondary: locale === "en" ? "Talk to Sales" : "تحدث مع المبيعات",
       guarantee:
@@ -161,8 +161,8 @@ export default function Landing() {
       title: locale === "en" ? "AI Expense Categorization" : "تصنيف المصروفات بالذكاء الاصطناعي",
       description:
         locale === "en"
-          ? "GPT-4o instantly categorizes your expenses with 99.8% accuracy. No manual entry needed."
-          : "GPT-4o يصنف مصروفاتك فوراً بدقة 99.8%. لا حاجة لإدخال يدوي.",
+          ? "AI-assisted review prompts help categorize expenses while your team keeps approval control."
+          : "تساعد تنبيهات المراجعة المدعومة بالذكاء الاصطناعي على تصنيف المصروفات مع بقاء الاعتماد بيد فريقك.",
       color: "from-violet-500 to-purple-600",
       bgColor: "bg-violet-500/10",
     },
@@ -226,8 +226,8 @@ export default function Landing() {
         "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face",
       quote:
         locale === "en"
-          ? "NR Accounting helped us get VAT registered in just 3 days. The AI bookkeeping app saves us 25+ hours monthly. We never miss a filing deadline and the accuracy is 99%+. Highly recommended!"
-          : "ساعدتنا NR Accounting في التسجيل لضريبة القيمة المضافة في 3 أيام فقط. تطبيق المحاسبة الذكي يوفر لنا 25+ ساعة شهرياً. لا نفوت موعد تقديم أبداً والدقة 99%+. موصى به بشدة!",
+          ? "The guided setup made invoices, receipt review, and VAT workpapers much easier to manage in one place."
+          : "ساعدنا الإعداد الموجه في إدارة الفواتير ومراجعة الإيصالات وأوراق عمل ضريبة القيمة المضافة في مكان واحد.",
       rating: 5,
       industry: locale === "en" ? "E-commerce" : "التجارة الإلكترونية",
     },
@@ -863,7 +863,7 @@ export default function Landing() {
                     }}
                   >
                     <Zap className="w-4 h-4 text-white" />
-                    <span className="text-white text-sm font-medium">99.8% Accurate</span>
+                    <span className="text-white text-sm font-medium">Review queue ready</span>
                   </motion.div>
                 </Floating>
               </div>
@@ -880,8 +880,8 @@ export default function Landing() {
         <div className="container max-w-7xl mx-auto px-6 lg:px-8">
           <p className="text-center text-sm text-muted-foreground mb-8">
             {locale === "en"
-              ? "Trusted by leading UAE businesses"
-              : "موثوق من الشركات الإماراتية الرائدة"}
+              ? "Built for UAE SME accounting workflows"
+              : "مصمم لسير عمل المحاسبة للشركات الصغيرة والمتوسطة في الإمارات"}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8 lg:gap-16 opacity-50">
             {logos.map((logo, i) => (
@@ -899,25 +899,25 @@ export default function Landing() {
           <StaggerContainer className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
             {[
               {
-                value: "50,000+",
+                value: "VAT",
                 label: t.stats.invoices,
                 icon: FileText,
                 color: "from-blue-500 to-cyan-500",
               },
               {
-                value: "99.8%",
+                value: "AI",
                 label: t.stats.accuracy,
                 icon: Target,
                 color: "from-green-500 to-emerald-500",
               },
               {
-                value: "87%",
+                value: "CSV",
                 label: t.stats.timeSaved,
                 icon: Timer,
                 color: "from-orange-500 to-amber-500",
               },
               {
-                value: "500+",
+                value: "CT",
                 label: t.stats.businesses,
                 icon: Building2,
                 color: "from-violet-500 to-purple-500",

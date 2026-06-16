@@ -1204,17 +1204,17 @@ export default function MuhasibLanding() {
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    EmaraTax handoff
+                    Official-channel handoff
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <FileText className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    e-Invoicing PINT AE
+                    E-invoicing roadmap
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    SOC 2 Type II
+                    SOC / ISO roadmap
                   </div>
                 </div>
               </Reveal>
@@ -1237,12 +1237,14 @@ export default function MuhasibLanding() {
       <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
         <Reveal>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-            {[
-              { value: 500, suffix: "+", label: "UAE businesses on Muhasib" },
-              { value: 12, prefix: "AED ", suffix: "M", label: "In VAT filed last quarter" },
-              { value: 99, suffix: "%", label: "AI categorisation accuracy" },
-              { value: 22, suffix: "h", label: "Saved per company per month" },
-            ].map((s) => (
+            {(
+              [
+                { value: 4, label: "Migration paths prepared" },
+                { value: 5, label: "Mobile workflows checked" },
+                { value: 2, label: "VAT and CT export workbooks" },
+                { value: 0, label: "Direct filing claims made" },
+              ] as Array<{ value: number; label: string; suffix?: string; prefix?: string }>
+            ).map((s) => (
               <div key={s.label}>
                 <div
                   className="font-serif text-5xl tracking-tight md:text-6xl"

@@ -109,10 +109,10 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/mobile-launch-ux.test.ts` after mobile layout changes on invoices,
   receipts, banking, VAT, or other launch-critical SaaS screens.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command
-  palette shortcuts, persona workspaces, report decision-question metadata, decision shortcut
-  paths, automation starter paths, report trigger-rule paths, delivery subscription paths/settings
-  controls, delivery previews/run history, comparison presets, report coverage maps, report pack
-  templates/exports, or report deep-link behavior changes.
+  palette shortcuts, persona workspaces, report operations navigation, report decision-question
+  metadata, decision shortcut paths, automation starter paths, report trigger-rule paths, delivery
+  subscription paths/settings controls, delivery previews/run history, comparison presets, report
+  coverage maps, report pack templates/exports, or report deep-link behavior changes.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery

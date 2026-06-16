@@ -657,13 +657,13 @@ export default function LandingPage() {
                 <p className="text-muted-foreground leading-relaxed max-w-2xl">
                   Muhasib.ai is the official digital platform of{" "}
                   <strong>Najma Al Raeda (NRA) Accounting</strong> — a UAE-registered accounting
-                  firm with over a decade of experience serving Emirati businesses. NRA is an
-                  FTA-registered Tax Agent, ensuring your filings meet every regulatory requirement.
+                  firm with over a decade of experience serving Emirati businesses. NRA supports
+                  accounting review, VAT workflows, and filing preparation through qualified staff.
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-4 justify-center lg:justify-start">
                   {[
-                    { icon: Shield, text: "FTA-Registered Tax Agent" },
+                    { icon: Shield, text: "Qualified accounting review" },
                     { icon: Award, text: "UAE Registered Firm" },
                     { icon: CheckCircle2, text: "Serving UAE since 2017" },
                   ].map((item) => {
@@ -690,7 +690,7 @@ export default function LandingPage() {
               Ready to Automate Your Bookkeeping?
             </h2>
             <p className="text-primary-foreground/80 text-lg mb-8">
-              Join 500+ UAE businesses already saving 20+ hours a month with Muhasib.ai.
+              Start with guided onboarding, sample data, and VAT-ready workflows for UAE SMEs.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link href="/register">
