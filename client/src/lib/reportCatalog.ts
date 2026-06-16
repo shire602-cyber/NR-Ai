@@ -14,6 +14,7 @@ export const reportPersonas = ["owner", "freelancer", "accountant"] as const;
 
 export type ReportTab = (typeof reportTabs)[number];
 export type ReportPersona = (typeof reportPersonas)[number];
+export type ReportSection = "recommendations" | "pack-readiness" | "pack-automation";
 export type ReportStatus = "live" | "api" | "planned";
 export type ReportCommandIcon =
   | "barChart"
@@ -584,6 +585,12 @@ export const reportCatalog: ReportCatalogItem[] = [
 
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
+const reportSectionAnchors: Record<ReportSection, string> = {
+  recommendations: "recommended-reports-title",
+  "pack-readiness": "report-pack-readiness-title",
+  "pack-automation": "report-pack-automation-title",
+};
+
 export function reportsHref(
   options: {
     tab?: ReportTab;
@@ -606,6 +613,13 @@ export function reportWorkspaceHref(
   workspace: Pick<ReportPersonaWorkspace, "persona" | "primaryTab">
 ): string {
   return reportsHref({ tab: workspace.primaryTab, persona: workspace.persona });
+}
+
+export function reportSectionHref(
+  workspace: Pick<ReportPersonaWorkspace, "persona" | "primaryTab">,
+  section: ReportSection
+): string {
+  return `${reportWorkspaceHref(workspace)}#${reportSectionAnchors[section]}`;
 }
 
 export function reportAutomationPlaybookHref(

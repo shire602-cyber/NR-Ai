@@ -2143,6 +2143,32 @@ export default function Reports() {
         }
       />
 
+      <section className="space-y-3" aria-labelledby="role-focus-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="role-focus-title" className="text-xl font-semibold">
+              Role focus
+            </h2>
+            <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
+          </div>
+          <Badge variant={personaFilter === "all" ? "outline" : "info"}>{personaFilterLabel}</Badge>
+        </div>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
+          {personaFilters.map((filter) => (
+            <Button
+              key={filter.id}
+              type="button"
+              size="sm"
+              variant={personaFilter === filter.id ? "default" : "outline"}
+              onClick={() => setReportPersonaFilter(filter.id)}
+              data-testid={`button-role-focus-${filter.id}`}
+            >
+              {filter.label}
+            </Button>
+          ))}
+        </div>
+      </section>
+
       <section className="space-y-4" aria-labelledby="recommended-reports-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>

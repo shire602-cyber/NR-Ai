@@ -8,6 +8,7 @@ import {
   reportHref,
   reportPersonas,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportTabs,
   reportWorkspaceHref,
 } from "../../client/src/lib/reportCatalog";
@@ -102,6 +103,30 @@ describe("report discoverability", () => {
     for (const workspace of reportPersonaWorkspaces) {
       expect(reportWorkspaceHref(workspace)).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}`
+      );
+    }
+  });
+
+  it("exposes persona pack workflows through global search", () => {
+    expect(commandSource).toContain('reportSectionHref(workspace, "recommendations")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "pack-readiness")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "pack-automation")');
+    expect(commandSource).toContain("id: `report-recommendations-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-pack-readiness-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
+    expect(commandSource).toContain("Recommended reports - ${workspace.title}");
+    expect(commandSource).toContain("Report pack readiness - ${workspace.title}");
+    expect(commandSource).toContain("Report pack automation - ${workspace.title}");
+
+    for (const workspace of reportPersonaWorkspaces) {
+      expect(reportSectionHref(workspace, "recommendations")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#recommended-reports-title`
+      );
+      expect(reportSectionHref(workspace, "pack-readiness")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-readiness-title`
+      );
+      expect(reportSectionHref(workspace, "pack-automation")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-automation-title`
       );
     }
   });
@@ -265,9 +290,13 @@ describe("report discoverability", () => {
 
   it("filters comparison and automation signals by selected persona", () => {
     expect(reportsSource).toContain("function matchesReportPersona");
+    expect(reportsSource).toContain("Role focus");
+    expect(reportsSource).toContain("Reporting role focus");
     expect(reportsSource).toContain("personaScopeDescription");
     expect(reportsSource).toContain("visibleComparisonRows");
     expect(reportsSource).toContain("visibleAutomationQueue");
+    expect(reportsSource).toContain("button-role-focus-${filter.id}");
+    expect(reportsSource).toContain("setReportPersonaFilter(filter.id)");
     expect(reportsSource).toContain(
       "comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter))"
     );

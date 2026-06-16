@@ -35,6 +35,7 @@ import {
   reportAutomationPlaybookHref,
   reportHref,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportWorkspaceHref,
   type ReportCommandIcon,
   type ReportWorkspaceIcon,
@@ -145,6 +146,32 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         })
       )
     ),
+    ...reportPersonaWorkspaces.flatMap((workspace): PaletteItem[] => [
+      {
+        id: `report-recommendations-${workspace.persona}`,
+        label: `Recommended reports - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "recommendations"),
+        keywords: `${workspace.commandKeywords} recommended next best reports comparisons automation`,
+      },
+      {
+        id: `report-pack-readiness-${workspace.persona}`,
+        label: `Report pack readiness - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "pack-readiness"),
+        keywords: `${workspace.commandKeywords} readiness delivery checklist pack send review`,
+      },
+      {
+        id: `report-pack-automation-${workspace.persona}`,
+        label: `Report pack automation - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "pack-automation"),
+        keywords: `${workspace.commandKeywords} scheduled send pack automation Google Sheets Excel`,
+      },
+    ]),
     ...liveReportCatalog.map(
       (report): PaletteItem => ({
         id: `report-${report.id}`,
