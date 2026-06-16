@@ -21,6 +21,13 @@ vi.mock("../../server/storage", () => ({
     hasCompanyAccess: vi.fn(async () => true),
     getReportDeliverySubscriptionSettings: vi.fn(async () => []),
     upsertReportDeliverySubscriptionSetting: vi.fn(),
+    getReportDeliveryRuns: vi.fn(async () => []),
+    createReportDeliveryRun: vi.fn(async (run: any) => ({
+      id: "run-1",
+      ...run,
+      createdAt: new Date("2026-06-16T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+    })),
   },
 }));
 
@@ -37,6 +44,7 @@ import { createAndEmitNotification } from "../../server/services/socket.service"
 import { storage } from "../../server/storage";
 import {
   buildReportDeliveryNotificationInput,
+  buildReportDeliveryRunInput,
   getReportDeliveryPlans,
 } from "../../server/services/report-delivery.service";
 
@@ -73,6 +81,8 @@ describe("report delivery subscriptions", () => {
     vi.mocked(storage.hasCompanyAccess).mockResolvedValue(true);
     vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([]);
     vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockReset();
+    vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([]);
+    vi.mocked(storage.createReportDeliveryRun).mockClear();
     vi.mocked(createAndEmitNotification).mockClear();
   });
 
@@ -93,6 +103,11 @@ describe("report delivery subscriptions", () => {
     expect(plans[0].readyReportCount).toBe(plans[0].reportCount);
     expect(plans[0].nextRunAt).toBe("2026-06-22T08:00:00.000Z");
     expect(plans[0].packTemplate?.title).toBe("Owner weekly command pack");
+    expect(plans[0].preview).toMatchObject({
+      readinessLabel: "Ready for queue",
+      reportNames: expect.arrayContaining(["Profit & Loss", "A/R Aging"]),
+      triggerRuleTitles: expect.arrayContaining(["Cash runway risk"]),
+    });
   });
 
   it("applies company delivery settings to catalog plans", () => {
@@ -150,6 +165,37 @@ describe("report delivery subscriptions", () => {
     expect(delivery?.notification.scheduledFor?.toISOString()).toBe("2026-06-22T08:00:00.000Z");
   });
 
+  it("builds a queued report delivery run snapshot", () => {
+    const [plan] = getReportDeliveryPlans({
+      persona: "owner",
+      now: new Date("2026-06-16T10:00:00.000Z"),
+    });
+
+    const run = buildReportDeliveryRunInput({
+      companyId,
+      queuedBy: userId,
+      plan,
+      notificationId: "notification-1",
+    });
+
+    expect(run).toMatchObject({
+      companyId,
+      subscriptionId: "owner-weekly-executive-delivery",
+      status: "queued",
+      readinessStatus: "ready",
+      notificationId: "notification-1",
+      queuedBy: userId,
+      reportCount: plan.reportCount,
+      readyReportCount: plan.readyReportCount,
+      triggerRuleCount: plan.triggerRuleCount,
+    });
+    expect(run.scheduledFor.toISOString()).toBe("2026-06-22T08:00:00.000Z");
+    expect(run.snapshot).toMatchObject({
+      title: "Owner weekly executive delivery",
+      preview: expect.objectContaining({ readinessLabel: "Ready for queue" }),
+    });
+  });
+
   it("returns report delivery plans by persona", async () => {
     const res = await request(
       appWithRoutes(),
@@ -165,6 +211,49 @@ describe("report delivery subscriptions", () => {
     ]);
     expect(res.body.subscriptions[0].href).toContain("#report-delivery-subscription-");
     expect(storage.getReportDeliverySubscriptionSettings).toHaveBeenCalledWith(companyId);
+  });
+
+  it("returns recent report delivery runs by subscription", async () => {
+    vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([
+      {
+        id: "run-1",
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        status: "queued",
+        readinessStatus: "ready",
+        notificationId: "notification-1",
+        scheduledFor: new Date("2026-06-22T08:00:00.000Z"),
+        queuedBy: userId,
+        channel: "Google Sheets plus email summary",
+        format: "Management pack workbook",
+        recipients: "Owner",
+        deliveryGuardrail: "Review guardrail",
+        reportCount: 6,
+        readyReportCount: 6,
+        triggerRuleCount: 2,
+        snapshot: {},
+        createdAt: new Date("2026-06-16T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+      },
+    ]);
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/runs?subscriptionId=owner-weekly-executive-delivery&limit=5`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.runs[0]).toMatchObject({
+      id: "run-1",
+      subscriptionId: "owner-weekly-executive-delivery",
+      status: "queued",
+    });
+    expect(storage.getReportDeliveryRuns).toHaveBeenCalledWith(companyId, {
+      subscriptionId: "owner-weekly-executive-delivery",
+      limit: 5,
+    });
   });
 
   it("updates company delivery settings", async () => {
@@ -231,6 +320,7 @@ describe("report delivery subscriptions", () => {
     expect(res.status).toBe(201);
     expect(res.body.subscription.id).toBe("owner-weekly-executive-delivery");
     expect(res.body.notification.id).toBe("notification-1");
+    expect(res.body.run.id).toBe("run-1");
     expect(createAndEmitNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
@@ -238,6 +328,16 @@ describe("report delivery subscriptions", () => {
         relatedEntityType: "report_delivery_subscription",
         actionUrl:
           "/reports?tab=balances&persona=owner#report-delivery-subscription-owner-weekly-executive-delivery",
+      })
+    );
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        notificationId: "notification-1",
+        queuedBy: userId,
+        status: "queued",
+        readinessStatus: "ready",
       })
     );
   });
@@ -270,6 +370,7 @@ describe("report delivery subscriptions", () => {
     expect(res.status).toBe(409);
     expect(res.body.message).toBe("Report delivery subscription is paused");
     expect(createAndEmitNotification).not.toHaveBeenCalled();
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
   });
 
   it("rejects users without company access", async () => {

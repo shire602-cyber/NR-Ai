@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { createAndEmitNotification } from "../services/socket.service";
 import {
   buildReportDeliveryNotificationInput,
+  buildReportDeliveryRunInput,
   getReportDeliveryPlan,
   getReportDeliveryPlans,
   isReportDeliveryPersona,
@@ -35,6 +36,11 @@ const reportDeliverySettingsSchema = z
     message: "At least one setting must be provided",
   });
 
+const reportDeliveryRunsQuerySchema = z.object({
+  subscriptionId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
 export function registerReportDeliveryRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/report-delivery/subscriptions",
@@ -54,6 +60,30 @@ export function registerReportDeliveryRoutes(app: Express) {
       });
 
       res.json({ subscriptions });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/report-delivery/runs",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const query = reportDeliveryRunsQuerySchema.parse(req.query);
+      if (query.subscriptionId && !getReportDeliveryPlan(query.subscriptionId)) {
+        return res.status(404).json({ message: "Report delivery subscription not found" });
+      }
+
+      const runs = await storage.getReportDeliveryRuns(companyId, {
+        subscriptionId: query.subscriptionId,
+        limit: query.limit,
+      });
+
+      res.json({ runs });
     })
   );
 
@@ -118,10 +148,19 @@ export function registerReportDeliveryRoutes(app: Express) {
       }
 
       const notification = await createAndEmitNotification(delivery.notification);
+      const run = await storage.createReportDeliveryRun(
+        buildReportDeliveryRunInput({
+          companyId,
+          queuedBy: userId,
+          plan: delivery.plan,
+          notificationId: notification.id,
+        })
+      );
 
       res.status(201).json({
         subscription: delivery.plan,
         notification,
+        run,
       });
     })
   );

@@ -7,6 +7,8 @@ import type {
   InsertCompanyUser,
   CompanyReportDeliverySubscription,
   InsertCompanyReportDeliverySubscription,
+  CompanyReportDeliveryRun,
+  InsertCompanyReportDeliveryRun,
   Account,
   InsertAccount,
   JournalEntry,
@@ -165,6 +167,7 @@ import {
   companies,
   companyUsers,
   companyReportDeliverySubscriptions,
+  companyReportDeliveryRuns,
   firmStaffAssignments,
   accounts,
   journalEntries,
@@ -324,6 +327,11 @@ export interface IStorage {
   upsertReportDeliverySubscriptionSetting(
     setting: InsertCompanyReportDeliverySubscription
   ): Promise<CompanyReportDeliverySubscription>;
+  getReportDeliveryRuns(
+    companyId: string,
+    options?: { subscriptionId?: string; limit?: number }
+  ): Promise<CompanyReportDeliveryRun[]>;
+  createReportDeliveryRun(run: InsertCompanyReportDeliveryRun): Promise<CompanyReportDeliveryRun>;
   /**
    * Check whether the user has access to a company. Optional firmRole allows
    * firm_owner (all client companies) or firm_admin (assigned client companies)
@@ -1143,6 +1151,32 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
 
+    return row;
+  }
+
+  async getReportDeliveryRuns(
+    companyId: string,
+    options: { subscriptionId?: string; limit?: number } = {}
+  ): Promise<CompanyReportDeliveryRun[]> {
+    const whereClause = options.subscriptionId
+      ? and(
+          eq(companyReportDeliveryRuns.companyId, companyId),
+          eq(companyReportDeliveryRuns.subscriptionId, options.subscriptionId)
+        )
+      : eq(companyReportDeliveryRuns.companyId, companyId);
+
+    return await db
+      .select()
+      .from(companyReportDeliveryRuns)
+      .where(whereClause)
+      .orderBy(desc(companyReportDeliveryRuns.createdAt))
+      .limit(options.limit ?? 20);
+  }
+
+  async createReportDeliveryRun(
+    run: InsertCompanyReportDeliveryRun
+  ): Promise<CompanyReportDeliveryRun> {
+    const [row] = await db.insert(companyReportDeliveryRuns).values(run).returning();
     return row;
   }
 

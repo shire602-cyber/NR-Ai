@@ -489,6 +489,58 @@ export type InsertCompanyReportDeliverySubscription = z.infer<
 export type CompanyReportDeliverySubscription =
   typeof companyReportDeliverySubscriptions.$inferSelect;
 
+export const companyReportDeliveryRuns = pgTable(
+  "company_report_delivery_runs",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscription_id").notNull(),
+    status: text("status").notNull().default("queued"), // queued | sent | failed | cancelled
+    readinessStatus: text("readiness_status").notNull(), // ready | setup | paused
+    notificationId: uuid("notification_id"),
+    scheduledFor: timestamp("scheduled_for").notNull(),
+    queuedBy: uuid("queued_by").references(() => users.id, { onDelete: "set null" }),
+    channel: text("channel").notNull(),
+    format: text("format").notNull(),
+    recipients: text("recipients").notNull(),
+    deliveryGuardrail: text("delivery_guardrail").notNull(),
+    reportCount: integer("report_count").notNull().default(0),
+    readyReportCount: integer("ready_report_count").notNull().default(0),
+    triggerRuleCount: integer("trigger_rule_count").notNull().default(0),
+    snapshot: jsonb("snapshot")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdIdx: index("idx_company_report_delivery_runs_company_id").on(table.companyId),
+    subscriptionIdIdx: index("idx_company_report_delivery_runs_subscription_id").on(
+      table.subscriptionId
+    ),
+    companySubscriptionIdx: index("idx_company_report_delivery_runs_company_subscription").on(
+      table.companyId,
+      table.subscriptionId
+    ),
+    scheduledForIdx: index("idx_company_report_delivery_runs_scheduled_for").on(table.scheduledFor),
+  })
+);
+
+export const insertCompanyReportDeliveryRunSchema = createInsertSchema(
+  companyReportDeliveryRuns
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanyReportDeliveryRun = z.infer<typeof insertCompanyReportDeliveryRunSchema>;
+export type CompanyReportDeliveryRun = typeof companyReportDeliveryRuns.$inferSelect;
+
 // ===========================
 // Firm Staff Assignments
 // ===========================

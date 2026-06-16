@@ -163,6 +163,47 @@ interface SaveReportDeliverySubscriptionSettingsInput {
   deliveryGuardrail?: string | null;
 }
 
+interface ReportDeliveryPlanPreview {
+  summary: string;
+  readinessLabel: string;
+  checklist: Array<{
+    label: string;
+    status: "ready" | "review" | "paused";
+    detail: string;
+  }>;
+  reportNames: string[];
+  triggerRuleTitles: string[];
+}
+
+interface ReportDeliveryPlanResponse {
+  id: string;
+  enabled: boolean;
+  status: "ready" | "setup" | "paused";
+  cadence: string;
+  channel: string;
+  format: string;
+  recipients: string;
+  deliveryGuardrail: string;
+  nextRunLabel: string;
+  settingsSource: "catalog" | "company";
+  preview: ReportDeliveryPlanPreview;
+}
+
+interface ReportDeliveryRunSummary {
+  id: string;
+  subscriptionId: string;
+  status: string;
+  readinessStatus: "ready" | "setup" | "paused";
+  scheduledFor: string;
+  channel: string;
+  format: string;
+  recipients: string;
+  reportCount: number;
+  readyReportCount: number;
+  triggerRuleCount: number;
+  createdAt: string;
+}
+
 type ConsolidatedStatementStatus = "included" | "unbalanced" | "multi_currency" | "failed";
 
 interface ConsolidatedStatementEntityRow {
@@ -1535,6 +1576,27 @@ function makeComparisonMetric(
 function normalizeDeliverySetting(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function formatDeliveryRunTimestamp(value: string | null | undefined): string {
+  if (!value) return "No runs yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return format(date, "MMM d, HH:mm");
+}
+
+function deliveryRunStatusVariant(status: string): BadgeProps["variant"] {
+  if (status === "sent") return "success";
+  if (status === "failed" || status === "cancelled") return "destructive";
+  return "info";
+}
+
+function deliveryPreviewCheckVariant(
+  status: ReportDeliveryPlanPreview["checklist"][number]["status"]
+): BadgeProps["variant"] {
+  if (status === "ready") return "success";
+  if (status === "paused") return "neutral";
+  return "warning";
 }
 
 export default function Reports() {
@@ -3666,22 +3728,20 @@ export default function Reports() {
   }, [personaFilter, reportAutomationTriggerRuleSummaries]);
 
   const reportDeliveryPlansQuery = useQuery<{
-    subscriptions: Array<{
-      id: string;
-      enabled: boolean;
-      status: "ready" | "setup" | "paused";
-      cadence: string;
-      channel: string;
-      format: string;
-      recipients: string;
-      deliveryGuardrail: string;
-      nextRunLabel: string;
-      settingsSource: "catalog" | "company";
-    }>;
+    subscriptions: ReportDeliveryPlanResponse[];
   }>({
     queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "subscriptions"],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/subscriptions`),
+    enabled: !!selectedCompanyId,
+  });
+
+  const reportDeliveryRunsQuery = useQuery<{
+    runs: ReportDeliveryRunSummary[];
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "runs"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/runs?limit=30`),
     enabled: !!selectedCompanyId,
   });
 
@@ -3691,11 +3751,22 @@ export default function Reports() {
     );
   }, [reportDeliveryPlansQuery.data?.subscriptions]);
 
+  const reportDeliveryRunsBySubscriptionId = useMemo(() => {
+    const runsBySubscription = new Map<string, ReportDeliveryRunSummary[]>();
+    for (const run of reportDeliveryRunsQuery.data?.runs ?? []) {
+      const existing = runsBySubscription.get(run.subscriptionId) ?? [];
+      existing.push(run);
+      runsBySubscription.set(run.subscriptionId, existing);
+    }
+    return runsBySubscription;
+  }, [reportDeliveryRunsQuery.data?.runs]);
+
   const reportDeliverySubscriptionSummaries = useMemo(() => {
     return reportDeliverySubscriptions.flatMap((subscription) => {
       const workspace = workspaceSummaries.find((item) => item.persona === subscription.persona);
       if (!workspace) return [];
       const deliveryPlan = reportDeliveryPlanById.get(subscription.id);
+      const deliveryRuns = reportDeliveryRunsBySubscriptionId.get(subscription.id) ?? [];
 
       const reports = subscription.reportIds
         .map((reportId) => reportCatalog.find((report) => report.id === reportId))
@@ -3751,6 +3822,28 @@ export default function Reports() {
           deliveryGuardrail: deliveryPlan?.deliveryGuardrail ?? subscription.deliveryGuardrail,
           nextRunLabel: deliveryPlan?.nextRunLabel ?? "",
           settingsSource: deliveryPlan?.settingsSource ?? "catalog",
+          preview:
+            deliveryPlan?.preview ??
+            ({
+              summary: `${subscription.format} to ${subscription.recipients} through ${subscription.channel}.`,
+              readinessLabel: "Catalog preview",
+              checklist: [
+                {
+                  label: "Reports",
+                  status: readyCount === reports.length ? "ready" : "review",
+                  detail: `${readyCount}/${reports.length} reports ready for this pack.`,
+                },
+                {
+                  label: "Guardrail",
+                  status: "ready",
+                  detail: subscription.deliveryGuardrail,
+                },
+              ],
+              reportNames: reports.map((report) => report.name),
+              triggerRuleTitles: triggerRules.map((rule) => rule.title),
+            } satisfies ReportDeliveryPlanPreview),
+          deliveryRuns,
+          latestDeliveryRun: deliveryRuns[0] ?? null,
           href: reportDeliverySubscriptionHref(subscription),
           packTemplateHref: packTemplate?.href ?? reportDeliverySubscriptionHref(subscription),
           automationStarterHref:
@@ -3769,6 +3862,7 @@ export default function Reports() {
     });
   }, [
     reportDeliveryPlanById,
+    reportDeliveryRunsBySubscriptionId,
     reportAutomationStarterSummaries,
     reportAutomationTriggerRuleSummaries,
     reportDecisionShortcutSummaries,
@@ -4315,6 +4409,7 @@ export default function Reports() {
     },
     onSuccess: (result: any) => {
       reportDeliveryPlansQuery.refetch();
+      reportDeliveryRunsQuery.refetch();
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
@@ -5984,6 +6079,109 @@ export default function Reports() {
                         </div>
                       </div>
                     )}
+
+                    <div
+                      className="rounded-md border p-3 text-xs"
+                      data-testid={`report-delivery-preview-${subscription.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-medium text-foreground">Pack preview</div>
+                          <p className="mt-1 text-muted-foreground">
+                            {subscription.preview.summary}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={
+                            subscription.preview.readinessLabel === "Ready for queue"
+                              ? "success"
+                              : subscription.preview.readinessLabel === "Paused"
+                                ? "neutral"
+                                : "warning"
+                          }
+                        >
+                          {subscription.preview.readinessLabel}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {subscription.preview.reportNames.slice(0, 4).map((reportName) => (
+                          <Badge key={reportName} variant="outline">
+                            {reportName}
+                          </Badge>
+                        ))}
+                        {subscription.preview.reportNames.length > 4 ? (
+                          <Badge variant="neutral">
+                            +{subscription.preview.reportNames.length - 4}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {subscription.preview.checklist.slice(0, 3).map((check) => (
+                          <div
+                            key={check.label}
+                            className="flex items-start justify-between gap-2 rounded-md bg-secondary/40 p-2"
+                          >
+                            <div>
+                              <div className="font-medium text-foreground">{check.label}</div>
+                              <div className="mt-0.5 text-muted-foreground">{check.detail}</div>
+                            </div>
+                            <Badge variant={deliveryPreviewCheckVariant(check.status)}>
+                              {check.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      className="rounded-md border p-3 text-xs"
+                      data-testid={`report-delivery-run-history-${subscription.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium text-foreground">Recent delivery runs</div>
+                        <Badge variant="neutral">{subscription.deliveryRuns.length}</Badge>
+                      </div>
+                      {subscription.latestDeliveryRun ? (
+                        <div className="mt-3 space-y-2">
+                          {subscription.deliveryRuns.slice(0, 2).map((run) => (
+                            <div
+                              key={run.id}
+                              className="flex items-start justify-between gap-2 rounded-md bg-secondary/40 p-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <Badge variant={deliveryRunStatusVariant(run.status)} dot>
+                                    {run.status}
+                                  </Badge>
+                                  <span className="font-medium text-foreground">
+                                    {formatDeliveryRunTimestamp(run.createdAt)}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
+                                  {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                                </div>
+                              </div>
+                              <Badge
+                                variant={
+                                  run.readinessStatus === "ready"
+                                    ? "success"
+                                    : run.readinessStatus === "paused"
+                                      ? "neutral"
+                                      : "warning"
+                                }
+                              >
+                                {run.readinessStatus}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded-md bg-secondary/40 p-2 text-muted-foreground">
+                          No queued delivery runs yet.
+                        </div>
+                      )}
+                    </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">

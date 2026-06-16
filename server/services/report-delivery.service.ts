@@ -10,7 +10,11 @@ import {
   type ReportDeliverySubscription,
   type ReportPersona,
 } from "../../client/src/lib/reportCatalog";
-import type { CompanyReportDeliverySubscription, InsertNotification } from "../../shared/schema";
+import type {
+  CompanyReportDeliverySubscription,
+  InsertCompanyReportDeliveryRun,
+  InsertNotification,
+} from "../../shared/schema";
 
 export type ReportDeliverySetting = Pick<
   CompanyReportDeliverySubscription,
@@ -66,6 +70,19 @@ export interface ReportDeliveryPlan {
     title: string;
     severity: string;
   }>;
+  preview: ReportDeliveryPreview;
+}
+
+export interface ReportDeliveryPreview {
+  summary: string;
+  readinessLabel: string;
+  checklist: Array<{
+    label: string;
+    status: "ready" | "review" | "paused";
+    detail: string;
+  }>;
+  reportNames: string[];
+  triggerRuleTitles: string[];
 }
 
 export function isReportDeliveryPersona(value: unknown): value is ReportPersona {
@@ -150,6 +167,43 @@ export function buildReportDeliveryPlan(
     (shortcut) => shortcut.id === subscription.decisionShortcutId
   );
   const nextRunAt = estimateReportDeliveryNextRun({ cadence }, now);
+  const blockedReportCount = reports.length - readyReportCount;
+  const readinessLabel = !enabled
+    ? "Paused"
+    : blockedReportCount > 0
+      ? "Setup needed before queue"
+      : "Ready for queue";
+  const preview: ReportDeliveryPreview = {
+    summary: `${format} to ${recipients} through ${channel}.`,
+    readinessLabel,
+    checklist: [
+      {
+        label: "Reports",
+        status: blockedReportCount > 0 ? "review" : "ready",
+        detail: `${readyReportCount}/${reports.length} reports ready for this pack.`,
+      },
+      {
+        label: "Guardrail",
+        status: enabled ? "ready" : "paused",
+        detail: deliveryGuardrail,
+      },
+      {
+        label: "Recipients",
+        status: enabled ? "ready" : "paused",
+        detail: recipients,
+      },
+      {
+        label: "Automation rules",
+        status: triggerRules.length > 0 ? "review" : "ready",
+        detail:
+          triggerRules.length > 0
+            ? `${triggerRules.length} trigger rules will be checked before delivery.`
+            : "No trigger rules are attached to this subscription.",
+      },
+    ],
+    reportNames: reports.map((report) => report.name),
+    triggerRuleTitles: triggerRules.map((rule) => rule.title),
+  };
 
   return {
     id: subscription.id,
@@ -188,6 +242,7 @@ export function buildReportDeliveryPlan(
       title: rule.title,
       severity: rule.severity,
     })),
+    preview,
   };
 }
 
@@ -247,6 +302,47 @@ export function buildReportDeliveryNotificationInput(input: {
       isRead: false,
       isDismissed: false,
       scheduledFor: new Date(plan.nextRunAt),
+    },
+  };
+}
+
+export function buildReportDeliveryRunInput(input: {
+  companyId: string;
+  queuedBy: string;
+  plan: ReportDeliveryPlan;
+  notificationId?: string | null;
+}): InsertCompanyReportDeliveryRun {
+  const { plan } = input;
+
+  return {
+    companyId: input.companyId,
+    subscriptionId: plan.id,
+    status: "queued",
+    readinessStatus: plan.status,
+    notificationId: input.notificationId ?? null,
+    scheduledFor: new Date(plan.nextRunAt),
+    queuedBy: input.queuedBy,
+    channel: plan.channel,
+    format: plan.format,
+    recipients: plan.recipients,
+    deliveryGuardrail: plan.deliveryGuardrail,
+    reportCount: plan.reportCount,
+    readyReportCount: plan.readyReportCount,
+    triggerRuleCount: plan.triggerRuleCount,
+    snapshot: {
+      title: plan.title,
+      persona: plan.persona,
+      audience: plan.audience,
+      href: plan.href,
+      nextRunAt: plan.nextRunAt,
+      nextRunLabel: plan.nextRunLabel,
+      settingsSource: plan.settingsSource,
+      reports: plan.reports,
+      triggerRules: plan.triggerRules,
+      packTemplate: plan.packTemplate,
+      automationStarter: plan.automationStarter,
+      decisionShortcut: plan.decisionShortcut,
+      preview: plan.preview,
     },
   };
 }
