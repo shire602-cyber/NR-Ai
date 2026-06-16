@@ -43,6 +43,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import {
   reportCatalog,
+  reportAutomationPlaybookHref,
   reportPersonas,
   reportPersonaWorkspaces,
   reportTabs,
@@ -512,6 +513,10 @@ function personaFilterFromSearch(search: string): PersonaFilter {
   return reportPersonas.includes(persona as ReportPersona) ? (persona as ReportPersona) : "all";
 }
 
+function matchesReportPersona(personas: ReportPersona[], persona: PersonaFilter): boolean {
+  return persona === "all" || personas.includes(persona);
+}
+
 function startOfLocalDay(date: Date): Date {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
@@ -614,9 +619,16 @@ export default function Reports() {
     navigate(reportsHref({ tab: activeTab, persona }));
   };
 
+  const personaFilterLabel =
+    personaFilters.find((filter) => filter.id === personaFilter)?.label ?? "All";
+  const personaScopeDescription =
+    personaFilter === "all"
+      ? "Showing all role signals."
+      : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
+
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
-      return personaFilter === "all" || report.personas.includes(personaFilter);
+      return matchesReportPersona(report.personas, personaFilter);
     });
   }, [personaFilter]);
 
@@ -631,7 +643,7 @@ export default function Reports() {
     return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
       const readyReports = reports.filter((report) => report.status !== "planned").length;
-      const automationCount = reports.filter((report) => report.automation).length;
+      const automationCount = workspace.automations.length;
       const topReadyReport = reports.find((report) => report.tab) ?? reports[0];
       return {
         ...workspace,
@@ -1045,6 +1057,21 @@ export default function Reports() {
       (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
       0
     );
+    const ledgerActivityForRange = (range: ComparisonRange) =>
+      journalEntries
+        .filter((entry) => entry.status === "posted" && valueInDateRange(entry.date, range))
+        .reduce(
+          (entrySum, entry) =>
+            entrySum +
+            (entry.lines ?? []).reduce(
+              (lineSum, line) =>
+                lineSum + Math.max(Number(line.debit) || 0, Number(line.credit) || 0),
+              0
+            ),
+          0
+        );
+    const currentLedgerActivity = ledgerActivityForRange(comparisonCurrentRange);
+    const previousLedgerActivity = ledgerActivityForRange(comparisonPreviousRange);
 
     return [
       makeComparisonMetric({
@@ -1102,6 +1129,17 @@ export default function Reports() {
         personas: ["owner", "freelancer", "accountant"],
         tab: "vat",
       }),
+      makeComparisonMetric({
+        id: "ledger-activity",
+        label: "Ledger activity",
+        current: currentLedgerActivity,
+        previous: previousLedgerActivity,
+        currency: "AED",
+        signal: "Close activity",
+        favorable: "neutral",
+        personas: ["accountant"],
+        tab: "ledger",
+      }),
     ];
   }, [
     comparisonCurrentProfitLoss?.netProfit,
@@ -1113,8 +1151,13 @@ export default function Reports() {
     comparisonPreviousRange,
     comparisonPreviousVat?.netVATPayable,
     invoices,
+    journalEntries,
     receipts,
   ]);
+
+  const visibleComparisonRows = useMemo(() => {
+    return comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter));
+  }, [comparisonRows, personaFilter]);
 
   const comparisonLoading =
     comparisonCurrentPlLoading ||
@@ -1122,6 +1165,7 @@ export default function Reports() {
     comparisonCurrentVatLoading ||
     comparisonPreviousVatLoading ||
     invoicesLoading ||
+    journalLoading ||
     receiptsLoading;
 
   const reportJournalEntries = useMemo(() => {
@@ -1388,7 +1432,11 @@ export default function Reports() {
     vatSummary?.netVATPayable,
   ]);
 
-  const automationQueueCount = automationQueue.reduce((sum, item) => sum + item.count, 0);
+  const visibleAutomationQueue = useMemo(() => {
+    return automationQueue.filter((item) => matchesReportPersona(item.personas, personaFilter));
+  }, [automationQueue, personaFilter]);
+
+  const automationQueueCount = visibleAutomationQueue.reduce((sum, item) => sum + item.count, 0);
 
   const handleExportExcel = () => {
     const dateRangeStr =
@@ -1555,11 +1603,21 @@ export default function Reports() {
               Period comparison
             </h2>
             <p className="text-sm text-muted-foreground">
-              {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.
+              {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.{" "}
+              {personaScopeDescription}
             </p>
           </div>
-          <Badge variant={comparisonRanges.isCustom ? "info" : "neutral"} dot>
-            {comparisonRanges.isCustom ? "Custom range" : "Month to date"}
+          <Badge
+            variant={
+              personaFilter === "all" ? (comparisonRanges.isCustom ? "info" : "neutral") : "info"
+            }
+            dot
+          >
+            {personaFilter === "all"
+              ? comparisonRanges.isCustom
+                ? "Custom range"
+                : "Month to date"
+              : personaFilterLabel}
           </Badge>
         </div>
 
@@ -1567,7 +1625,7 @@ export default function Reports() {
           <Skeleton className="h-48 w-full" />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-5">
-            {comparisonRows.map((row) => (
+            {visibleComparisonRows.map((row) => (
               <Card key={row.id}>
                 <CardHeader className="space-y-3 pb-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1625,7 +1683,7 @@ export default function Reports() {
               Automation queues
             </h2>
             <p className="text-sm text-muted-foreground">
-              Live report signals routed to the next workflow.
+              Live report signals routed to the next workflow. {personaScopeDescription}
             </p>
           </div>
           <Badge variant={automationQueueCount > 0 ? "warning" : "success"} dot>
@@ -1637,7 +1695,7 @@ export default function Reports() {
           <Skeleton className="h-56 w-full" />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-            {automationQueue.map((item) => {
+            {visibleAutomationQueue.map((item) => {
               const Icon = item.icon;
               const hasAction = item.count > 0;
               return (
@@ -1711,11 +1769,15 @@ export default function Reports() {
               Comparison snapshots
             </h2>
             <p className="text-sm text-muted-foreground">
-              {comparisonCurrentLabel} vs {comparisonPreviousLabel}
+              {comparisonCurrentLabel} vs {comparisonPreviousLabel}. {personaScopeDescription}
             </p>
           </div>
-          <Badge variant="outline">
-            {comparisonRanges.isCustom ? "Selected range" : "Month to date"}
+          <Badge variant={personaFilter === "all" ? "outline" : "info"}>
+            {personaFilter === "all"
+              ? comparisonRanges.isCustom
+                ? "Selected range"
+                : "Month to date"
+              : personaFilterLabel}
           </Badge>
         </div>
 
@@ -1744,7 +1806,7 @@ export default function Reports() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comparisonRows.map((row) => (
+                    {visibleComparisonRows.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell className="font-medium">{row.label}</TableCell>
                         <TableCell>
@@ -1870,6 +1932,46 @@ export default function Reports() {
                     <div className="text-xs text-muted-foreground">
                       {workspace.topReadyReport?.automation}
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Automation playbooks
+                    </div>
+                    {workspace.automations.map((playbook) => {
+                      const linkedReports = playbook.reportIds
+                        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+                        .filter((report): report is (typeof reportCatalog)[number] =>
+                          Boolean(report)
+                        );
+
+                      return (
+                        <div key={playbook.id} className="rounded-md border p-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 space-y-1">
+                              <div className="text-sm font-medium">{playbook.title}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Trigger: {playbook.trigger}
+                              </div>
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {linkedReports.slice(0, 3).map((report) => (
+                                  <Badge key={report.id} variant="outline">
+                                    {report.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                            <Button asChild size="sm" variant="outline">
+                              <Link
+                                href={reportAutomationPlaybookHref(playbook, workspace.persona)}
+                              >
+                                {playbook.cta}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="flex flex-wrap gap-2">

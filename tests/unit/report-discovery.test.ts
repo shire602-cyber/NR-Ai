@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   liveReportCatalog,
+  reportAutomationPlaybookHref,
   reportCatalog,
   reportHref,
   reportPersonas,
@@ -105,6 +106,35 @@ describe("report discoverability", () => {
     }
   });
 
+  it("keeps persona automation playbooks tied to real reports and workflows", () => {
+    expect(reportsSource).toContain("Automation playbooks");
+    expect(reportsSource).toContain("workspace.automations.length");
+    expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
+
+    const allReportIds = new Set(reportCatalog.map((report) => report.id));
+    const liveReportIds = new Set(liveReportCatalog.map((report) => report.id));
+
+    for (const workspace of reportPersonaWorkspaces) {
+      expect(workspace.automations).toHaveLength(3);
+
+      for (const playbook of workspace.automations) {
+        expect(playbook.id).toContain(workspace.persona);
+        expect(playbook.reportIds.length).toBeGreaterThanOrEqual(3);
+        expect(reportAutomationPlaybookHref(playbook, workspace.persona)).toBeTruthy();
+        expect(playbook.href || playbook.tab).toBeTruthy();
+
+        for (const reportId of playbook.reportIds) {
+          expect(allReportIds.has(reportId)).toBe(true);
+        }
+
+        const liveReportCount = playbook.reportIds.filter((reportId) =>
+          liveReportIds.has(reportId)
+        ).length;
+        expect(liveReportCount).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   it("keeps report tab deep links bounded to known Reports tabs", () => {
     expect(reportTabs).toEqual([
       "pl",
@@ -132,7 +162,14 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Current vs prior period");
     expect(reportsSource).toContain("buildComparisonRanges(dateRange)");
 
-    for (const metricId of ["revenue", "net-profit", "invoice-value", "expense-spend", "vat-due"]) {
+    for (const metricId of [
+      "revenue",
+      "net-profit",
+      "invoice-value",
+      "expense-spend",
+      "vat-due",
+      "ledger-activity",
+    ]) {
       expect(reportsSource).toContain(`id: "${metricId}"`);
     }
 
@@ -142,9 +179,24 @@ describe("report discoverability", () => {
       "Sales activity",
       "Cost pressure",
       "Tax cash flow",
+      "Close activity",
     ]) {
       expect(reportsSource).toContain(`signal: "${signal}"`);
     }
+  });
+
+  it("filters comparison and automation signals by selected persona", () => {
+    expect(reportsSource).toContain("function matchesReportPersona");
+    expect(reportsSource).toContain("personaScopeDescription");
+    expect(reportsSource).toContain("visibleComparisonRows");
+    expect(reportsSource).toContain("visibleAutomationQueue");
+    expect(reportsSource).toContain(
+      "comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter))"
+    );
+    expect(reportsSource).toContain(
+      "automationQueue.filter((item) => matchesReportPersona(item.personas, personaFilter))"
+    );
+    expect(reportsSource).toContain('personas: ["accountant"]');
   });
 
   it("surfaces report-driven automation queues for next actions", () => {
@@ -178,7 +230,8 @@ describe("report discoverability", () => {
 
   it("renders period comparison rows instead of leaving comparison signals hidden", () => {
     expect(reportsSource).toContain("Period comparison");
-    expect(reportsSource).toContain("comparisonRows.map((row)");
+    expect(reportsSource).toContain("visibleComparisonRows.map((row)");
+    expect(reportsSource).toContain("matchesReportPersona(row.personas, personaFilter)");
     expect(reportsSource).toContain("formatComparisonPercent(row.percentChange)");
     expect(reportsSource).toContain("comparisonBadgeVariant(row)");
     expect(reportsSource).toContain("setActiveTab(row.tab)");
@@ -189,6 +242,7 @@ describe("report discoverability", () => {
       'id: "invoice-value"',
       'id: "expense-spend"',
       'id: "vat-due"',
+      'id: "ledger-activity"',
     ]) {
       expect(reportsSource).toContain(metric);
     }

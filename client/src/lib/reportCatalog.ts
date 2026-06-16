@@ -40,6 +40,16 @@ export interface ReportCatalogItem {
   href?: string;
 }
 
+export interface ReportAutomationPlaybook {
+  id: string;
+  title: string;
+  trigger: string;
+  reportIds: string[];
+  cta: string;
+  tab?: ReportTab;
+  href?: string;
+}
+
 export interface ReportPersonaWorkspace {
   persona: ReportPersona;
   title: string;
@@ -47,6 +57,7 @@ export interface ReportPersonaWorkspace {
   primaryTab: ReportTab;
   icon: ReportWorkspaceIcon;
   commandKeywords: string;
+  automations: ReportAutomationPlaybook[];
 }
 
 export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
@@ -57,6 +68,32 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "balances",
     icon: "briefcase",
     commandKeywords: "reports owner cash profit receivables tax automation",
+    automations: [
+      {
+        id: "owner-cash-collections",
+        title: "Cash and collections command center",
+        trigger: "Overdue receivables or cash forecast risk",
+        reportIds: ["customer-balances", "ar-aging", "cash-flow-forecast"],
+        cta: "Open collections",
+        href: "/payment-chasing",
+      },
+      {
+        id: "owner-vat-readiness",
+        title: "VAT filing readiness",
+        trigger: "Net VAT due, refund, or missing support",
+        reportIds: ["vat-summary", "vat-return", "expenses-category"],
+        cta: "Open VAT filing",
+        href: "/vat-filing",
+      },
+      {
+        id: "owner-spend-guardrails",
+        title: "Spend and budget guardrails",
+        trigger: "Budget variance or vendor balance pressure",
+        reportIds: ["budget-actual", "expenses-category", "vendor-balances"],
+        cta: "Open planning",
+        tab: "planning",
+      },
+    ],
   },
   {
     persona: "freelancer",
@@ -65,6 +102,32 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "sales",
     icon: "users",
     commandKeywords: "reports freelancer invoices clients expenses vat automation",
+    automations: [
+      {
+        id: "freelancer-invoice-followup",
+        title: "Invoice follow-up lane",
+        trigger: "Unpaid or overdue client invoices",
+        reportIds: ["invoice-status", "revenue-customer", "customer-balances"],
+        cta: "Open chasing",
+        href: "/payment-chasing",
+      },
+      {
+        id: "freelancer-monthly-tax-close",
+        title: "Monthly tax and receipt close",
+        trigger: "Unposted receipts or VAT-ready expenses",
+        reportIds: ["expenses-vendor", "expenses-category", "vat-summary"],
+        cta: "Open expenses",
+        tab: "expenses",
+      },
+      {
+        id: "freelancer-runway-snapshot",
+        title: "Runway snapshot",
+        trigger: "Profit movement or low cash forecast",
+        reportIds: ["profit-loss", "period-comparison", "cash-flow-forecast"],
+        cta: "Open planning",
+        tab: "planning",
+      },
+    ],
   },
   {
     persona: "accountant",
@@ -73,6 +136,32 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
     primaryTab: "trial",
     icon: "clipboardCheck",
     commandKeywords: "reports accountant close ledger trial balance tax automation",
+    automations: [
+      {
+        id: "accountant-close-review",
+        title: "Close review checklist",
+        trigger: "Trial-balance differences or unlinked ledger sources",
+        reportIds: ["trial-balance", "general-ledger", "account-transactions"],
+        cta: "Open close review",
+        tab: "trial",
+      },
+      {
+        id: "accountant-tax-workpapers",
+        title: "Tax workpaper readiness",
+        trigger: "VAT filing support or tax-period review",
+        reportIds: ["vat-summary", "vat-return", "expenses-category"],
+        cta: "Open VAT filing",
+        href: "/vat-filing",
+      },
+      {
+        id: "accountant-advisory-pack",
+        title: "Client advisory pack",
+        trigger: "Recurring P&L, balance sheet, cash, and comparison review",
+        reportIds: ["profit-loss", "balance-sheet", "cash-flow", "period-comparison"],
+        cta: "Open report pack",
+        tab: "pl",
+      },
+    ],
   },
 ];
 
@@ -487,4 +576,11 @@ export function reportWorkspaceHref(
   workspace: Pick<ReportPersonaWorkspace, "persona" | "primaryTab">
 ): string {
   return reportsHref({ tab: workspace.primaryTab, persona: workspace.persona });
+}
+
+export function reportAutomationPlaybookHref(
+  playbook: Pick<ReportAutomationPlaybook, "href" | "tab">,
+  persona?: ReportPersona
+): string {
+  return playbook.href ?? reportsHref({ tab: playbook.tab, persona });
 }
