@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
 import { useState, useCallback } from "react";
+import { reportPersonaWorkspaces, reportWorkspaceHref } from "@/lib/reportCatalog";
 
 interface NavItem {
   label: string;
@@ -20,6 +21,10 @@ const navItems: NavItem[] = [
 ];
 
 const moreLinks = [
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: workspace.navLabel,
+    href: reportWorkspaceHref(workspace),
+  })),
   { label: "Accounts", href: "/chart-of-accounts" },
   { label: "Journal", href: "/journal" },
   { label: "Contacts", href: "/contacts" },
@@ -65,7 +70,7 @@ export function MobileNav() {
 
   const isActive = (href: string) => {
     if (href === "#") return moreOpen;
-    return location === href || location.startsWith(href + "/");
+    return location === href || location.startsWith(href + "/") || location.startsWith(href + "?");
   };
 
   return (

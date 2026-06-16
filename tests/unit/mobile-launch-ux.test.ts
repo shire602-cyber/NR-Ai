@@ -39,4 +39,13 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("grid grid-cols-1 gap-3 sm:grid-cols-2");
     expect(source).toContain("flex flex-col gap-3 p-4 border rounded-lg");
   });
+
+  it("keeps report workspaces reachable from mobile navigation", () => {
+    const source = read("client/src/components/MobileNav.tsx");
+
+    expect(source).toContain("reportPersonaWorkspaces.map");
+    expect(source).toContain("workspace.navLabel");
+    expect(source).toContain("reportWorkspaceHref(workspace)");
+    expect(source).toContain('location.startsWith(href + "?")');
+  });
 });

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
+import { reportPersonaWorkspaces, reportWorkspaceHref } from "@/lib/reportCatalog";
 import { z } from "zod";
 import {
   Sparkles,
@@ -1181,7 +1182,11 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: FileText, label: "Invoices", href: "/invoices" },
     { icon: Receipt, label: "Receipts", href: "/receipts" },
-    { icon: BarChart3, label: "Reports", href: "/reports" },
+    ...reportPersonaWorkspaces.map((workspace) => ({
+      icon: BarChart3,
+      label: workspace.navLabel,
+      href: reportWorkspaceHref(workspace),
+    })),
     { icon: BookOpen, label: "Chart of Accounts", href: "/chart-of-accounts" },
     { icon: Users, label: "Contacts", href: "/contacts" },
   ];

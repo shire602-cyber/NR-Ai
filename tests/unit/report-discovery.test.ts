@@ -20,6 +20,10 @@ function read(path: string): string {
 describe("report discoverability", () => {
   const catalogSource = read("client/src/lib/reportCatalog.ts");
   const commandSource = read("client/src/components/CommandPalette.tsx");
+  const mobileNavSource = read("client/src/components/MobileNav.tsx");
+  const onboardingSource = read("client/src/pages/Onboarding.tsx");
+  const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
+  const i18nSource = read("client/src/lib/i18n.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
 
   const expectedLiveReports = [
@@ -96,6 +100,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("reportPersonaWorkspaces.map");
     expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
     expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
+    expect(mobileNavSource).toContain("reportPersonaWorkspaces.map");
+    expect(mobileNavSource).toContain("workspace.navLabel");
+    expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
+    expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
+    expect(onboardingSource).toContain("workspace.navLabel");
+    expect(onboardingSource).toContain("reportWorkspaceHref(workspace)");
+    expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
+    expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
+    expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
+    expect(i18nSource).toContain("ownerReports");
+    expect(i18nSource).toContain("freelancerReports");
+    expect(i18nSource).toContain("accountantReports");
     expect(reportsSource).toContain("function personaFilterFromSearch(search: string)");
     expect(reportsSource).toContain("return reportPersonas.includes(persona as ReportPersona)");
     expect(reportsSource).toContain("navigate(reportWorkspaceHref(workspace))");
@@ -104,6 +120,7 @@ describe("report discoverability", () => {
       expect(reportWorkspaceHref(workspace)).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}`
       );
+      expect(workspace.navLabel).toContain("Reports");
     }
   });
 

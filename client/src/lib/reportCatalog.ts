@@ -62,6 +62,7 @@ export interface ReportPackSchedule {
 export interface ReportPersonaWorkspace {
   persona: ReportPersona;
   title: string;
+  navLabel: string;
   focus: string;
   primaryTab: ReportTab;
   icon: ReportWorkspaceIcon;
@@ -74,6 +75,7 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
   {
     persona: "owner",
     title: "Owner workspace",
+    navLabel: "Owner Reports",
     focus: "Cash, profit, receivables, tax, and payroll decisions.",
     primaryTab: "balances",
     icon: "briefcase",
@@ -115,6 +117,7 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
   {
     persona: "freelancer",
     title: "Freelancer workspace",
+    navLabel: "Freelancer Reports",
     focus: "Client income, unpaid invoices, expenses, and monthly tax readiness.",
     primaryTab: "sales",
     icon: "users",
@@ -156,6 +159,7 @@ export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
   {
     persona: "accountant",
     title: "Accountant workspace",
+    navLabel: "Accountant Reports",
     focus: "Close workpapers, ledgers, audit trails, tax, and consolidation.",
     primaryTab: "trial",
     icon: "clipboardCheck",

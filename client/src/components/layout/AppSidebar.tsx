@@ -60,6 +60,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import {
+  reportPersonaWorkspaces,
+  reportWorkspaceHref,
+  type ReportPersona,
+} from "@/lib/reportCatalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +81,12 @@ interface NavGroup {
 }
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
+
+const reportWorkspaceTitleKeys: Record<ReportPersona, string> = {
+  owner: "ownerReports",
+  freelancer: "freelancerReports",
+  accountant: "accountantReports",
+};
 
 const CUSTOMER_GROUPS: NavGroup[] = [
   {
@@ -126,6 +137,10 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     icon: BarChart3,
     items: [
       { titleKey: "reports", url: "/reports" },
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: reportWorkspaceTitleKeys[workspace.persona],
+        url: reportWorkspaceHref(workspace),
+      })),
       { titleKey: "financialStatements", url: "/financial-statements" },
       { titleKey: "vatFiling", url: "/vat-filing" },
       { titleKey: "vatAutopilot", url: "/vat-autopilot" },
