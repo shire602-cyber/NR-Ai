@@ -42,6 +42,7 @@ describe("report discoverability", () => {
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
   const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
   const i18nSource = read("client/src/lib/i18n.ts");
+  const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
@@ -169,6 +170,13 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("setPreferredReportPersona(persona)");
+    expect(dashboardSource).toContain("fetchReportCatalogDiscovery");
+    expect(dashboardSource).toContain(
+      "reportCatalogDiscoveryQueryKey(preferredReportWorkspace.persona)"
+    );
+    expect(dashboardSource).toContain('data-testid="dashboard-report-catalog-sync"');
+    expect(dashboardSource).toContain("syncedLiveReports");
+    expect(dashboardSource).toContain("syncedAutomationLanes");
     expect(dashboardSource).toContain("selectDashboardReportPersona");
     expect(dashboardSource).toContain("preferredReportWorkspace");
     expect(dashboardSource).toContain("dashboardReportWorkspaces");
@@ -1190,6 +1198,13 @@ describe("report discoverability", () => {
     expect(reportCatalogServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(reportCatalogServiceSource).toContain("reportPackTemplateHref(template)");
     expect(reportCatalogServiceSource).toContain("reportComparisonPresetHref(preset)");
+    expect(reportCatalogApiSource).toContain("ReportCatalogDiscoverySummary");
+    expect(reportCatalogApiSource).toContain("ReportCatalogDiscovery");
+    expect(reportCatalogApiSource).toContain("reportCatalogDiscoveryQueryKey");
+    expect(reportCatalogApiSource).toContain("reportCatalogDiscoveryPath");
+    expect(reportCatalogApiSource).toContain("fetchReportCatalogDiscovery");
+    expect(reportCatalogApiSource).toContain('"/api/reports/catalog"');
+    expect(reportCatalogApiSource).toContain("new URLSearchParams({ persona })");
   });
 
   it("serves report delivery subscriptions through an authenticated queue endpoint", () => {

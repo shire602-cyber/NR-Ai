@@ -54,6 +54,15 @@
         "'/:id/generate-return'",
         "'/:id/status'"
       ]
+    },
+    {
+      "name": "report catalog discovery",
+      "file": "server/routes/reports.routes.ts",
+      "mustContain": [
+        "'/api/reports/catalog'",
+        "buildReportCatalogDiscovery",
+        "isReportCatalogPersona"
+      ]
     }
   ]
 }

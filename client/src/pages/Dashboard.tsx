@@ -9,6 +9,11 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  fetchReportCatalogDiscovery,
+  reportCatalogDiscoveryQueryKey,
+  type ReportCatalogDiscovery,
+} from "@/lib/reportCatalogApi";
+import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   calculateReportAutomationHealth,
@@ -448,6 +453,12 @@ function CustomerDashboard() {
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
+  const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
+    queryKey: reportCatalogDiscoveryQueryKey(preferredReportWorkspace.persona),
+    queryFn: () => fetchReportCatalogDiscovery(preferredReportWorkspace.persona),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
   const dashboardReportWorkspaces = useMemo(() => {
     return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
@@ -486,11 +497,20 @@ function CustomerDashboard() {
       plannedReports,
       totalReports: preferredWorkspaceCatalogReports.length,
       automationLanes: preferredReportWorkspace.automations.length,
+      syncedLiveReports: reportCatalogDiscoveryQuery.data?.summary.liveReportCount ?? readyReports,
+      syncedAutomationLanes:
+        reportCatalogDiscoveryQuery.data?.summary.automationPlaybookCount ??
+        preferredReportWorkspace.automations.length,
       readinessPercent: preferredWorkspaceCatalogReports.length
         ? Math.round((readyReports / preferredWorkspaceCatalogReports.length) * 100)
         : 0,
     };
-  }, [preferredReportWorkspace.automations.length, preferredWorkspaceCatalogReports]);
+  }, [
+    preferredReportWorkspace.automations.length,
+    preferredWorkspaceCatalogReports,
+    reportCatalogDiscoveryQuery.data?.summary.automationPlaybookCount,
+    reportCatalogDiscoveryQuery.data?.summary.liveReportCount,
+  ]);
   const preferredReportPackTemplates = useMemo(() => {
     return reportPackTemplates
       .filter((template) => template.persona === preferredReportWorkspace.persona)
@@ -1205,6 +1225,16 @@ function CustomerDashboard() {
                     <Badge variant={reportAutomationHealth.variant} dot>
                       {reportAutomationHealth.label}
                     </Badge>
+                    <Badge
+                      variant={reportCatalogDiscoveryQuery.isError ? "warning" : "info"}
+                      data-testid="dashboard-report-catalog-sync"
+                    >
+                      {reportCatalogDiscoveryQuery.isLoading
+                        ? "Syncing catalog"
+                        : reportCatalogDiscoveryQuery.isError
+                          ? "Local catalog"
+                          : `${preferredReportPackReadiness.syncedLiveReports} synced reports`}
+                    </Badge>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
@@ -1232,7 +1262,7 @@ function CustomerDashboard() {
                       Lanes
                     </div>
                     <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
-                      {preferredReportPackReadiness.automationLanes}
+                      {preferredReportPackReadiness.syncedAutomationLanes}
                     </div>
                   </div>
                   <div className="rounded-md border border-border/70 p-3">
