@@ -194,9 +194,10 @@ import "@/styles/mobile.css";
 
 // Components
 import { OnboardingWizard } from "@/components/Onboarding";
-import { CommandPaletteProvider, openCommandPalette } from "@/components/CommandPalette";
+import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
+import { openCommandPalette } from "@/lib/commandPalette";
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -735,7 +736,7 @@ export default function App() {
   useEffect(() => {
     // Initialize locale settings
     setLocale(locale);
-  }, []);
+  }, [locale, setLocale]);
 
   return (
     <ErrorBoundary>

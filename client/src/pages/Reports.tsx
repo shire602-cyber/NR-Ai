@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -52,6 +52,7 @@ import {
   FileSpreadsheet,
   FileText,
   Scale,
+  Wallet,
   TrendingUp,
   TrendingDown,
   DollarSign,
@@ -354,16 +355,18 @@ interface BalanceSummaryReport {
 type ReportPersona = "owner" | "freelancer" | "accountant";
 type PersonaFilter = "all" | ReportPersona;
 type ReportStatus = "live" | "api" | "planned";
-type ReportTab =
-  | "pl"
-  | "bs"
-  | "vat"
-  | "trial"
-  | "sales"
-  | "balances"
-  | "expenses"
-  | "ledger"
-  | "planning";
+const reportTabs = [
+  "pl",
+  "bs",
+  "vat",
+  "trial",
+  "sales",
+  "balances",
+  "expenses",
+  "ledger",
+  "planning",
+] as const;
+type ReportTab = (typeof reportTabs)[number];
 
 interface ReportCatalogItem {
   name: string;
@@ -382,6 +385,40 @@ interface PersonaWorkspace {
   focus: string;
   icon: LucideIcon;
   primaryTab: ReportTab;
+}
+
+interface AutomationQueueItem {
+  id: string;
+  title: string;
+  signal: string;
+  detail: string;
+  count: number;
+  amount?: number;
+  currency?: string;
+  personas: ReportPersona[];
+  icon: LucideIcon;
+  actionLabel: string;
+  tab?: ReportTab;
+  href?: string;
+}
+
+interface ComparisonRange {
+  from: Date;
+  to: Date;
+}
+
+interface ComparisonMetricRow {
+  id: string;
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+  percentChange: number | null;
+  currency: string;
+  signal: string;
+  favorable: "increase" | "decrease" | "neutral";
+  personas: ReportPersona[];
+  tab: ReportTab;
 }
 
 const reportStatusMeta: Record<ReportStatus, { label: string; variant: BadgeProps["variant"] }> = {
@@ -795,14 +832,99 @@ function invoiceStatusVariant(status: string): BadgeProps["variant"] {
   return "neutral";
 }
 
+function reportTabFromSearch(search: string): ReportTab {
+  const tab = new URLSearchParams(search).get("tab");
+  return reportTabs.includes(tab as ReportTab) ? (tab as ReportTab) : "pl";
+}
+
+function startOfLocalDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function inclusiveDayCount(from: Date, to: Date): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.max(
+    1,
+    Math.round((startOfLocalDay(to).getTime() - startOfLocalDay(from).getTime()) / msPerDay) + 1
+  );
+}
+
+function buildComparisonRanges(dateRange: DateRange): {
+  current: ComparisonRange;
+  previous: ComparisonRange;
+  isCustom: boolean;
+} {
+  const today = startOfLocalDay(new Date());
+  const currentFrom =
+    dateRange.from && dateRange.to
+      ? startOfLocalDay(dateRange.from)
+      : new Date(today.getFullYear(), today.getMonth(), 1);
+  const currentTo = dateRange.from && dateRange.to ? startOfLocalDay(dateRange.to) : today;
+  const days = inclusiveDayCount(currentFrom, currentTo);
+  const previousTo = addDays(currentFrom, -1);
+  const previousFrom = addDays(previousTo, -days + 1);
+
+  return {
+    current: { from: currentFrom, to: currentTo },
+    previous: { from: previousFrom, to: previousTo },
+    isCustom: Boolean(dateRange.from && dateRange.to),
+  };
+}
+
+function comparisonParams(range: ComparisonRange): string {
+  return `?startDate=${format(range.from, "yyyy-MM-dd")}&endDate=${format(range.to, "yyyy-MM-dd")}`;
+}
+
+function percentageChange(current: number, previous: number): number | null {
+  if (Math.abs(previous) < 0.005) return Math.abs(current) < 0.005 ? 0 : null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function formatComparisonPercent(value: number | null): string {
+  if (value === null) return "New";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function comparisonBadgeVariant(row: ComparisonMetricRow): BadgeProps["variant"] {
+  if (Math.abs(row.delta) < 0.005) return "neutral";
+  if (row.favorable === "neutral") return row.delta >= 0 ? "info" : "neutral";
+  const improved = row.favorable === "increase" ? row.delta > 0 : row.delta < 0;
+  return improved ? "success" : "warning";
+}
+
+function makeComparisonMetric(
+  input: Omit<ComparisonMetricRow, "delta" | "percentChange">
+): ComparisonMetricRow {
+  const delta = input.current - input.previous;
+  return {
+    ...input,
+    delta,
+    percentChange: percentageChange(input.current, input.previous),
+  };
+}
+
 export default function Reports() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const [location, navigate] = useLocation();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
-  const [activeTab, setActiveTab] = useState<ReportTab>("pl");
   const [personaFilter, setPersonaFilter] = useState<PersonaFilter>("all");
   const [isExporting, setIsExporting] = useState(false);
+
+  const activeTab = useMemo(() => {
+    const locationSearch = location.includes("?") ? location.slice(location.indexOf("?")) : "";
+    return reportTabFromSearch(locationSearch || window.location.search);
+  }, [location]);
+  const setActiveTab = (tab: ReportTab) => navigate(`/reports?tab=${tab}`);
 
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
@@ -842,6 +964,19 @@ export default function Reports() {
     dateRange.from && dateRange.to
       ? `?from=${format(dateRange.from, "yyyy-MM-dd")}&to=${format(dateRange.to, "yyyy-MM-dd")}`
       : "";
+  const comparisonRanges = useMemo(() => buildComparisonRanges(dateRange), [dateRange]);
+  const comparisonCurrentParams = comparisonParams(comparisonRanges.current);
+  const comparisonPreviousParams = comparisonParams(comparisonRanges.previous);
+  const comparisonCurrentLabel = `${format(comparisonRanges.current.from, "MMM dd, yyyy")} - ${format(
+    comparisonRanges.current.to,
+    "MMM dd, yyyy"
+  )}`;
+  const comparisonPreviousLabel = `${format(
+    comparisonRanges.previous.from,
+    "MMM dd, yyyy"
+  )} - ${format(comparisonRanges.previous.to, "MMM dd, yyyy")}`;
+  const comparisonCurrentRange = comparisonRanges.current;
+  const comparisonPreviousRange = comparisonRanges.previous;
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
@@ -857,6 +992,78 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     enabled: !!selectedCompanyId,
   });
+
+  const { data: comparisonCurrentProfitLoss, isLoading: comparisonCurrentPlLoading } =
+    useQuery<ProfitLossReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "pl",
+        comparisonCurrentParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/pl${comparisonCurrentParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: comparisonPreviousProfitLoss, isLoading: comparisonPreviousPlLoading } =
+    useQuery<ProfitLossReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "pl",
+        comparisonPreviousParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/pl${comparisonPreviousParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: comparisonCurrentVat, isLoading: comparisonCurrentVatLoading } =
+    useQuery<VATSummaryReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "vat-summary",
+        comparisonCurrentParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/vat-summary${comparisonCurrentParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: comparisonPreviousVat, isLoading: comparisonPreviousVatLoading } =
+    useQuery<VATSummaryReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "vat-summary",
+        comparisonPreviousParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/vat-summary${comparisonPreviousParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
 
   const { data: trialBalance, isLoading: trialBalanceLoading } = useQuery<TrialBalanceReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "trial-balance", trialBalanceParams],
@@ -1054,40 +1261,43 @@ export default function Reports() {
     return receipts.filter((receipt) => receiptInDateRange(receipt, dateRange));
   }, [dateRange, receipts]);
 
-  const buildExpenseSummary = (getLabel: (receipt: ReceiptReportRow) => string) => {
-    const summaries = new Map<string, ExpenseSummaryRow>();
-    for (const receipt of reportReceipts) {
-      const label = getLabel(receipt);
-      const summary = summaries.get(label) ?? {
-        label,
-        receiptCount: 0,
-        subtotalAed: 0,
-        vatAed: 0,
-        totalAed: 0,
-        unpostedCount: 0,
-        autoPostedCount: 0,
-      };
-      const subtotalAed = receiptSubtotalAed(receipt);
-      const vatAed = receiptVatAed(receipt);
-      summary.receiptCount += 1;
-      summary.subtotalAed += subtotalAed;
-      summary.vatAed += vatAed;
-      summary.totalAed += subtotalAed + vatAed;
-      if (!receipt.posted) summary.unpostedCount += 1;
-      if (receipt.autoPosted) summary.autoPostedCount += 1;
-      summaries.set(label, summary);
-    }
-    return Array.from(summaries.values()).sort((a, b) => b.totalAed - a.totalAed);
-  };
+  const buildExpenseSummary = useCallback(
+    (getLabel: (receipt: ReceiptReportRow) => string) => {
+      const summaries = new Map<string, ExpenseSummaryRow>();
+      for (const receipt of reportReceipts) {
+        const label = getLabel(receipt);
+        const summary = summaries.get(label) ?? {
+          label,
+          receiptCount: 0,
+          subtotalAed: 0,
+          vatAed: 0,
+          totalAed: 0,
+          unpostedCount: 0,
+          autoPostedCount: 0,
+        };
+        const subtotalAed = receiptSubtotalAed(receipt);
+        const vatAed = receiptVatAed(receipt);
+        summary.receiptCount += 1;
+        summary.subtotalAed += subtotalAed;
+        summary.vatAed += vatAed;
+        summary.totalAed += subtotalAed + vatAed;
+        if (!receipt.posted) summary.unpostedCount += 1;
+        if (receipt.autoPosted) summary.autoPostedCount += 1;
+        summaries.set(label, summary);
+      }
+      return Array.from(summaries.values()).sort((a, b) => b.totalAed - a.totalAed);
+    },
+    [reportReceipts]
+  );
 
   const expenseByVendor = useMemo(
     () => buildExpenseSummary((receipt) => receipt.merchant || "Unknown Merchant").slice(0, 8),
-    [reportReceipts]
+    [buildExpenseSummary]
   );
 
   const expenseByCategory = useMemo(
     () => buildExpenseSummary((receipt) => receipt.category || "Uncategorized").slice(0, 8),
-    [reportReceipts]
+    [buildExpenseSummary]
   );
 
   const expenseReport = useMemo(() => {
@@ -1112,6 +1322,118 @@ export default function Reports() {
   }, [expenseByCategory, expenseByVendor, reportReceipts]);
 
   const expensesLoading = receiptsLoading;
+
+  const comparisonRows = useMemo<ComparisonMetricRow[]>(() => {
+    const currentInvoices = invoices.filter(
+      (invoice) =>
+        !inactiveInvoiceStatuses.has(invoice.status) &&
+        invoiceInDateRange(invoice, comparisonCurrentRange)
+    );
+    const previousInvoices = invoices.filter(
+      (invoice) =>
+        !inactiveInvoiceStatuses.has(invoice.status) &&
+        invoiceInDateRange(invoice, comparisonPreviousRange)
+    );
+    const currentReceipts = receipts.filter((receipt) =>
+      receiptInDateRange(receipt, comparisonCurrentRange)
+    );
+    const previousReceipts = receipts.filter((receipt) =>
+      receiptInDateRange(receipt, comparisonPreviousRange)
+    );
+    const currentInvoiceValue = currentInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const previousInvoiceValue = previousInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const currentExpenseValue = currentReceipts.reduce(
+      (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+      0
+    );
+    const previousExpenseValue = previousReceipts.reduce(
+      (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+      0
+    );
+
+    return [
+      makeComparisonMetric({
+        id: "revenue",
+        label: "Revenue",
+        current: comparisonCurrentProfitLoss?.totalRevenue ?? 0,
+        previous: comparisonPreviousProfitLoss?.totalRevenue ?? 0,
+        currency: "AED",
+        signal: "Growth",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
+        id: "net-profit",
+        label: "Net profit",
+        current: comparisonCurrentProfitLoss?.netProfit ?? 0,
+        previous: comparisonPreviousProfitLoss?.netProfit ?? 0,
+        currency: "AED",
+        signal: "Profitability",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
+        id: "invoice-value",
+        label: "Invoice value",
+        current: currentInvoiceValue,
+        previous: previousInvoiceValue,
+        currency: "AED",
+        signal: "Sales activity",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "expense-spend",
+        label: "Expense spend",
+        current: currentExpenseValue,
+        previous: previousExpenseValue,
+        currency: "AED",
+        signal: "Cost pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "vat-due",
+        label: "Net VAT due",
+        current: comparisonCurrentVat?.netVATPayable ?? 0,
+        previous: comparisonPreviousVat?.netVATPayable ?? 0,
+        currency: "AED",
+        signal: "Tax cash flow",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "vat",
+      }),
+    ];
+  }, [
+    comparisonCurrentProfitLoss?.netProfit,
+    comparisonCurrentProfitLoss?.totalRevenue,
+    comparisonCurrentRange,
+    comparisonCurrentVat?.netVATPayable,
+    comparisonPreviousProfitLoss?.netProfit,
+    comparisonPreviousProfitLoss?.totalRevenue,
+    comparisonPreviousRange,
+    comparisonPreviousVat?.netVATPayable,
+    invoices,
+    receipts,
+  ]);
+
+  const comparisonLoading =
+    comparisonCurrentPlLoading ||
+    comparisonPreviousPlLoading ||
+    comparisonCurrentVatLoading ||
+    comparisonPreviousVatLoading ||
+    invoicesLoading ||
+    receiptsLoading;
 
   const reportJournalEntries = useMemo(() => {
     return journalEntries.filter(
@@ -1273,6 +1595,112 @@ export default function Reports() {
 
   const planningLoading = budgetPlansLoading || varianceLoading || cashFlowForecastLoading;
 
+  const automationLoading =
+    balancesLoading ||
+    expensesLoading ||
+    vatLoading ||
+    trialBalanceLoading ||
+    ledgerLoading ||
+    planningLoading;
+
+  const automationQueue = useMemo<AutomationQueueItem[]>(() => {
+    const vatNet = vatSummary?.netVATPayable ?? 0;
+    const closeReviewCount = ledgerReport.reviewEntries + (trialBalanceSummary.isBalanced ? 0 : 1);
+    const planningRiskCount =
+      (planningReport.cashWarning === "On track" ? 0 : 1) + planningReport.overBudgetLines;
+
+    return [
+      {
+        id: "collections",
+        title: "Collections follow-up",
+        signal: "Overdue customers",
+        detail: "Route overdue receivables into payment chasing.",
+        count: balanceReport.overdueCustomerCount,
+        amount: balanceReport.customerOverdueAed,
+        currency: "AED",
+        personas: ["owner", "freelancer", "accountant"],
+        icon: Users,
+        actionLabel: "Open queue",
+        href: "/payment-chasing",
+      },
+      {
+        id: "bill-pay",
+        title: "Bill pay timing",
+        signal: "Overdue vendors",
+        detail: "Review vendor balances and payable timing.",
+        count: balanceReport.overdueVendorCount,
+        amount: balanceReport.vendorOverdueAed,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: Wallet,
+        actionLabel: "Open bills",
+        href: "/bill-pay?tab=summary",
+      },
+      {
+        id: "receipt-posting",
+        title: "Receipt posting",
+        signal: "Receipts waiting",
+        detail: "Clear OCR and posting exceptions before close.",
+        count: expenseReport.unpostedReceipts,
+        personas: ["owner", "freelancer", "accountant"],
+        icon: FileSpreadsheet,
+        actionLabel: "Open expenses",
+        tab: "expenses",
+      },
+      {
+        id: "vat-readiness",
+        title: "VAT readiness",
+        signal: vatNet >= 0 ? "VAT payable" : "VAT refund",
+        detail: "Check the filing amount and supporting VAT reports.",
+        count: Math.abs(vatNet) > 0.005 ? 1 : 0,
+        amount: Math.abs(vatNet),
+        currency: "AED",
+        personas: ["owner", "freelancer", "accountant"],
+        icon: FileText,
+        actionLabel: "Open filing",
+        href: "/vat-filing",
+      },
+      {
+        id: "close-review",
+        title: "Close review",
+        signal: "Review items",
+        detail: "Inspect trial-balance differences and manual ledger sources.",
+        count: closeReviewCount,
+        personas: ["accountant"],
+        icon: ClipboardCheck,
+        actionLabel: "Open ledger",
+        tab: closeReviewCount > 0 && !trialBalanceSummary.isBalanced ? "trial" : "ledger",
+      },
+      {
+        id: "planning-risk",
+        title: "Planning guardrails",
+        signal: "Budget and cash alerts",
+        detail: "Review cash warnings and budget variance outliers.",
+        count: planningRiskCount,
+        amount: Math.abs(planningReport.variance),
+        currency: "AED",
+        personas: ["owner", "freelancer", "accountant"],
+        icon: AlertTriangle,
+        actionLabel: "Open planning",
+        tab: "planning",
+      },
+    ];
+  }, [
+    balanceReport.customerOverdueAed,
+    balanceReport.overdueCustomerCount,
+    balanceReport.overdueVendorCount,
+    balanceReport.vendorOverdueAed,
+    expenseReport.unpostedReceipts,
+    ledgerReport.reviewEntries,
+    planningReport.cashWarning,
+    planningReport.overBudgetLines,
+    planningReport.variance,
+    trialBalanceSummary.isBalanced,
+    vatSummary?.netVATPayable,
+  ]);
+
+  const automationQueueCount = automationQueue.reduce((sum, item) => sum + item.count, 0);
+
   const handleExportExcel = () => {
     const dateRangeStr =
       dateRange.from && dateRange.to
@@ -1430,6 +1858,253 @@ export default function Reports() {
           </DropdownMenu>
         }
       />
+
+      <section className="space-y-4" aria-labelledby="period-comparison-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="period-comparison-title" className="text-xl font-semibold">
+              Period comparison
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.
+            </p>
+          </div>
+          <Badge variant={comparisonRanges.isCustom ? "info" : "neutral"} dot>
+            {comparisonRanges.isCustom ? "Custom range" : "Month to date"}
+          </Badge>
+        </div>
+
+        {comparisonLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-5">
+            {comparisonRows.map((row) => (
+              <Card key={row.id}>
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="text-base font-semibold">{row.label}</CardTitle>
+                      <CardDescription>{row.signal}</CardDescription>
+                    </div>
+                    <Badge variant={comparisonBadgeVariant(row)} dot>
+                      {formatComparisonPercent(row.percentChange)}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Current</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {formatCurrency(row.current, row.currency, locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Previous</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {formatCurrency(row.previous, row.currency, locale)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">Movement</div>
+                      <div className="truncate font-mono text-sm font-semibold">
+                        {formatCurrency(row.delta, row.currency, locale)}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setActiveTab(row.tab)}
+                    >
+                      Open
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="automation-queues-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="automation-queues-title" className="text-xl font-semibold">
+              Automation queues
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Live report signals routed to the next workflow.
+            </p>
+          </div>
+          <Badge variant={automationQueueCount > 0 ? "warning" : "success"} dot>
+            {automationQueueCount} open
+          </Badge>
+        </div>
+
+        {automationLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {automationQueue.map((item) => {
+              const Icon = item.icon;
+              const hasAction = item.count > 0;
+              return (
+                <Card key={item.id}>
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
+                          <CardDescription>{item.detail}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={hasAction ? "warning" : "success"} dot>
+                        {hasAction ? "Review" : "Clear"}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">{item.signal}</div>
+                        <div className="font-mono text-2xl font-semibold">{item.count}</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Amount</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {typeof item.amount === "number"
+                            ? formatCurrency(item.amount, item.currency ?? "AED", locale)
+                            : "-"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {item.personas.map((persona) => (
+                        <Badge key={persona} variant="outline" className="capitalize">
+                          {persona}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    {item.href ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={item.href}>{item.actionLabel}</Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => item.tab && setActiveTab(item.tab)}
+                      >
+                        {item.actionLabel}
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="comparison-snapshots-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="comparison-snapshots-title" className="text-xl font-semibold">
+              Comparison snapshots
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {comparisonCurrentLabel} vs {comparisonPreviousLabel}
+            </p>
+          </div>
+          <Badge variant="outline">
+            {comparisonRanges.isCustom ? "Selected range" : "Month to date"}
+          </Badge>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Current vs prior period</CardTitle>
+            <CardDescription>
+              High-level movement across revenue, profit, sales, spend, and tax cash flow.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {comparisonLoading ? (
+              <Skeleton className="h-72 w-full" />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[920px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Metric</TableHead>
+                      <TableHead>Signal</TableHead>
+                      <TableHead className="text-right">Current</TableHead>
+                      <TableHead className="text-right">Prior</TableHead>
+                      <TableHead className="text-right">Change</TableHead>
+                      <TableHead>Roles</TableHead>
+                      <TableHead className="text-right">Open</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {comparisonRows.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">{row.label}</TableCell>
+                        <TableCell>
+                          <Badge variant={comparisonBadgeVariant(row)} dot>
+                            {row.signal}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(row.current, row.currency, locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(row.previous, row.currency, locale)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-mono font-medium">
+                            {formatCurrency(row.delta, row.currency, locale)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatComparisonPercent(row.percentChange)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {row.personas.map((persona) => (
+                              <Badge key={persona} variant="outline" className="capitalize">
+                                {persona}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setActiveTab(row.tab)}
+                          >
+                            Open
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       <section className="space-y-4" aria-labelledby="persona-workspaces-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
