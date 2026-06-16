@@ -11,6 +11,7 @@ import {
   reportCatalogDiscoveryQueryKey,
   type ReportCatalogDiscovery,
 } from "@/lib/reportCatalogApi";
+import { apiRequest } from "@/lib/queryClient";
 import {
   reportAutomationStarterHref,
   reportAutomationStarters,
@@ -22,6 +23,7 @@ import {
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
   getPreferredReportDeliveryAutomationCommand,
+  parseReportDeliveryAutomationCommand,
   reportHref,
   reportPersonas,
   reportPersonaWorkspaces,
@@ -64,11 +66,17 @@ interface ReportLaunchPickerProps {
   deliveryQueueDisabled?: boolean;
   deliverySubscriptionPreviewById?: Record<string, ReportLaunchDeliveryPreview | undefined>;
   preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
+  companyId?: string | null;
   className?: string;
 }
 
 type LaunchReport = Omit<ReportCatalogItem, "href"> & { href?: string | null };
 type LaunchComparisonPreset = ReportComparisonPreset & { href?: string | null };
+
+interface ReportDeliveryAutomationPreference {
+  persona: ReportPersona;
+  preferredDeliveryAutomationCommand: ReportDeliveryAutomationCommand | null;
+}
 
 function reportItemHref(report: LaunchReport): string {
   return report.href ?? reportHref({ href: undefined, tab: report.tab }) ?? "/reports";
@@ -112,6 +120,7 @@ export function ReportLaunchPicker({
   deliveryQueueDisabled = false,
   deliverySubscriptionPreviewById = {},
   preferredDeliveryAutomationCommand,
+  companyId = null,
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
@@ -139,6 +148,16 @@ export function ReportLaunchPicker({
   });
 
   const syncedCatalog = catalogQuery.data;
+  const automationPreferencesQuery = useQuery<{
+    preferences: ReportDeliveryAutomationPreference[];
+  }>({
+    queryKey: ["/api/companies", companyId, "report-delivery", "preferences"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/report-delivery/preferences`),
+    enabled: Boolean(companyId),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
   const workspace =
     syncedCatalog?.workspaces[0] ??
     reportPersonaWorkspaces.find((item) => item.persona === selectedPersona) ??
@@ -176,9 +195,14 @@ export function ReportLaunchPicker({
     reportComparisonPresets.filter((preset) => preset.persona === selectedPersona);
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
+  const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
+    automationPreferencesQuery.data?.preferences.find(
+      (preference) => preference.persona === selectedPersona
+    )?.preferredDeliveryAutomationCommand
+  );
   const pinnedDeliveryAutomationCommand = hasControlledDeliveryAutomationCommand
     ? preferredDeliveryAutomationCommand
-    : storedDeliveryAutomationCommand;
+    : (syncedDeliveryAutomationCommand ?? storedDeliveryAutomationCommand);
   const primaryDeliverySubscription = deliverySubscriptions[0];
   const primaryDeliveryPreview = primaryDeliverySubscription
     ? deliverySubscriptionPreviewById[primaryDeliverySubscription.id]

@@ -129,8 +129,8 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery
-  subscription service, route, persisted settings, run history, notification queueing, or
-  failure-retry API/scheduling-plan changes.
+  subscription service, route, persisted settings, persisted automation-command preferences, run
+  history, notification queueing, or failure-retry API/scheduling-plan changes.
 - Use `npx vitest run tests/unit/report-delivery-scheduler.test.ts` after report delivery cadence,
   due-scan, guardrail, failure recovery, scheduler telemetry, or scheduler cron changes.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes. The

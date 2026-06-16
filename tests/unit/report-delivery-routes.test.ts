@@ -19,6 +19,9 @@ vi.mock("../../server/middleware/auth", () => ({
 vi.mock("../../server/storage", () => ({
   storage: {
     hasCompanyAccess: vi.fn(async () => true),
+    getReportAutomationPreferences: vi.fn(async () => []),
+    getReportAutomationPreference: vi.fn(async () => undefined),
+    upsertReportAutomationPreference: vi.fn(),
     getReportDeliverySubscriptionSettings: vi.fn(async () => []),
     upsertReportDeliverySubscriptionSetting: vi.fn(),
     getReportDeliveryRuns: vi.fn(async () => []),
@@ -87,6 +90,9 @@ async function request(
 describe("report delivery subscriptions", () => {
   beforeEach(() => {
     vi.mocked(storage.hasCompanyAccess).mockResolvedValue(true);
+    vi.mocked(storage.getReportAutomationPreferences).mockResolvedValue([]);
+    vi.mocked(storage.getReportAutomationPreference).mockResolvedValue(undefined);
+    vi.mocked(storage.upsertReportAutomationPreference).mockReset();
     vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([]);
     vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockReset();
     vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([]);
@@ -308,6 +314,80 @@ describe("report delivery subscriptions", () => {
     expect(res.body.recentScans).toHaveLength(1);
     expect(storage.getLatestReportDeliverySchedulerScan).toHaveBeenCalledWith(companyId);
     expect(storage.getReportDeliverySchedulerScans).toHaveBeenCalledWith(companyId, { limit: 3 });
+  });
+
+  it("returns persisted report automation preferences for the current user and company", async () => {
+    vi.mocked(storage.getReportAutomationPreferences).mockResolvedValue([
+      {
+        id: "preference-1",
+        companyId,
+        userId,
+        persona: "owner",
+        preferredDeliveryAutomationCommand: "queue",
+        createdAt: new Date("2026-06-16T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+      },
+    ]);
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/preferences`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.preferences).toHaveLength(1);
+    expect(res.body.preferences[0]).toMatchObject({
+      companyId,
+      userId,
+      persona: "owner",
+      preferredDeliveryAutomationCommand: "queue",
+    });
+    expect(storage.getReportAutomationPreferences).toHaveBeenCalledWith(companyId, userId);
+  });
+
+  it("persists a report automation command preference for the current user and company", async () => {
+    vi.mocked(storage.upsertReportAutomationPreference).mockResolvedValue({
+      id: "preference-1",
+      companyId,
+      userId,
+      persona: "accountant",
+      preferredDeliveryAutomationCommand: "comparison",
+      createdAt: new Date("2026-06-16T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+    });
+
+    const res = await request(
+      appWithRoutes(),
+      "PATCH",
+      `/api/companies/${companyId}/report-delivery/preferences/accountant`,
+      { preferredDeliveryAutomationCommand: "comparison" }
+    );
+
+    expect(res.status).toBe(200);
+    expect(storage.upsertReportAutomationPreference).toHaveBeenCalledWith({
+      companyId,
+      userId,
+      persona: "accountant",
+      preferredDeliveryAutomationCommand: "comparison",
+    });
+    expect(res.body.preference).toMatchObject({
+      persona: "accountant",
+      preferredDeliveryAutomationCommand: "comparison",
+    });
+  });
+
+  it("rejects report automation preferences for unsupported personas", async () => {
+    const res = await request(
+      appWithRoutes(),
+      "PATCH",
+      `/api/companies/${companyId}/report-delivery/preferences/partner`,
+      { preferredDeliveryAutomationCommand: "queue" }
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe("persona must be owner, freelancer, or accountant");
+    expect(storage.upsertReportAutomationPreference).not.toHaveBeenCalled();
   });
 
   it("updates company delivery settings", async () => {

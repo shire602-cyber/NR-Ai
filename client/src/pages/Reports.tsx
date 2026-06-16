@@ -175,6 +175,16 @@ interface SaveReportDeliverySubscriptionSettingsInput {
   deliveryGuardrail?: string | null;
 }
 
+interface SaveReportDeliveryAutomationPreferenceInput {
+  persona: ReportPersona;
+  command: ReportDeliveryAutomationCommand;
+}
+
+interface ReportDeliveryAutomationPreferenceResponse {
+  persona: ReportPersona;
+  preferredDeliveryAutomationCommand: ReportDeliveryAutomationCommand | null;
+}
+
 interface ReportDeliveryPlanPreview {
   summary: string;
   readinessLabel: string;
@@ -1739,6 +1749,23 @@ export default function Reports() {
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const pinnedReportDeliveryAutomationCommand =
     pinnedReportDeliveryAutomationCommands[reportDeliveryLauncherPersona];
+  const saveReportDeliveryAutomationPreference = useMutation({
+    mutationFn: ({ persona, command }: SaveReportDeliveryAutomationPreferenceInput) => {
+      if (!selectedCompanyId) throw new Error("Select a company before saving automation.");
+      return apiRequest(
+        "PATCH",
+        `/api/companies/${selectedCompanyId}/report-delivery/preferences/${persona}`,
+        { preferredDeliveryAutomationCommand: command }
+      );
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not save automation command",
+        description: error?.message || "Failed to save the pinned automation command",
+        variant: "destructive",
+      });
+    },
+  });
   const pinReportDeliveryAutomationCommand = useCallback(
     (command: ReportDeliveryAutomationCommand) => {
       const parsedCommand = parseReportDeliveryAutomationCommand(command);
@@ -1749,12 +1776,24 @@ export default function Reports() {
         ...current,
         [reportDeliveryLauncherPersona]: parsedCommand,
       }));
+      if (selectedCompanyId) {
+        saveReportDeliveryAutomationPreference.mutate({
+          persona: reportDeliveryLauncherPersona,
+          command: parsedCommand,
+        });
+      }
       toast({
         title: "Automation command pinned",
         description: `${reportDeliveryAutomationCommandLabels[parsedCommand]} is pinned for ${personaFilterLabel.toLowerCase()} workflows.`,
       });
     },
-    [personaFilterLabel, reportDeliveryLauncherPersona, toast]
+    [
+      personaFilterLabel,
+      reportDeliveryLauncherPersona,
+      saveReportDeliveryAutomationPreference,
+      selectedCompanyId,
+      toast,
+    ]
   );
 
   const filteredReports = useMemo(() => {
@@ -3830,6 +3869,30 @@ export default function Reports() {
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/subscriptions`),
     enabled: !!selectedCompanyId,
   });
+
+  const reportDeliveryAutomationPreferencesQuery = useQuery<{
+    preferences: ReportDeliveryAutomationPreferenceResponse[];
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "preferences"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/preferences`),
+    enabled: !!selectedCompanyId,
+  });
+
+  useEffect(() => {
+    const preferences = reportDeliveryAutomationPreferencesQuery.data?.preferences;
+    if (!preferences?.length) return;
+
+    setPinnedReportDeliveryAutomationCommands((current) => {
+      const next = { ...current };
+      for (const preference of preferences) {
+        next[preference.persona] = parseReportDeliveryAutomationCommand(
+          preference.preferredDeliveryAutomationCommand
+        );
+      }
+      return next;
+    });
+  }, [reportDeliveryAutomationPreferencesQuery.data?.preferences]);
 
   const reportDeliveryRunsQuery = useQuery<{
     runs: ReportDeliveryRunSummary[];
@@ -6632,6 +6695,7 @@ export default function Reports() {
           deliveryQueueDisabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
           deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
           preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}
+          companyId={selectedCompanyId}
           className="shadow-none"
         />
 

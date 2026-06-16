@@ -2052,7 +2052,10 @@ function CustomerDashboard() {
       </section>
 
       <section data-testid="dashboard-report-launch-picker">
-        <ReportLaunchPicker persona={preferredReportWorkspace.persona} />
+        <ReportLaunchPicker
+          persona={preferredReportWorkspace.persona}
+          companyId={selectedCompanyId}
+        />
       </section>
 
       {/* ── Recent activity ─────────────────────────────────────────────── */}

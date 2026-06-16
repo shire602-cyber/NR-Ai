@@ -66,6 +66,9 @@ describe("report discoverability", () => {
   const reportDeliveryRunFailuresMigrationSource = read(
     "migrations/0078_report_delivery_run_failures.sql"
   );
+  const reportAutomationPreferencesMigrationSource = read(
+    "migrations/0079_report_automation_preferences.sql"
+  );
   const reportsRouteSource = read("server/routes/reports.routes.ts");
   const expenseClaimsRouteSource = read("server/routes/expense-claims.routes.ts");
   const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
@@ -185,6 +188,7 @@ describe("report discoverability", () => {
     );
     expect(dashboardSource).toContain('data-testid="dashboard-report-catalog-sync"');
     expect(dashboardSource).toContain("ReportLaunchPicker");
+    expect(dashboardSource).toContain("companyId={selectedCompanyId}");
     expect(dashboardSource).toContain('data-testid="dashboard-report-launch-picker"');
     expect(dashboardSource).toContain("syncedLiveReports");
     expect(dashboardSource).toContain("syncedAutomationLanes");
@@ -946,9 +950,13 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportDeliveryAutomationCommandTargets");
     expect(reportsSource).toContain("pinnedReportDeliveryAutomationCommands");
     expect(reportsSource).toContain("pinReportDeliveryAutomationCommand");
+    expect(reportsSource).toContain("saveReportDeliveryAutomationPreference");
+    expect(reportsSource).toContain("reportDeliveryAutomationPreferencesQuery");
     expect(reportsSource).toContain("reportDeliveryAutomationCommandCardClass");
     expect(reportsSource).toContain("parseReportDeliveryAutomationCommand(command)");
     expect(reportsSource).toContain("setPreferredReportDeliveryAutomationCommand");
+    expect(reportsSource).toContain("/report-delivery/preferences/${persona}");
+    expect(reportsSource).toContain("/report-delivery/preferences");
     expect(reportsSource).toContain("retryableSubscriptionCount");
     expect(reportsSource).toContain("reviewSubscriptionCount");
     expect(reportsSource).toContain("Retry latest failed delivery");
@@ -997,6 +1005,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain(
       "preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}"
     );
+    expect(reportsSource).toContain("companyId={selectedCompanyId}");
     expect(reportsSource).toContain("ReportLaunchDeliveryPreview");
     expect(reportsSource).toContain("reportDeliveryLauncherPreviewById");
     expect(reportsSource).toContain("deliverySubscriptionPreviewById");
@@ -1299,9 +1308,15 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptionHref");
     expect(reportLaunchPickerSource).toContain("getPreferredReportDeliveryAutomationCommand");
     expect(reportLaunchPickerSource).toContain("preferredDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("companyId");
+    expect(reportLaunchPickerSource).toContain("automationPreferencesQuery");
+    expect(reportLaunchPickerSource).toContain(
+      "/api/companies/${companyId}/report-delivery/preferences"
+    );
     expect(reportLaunchPickerSource).toContain("storedDeliveryAutomationCommand");
     expect(reportLaunchPickerSource).toContain("hasControlledDeliveryAutomationCommand");
     expect(reportLaunchPickerSource).toContain("selectedPersona === persona");
+    expect(reportLaunchPickerSource).toContain("syncedDeliveryAutomationCommand");
     expect(reportLaunchPickerSource).toContain("pinnedDeliveryAutomationCommand");
     expect(reportLaunchPickerSource).toContain("reportComparisonPresetHref");
     expect(reportLaunchPickerSource).toContain("reportComparisonPresets");
@@ -1357,10 +1372,19 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain(
       '"/api/companies/:companyId/report-delivery/runs/:runId/retry"'
     );
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/preferences"'
+    );
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/preferences/:persona"'
+    );
     expect(reportDeliveryRouteSource).toContain("storage.hasCompanyAccess(userId, companyId)");
     expect(reportDeliveryRouteSource).toContain(
       "storage.getReportDeliverySubscriptionSettings(companyId)"
     );
+    expect(reportDeliveryRouteSource).toContain("storage.getReportAutomationPreferences");
+    expect(reportDeliveryRouteSource).toContain("storage.upsertReportAutomationPreference");
+    expect(reportDeliveryRouteSource).toContain("preferredDeliveryAutomationCommand");
     expect(reportDeliveryRouteSource).toContain("storage.upsertReportDeliverySubscriptionSetting");
     expect(reportDeliveryRouteSource).toContain("storage.getReportDeliveryRuns");
     expect(reportDeliveryRouteSource).toContain("storage.getReportDeliveryRun");
@@ -1397,9 +1421,11 @@ describe("report discoverability", () => {
     );
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(schemaSource).toContain("companyReportDeliverySubscriptions");
+    expect(schemaSource).toContain("companyReportAutomationPreferences");
     expect(schemaSource).toContain("companyReportDeliveryRuns");
     expect(schemaSource).toContain("companyReportDeliverySchedulerScans");
     expect(schemaSource).toContain("company_report_delivery_subscriptions_unique");
+    expect(schemaSource).toContain("company_report_automation_preferences_unique");
     expect(schemaSource).toContain("retriedFromRunId");
     expect(schemaSource).toContain("errorMessage");
     expect(reportDeliveryMigrationSource).toContain(
@@ -1414,12 +1440,23 @@ describe("report discoverability", () => {
     expect(reportDeliveryRunsMigrationSource).toContain('"snapshot" jsonb NOT NULL');
     expect(reportDeliveryRunFailuresMigrationSource).toContain('"retried_from_run_id" uuid');
     expect(reportDeliveryRunFailuresMigrationSource).toContain('"error_message" text');
+    expect(reportAutomationPreferencesMigrationSource).toContain(
+      'CREATE TABLE IF NOT EXISTS "company_report_automation_preferences"'
+    );
+    expect(reportAutomationPreferencesMigrationSource).toContain(
+      '"preferred_delivery_automation_command" text'
+    );
+    expect(reportAutomationPreferencesMigrationSource).toContain(
+      'CONSTRAINT "company_report_automation_preferences_unique"'
+    );
     expect(reportDeliverySchedulerScansMigrationSource).toContain(
       'CREATE TABLE IF NOT EXISTS "company_report_delivery_scheduler_scans"'
     );
     expect(reportDeliverySchedulerScansMigrationSource).toContain('"queued_runs" integer');
     expect(storageSource).toContain("getReportDeliverySubscriptionSettings");
     expect(storageSource).toContain("upsertReportDeliverySubscriptionSetting");
+    expect(storageSource).toContain("getReportAutomationPreferences");
+    expect(storageSource).toContain("upsertReportAutomationPreference");
     expect(storageSource).toContain("getReportDeliveryRuns");
     expect(storageSource).toContain("getReportDeliveryRun");
     expect(storageSource).toContain("createReportDeliveryRun");

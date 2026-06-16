@@ -5,6 +5,8 @@ import type {
   InsertCompany,
   CompanyUser,
   InsertCompanyUser,
+  CompanyReportAutomationPreference,
+  InsertCompanyReportAutomationPreference,
   CompanyReportDeliverySubscription,
   InsertCompanyReportDeliverySubscription,
   CompanyReportDeliveryRun,
@@ -168,6 +170,7 @@ import {
   users,
   companies,
   companyUsers,
+  companyReportAutomationPreferences,
   companyReportDeliverySubscriptions,
   companyReportDeliveryRuns,
   companyReportDeliverySchedulerScans,
@@ -320,6 +323,18 @@ export interface IStorage {
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
   resolveCompanyActorUserId(companyId: string): Promise<string | null>;
   getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]>;
+  getReportAutomationPreferences(
+    companyId: string,
+    userId: string
+  ): Promise<CompanyReportAutomationPreference[]>;
+  getReportAutomationPreference(
+    companyId: string,
+    userId: string,
+    persona: string
+  ): Promise<CompanyReportAutomationPreference | undefined>;
+  upsertReportAutomationPreference(
+    preference: InsertCompanyReportAutomationPreference
+  ): Promise<CompanyReportAutomationPreference>;
   getReportDeliverySubscriptionSettings(
     companyId: string
   ): Promise<CompanyReportDeliverySubscription[]>;
@@ -1119,6 +1134,63 @@ export class DatabaseStorage implements IStorage {
       .from(companyReportDeliverySubscriptions)
       .where(eq(companyReportDeliverySubscriptions.companyId, companyId))
       .orderBy(companyReportDeliverySubscriptions.subscriptionId);
+  }
+
+  async getReportAutomationPreferences(
+    companyId: string,
+    userId: string
+  ): Promise<CompanyReportAutomationPreference[]> {
+    return await db
+      .select()
+      .from(companyReportAutomationPreferences)
+      .where(
+        and(
+          eq(companyReportAutomationPreferences.companyId, companyId),
+          eq(companyReportAutomationPreferences.userId, userId)
+        )
+      )
+      .orderBy(companyReportAutomationPreferences.persona);
+  }
+
+  async getReportAutomationPreference(
+    companyId: string,
+    userId: string,
+    persona: string
+  ): Promise<CompanyReportAutomationPreference | undefined> {
+    const [preference] = await db
+      .select()
+      .from(companyReportAutomationPreferences)
+      .where(
+        and(
+          eq(companyReportAutomationPreferences.companyId, companyId),
+          eq(companyReportAutomationPreferences.userId, userId),
+          eq(companyReportAutomationPreferences.persona, persona)
+        )
+      )
+      .limit(1);
+    return preference || undefined;
+  }
+
+  async upsertReportAutomationPreference(
+    preference: InsertCompanyReportAutomationPreference
+  ): Promise<CompanyReportAutomationPreference> {
+    const [row] = await db
+      .insert(companyReportAutomationPreferences)
+      .values(preference)
+      .onConflictDoUpdate({
+        target: [
+          companyReportAutomationPreferences.companyId,
+          companyReportAutomationPreferences.userId,
+          companyReportAutomationPreferences.persona,
+        ],
+        set: {
+          preferredDeliveryAutomationCommand: preference.preferredDeliveryAutomationCommand,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    return row;
   }
 
   async getReportDeliverySubscriptionSetting(

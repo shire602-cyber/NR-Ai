@@ -45,6 +45,10 @@ const reportDeliverySchedulerHealthQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).optional(),
 });
 
+const reportDeliveryAutomationPreferenceSchema = z.object({
+  preferredDeliveryAutomationCommand: z.enum(["retry", "review", "queue", "comparison"]).nullable(),
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Report delivery failed";
 }
@@ -112,6 +116,49 @@ export function registerReportDeliveryRoutes(app: Express) {
       ]);
 
       res.json({ latestScan: latestScan ?? null, recentScans });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/report-delivery/preferences",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const preferences = await storage.getReportAutomationPreferences(companyId, userId);
+
+      res.json({ preferences });
+    })
+  );
+
+  app.patch(
+    "/api/companies/:companyId/report-delivery/preferences/:persona",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId, persona } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!isReportDeliveryPersona(persona)) {
+        return res
+          .status(400)
+          .json({ message: "persona must be owner, freelancer, or accountant" });
+      }
+
+      const body = reportDeliveryAutomationPreferenceSchema.parse(req.body);
+      const preference = await storage.upsertReportAutomationPreference({
+        companyId,
+        userId,
+        persona,
+        preferredDeliveryAutomationCommand: body.preferredDeliveryAutomationCommand,
+      });
+
+      res.json({ preference });
     })
   );
 

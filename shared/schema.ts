@@ -489,6 +489,48 @@ export type InsertCompanyReportDeliverySubscription = z.infer<
 export type CompanyReportDeliverySubscription =
   typeof companyReportDeliverySubscriptions.$inferSelect;
 
+export const companyReportAutomationPreferences = pgTable(
+  "company_report_automation_preferences",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    persona: text("persona").notNull(),
+    preferredDeliveryAutomationCommand: text("preferred_delivery_automation_command"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyUserPersonaUnique: unique("company_report_automation_preferences_unique").on(
+      table.companyId,
+      table.userId,
+      table.persona
+    ),
+    companyIdIdx: index("idx_company_report_automation_preferences_company_id").on(table.companyId),
+    userIdIdx: index("idx_company_report_automation_preferences_user_id").on(table.userId),
+  })
+);
+
+export const insertCompanyReportAutomationPreferenceSchema = createInsertSchema(
+  companyReportAutomationPreferences
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanyReportAutomationPreference = z.infer<
+  typeof insertCompanyReportAutomationPreferenceSchema
+>;
+export type CompanyReportAutomationPreference =
+  typeof companyReportAutomationPreferences.$inferSelect;
+
 export const companyReportDeliveryRuns = pgTable(
   "company_report_delivery_runs",
   {
