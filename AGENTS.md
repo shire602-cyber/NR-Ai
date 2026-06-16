@@ -6,8 +6,9 @@ Scope: this file applies to the whole repository.
 
 - `client/` contains the React/Vite frontend. Vite aliases `@` to `client/src`.
 - `client/src/lib/reportCatalog.ts` is the shared source for Reports catalog/workspace metadata,
-  automation playbooks, automation-health scoring/history, persona preference storage, and
-  command-palette report shortcuts; avoid duplicating report labels or deep links elsewhere.
+  automation playbooks, roadmap prerequisites, automation-health scoring/history, persona
+  preference storage, and command-palette report shortcuts; avoid duplicating report labels or deep
+  links elsewhere.
 - `server/` contains the Express API, middleware, routes, services, and startup code.
 - `shared/` contains the Drizzle schema and shared validators. The alias `@shared` points here.
 - `migrations/` contains Drizzle migrations. Treat `migrations/meta/` as Drizzle-managed output.

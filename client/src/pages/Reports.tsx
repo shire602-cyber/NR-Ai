@@ -1545,6 +1545,13 @@ export default function Reports() {
       const plannedCategories = Array.from(
         new Set(workspace.plannedReports.map((report) => report.category))
       );
+      const plannedWorkflowDependencies = Array.from(
+        new Set(
+          workspace.plannedReports
+            .map((report) => report.roadmapPrerequisites?.workflowDependency)
+            .filter((dependency): dependency is string => Boolean(dependency))
+        )
+      );
       const nextReports = workspace.plannedReports.slice(0, 4);
 
       return {
@@ -1553,8 +1560,11 @@ export default function Reports() {
         nextReports,
         plannedAutomationHooks,
         plannedCategories,
+        plannedWorkflowDependencies,
         liveReportCount: workspace.reports.length - workspace.plannedReports.length,
         plannedReportCount: workspace.plannedReports.length,
+        prerequisiteCount: workspace.plannedReports.filter((report) => report.roadmapPrerequisites)
+          .length,
         roadmapStatus: workspace.plannedReports.length > 0 ? "Roadmap gaps" : "Coverage complete",
         nextWorkflow:
           nextReports.length > 0
@@ -1888,6 +1898,7 @@ export default function Reports() {
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
         { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
+        { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
         { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
@@ -1951,6 +1962,9 @@ export default function Reports() {
         { header: "Category", key: "category", width: 24 },
         { header: "Comparison", key: "comparison", width: 28 },
         { header: "Automation Unlock", key: "automation", width: 34 },
+        { header: "Data Source Needed", key: "dataSource", width: 46 },
+        { header: "Workflow Dependency", key: "workflowDependency", width: 50 },
+        { header: "Automation Rule Needed", key: "automationRule", width: 50 },
         { header: "Workflow", key: "workflow", width: 40 },
       ],
       rows: workspace.reports
@@ -1966,6 +1980,9 @@ export default function Reports() {
           category: report.category,
           comparison: report.comparison,
           automation: report.automation,
+          dataSource: report.roadmapPrerequisites?.dataSource ?? "",
+          workflowDependency: report.roadmapPrerequisites?.workflowDependency ?? "",
+          automationRule: report.roadmapPrerequisites?.automationRule ?? "",
           workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
         })),
     };
@@ -2962,7 +2979,7 @@ export default function Reports() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">Live now</div>
                       <div className="font-mono text-lg font-semibold">{item.liveReportCount}</div>
@@ -2977,6 +2994,12 @@ export default function Reports() {
                       <div className="text-xs text-muted-foreground">Categories</div>
                       <div className="font-mono text-lg font-semibold">
                         {item.plannedCategories.length}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Prereqs</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {item.prerequisiteCount}
                       </div>
                     </div>
                   </div>
@@ -2999,6 +3022,26 @@ export default function Reports() {
                             <div className="text-xs text-muted-foreground">
                               {report.comparison} - {report.automation}
                             </div>
+                            {report.roadmapPrerequisites ? (
+                              <div className="grid gap-2 pt-2 text-xs text-muted-foreground">
+                                <div>
+                                  <span className="font-medium text-foreground">Data source:</span>{" "}
+                                  {report.roadmapPrerequisites.dataSource}
+                                </div>
+                                <div>
+                                  <span className="font-medium text-foreground">
+                                    Workflow dependency:
+                                  </span>{" "}
+                                  {report.roadmapPrerequisites.workflowDependency}
+                                </div>
+                                <div>
+                                  <span className="font-medium text-foreground">
+                                    Automation rule:
+                                  </span>{" "}
+                                  {report.roadmapPrerequisites.automationRule}
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                           <Button asChild size="sm" variant="outline">
                             <Link href={reportHref(report) ?? reportWorkspaceHref(workspace)}>
@@ -3025,6 +3068,22 @@ export default function Reports() {
                       ).map((hook) => (
                         <Badge key={hook} variant="outline">
                           {hook}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Workflow dependencies
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(item.plannedWorkflowDependencies.length > 0
+                        ? item.plannedWorkflowDependencies
+                        : ["No planned workflow dependencies"]
+                      ).map((dependency) => (
+                        <Badge key={dependency} variant="outline">
+                          {dependency}
                         </Badge>
                       ))}
                     </div>

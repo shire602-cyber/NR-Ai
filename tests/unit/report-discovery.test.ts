@@ -298,12 +298,21 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("visibleReportRoadmap");
     expect(reportsSource).toContain("visiblePlannedReportCount");
     expect(reportsSource).toContain("plannedAutomationHooks");
+    expect(reportsSource).toContain("plannedWorkflowDependencies");
+    expect(reportsSource).toContain("prerequisiteCount");
     expect(reportsSource).toContain("Planned report gaps");
+    expect(reportsSource).toContain("Roadmap prerequisites");
     expect(reportsSource).toContain("Roadmap status");
     expect(reportsSource).toContain("Automation Unlock");
+    expect(reportsSource).toContain("Data Source Needed");
+    expect(reportsSource).toContain("Workflow Dependency");
+    expect(reportsSource).toContain("Automation Rule Needed");
     expect(reportsSource).toContain("report-roadmap-${workspace.persona}");
     expect(reportsSource).toContain("Next report unlocks");
     expect(reportsSource).toContain("Automation unlocks");
+    expect(reportsSource).toContain("Workflow dependencies");
+    expect(reportsSource).toContain("Data source:");
+    expect(reportsSource).toContain("Automation rule:");
     expect(reportsSource).toContain("Open next workflow");
     expect(reportsSource).toContain("visibleReportPackReadiness");
     expect(reportsSource).toContain("reportPackReadinessNeedingReview");
@@ -354,6 +363,15 @@ describe("report discoverability", () => {
       expect(workspace.packSchedule.trigger).toBeTruthy();
       expect(workspace.packSchedule.automation).toBeTruthy();
       expect(workspace.automations).toHaveLength(3);
+    }
+
+    const plannedReports = reportCatalog.filter((report) => report.status === "planned");
+    expect(plannedReports.length).toBeGreaterThan(0);
+
+    for (const report of plannedReports) {
+      expect(report.roadmapPrerequisites?.dataSource).toBeTruthy();
+      expect(report.roadmapPrerequisites?.workflowDependency).toBeTruthy();
+      expect(report.roadmapPrerequisites?.automationRule).toBeTruthy();
     }
   });
 

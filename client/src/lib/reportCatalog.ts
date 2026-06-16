@@ -38,6 +38,11 @@ export interface ReportCatalogItem {
   personas: ReportPersona[];
   comparison: string;
   automation: string;
+  roadmapPrerequisites?: {
+    dataSource: string;
+    workflowDependency: string;
+    automationRule: string;
+  };
   commandIcon: ReportCommandIcon;
   commandKeywords: string;
   tab?: ReportTab;
@@ -394,6 +399,12 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Tax year",
     automation: "Tax liability review",
+    roadmapPrerequisites: {
+      dataSource: "Finalized P&L, deductible expense mapping, and UAE corporate tax settings.",
+      workflowDependency: "Corporate Tax workspace with tax-year configuration and adjustments.",
+      automationRule:
+        "Flag taxable-profit thresholds, disallowed expenses, and filing-deadline risk.",
+    },
     href: "/corporate-tax",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports corporate tax estimate liability",
@@ -478,6 +489,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Margin",
     automation: "Margin alerts",
+    roadmapPrerequisites: {
+      dataSource: "Invoice line items with product/service, quantity, subtotal, and margin inputs.",
+      workflowDependency: "Invoice item catalog and product/service tagging in Invoices.",
+      automationRule: "Alert on low margin, top service concentration, and missing item tags.",
+    },
     href: "/invoices",
     commandIcon: "fileText",
     commandKeywords: "reports sales products services margin",
@@ -514,6 +530,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "As of date",
     automation: "Stock risk",
+    roadmapPrerequisites: {
+      dataSource: "Inventory items, on-hand quantity, unit cost, and valuation method.",
+      workflowDependency: "Inventory item master with cost and stock-count reconciliation.",
+      automationRule: "Flag negative stock, stale valuation, and valuation-method mismatches.",
+    },
     href: "/inventory",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports inventory valuation stock",
@@ -526,6 +547,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Period movement",
     automation: "Reorder alerts",
+    roadmapPrerequisites: {
+      dataSource: "Stock receipts, issues, transfers, and adjustments linked to each item.",
+      workflowDependency: "Inventory movement ledger with reorder points and item categories.",
+      automationRule: "Trigger reorder and shrinkage alerts when movement breaches thresholds.",
+    },
     href: "/inventory",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports inventory movement reorder",
@@ -538,6 +564,12 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "As of date",
     automation: "Capitalization review",
+    roadmapPrerequisites: {
+      dataSource:
+        "Asset records with purchase date, cost, category, location, and disposal status.",
+      workflowDependency: "Fixed Assets workspace with capitalization policy and asset tagging.",
+      automationRule: "Review purchases above capitalization thresholds and missing asset fields.",
+    },
     href: "/fixed-assets",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports fixed assets register capitalization",
@@ -550,6 +582,12 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["accountant"],
     comparison: "Period",
     automation: "Posting suggestions",
+    roadmapPrerequisites: {
+      dataSource: "Fixed asset register with depreciation method, useful life, and residual value.",
+      workflowDependency:
+        "Fixed Assets depreciation setup and journal-posting destination accounts.",
+      automationRule: "Suggest monthly depreciation journals and flag assets missing methods.",
+    },
     href: "/fixed-assets",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports depreciation fixed assets posting",
@@ -562,6 +600,12 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Pay period",
     automation: "Variance checks",
+    roadmapPrerequisites: {
+      dataSource: "Approved pay runs, employee cost centers, allowances, and deductions.",
+      workflowDependency: "Payroll workspace with employee profiles and pay-run approvals.",
+      automationRule:
+        "Flag payroll variance, missing approvals, and unexpected employee-cost movement.",
+    },
     href: "/payroll",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports payroll summary wages",
@@ -574,6 +618,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Pay run",
     automation: "WPS readiness",
+    roadmapPrerequisites: {
+      dataSource: "Payroll runs with WPS employee identifiers, bank routing, and SIF fields.",
+      workflowDependency: "Payroll WPS configuration with employee bank validation.",
+      automationRule: "Block SIF export when required WPS or bank fields are incomplete.",
+    },
     href: "/payroll",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports wps sif payroll readiness",
@@ -586,6 +635,12 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["owner", "accountant"],
     comparison: "Claim status",
     automation: "Approval routing",
+    roadmapPrerequisites: {
+      dataSource: "Submitted claims, receipts, approval state, and reimbursement account mapping.",
+      workflowDependency:
+        "Expense Claims workflow with approver routing and reimbursement posting.",
+      automationRule: "Route stale claims, duplicate receipts, and policy exceptions for review.",
+    },
     href: "/expense-claims",
     commandIcon: "receipt",
     commandKeywords: "reports expense claims approval",
@@ -598,6 +653,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["accountant"],
     comparison: "Close period",
     automation: "Close checklist",
+    roadmapPrerequisites: {
+      dataSource: "Close tasks, reconciliations, trial-balance checks, and reviewer assignments.",
+      workflowDependency: "Month-End workspace with task templates and period lock controls.",
+      automationRule: "Escalate overdue close tasks and unresolved reconciliation exceptions.",
+    },
     href: "/month-end",
     commandIcon: "book",
     commandKeywords: "reports month end close checklist accountant",
@@ -610,6 +670,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["accountant"],
     comparison: "Activity period",
     automation: "Risk summary",
+    roadmapPrerequisites: {
+      dataSource: "User activity logs, journal changes, invoice/bill edits, and approval events.",
+      workflowDependency: "History activity stream with entity-level mutation tracking.",
+      automationRule: "Summarize unusual edits, privileged actions, and post-close changes.",
+    },
     href: "/history",
     commandIcon: "book",
     commandKeywords: "reports audit trail history risk",
@@ -622,6 +687,11 @@ export const reportCatalog: ReportCatalogItem[] = [
     personas: ["accountant"],
     comparison: "Multi-company",
     automation: "Report packs",
+    roadmapPrerequisites: {
+      dataSource: "Multi-company chart mapping, ownership rules, eliminations, and period locks.",
+      workflowDependency: "Financial Statements workspace with consolidation mappings.",
+      automationRule: "Flag unmapped accounts, intercompany balances, and missing company closes.",
+    },
     href: "/financial-statements",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports consolidated statements multi company",
