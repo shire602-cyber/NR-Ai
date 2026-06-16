@@ -8,6 +8,8 @@ describe("Bank import launch UX", () => {
   it("keeps a sample CSV path for buyers without live bank feeds", () => {
     expect(source).toContain("muhasib-sample-bank-statement.csv");
     expect(source).toContain("Live bank feeds are not required");
+    expect(source).toContain("Arabic/English generic");
+    expect(source).toContain("Amount + Dr/Cr type columns are supported");
     expect(source).toContain('data-testid="button-download-sample-bank-csv"');
   });
 

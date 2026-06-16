@@ -31,6 +31,7 @@ const bannedLaunchClaims = [
   /FTA Compliant/i,
   /FTA Registered/i,
   /UAE-compliant/i,
+  /VAT-compliant/i,
   /bank-grade/i,
   /bank-level/i,
   /SLA guarantee/i,
@@ -81,11 +82,15 @@ describe("Public SaaS launch surface", () => {
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
     const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+    const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
+    const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
     expect(appSource).toContain("UAE Tax Ready");
     for (const [file, source] of [
       ["client/src/App.tsx", appSource],
       ["client/src/pages/Dashboard.tsx", dashboardSource],
+      ["client/src/components/Onboarding.tsx", onboardingWizardSource],
+      ["client/src/pages/Onboarding.tsx", onboardingPageSource],
     ] as const) {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);

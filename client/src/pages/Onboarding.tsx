@@ -1126,7 +1126,7 @@ function FirstDocStep({
     {
       icon: FileText,
       title: "Create an Invoice",
-      description: "Issue a VAT-compliant tax invoice to your first customer.",
+      description: "Issue a VAT-ready tax invoice to your first customer.",
       action: "/invoices",
       testId: "onboarding-goto-invoice",
     },

@@ -70,8 +70,16 @@ interface ParsedTransaction {
 
 type BankFormat = "emiratesnbd" | "adcb" | "fab" | "mashreq" | "generic";
 
+function normalizeHeader(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\ufeff/g, "")
+    .replace(/[\u200e\u200f]/g, "")
+    .replace(/[^a-z0-9\u0600-\u06ff]/g, "");
+}
+
 function detectBankFormat(headers: string[]): BankFormat {
-  const h = headers.map((x) => x.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const h = headers.map(normalizeHeader);
   const joined = h.join(",");
 
   if (joined.includes("valuedate") || joined.includes("narration")) return "emiratesnbd";
@@ -150,18 +158,61 @@ function parseDate(raw: string): Date | null {
 
 function parseAmount(raw: string): number {
   if (!raw) return 0;
+  const normalizedDigits = raw
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - "٠".charCodeAt(0)))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - "۰".charCodeAt(0)))
+    .replace(/٫/g, ".")
+    .replace(/٬/g, ",");
   // Remove currency symbols, commas, spaces; handle parentheses as negative
-  const negative = raw.trim().startsWith("(") || raw.trim().startsWith("-");
-  const cleaned = raw.replace(/[^0-9.]/g, "");
+  const negative =
+    normalizedDigits.trim().startsWith("(") ||
+    normalizedDigits.trim().startsWith("-") ||
+    /\bdr\b/i.test(normalizedDigits) ||
+    /مدين|سحب|خصم/.test(normalizedDigits);
+  const cleaned = normalizedDigits.replace(/[^0-9.]/g, "");
   const val = parseFloat(cleaned) || 0;
   return negative ? -val : val;
 }
 
+function debitCreditDirection(raw: string): "debit" | "credit" | null {
+  const normalized = normalizeHeader(raw);
+  if (!normalized) return null;
+
+  if (["d", "dr"].includes(normalized)) return "debit";
+  if (["c", "cr"].includes(normalized)) return "credit";
+
+  if (
+    ["debit", "withdrawal", "outflow", "paid", "مدين", "سحب", "خصم"].some((token) =>
+      normalized.includes(normalizeHeader(token))
+    )
+  ) {
+    return "debit";
+  }
+
+  if (
+    ["credit", "deposit", "inflow", "received", "دائن", "ايداع", "إيداع"].some((token) =>
+      normalized.includes(normalizeHeader(token))
+    )
+  ) {
+    return "credit";
+  }
+
+  return null;
+}
+
 function mapRow(fields: string[], headers: string[], format: BankFormat): ParsedTransaction | null {
-  const get = (key: string): string => {
-    const idx = headers.findIndex(
-      (h) =>
-        h.toLowerCase().replace(/[^a-z0-9]/g, "") === key.toLowerCase().replace(/[^a-z0-9]/g, "")
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const get = (...keys: string[]): string => {
+    const normalizedKeys = keys.map(normalizeHeader).filter(Boolean);
+    const idx = normalizedHeaders.findIndex(
+      (header) =>
+        Boolean(header) &&
+        normalizedKeys.some(
+          (key) =>
+            header === key ||
+            (key.length > 2 && header.includes(key)) ||
+            (key.length > 2 && header.length > 2 && key.includes(header))
+        )
     );
     return idx >= 0 ? (fields[idx] || "").trim() : "";
   };
@@ -174,47 +225,77 @@ function mapRow(fields: string[], headers: string[], format: BankFormat): Parsed
   let reference = "";
 
   if (format === "emiratesnbd") {
-    dateStr = get("ValueDate") || get("Date") || get("TransactionDate");
-    description = get("Narration") || get("Description") || get("Details");
-    debitStr = get("Debit") || get("Withdrawal");
-    creditStr = get("Credit") || get("Deposit");
-    balanceStr = get("Balance") || get("RunningBalance");
-    reference = get("ChequeNo") || get("Reference") || get("Ref");
+    dateStr = get("ValueDate", "Date", "TransactionDate", "تاريخ", "تاريخالقيمة");
+    description = get("Narration", "Description", "Details", "البيان", "الوصف", "تفاصيل");
+    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
+    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
+    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
+    reference = get("ChequeNo", "Reference", "Ref", "مرجع", "رقمالمرجع");
   } else if (format === "adcb") {
-    dateStr = get("TxnDate") || get("Date") || get("TransactionDate");
-    description = get("Particulars") || get("Description") || get("Details");
-    debitStr = get("Debit") || get("Withdrawal") || get("Dr");
-    creditStr = get("Credit") || get("Deposit") || get("Cr");
-    balanceStr = get("Balance") || get("ClosingBalance");
-    reference = get("Reference") || get("Ref") || get("ChequeNo");
+    dateStr = get("TxnDate", "Date", "TransactionDate", "تاريخ", "تاريخالعملية");
+    description = get("Particulars", "Description", "Details", "البيان", "الوصف", "تفاصيل");
+    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
+    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
+    balanceStr = get("Balance", "ClosingBalance", "الرصيد", "رصيد");
+    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
   } else if (format === "fab") {
-    dateStr = get("TransDate") || get("Date") || get("ValueDate");
-    description = get("Description") || get("Details") || get("Narration");
-    debitStr = get("Debit") || get("Withdrawal") || get("Dr");
-    creditStr = get("Credit") || get("Deposit") || get("Cr");
-    balanceStr = get("Balance") || get("RunningBalance");
-    reference = get("ChequeNo") || get("Reference") || get("TxnRef");
+    dateStr = get("TransDate", "Date", "ValueDate", "تاريخ", "تاريخالعملية");
+    description = get("Description", "Details", "Narration", "البيان", "الوصف", "تفاصيل");
+    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
+    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
+    balanceStr = get("Balance", "RunningBalance", "الرصيد", "رصيد");
+    reference = get("ChequeNo", "Reference", "TxnRef", "مرجع", "رقمالمرجع");
   } else if (format === "mashreq") {
-    dateStr = get("PostingDate") || get("Date") || get("ValueDate");
-    description = get("TransactionDetails") || get("Description") || get("Narration");
-    debitStr = get("Debit") || get("Withdrawal") || get("Dr");
-    creditStr = get("Credit") || get("Deposit") || get("Cr");
-    balanceStr = get("Balance") || get("AvailableBalance");
-    reference = get("Reference") || get("Ref") || get("ChequeNo");
+    dateStr = get("PostingDate", "Date", "ValueDate", "تاريخ", "تاريخالقيد");
+    description = get(
+      "TransactionDetails",
+      "Description",
+      "Narration",
+      "البيان",
+      "الوصف",
+      "تفاصيل"
+    );
+    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
+    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
+    balanceStr = get("Balance", "AvailableBalance", "الرصيد", "رصيد");
+    reference = get("Reference", "Ref", "ChequeNo", "مرجع", "رقمالمرجع");
   } else {
     // Generic: try common column names
-    dateStr = get("Date") || get("TransactionDate") || get("ValueDate") || get("TxnDate");
-    description = get("Description") || get("Details") || get("Narration") || get("Particulars");
-    debitStr = get("Debit") || get("Withdrawal") || get("Dr");
-    creditStr = get("Credit") || get("Deposit") || get("Cr");
-    balanceStr = get("Balance") || get("RunningBalance") || get("ClosingBalance");
-    reference = get("Reference") || get("Ref") || get("ChequeNo");
+    dateStr = get("Date", "TransactionDate", "ValueDate", "TxnDate", "تاريخ", "تاريخالعملية");
+    description = get(
+      "Description",
+      "Details",
+      "Narration",
+      "Particulars",
+      "البيان",
+      "الوصف",
+      "تفاصيل"
+    );
+    debitStr = get("Debit", "Withdrawal", "Dr", "مدين", "سحب", "خصم");
+    creditStr = get("Credit", "Deposit", "Cr", "دائن", "ايداع", "إيداع");
+    balanceStr = get("Balance", "RunningBalance", "ClosingBalance", "الرصيد", "رصيد");
+    reference = get("Reference", "Ref", "ChequeNo", "TxnRef", "مرجع", "رقمالمرجع");
 
-    // If there's a single amount column with +/- signs
+    // If there's a single amount column, respect a paired Dr/Cr or type column when present.
     if (!debitStr && !creditStr) {
-      const amtStr = get("Amount") || get("Debit/Credit");
+      const amtStr = get("Amount", "TransactionAmount", "Debit/Credit", "المبلغ", "مبلغ");
+      const direction = debitCreditDirection(
+        get(
+          "Type",
+          "TransactionType",
+          "DrCr",
+          "DebitCredit",
+          "Debit/CreditType",
+          "النوع",
+          "نوعالعملية",
+          "مديندائن",
+          "دائنمدين"
+        )
+      );
       const amt = parseAmount(amtStr);
-      if (amt < 0) debitStr = String(Math.abs(amt));
+      if (direction === "debit") debitStr = String(Math.abs(amt));
+      else if (direction === "credit") creditStr = String(Math.abs(amt));
+      else if (amt < 0) debitStr = String(Math.abs(amt));
       else creditStr = String(amt);
     }
   }
@@ -246,7 +327,7 @@ function mapRow(fields: string[], headers: string[], format: BankFormat): Parsed
  * Parse CSV content and return normalized transactions.
  * Skips header-only detection rows and blank lines.
  */
-function parseBankCsv(csvContent: string): {
+export function parseBankCsv(csvContent: string): {
   transactions: ParsedTransaction[];
   format: BankFormat;
   errors: string[];

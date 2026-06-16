@@ -1170,7 +1170,11 @@ export default function BankReconciliation() {
                   <p className="font-medium text-xs uppercase tracking-wide">Supported formats</p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
-                    <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, generic</span>
+                    <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, Arabic/English generic</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
+                    <span>Amount + Dr/Cr type columns are supported</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <FileText className="w-3.5 h-3.5 text-destructive" />

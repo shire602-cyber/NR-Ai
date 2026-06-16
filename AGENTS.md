@@ -104,6 +104,8 @@ Scope: this file applies to the whole repository.
   copy changes.
 - Use `npx vitest run tests/unit/bank-import-ux.test.ts` after bank statement import or
   reconciliation UX changes, especially sample CSV and duplicate-import messaging.
+- Use `npx vitest run tests/unit/bank-statement-import.test.ts` after bank CSV parser/header
+  detection changes, especially Arabic headers or amount-plus-Dr/Cr statement formats.
 - Use `npx vitest run tests/unit/mobile-launch-ux.test.ts` after mobile layout changes on invoices,
   receipts, banking, VAT, or other launch-critical SaaS screens.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command

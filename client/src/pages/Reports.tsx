@@ -4389,6 +4389,162 @@ export default function Reports() {
     };
   }, [visibleReportAutomationRules, visibleReportPackReadiness]);
 
+  const reportAutomationOperationSummaries = useMemo(() => {
+    return workspaceSummaries.map((workspace) => {
+      const packReadiness = reportPackDeliveryReadiness.find(
+        (item) => item.workspace.persona === workspace.persona
+      );
+      const deliverySubscriptions = reportDeliverySubscriptionSummaries.filter(
+        (subscription) => subscription.persona === workspace.persona
+      );
+      const automationRules = reportAutomationRules.filter(
+        (rule) => rule.workspace.persona === workspace.persona
+      );
+      const recommendations =
+        personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
+          ?.recommendations ?? [];
+      const failedRunCount = deliverySubscriptions.reduce(
+        (sum, subscription) =>
+          sum + subscription.deliveryRuns.filter((run) => run.status === "failed").length,
+        0
+      );
+      const pausedDeliveryCount = deliverySubscriptions.filter(
+        (subscription) => !subscription.enabled
+      ).length;
+      const setupDeliveryCount = deliverySubscriptions.filter(
+        (subscription) => subscription.status === "Setup needed"
+      ).length;
+      const readyDeliveryCount = deliverySubscriptions.filter(
+        (subscription) => subscription.status === "Ready to send"
+      ).length;
+      const reviewDeliveryCount = deliverySubscriptions.filter(
+        (subscription) => subscription.status === "Review before send"
+      ).length;
+      const readyRuleCount = automationRules.filter(
+        (rule) => rule.status === "Ready to auto-send"
+      ).length;
+      const openWorkItemCount = automationRules.reduce(
+        (sum, rule) => sum + rule.openWorkItemCount,
+        0
+      );
+      const amountAtRisk = automationRules.reduce((sum, rule) => sum + rule.amountAtRisk, 0);
+      const comparisonWarnings = comparisonRows.filter(
+        (row) =>
+          matchesReportPersona(row.personas, workspace.persona) &&
+          comparisonBadgeVariant(row) === "warning"
+      ).length;
+      const reportCount = workspace.reports.length;
+      const deliveryIssueCount =
+        failedRunCount + pausedDeliveryCount + setupDeliveryCount + reviewDeliveryCount;
+      const automationScore = packReadiness?.automationHealth.score ?? workspace.readiness;
+      const automationHealthVariant =
+        packReadiness?.automationHealth.variant ??
+        (workspace.readiness >= 85 ? "success" : workspace.readiness >= 60 ? "warning" : "danger");
+
+      const nextAction =
+        failedRunCount > 0
+          ? {
+              label: "Recover failed delivery",
+              detail: `${failedRunCount} failed report delivery run${
+                failedRunCount === 1 ? "" : "s"
+              } can be retried after guardrails are fixed.`,
+              href: reportSectionHref(workspace, "delivery-subscriptions"),
+              badge: "Recovery",
+              badgeVariant: "danger" as const,
+            }
+          : deliveryIssueCount > 0
+            ? {
+                label: "Review delivery setup",
+                detail: `${deliveryIssueCount} delivery subscription${
+                  deliveryIssueCount === 1 ? "" : "s"
+                } need setup, guardrail review, or enablement before auto-send.`,
+                href: reportSectionHref(workspace, "delivery-subscriptions"),
+                badge: "Delivery",
+                badgeVariant: "warning" as const,
+              }
+            : openWorkItemCount > 0
+              ? {
+                  label: "Clear automation queue",
+                  detail: `${openWorkItemCount} open work item${
+                    openWorkItemCount === 1 ? "" : "s"
+                  } should be resolved before scheduled packs are sent.`,
+                  href: reportSectionHref(workspace, "automation-command-center"),
+                  badge: "Work queue",
+                  badgeVariant: "warning" as const,
+                }
+              : comparisonWarnings > 0
+                ? {
+                    label: "Review comparison movement",
+                    detail: `${comparisonWarnings} comparison signal${
+                      comparisonWarnings === 1 ? "" : "s"
+                    } need a note before the next pack delivery.`,
+                    href: reportSectionHref(workspace, "recommendations"),
+                    badge: "Movement",
+                    badgeVariant: "warning" as const,
+                  }
+                : {
+                    label: "Keep automation running",
+                    detail: `${readyRuleCount}/${automationRules.length} auto-send rules and ${readyDeliveryCount}/${deliverySubscriptions.length} deliveries are ready.`,
+                    href: reportSectionHref(workspace, "automation-command-center"),
+                    badge: "Ready",
+                    badgeVariant: "success" as const,
+                  };
+
+      const status =
+        failedRunCount > 0
+          ? "Delivery recovery"
+          : deliveryIssueCount > 0 || openWorkItemCount > 0 || comparisonWarnings > 0
+            ? "Needs review"
+            : "Ready to automate";
+
+      return {
+        workspace,
+        reportCount,
+        readyReportCount: workspace.readyReports,
+        automationScore,
+        automationHealthVariant,
+        automationRuleCount: automationRules.length,
+        readyRuleCount,
+        deliverySubscriptionCount: deliverySubscriptions.length,
+        readyDeliveryCount,
+        failedRunCount,
+        openWorkItemCount,
+        amountAtRisk,
+        comparisonWarnings,
+        recommendationCount: recommendations.length,
+        nextAction,
+        status,
+        statusVariant:
+          status === "Ready to automate"
+            ? ("success" as const)
+            : status === "Delivery recovery"
+              ? ("destructive" as const)
+              : ("warning" as const),
+      };
+    });
+  }, [
+    comparisonRows,
+    personaReportRecommendations,
+    reportAutomationRules,
+    reportDeliverySubscriptionSummaries,
+    reportPackDeliveryReadiness,
+    workspaceSummaries,
+  ]);
+
+  const visibleReportAutomationOperations = useMemo(() => {
+    return reportAutomationOperationSummaries.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationOperationSummaries]);
+  const reportAutomationOperationsNeedingReview = visibleReportAutomationOperations.filter(
+    (item) => item.status !== "Ready to automate"
+  ).length;
+  const reportAutomationOperationsLoading =
+    automationLoading ||
+    comparisonLoading ||
+    reportDeliveryPlansQuery.isLoading ||
+    reportDeliveryRunsQuery.isLoading;
+
   const reportPackReadinessNeedingReview = visibleReportPackReadiness.filter(
     (item) => item.reviewCount > 0
   ).length;
@@ -5540,6 +5696,161 @@ export default function Reports() {
             </Button>
           ))}
         </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-automation-operations-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-automation-operations-title" className="text-xl font-semibold">
+              Report automation operations
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              One operating view for report readiness, auto-send rules, delivery recovery, and next
+              actions across owner, freelancer, and accountant workspaces. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
+            {reportAutomationOperationsNeedingReview} need action
+          </Badge>
+        </div>
+
+        {reportAutomationOperationsLoading ? (
+          <Skeleton className="h-64 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            {visibleReportAutomationOperations.map((item) => {
+              const workspace = item.workspace;
+              const WorkspaceIcon = workspace.icon;
+
+              return (
+                <Card
+                  key={workspace.persona}
+                  data-testid={`report-automation-operations-${workspace.persona}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {workspace.title}
+                          </CardTitle>
+                          <CardDescription>{workspace.automationOutcome}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={item.statusVariant} dot>
+                        {item.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Health</div>
+                        <div className="mt-1 flex items-baseline gap-1">
+                          <span className="font-mono text-lg font-semibold">
+                            {item.automationScore}
+                          </span>
+                          <span className="text-xs text-muted-foreground">/100</span>
+                        </div>
+                        <Badge variant={item.automationHealthVariant} dot className="mt-2">
+                          Automation
+                        </Badge>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Reports ready</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.readyReportCount}/{item.reportCount}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {item.recommendationCount} recommended actions
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Auto-send rules</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.readyRuleCount}/{item.automationRuleCount}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {item.openWorkItemCount} open work items
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Deliveries ready</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {item.failedRunCount} failed runs
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-medium uppercase text-muted-foreground">
+                          Next action
+                        </div>
+                        <Badge variant={item.nextAction.badgeVariant} dot>
+                          {item.nextAction.badge}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-foreground">
+                        {item.nextAction.label}
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {item.nextAction.detail}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={item.nextAction.href}>Open action</Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={personaFilter === workspace.persona ? "default" : "ghost"}
+                          onClick={() => setReportPersonaFilter(workspace.persona)}
+                        >
+                          Set focus
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Amount at risk</div>
+                        <div className="mt-1 truncate font-mono font-semibold text-foreground">
+                          {formatCurrency(item.amountAtRisk, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Comparison warnings</div>
+                        <div className="mt-1 font-mono font-semibold text-foreground">
+                          {item.comparisonWarnings}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={reportSectionHref(workspace, "automation-command-center")}>
+                          Open command center
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={reportSectionHref(workspace, "delivery-subscriptions")}>
+                          Open delivery
+                        </Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="space-y-4" aria-labelledby="decision-shortcuts-title">

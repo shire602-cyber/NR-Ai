@@ -409,6 +409,7 @@ describe("report discoverability", () => {
   });
 
   it("exposes persona pack workflows through global search", () => {
+    expect(commandSource).toContain('reportSectionHref(workspace, "automation-operations")');
     expect(commandSource).toContain('reportSectionHref(workspace, "decision-shortcuts")');
     expect(commandSource).toContain('reportSectionHref(workspace, "recommendations")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-starters")');
@@ -442,6 +443,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-comparison-preset-${preset.id}`");
     expect(commandSource).toContain("href: reportComparisonPresetHref(preset)");
     expect(commandSource).toContain("comparison preset report pack");
+    expect(commandSource).toContain("id: `report-automation-operations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-decision-shortcuts-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-trigger-rules-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-delivery-subscriptions-${workspace.persona}`");
@@ -451,6 +453,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-automation-rules-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-automation-command-center-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
+    expect(commandSource).toContain("Report automation operations - ${workspace.title}");
     expect(commandSource).toContain("Decision shortcuts - ${workspace.title}");
     expect(commandSource).toContain("Trigger rules - ${workspace.title}");
     expect(commandSource).toContain("Delivery subscriptions - ${workspace.title}");
@@ -462,6 +465,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("Report pack automation - ${workspace.title}");
 
     for (const workspace of reportPersonaWorkspaces) {
+      expect(reportSectionHref(workspace, "automation-operations")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-automation-operations-title`
+      );
       expect(reportSectionHref(workspace, "decision-shortcuts")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#decision-shortcuts-title`
       );
@@ -823,6 +829,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Recommended Actions");
     expect(reportsSource).toContain("Report Roadmap");
     expect(reportsSource).toContain("Automation Command Center");
+    expect(reportsSource).toContain("Report automation operations");
     expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Automation Health Trend");
     expect(reportsSource).toContain("Delivery Checklist");
@@ -855,6 +862,13 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("deliveryGuardrail");
     expect(reportsSource).toContain("reportDeliverySubscriptionSummaries");
     expect(reportsSource).toContain("visibleReportDeliverySubscriptions");
+    expect(reportsSource).toContain("reportAutomationOperationSummaries");
+    expect(reportsSource).toContain("visibleReportAutomationOperations");
+    expect(reportsSource).toContain("report-automation-operations-${workspace.persona}");
+    expect(reportsSource).toContain("report-automation-operations-title");
+    expect(reportsSource).toContain("Recover failed delivery");
+    expect(reportsSource).toContain("Open command center");
+    expect(reportsSource).toContain("Open delivery");
     expect(reportsSource).toContain("report-delivery-subscription-${subscription.id}");
     expect(reportsSource).toContain("Open subscription");
     expect(reportsSource).toContain("queueReportDeliverySubscription");

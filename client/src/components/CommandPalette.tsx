@@ -270,6 +270,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }),
     ...reportPersonaWorkspaces.flatMap((workspace): PaletteItem[] => [
       {
+        id: `report-automation-operations-${workspace.persona}`,
+        label: `Report automation operations - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "automation-operations"),
+        keywords: `${workspace.commandKeywords} operations control room readiness delivery failures automation health next action`,
+      },
+      {
         id: `report-decision-shortcuts-${workspace.persona}`,
         label: `Decision shortcuts - ${workspace.title}`,
         group: "Reports",

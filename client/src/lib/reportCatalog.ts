@@ -18,6 +18,7 @@ export const reportPersonas = ["owner", "freelancer", "accountant"] as const;
 export type ReportTab = (typeof reportTabs)[number];
 export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportSection =
+  | "automation-operations"
   | "decision-shortcuts"
   | "recommendations"
   | "automation-starters"
@@ -1691,6 +1692,7 @@ export function clearPreferredReportPersona(): void {
 }
 
 const reportSectionAnchors: Record<ReportSection, string> = {
+  "automation-operations": "report-automation-operations-title",
   "decision-shortcuts": "decision-shortcuts-title",
   recommendations: "recommended-reports-title",
   "automation-starters": "automation-starters-title",
