@@ -9,6 +9,14 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  getPreferredReportPersona,
+  reportAutomationPlaybookHref,
+  reportCatalog,
+  reportHref,
+  reportPersonaWorkspaces,
+  reportWorkspaceHref,
+} from "@/lib/reportCatalog";
+import {
   TrendingUp,
   TrendingDown,
   AlertCircle,
@@ -389,6 +397,21 @@ function SectionHeader({
 function CustomerDashboard() {
   const { t, locale } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const preferredReportPersona = useMemo(() => getPreferredReportPersona() ?? "owner", []);
+  const preferredReportWorkspace = useMemo(() => {
+    return (
+      reportPersonaWorkspaces.find((workspace) => workspace.persona === preferredReportPersona) ??
+      reportPersonaWorkspaces[0]
+    );
+  }, [preferredReportPersona]);
+  const preferredWorkspaceReports = useMemo(() => {
+    return reportCatalog
+      .filter(
+        (report) =>
+          report.status !== "planned" && report.personas.includes(preferredReportWorkspace.persona)
+      )
+      .slice(0, 4);
+  }, [preferredReportWorkspace.persona]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
@@ -779,6 +802,98 @@ function CustomerDashboard() {
             </Card>
           </motion.section>
         )}
+
+      {/* ── Preferred report workspace ──────────────────────────────────── */}
+      <section data-testid="dashboard-report-workspace">
+        <SectionHeader
+          eyebrow="Reports"
+          title={preferredReportWorkspace.navLabel}
+          action={
+            <Link href={reportWorkspaceHref(preferredReportWorkspace)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-accent hover:text-accent -me-2"
+                data-testid="dashboard-open-report-workspace"
+              >
+                Open workspace <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            </Link>
+          }
+        />
+        <Card className="border-card-border overflow-hidden">
+          <CardContent className="p-0">
+            <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border/60">
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Workspace focus
+                    </div>
+                    <p className="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">
+                      {preferredReportWorkspace.focus}
+                    </p>
+                  </div>
+                  <Badge variant="info" dot>
+                    {preferredWorkspaceReports.length} ready reports
+                  </Badge>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {preferredWorkspaceReports.map((report) => (
+                    <Link
+                      key={report.id}
+                      href={reportHref(report) ?? reportWorkspaceHref(preferredReportWorkspace)}
+                    >
+                      <div className="rounded-md border border-border/70 p-3 hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium text-foreground">{report.name}</div>
+                          <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {report.comparison} · {report.automation}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-5">
+                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                  Automation lanes
+                </div>
+                <div className="mt-3 divide-y divide-border/50">
+                  {preferredReportWorkspace.automations.map((playbook) => (
+                    <div key={playbook.id} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-foreground">
+                            {playbook.title}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                            {playbook.trigger}
+                          </div>
+                        </div>
+                        <Link
+                          href={reportAutomationPlaybookHref(
+                            playbook,
+                            preferredReportWorkspace.persona
+                          )}
+                        >
+                          <Button variant="outline" size="sm" className="shrink-0">
+                            {playbook.cta}
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
 
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>

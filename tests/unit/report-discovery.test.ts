@@ -21,6 +21,7 @@ function read(path: string): string {
 describe("report discoverability", () => {
   const catalogSource = read("client/src/lib/reportCatalog.ts");
   const commandSource = read("client/src/components/CommandPalette.tsx");
+  const dashboardSource = read("client/src/pages/Dashboard.tsx");
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
   const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
@@ -101,6 +102,16 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("reportPersonaWorkspaces.map");
     expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
     expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
+    expect(dashboardSource).toContain("getPreferredReportPersona() ??");
+    expect(dashboardSource).toContain("preferredReportWorkspace");
+    expect(dashboardSource).toContain("reportPersonaWorkspaces.find");
+    expect(dashboardSource).toContain("preferredWorkspaceReports");
+    expect(dashboardSource).toContain("reportCatalog");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-workspace"');
+    expect(dashboardSource).toContain('data-testid="dashboard-open-report-workspace"');
+    expect(dashboardSource).toContain("reportWorkspaceHref(preferredReportWorkspace)");
+    expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
+    expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
     expect(catalogSource).toContain("REPORT_PERSONA_PREFERENCE_KEY");
     expect(catalogSource).toContain("getPreferredReportPersona");
     expect(catalogSource).toContain("setPreferredReportPersona");
