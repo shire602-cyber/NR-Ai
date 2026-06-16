@@ -45,6 +45,10 @@ const reportDeliverySchedulerHealthQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).optional(),
 });
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Report delivery failed";
+}
+
 export function registerReportDeliveryRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/report-delivery/subscriptions",
@@ -171,6 +175,76 @@ export function registerReportDeliveryRoutes(app: Express) {
         return res.status(409).json({ message: "Report delivery subscription is paused" });
       }
 
+      let notification;
+      let run;
+      try {
+        notification = await createAndEmitNotification(delivery.notification);
+        run = await storage.createReportDeliveryRun(
+          buildReportDeliveryRunInput({
+            companyId,
+            queuedBy: userId,
+            plan: delivery.plan,
+            notificationId: notification.id,
+          })
+        );
+      } catch (error) {
+        await storage.createReportDeliveryRun(
+          buildReportDeliveryRunInput({
+            companyId,
+            queuedBy: userId,
+            plan: delivery.plan,
+            status: "failed",
+            errorMessage: errorMessage(error),
+          })
+        );
+        throw error;
+      }
+
+      res.status(201).json({
+        subscription: delivery.plan,
+        notification,
+        run,
+      });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/report-delivery/runs/:runId/retry",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId, runId } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const failedRun = await storage.getReportDeliveryRun(companyId, runId);
+      if (!failedRun) return res.status(404).json({ message: "Report delivery run not found" });
+      if (failedRun.status !== "failed") {
+        return res.status(409).json({ message: "Only failed report delivery runs can be retried" });
+      }
+
+      const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
+      const delivery = buildReportDeliveryNotificationInput({
+        userId,
+        companyId,
+        subscriptionId: failedRun.subscriptionId,
+        settings,
+        scheduledFor: new Date(),
+      });
+
+      if (!delivery) {
+        return res.status(404).json({ message: "Report delivery subscription not found" });
+      }
+
+      if (!delivery.plan.enabled) {
+        return res.status(409).json({ message: "Report delivery subscription is paused" });
+      }
+
+      if (delivery.plan.status !== "ready") {
+        return res.status(409).json({ message: "Report delivery subscription needs setup" });
+      }
+
       const notification = await createAndEmitNotification(delivery.notification);
       const run = await storage.createReportDeliveryRun(
         buildReportDeliveryRunInput({
@@ -178,6 +252,8 @@ export function registerReportDeliveryRoutes(app: Express) {
           queuedBy: userId,
           plan: delivery.plan,
           notificationId: notification.id,
+          retriedFromRunId: failedRun.id,
+          scheduledFor: delivery.notification.scheduledFor ?? new Date(),
         })
       );
 
@@ -185,6 +261,7 @@ export function registerReportDeliveryRoutes(app: Express) {
         subscription: delivery.plan,
         notification,
         run,
+        retriedFromRun: failedRun,
       });
     })
   );

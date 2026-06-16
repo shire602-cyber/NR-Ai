@@ -22,6 +22,7 @@ vi.mock("../../server/storage", () => ({
     getReportDeliverySubscriptionSettings: vi.fn(async () => []),
     upsertReportDeliverySubscriptionSetting: vi.fn(),
     getReportDeliveryRuns: vi.fn(async () => []),
+    getReportDeliveryRun: vi.fn(async () => undefined),
     getLatestReportDeliverySchedulerScan: vi.fn(async () => null),
     getReportDeliverySchedulerScans: vi.fn(async () => []),
     createReportDeliveryRun: vi.fn(async (run: any) => ({
@@ -72,7 +73,12 @@ async function request(
       headers: body === undefined ? undefined : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    return { status: res.status, body: await res.json() };
+    const text = await res.text();
+    try {
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    } catch {
+      return { status: res.status, body: { raw: text } };
+    }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -84,6 +90,7 @@ describe("report delivery subscriptions", () => {
     vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([]);
     vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockReset();
     vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([]);
+    vi.mocked(storage.getReportDeliveryRun).mockResolvedValue(undefined);
     vi.mocked(storage.getLatestReportDeliverySchedulerScan).mockResolvedValue(null);
     vi.mocked(storage.getReportDeliverySchedulerScans).mockResolvedValue([]);
     vi.mocked(storage.createReportDeliveryRun).mockClear();
@@ -381,6 +388,72 @@ describe("report delivery subscriptions", () => {
         queuedBy: userId,
         status: "queued",
         readinessStatus: "ready",
+      })
+    );
+  });
+
+  it("records a failed report delivery run when notification queueing fails", async () => {
+    vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Email provider down"));
+
+    const res = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/queue`
+    );
+
+    expect(res.status).toBe(500);
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        queuedBy: userId,
+        status: "failed",
+        errorMessage: "Email provider down",
+      })
+    );
+  });
+
+  it("retries failed report delivery runs", async () => {
+    vi.mocked(storage.getReportDeliveryRun).mockResolvedValue({
+      id: "failed-run-1",
+      companyId,
+      subscriptionId: "owner-weekly-executive-delivery",
+      status: "failed",
+      readinessStatus: "ready",
+      notificationId: null,
+      retriedFromRunId: null,
+      errorMessage: "Email provider down",
+      scheduledFor: new Date("2026-06-22T08:00:00.000Z"),
+      queuedBy: userId,
+      channel: "Google Sheets plus email summary",
+      format: "Management pack workbook",
+      recipients: "Owner",
+      deliveryGuardrail: "Review guardrail",
+      reportCount: 6,
+      readyReportCount: 6,
+      triggerRuleCount: 2,
+      snapshot: {},
+      createdAt: new Date("2026-06-22T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-22T09:00:00.000Z"),
+    });
+
+    const res = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/runs/failed-run-1/retry`
+    );
+
+    expect(res.status).toBe(201);
+    expect(res.body.retriedFromRun.id).toBe("failed-run-1");
+    expect(res.body.run.id).toBe("run-1");
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        notificationId: "notification-1",
+        retriedFromRunId: "failed-run-1",
+        queuedBy: userId,
+        status: "queued",
       })
     );
   });

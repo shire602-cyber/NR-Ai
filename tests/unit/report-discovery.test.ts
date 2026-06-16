@@ -1142,12 +1142,16 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain(
       '"/api/companies/:companyId/report-delivery/scheduler-health"'
     );
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/runs/:runId/retry"'
+    );
     expect(reportDeliveryRouteSource).toContain("storage.hasCompanyAccess(userId, companyId)");
     expect(reportDeliveryRouteSource).toContain(
       "storage.getReportDeliverySubscriptionSettings(companyId)"
     );
     expect(reportDeliveryRouteSource).toContain("storage.upsertReportDeliverySubscriptionSetting");
     expect(reportDeliveryRouteSource).toContain("storage.getReportDeliveryRuns");
+    expect(reportDeliveryRouteSource).toContain("storage.getReportDeliveryRun");
     expect(reportDeliveryRouteSource).toContain("storage.createReportDeliveryRun");
     expect(reportDeliveryRouteSource).toContain("storage.getLatestReportDeliverySchedulerScan");
     expect(reportDeliveryRouteSource).toContain("storage.getReportDeliverySchedulerScans");
@@ -1157,11 +1161,18 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain("getReportDeliveryPlan");
     expect(reportDeliveryRouteSource).toContain("getReportDeliveryPlans");
     expect(reportDeliveryRouteSource).toContain("Report delivery subscription is paused");
+    expect(reportDeliveryRouteSource).toContain("Only failed report delivery runs can be retried");
+    expect(reportDeliveryRouteSource).toContain("errorMessage(error)");
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptions");
     expect(reportDeliveryServiceSource).toContain("ReportDeliverySetting");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryPlan");
     expect(reportDeliveryServiceSource).toContain("ReportDeliveryPreview");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryRunInput");
+    expect(reportDeliveryServiceSource).toContain(
+      'status?: "queued" | "failed" | "sent" | "cancelled"'
+    );
+    expect(reportDeliveryServiceSource).toContain("retriedFromRunId");
+    expect(reportDeliveryServiceSource).toContain("errorMessage");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryNotificationForPlan");
     expect(reportDeliveryServiceSource).toContain("estimateReportDeliveryNextRun");
     expect(reportDeliveryServiceSource).toContain("settingsSource");
@@ -1196,6 +1207,7 @@ describe("report discoverability", () => {
     expect(storageSource).toContain("getReportDeliverySubscriptionSettings");
     expect(storageSource).toContain("upsertReportDeliverySubscriptionSetting");
     expect(storageSource).toContain("getReportDeliveryRuns");
+    expect(storageSource).toContain("getReportDeliveryRun");
     expect(storageSource).toContain("createReportDeliveryRun");
     expect(storageSource).toContain("getReportDeliverySchedulerScans");
     expect(storageSource).toContain("createReportDeliverySchedulerScan");
