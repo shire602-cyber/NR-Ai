@@ -37,6 +37,8 @@ describe("customer launch E2E surface", () => {
   it("refuses remote mutation unless explicitly approved and supports public-only mode", () => {
     expect(scriptSource).toContain("CUSTOMER_E2E_PUBLIC_ONLY");
     expect(scriptSource).toContain("CUSTOMER_E2E_ALLOW_REMOTE_MUTATION");
+    expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL");
+    expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_PASS");
     expect(scriptSource).toContain("function assertFullModeMayMutate()");
     expect(scriptSource).toContain(
       "Refusing to run full customer E2E against a non-local BASE_URL"
@@ -45,6 +47,16 @@ describe("customer launch E2E surface", () => {
       "This script registers a customer and creates accounting records"
     );
     expect(scriptSource).toContain("All public customer-launch checks passed.");
+  });
+
+  it("keeps remote customer E2E cleanup explicit and auditable", () => {
+    expect(scriptSource).toContain("customer-launch-last-run.json");
+    expect(scriptSource).toContain("async function writeRunArtifact(runState)");
+    expect(scriptSource).toContain("async function cleanupCreatedCustomer(runState)");
+    expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_DELETE_USER");
+    expect(scriptSource).toContain("/api/admin/clients/${runState.companyId}");
+    expect(scriptSource).toContain("/api/admin/users/${runState.userId}");
+    expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL/PASS not set");
   });
 
   it("does not fail public-route QA on expected anonymous refresh misses", () => {

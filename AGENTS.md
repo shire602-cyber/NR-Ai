@@ -83,7 +83,9 @@ Scope: this file applies to the whole repository.
   reruns mobile checks for invoices, receipts, banking, reports, and VAT, exercises
   journal/invoice/bank-import flows, and verifies NR-only WhatsApp/document-chasing, firm, and
   admin surfaces stay blocked. Full mode refuses non-local `BASE_URL` unless
-  `CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true` is set for an approved disposable target.
+  `CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true` is set for an approved disposable target. For remote
+  cleanup, set `CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL` and `CUSTOMER_E2E_CLEANUP_ADMIN_PASS`; the runner
+  writes the created customer/company IDs to `tests/e2e/.artifacts/customer-launch-last-run.json`.
 - For read-only production/ad-route customer launch QA, run
   `BASE_URL=<url> npm run e2e:customer:public`; it crawls only public launch routes and does not
   register users or create accounting records.

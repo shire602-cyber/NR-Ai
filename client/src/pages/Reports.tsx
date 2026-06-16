@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
+  type ExportData,
   exportToExcel,
   exportToGoogleSheets,
   prepareProfitLossForExport,
@@ -47,6 +48,7 @@ import {
   reportPersonas,
   reportPersonaWorkspaces,
   reportTabs,
+  reportHref,
   reportsHref,
   reportWorkspaceHref,
   type ReportPersona,
@@ -1438,6 +1440,151 @@ export default function Reports() {
 
   const automationQueueCount = visibleAutomationQueue.reduce((sum, item) => sum + item.count, 0);
 
+  const exportDateRangeSuffix =
+    dateRange.from && dateRange.to
+      ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
+      : "";
+
+  const buildWorkspaceReportPack = (
+    workspace: (typeof workspaceSummaries)[number]
+  ): ExportData[] => {
+    const workspaceReportIds = new Set(workspace.reports.map((report) => report.id));
+    const workbookReportIds = new Set<string>();
+    const workbookSheets: ExportData[] = [];
+
+    const addSheets = (reportIds: string[], sheets: ExportData | ExportData[]) => {
+      if (!reportIds.some((reportId) => workspaceReportIds.has(reportId))) return;
+      reportIds.forEach((reportId) => workbookReportIds.add(reportId));
+      workbookSheets.push(...(Array.isArray(sheets) ? sheets : [sheets]));
+    };
+
+    addSheets(["profit-loss"], prepareProfitLossForExport(profitLoss));
+    addSheets(["balance-sheet"], prepareBalanceSheetForExport(balanceSheet));
+    addSheets(["vat-summary"], prepareVATSummaryForExport(vatSummary));
+    addSheets(["trial-balance"], prepareTrialBalanceForExport(trialBalance));
+    addSheets(
+      ["invoice-status", "revenue-customer"],
+      prepareInvoiceStatusForExport(invoiceStatusReport)
+    );
+    addSheets(
+      ["customer-balances", "vendor-balances"],
+      prepareBalanceSummaryReportsForExport(balanceReport)
+    );
+    addSheets(
+      ["expenses-vendor", "expenses-category"],
+      prepareExpenseReportsForExport(expenseReport)
+    );
+    addSheets(
+      ["general-ledger", "account-transactions"],
+      prepareLedgerReportsForExport(ledgerReport)
+    );
+    addSheets(
+      ["budget-actual", "cash-flow-forecast"],
+      preparePlanningReportsForExport(planningReport)
+    );
+
+    const packIndex: ExportData = {
+      sheetName: "Pack Index",
+      columns: [
+        { header: "Report", key: "report", width: 32 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Comparison", key: "comparison", width: 24 },
+        { header: "Automation", key: "automation", width: 28 },
+        { header: "Delivery", key: "delivery", width: 22 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: workspace.reports.map((report) => ({
+        report: report.name,
+        status: reportStatusMeta[report.status].label,
+        comparison: report.comparison,
+        automation: report.automation,
+        delivery: workbookReportIds.has(report.id) ? "Included in workbook" : "Open workflow",
+        workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
+      })),
+    };
+
+    const automationPlaybooks: ExportData = {
+      sheetName: "Automation Playbooks",
+      columns: [
+        { header: "Playbook", key: "playbook", width: 34 },
+        { header: "Trigger", key: "trigger", width: 42 },
+        { header: "Reports", key: "reports", width: 60 },
+        { header: "Action", key: "action", width: 24 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: workspace.automations.map((playbook) => ({
+        playbook: playbook.title,
+        trigger: playbook.trigger,
+        reports: playbook.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId)?.name)
+          .filter(Boolean)
+          .join(", "),
+        action: playbook.cta,
+        workflow: reportAutomationPlaybookHref(playbook, workspace.persona),
+      })),
+    };
+
+    return [packIndex, automationPlaybooks, ...workbookSheets];
+  };
+
+  const handleExportWorkspacePack = async (workspace: (typeof workspaceSummaries)[number]) => {
+    setIsExporting(true);
+    try {
+      await exportToExcel(
+        buildWorkspaceReportPack(workspace),
+        `${workspace.persona}_report_pack${exportDateRangeSuffix}`
+      );
+      toast({
+        title: "Report pack exported",
+        description: `${workspace.title} exported to Excel.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: error?.message || "Failed to export report pack",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportWorkspacePackToSheets = async (
+    workspace: (typeof workspaceSummaries)[number]
+  ) => {
+    if (!selectedCompanyId) return;
+
+    setIsExporting(true);
+    const dateRangeTitle =
+      dateRange.from && dateRange.to
+        ? ` (${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")})`
+        : "";
+
+    const result = await exportToGoogleSheets(
+      buildWorkspaceReportPack(workspace),
+      `${workspace.title}${dateRangeTitle}`,
+      selectedCompanyId
+    );
+
+    setIsExporting(false);
+
+    if (result?.success) {
+      toast({
+        title: "Report pack exported",
+        description: `${workspace.title} exported to Google Sheets. Opening...`,
+      });
+      if (result.spreadsheetUrl) {
+        window.open(result.spreadsheetUrl, "_blank");
+      }
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: result?.error || "Failed to export report pack to Google Sheets",
+      });
+    }
+  };
+
   const handleExportExcel = () => {
     const dateRangeStr =
       dateRange.from && dateRange.to
@@ -1992,6 +2139,28 @@ export default function Reports() {
                       onClick={() => setReportPersonaFilter(workspace.persona)}
                     >
                       Filter library
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isExporting}
+                      onClick={() => handleExportWorkspacePack(workspace)}
+                      data-testid={`button-export-workspace-pack-${workspace.persona}`}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export pack
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isExporting || !selectedCompanyId}
+                      onClick={() => handleExportWorkspacePackToSheets(workspace)}
+                      data-testid={`button-export-workspace-pack-sheets-${workspace.persona}`}
+                    >
+                      <SiGooglesheets className="mr-2 h-4 w-4" />
+                      Sheets pack
                     </Button>
                   </div>
                 </CardContent>

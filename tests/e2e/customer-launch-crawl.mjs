@@ -12,19 +12,27 @@
  *   BASE_URL (default http://127.0.0.1:5000)
  *   CUSTOMER_E2E_PUBLIC_ONLY=true to run the read-only public launch crawl
  *   CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true to allow full mode against a non-local URL
+ *   CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL / CUSTOMER_E2E_CLEANUP_ADMIN_PASS to soft-delete the
+ *     created test company through existing admin APIs after full-mode checks
+ *   CUSTOMER_E2E_CLEANUP_DELETE_USER=true to also delete the generated test user
  *   CHROMIUM_PATH (optional browser override)
- * Exit code 0 = every check passed. Screenshots of failures land in tests/e2e/.artifacts/.
+ * Exit code 0 = every check passed. Screenshots and the last-run cleanup artifact land in
+ * tests/e2e/.artifacts/.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, request } from "playwright-core";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
 const ALLOW_REMOTE_MUTATION = process.env.CUSTOMER_E2E_ALLOW_REMOTE_MUTATION === "true";
+const CLEANUP_ADMIN_EMAIL = process.env.CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL;
+const CLEANUP_ADMIN_PASS = process.env.CUSTOMER_E2E_CLEANUP_ADMIN_PASS;
+const CLEANUP_DELETE_USER = process.env.CUSTOMER_E2E_CLEANUP_DELETE_USER === "true";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
+const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
 const PUBLIC_ROUTES = ["/", "/demo", "/trust", "/help", "/migration-guides", "/pricing"];
 
@@ -109,6 +117,95 @@ function assertFullModeMayMutate() {
   );
 }
 
+function cleanupConfigured() {
+  return Boolean(CLEANUP_ADMIN_EMAIL && CLEANUP_ADMIN_PASS);
+}
+
+async function writeRunArtifact(runState) {
+  await fs.promises.writeFile(RUN_ARTIFACT_PATH, JSON.stringify(runState, null, 2));
+}
+
+async function cleanupCreatedCustomer(runState) {
+  if (PUBLIC_ONLY) return { status: "skipped", reason: "public-only mode" };
+  if (!runState.companyId && !runState.userId) {
+    return { status: "skipped", reason: "no created company/user IDs captured" };
+  }
+  if (!cleanupConfigured()) {
+    return {
+      status: "skipped",
+      reason: "CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL/PASS not set",
+      artifact: RUN_ARTIFACT_PATH,
+    };
+  }
+
+  const loginContext = await request.newContext({ baseURL: BASE });
+  let adminContext;
+  try {
+    const login = await loginContext.post("/api/auth/login", {
+      data: {
+        email: CLEANUP_ADMIN_EMAIL,
+        password: CLEANUP_ADMIN_PASS,
+      },
+    });
+    if (login.status() >= 300) {
+      return {
+        status: "failed",
+        stage: "admin-login",
+        detail: `status ${login.status()}: ${(await login.text()).slice(0, 200)}`,
+      };
+    }
+
+    const loginBody = await login.json().catch(() => ({}));
+    const token = loginBody?.token || loginBody?.accessToken;
+    if (!token) {
+      return { status: "failed", stage: "admin-login", detail: "missing bearer token" };
+    }
+
+    adminContext = await request.newContext({
+      baseURL: BASE,
+      extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+    });
+
+    const results = [];
+    if (runState.companyId) {
+      const companyDelete = await adminContext.delete(`/api/admin/clients/${runState.companyId}`);
+      results.push({
+        target: "company",
+        id: runState.companyId,
+        status: companyDelete.status(),
+        body: (await companyDelete.text().catch(() => "")).slice(0, 200),
+      });
+    }
+
+    if (runState.userId) {
+      if (CLEANUP_DELETE_USER) {
+        const userDelete = await adminContext.delete(`/api/admin/users/${runState.userId}`);
+        results.push({
+          target: "user",
+          id: runState.userId,
+          status: userDelete.status(),
+          body: (await userDelete.text().catch(() => "")).slice(0, 200),
+        });
+      } else {
+        results.push({
+          target: "user",
+          id: runState.userId,
+          status: "skipped",
+          body: "Set CUSTOMER_E2E_CLEANUP_DELETE_USER=true to delete the generated user.",
+        });
+      }
+    }
+
+    const failed = results.filter(
+      (result) => typeof result.status === "number" && result.status >= 300 && result.status !== 404
+    );
+    return { status: failed.length ? "failed" : "completed", results };
+  } finally {
+    await adminContext?.dispose().catch(() => undefined);
+    await loginContext.dispose().catch(() => undefined);
+  }
+}
+
 async function main() {
   assertFullModeMayMutate();
   fs.mkdirSync(SHOT_DIR, { recursive: true });
@@ -122,6 +219,16 @@ async function main() {
   const failures = [];
   let routeErrors = [];
   let apiFailures = [];
+  const runState = {
+    baseUrl: BASE,
+    publicOnly: PUBLIC_ONLY,
+    startedAt: new Date().toISOString(),
+    email: null,
+    userId: null,
+    companyId: null,
+    companyName: null,
+    cleanup: { status: "not_attempted" },
+  };
 
   page.on("pageerror", (e) => routeErrors.push(`JS: ${e.message.slice(0, 200)}`));
   page.on("response", (r) => {
@@ -223,6 +330,12 @@ async function main() {
     });
     throw new Error(`register failed: ${reg.status()}`);
   }
+  const registration = await reg.json().catch(() => ({}));
+  runState.email = email;
+  runState.userId = registration?.user?.id ?? null;
+  runState.companyId = registration?.company?.id ?? null;
+  runState.companyName = registration?.company?.name ?? null;
+  await writeRunArtifact(runState);
 
   await page.goto(`${BASE}/dashboard`);
   await page.waitForTimeout(2500);
@@ -239,7 +352,10 @@ async function main() {
 
   const csrfToken = (await (await page.request.get(`${BASE}/api/csrf-token`)).json())?.csrfToken;
   const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
-  const companyId = companies?.[0]?.id;
+  const companyId = runState.companyId ?? companies?.[0]?.id;
+  runState.companyId = companyId ?? runState.companyId;
+  runState.companyName = runState.companyName ?? companies?.[0]?.name ?? null;
+  await writeRunArtifact(runState);
   if (!companyId) {
     await fail("customer-company", { detail: "registered customer has no company" });
   }
@@ -395,6 +511,16 @@ async function main() {
         detail: `expected 401/403, got ${res.status()}`,
       });
     }
+  }
+
+  runState.finishedAt = new Date().toISOString();
+  runState.cleanup = await cleanupCreatedCustomer(runState);
+  await writeRunArtifact(runState);
+  if (runState.cleanup.status === "failed") {
+    await fail("customer-e2e-cleanup", {
+      detail: JSON.stringify(runState.cleanup).slice(0, 400),
+      artifact: RUN_ARTIFACT_PATH,
+    });
   }
 
   await browser.close();

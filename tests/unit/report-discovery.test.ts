@@ -135,6 +135,30 @@ describe("report discoverability", () => {
     }
   });
 
+  it("offers persona report packs with an index and automation workbook", () => {
+    expect(reportsSource).toContain("buildWorkspaceReportPack");
+    expect(reportsSource).toContain("handleExportWorkspacePack");
+    expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
+    expect(reportsSource).toContain("Pack Index");
+    expect(reportsSource).toContain("Automation Playbooks");
+    expect(reportsSource).toContain("Included in workbook");
+    expect(reportsSource).toContain("Open workflow");
+    expect(reportsSource).toContain("reportHref(report) ?? reportWorkspaceHref(workspace)");
+    expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
+    expect(reportsSource).toContain("button-export-workspace-pack-${workspace.persona}");
+    expect(reportsSource).toContain("button-export-workspace-pack-sheets-${workspace.persona}");
+    expect(reportsSource).toContain("exportToGoogleSheets(");
+    expect(reportsSource).toContain("Export pack");
+    expect(reportsSource).toContain("Sheets pack");
+
+    for (const workspace of reportPersonaWorkspaces) {
+      expect(
+        reportCatalog.filter((report) => report.personas.includes(workspace.persona)).length
+      ).toBeGreaterThan(0);
+      expect(workspace.automations).toHaveLength(3);
+    }
+  });
+
   it("keeps report tab deep links bounded to known Reports tabs", () => {
     expect(reportTabs).toEqual([
       "pl",
