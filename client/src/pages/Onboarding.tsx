@@ -27,6 +27,8 @@ import {
   reportAutomationStarters,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportPackTemplateHref,
   reportPackTemplates,
   reportPersonaWorkspaces,
@@ -1209,6 +1211,9 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const selectedTriggerRules = reportAutomationTriggerRules.filter(
     (rule) => rule.persona === selectedWorkspace.persona
   );
+  const selectedDeliverySubscriptions = reportDeliverySubscriptions.filter(
+    (subscription) => subscription.persona === selectedWorkspace.persona
+  );
   const selectedAutomationStarters = reportAutomationStarters.filter(
     (starter) => starter.persona === selectedWorkspace.persona
   );
@@ -1338,6 +1343,36 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
                 {rule.cadence} · {rule.reportIds.length} reports
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-delivery-subscriptions"
+        >
+          {selectedDeliverySubscriptions.map((subscription) => (
+            <button
+              key={subscription.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportDeliverySubscriptionHref(subscription));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-delivery-subscription-${subscription.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{subscription.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {subscription.cadence}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {subscription.channel} · {subscription.reportIds.length} reports
               </p>
             </button>
           ))}

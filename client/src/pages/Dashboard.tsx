@@ -19,6 +19,8 @@ import {
   reportCatalog,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportHref,
   reportPackTemplateHref,
   reportPackTemplates,
@@ -569,6 +571,31 @@ function CustomerDashboard() {
           primaryReportHref: primaryReport
             ? (reportHref(primaryReport) ?? reportAutomationTriggerRuleHref(rule))
             : reportAutomationTriggerRuleHref(rule),
+        };
+      });
+  }, [preferredReportWorkspace.persona]);
+  const preferredReportDeliverySubscriptions = useMemo(() => {
+    return reportDeliverySubscriptions
+      .filter((subscription) => subscription.persona === preferredReportWorkspace.persona)
+      .map((subscription) => {
+        const reports = subscription.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const readyReports = reports.filter((report) => report.status !== "planned").length;
+        const triggerRules = subscription.triggerRuleIds
+          .map((ruleId) => reportAutomationTriggerRules.find((rule) => rule.id === ruleId))
+          .filter((rule): rule is (typeof reportAutomationTriggerRules)[number] => Boolean(rule));
+        const packTemplate = reportPackTemplates.find(
+          (template) => template.id === subscription.packTemplateId
+        );
+
+        return {
+          ...subscription,
+          reports,
+          readyReports,
+          triggerRules,
+          packTemplate,
+          href: reportDeliverySubscriptionHref(subscription),
         };
       });
   }, [preferredReportWorkspace.persona]);
@@ -1233,6 +1260,13 @@ function CustomerDashboard() {
                       Open automation starters <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
+                  <Link
+                    href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}
+                  >
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open delivery subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                       Open automation rules <ArrowRight className="w-3.5 h-3.5" />
@@ -1342,6 +1376,79 @@ function CustomerDashboard() {
                       <Link href={rule.href}>
                         <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                           View rule <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-delivery-subscriptions"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Delivery subscriptions
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Scheduled packs for {preferredReportWorkspace.navLabel} with recipients,
+                    channels, and delivery guardrails.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}>
+                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
+                    Open subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportDeliverySubscriptions.map((subscription) => (
+                  <div
+                    key={subscription.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-delivery-subscription-${subscription.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">
+                          {subscription.title}
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {subscription.cadence}
+                        </p>
+                      </div>
+                      <Badge variant="outline">{subscription.channel}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Ready reports</div>
+                        <div className="mt-1 font-mono font-semibold text-foreground">
+                          {subscription.readyReports}/{subscription.reports.length}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Trigger rules</div>
+                        <div className="mt-1 font-mono font-semibold text-foreground">
+                          {subscription.triggerRules.length}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      {subscription.deliveryGuardrail}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={subscription.href}>
+                        <Button variant="outline" size="sm">
+                          Open subscription
+                        </Button>
+                      </Link>
+                      <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                          Review pack <ArrowRight className="w-3.5 h-3.5" />
                         </Button>
                       </Link>
                     </div>

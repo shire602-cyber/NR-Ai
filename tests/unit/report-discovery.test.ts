@@ -17,6 +17,8 @@ import {
   reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportCatalog,
   reportPackTemplateHref,
   reportPackTemplates,
@@ -42,6 +44,9 @@ describe("report discoverability", () => {
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
   const exportSource = read("client/src/lib/export.ts");
+  const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
+  const reportDeliveryServiceSource = read("server/services/report-delivery.service.ts");
+  const routesSource = read("server/routes.ts");
   const reportsRouteSource = read("server/routes/reports.routes.ts");
   const expenseClaimsRouteSource = read("server/routes/expense-claims.routes.ts");
   const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
@@ -185,6 +190,11 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("reportAutomationTriggerRuleHref(rule)");
     expect(dashboardSource).toContain('data-testid="dashboard-report-trigger-rules"');
     expect(dashboardSource).toContain("dashboard-report-trigger-rule-${rule.id}");
+    expect(dashboardSource).toContain("preferredReportDeliverySubscriptions");
+    expect(dashboardSource).toContain("reportDeliverySubscriptions");
+    expect(dashboardSource).toContain("reportDeliverySubscriptionHref(subscription)");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-subscriptions"');
+    expect(dashboardSource).toContain("dashboard-report-delivery-subscription-${subscription.id}");
     expect(dashboardSource).toContain("preferredAutomationNextAction");
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-action"');
     expect(dashboardSource).toContain("Next automation action");
@@ -233,6 +243,9 @@ describe("report discoverability", () => {
       'reportSectionHref(preferredReportWorkspace, "trigger-rules")'
     );
     expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")'
+    );
+    expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "automation-command-center")'
     );
     expect(dashboardSource).toContain(
@@ -245,6 +258,7 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("Open decision shortcuts");
     expect(dashboardSource).toContain("Open automation starters");
     expect(dashboardSource).toContain("Open trigger rules");
+    expect(dashboardSource).toContain("Open delivery subscriptions");
     expect(dashboardSource).toContain("Open automation rules");
     expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
     expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
@@ -275,6 +289,8 @@ describe("report discoverability", () => {
     expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
     expect(mobileNavSource).toContain("reportAutomationTriggerRules.map");
     expect(mobileNavSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(mobileNavSource).toContain("reportDeliverySubscriptions.map");
+    expect(mobileNavSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(mobileNavSource).toContain("reportAutomationStarters.map");
     expect(mobileNavSource).toContain("reportAutomationStarterHref(starter)");
     expect(mobileNavSource).toContain("reportPackTemplates.map");
@@ -289,6 +305,8 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain("reportDecisionShortcutHref(shortcut)");
     expect(onboardingSource).toContain("selectedTriggerRules");
     expect(onboardingSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(onboardingSource).toContain("selectedDeliverySubscriptions");
+    expect(onboardingSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(onboardingSource).toContain("selectedAutomationStarters");
     expect(onboardingSource).toContain("reportAutomationStarterHref(starter)");
     expect(onboardingSource).toContain("selectedReportPackTemplates");
@@ -304,6 +322,10 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain("onboarding-report-decision-shortcut-${shortcut.id}");
     expect(onboardingSource).toContain('data-testid="onboarding-report-trigger-rules"');
     expect(onboardingSource).toContain("onboarding-report-trigger-rule-${rule.id}");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-delivery-subscriptions"');
+    expect(onboardingSource).toContain(
+      "onboarding-report-delivery-subscription-${subscription.id}"
+    );
     expect(onboardingSource).toContain('data-testid="onboarding-report-automation-starters"');
     expect(onboardingSource).toContain("onboarding-report-automation-starter-${starter.id}");
     expect(onboardingSource).toContain('data-testid="onboarding-report-pack-templates"');
@@ -322,6 +344,8 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain("reportDecisionShortcutHref(shortcut)");
     expect(sidebarSource).toContain("reportAutomationTriggerRules.map");
     expect(sidebarSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(sidebarSource).toContain("reportDeliverySubscriptions.map");
+    expect(sidebarSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(sidebarSource).toContain("reportAutomationStarters.map");
     expect(sidebarSource).toContain("reportAutomationStarterHref(starter)");
     expect(sidebarSource).toContain("reportPackTemplates.map");
@@ -331,6 +355,7 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain("testId: `report-pack-template-${template.id}`");
     expect(sidebarSource).toContain("testId: `report-decision-shortcut-${shortcut.id}`");
     expect(sidebarSource).toContain("testId: `report-trigger-rule-${rule.id}`");
+    expect(sidebarSource).toContain("testId: `report-delivery-subscription-${subscription.id}`");
     expect(sidebarSource).toContain("testId: `report-automation-starter-${starter.id}`");
     expect(sidebarSource).toContain("testId: `report-comparison-preset-${preset.id}`");
     expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
@@ -372,6 +397,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain('reportSectionHref(workspace, "recommendations")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-starters")');
     expect(commandSource).toContain('reportSectionHref(workspace, "trigger-rules")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "delivery-subscriptions")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-readiness")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-rules")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-command-center")');
@@ -384,6 +410,10 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-trigger-rule-${rule.id}`");
     expect(commandSource).toContain("href: reportAutomationTriggerRuleHref(rule)");
     expect(commandSource).toContain("trigger rule threshold report automation alert");
+    expect(commandSource).toContain("reportDeliverySubscriptions.map");
+    expect(commandSource).toContain("id: `report-delivery-subscription-${subscription.id}`");
+    expect(commandSource).toContain("href: reportDeliverySubscriptionHref(subscription)");
+    expect(commandSource).toContain("delivery subscription scheduled send report pack recipients");
     expect(commandSource).toContain("reportAutomationStarters.map");
     expect(commandSource).toContain("id: `report-automation-starter-${starter.id}`");
     expect(commandSource).toContain("href: reportAutomationStarterHref(starter)");
@@ -398,6 +428,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("comparison preset report pack");
     expect(commandSource).toContain("id: `report-decision-shortcuts-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-trigger-rules-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-delivery-subscriptions-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-automation-starters-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-recommendations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-readiness-${workspace.persona}`");
@@ -406,6 +437,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
     expect(commandSource).toContain("Decision shortcuts - ${workspace.title}");
     expect(commandSource).toContain("Trigger rules - ${workspace.title}");
+    expect(commandSource).toContain("Delivery subscriptions - ${workspace.title}");
     expect(commandSource).toContain("Automation starters - ${workspace.title}");
     expect(commandSource).toContain("Recommended reports - ${workspace.title}");
     expect(commandSource).toContain("Report pack readiness - ${workspace.title}");
@@ -425,6 +457,9 @@ describe("report discoverability", () => {
       );
       expect(reportSectionHref(workspace, "trigger-rules")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#trigger-rules-title`
+      );
+      expect(reportSectionHref(workspace, "delivery-subscriptions")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-delivery-subscriptions-title`
       );
       expect(reportSectionHref(workspace, "pack-readiness")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-readiness-title`
@@ -455,6 +490,7 @@ describe("report discoverability", () => {
     ]);
     expect(reportDecisionShortcuts).toHaveLength(9);
     expect(reportAutomationTriggerRules).toHaveLength(9);
+    expect(reportDeliverySubscriptions).toHaveLength(6);
     expect(reportAutomationStarters).toHaveLength(6);
     expect(reportPackTemplates).toHaveLength(6);
     expect(reportComparisonPresets).toHaveLength(6);
@@ -466,6 +502,11 @@ describe("report discoverability", () => {
       expect(
         reportAutomationTriggerRules.filter((rule) => rule.persona === workspace.persona)
       ).toHaveLength(3);
+      expect(
+        reportDeliverySubscriptions.filter(
+          (subscription) => subscription.persona === workspace.persona
+        )
+      ).toHaveLength(2);
       expect(
         reportAutomationStarters.filter((starter) => starter.persona === workspace.persona)
       ).toHaveLength(2);
@@ -500,6 +541,47 @@ describe("report discoverability", () => {
 
       const shortcut = reportDecisionShortcuts.find((item) => item.id === rule.decisionShortcutId);
       expect(shortcut?.persona).toBe(rule.persona);
+    }
+
+    for (const subscription of reportDeliverySubscriptions) {
+      expect(reportPersonas).toContain(subscription.persona);
+      expect(reportDeliverySubscriptionHref(subscription)).toContain(
+        `persona=${subscription.persona}#report-delivery-subscription-${subscription.id}`
+      );
+      expect(subscription.reportIds.length).toBeGreaterThanOrEqual(5);
+      expect(subscription.triggerRuleIds.length).toBeGreaterThanOrEqual(2);
+      expect(subscription.audience).toBeTruthy();
+      expect(subscription.cadence).toBeTruthy();
+      expect(subscription.channel).toBeTruthy();
+      expect(subscription.format).toBeTruthy();
+      expect(subscription.recipients).toBeTruthy();
+      expect(subscription.deliveryGuardrail).toBeTruthy();
+
+      for (const reportId of subscription.reportIds) {
+        const report = reportCatalog.find((item) => item.id === reportId);
+        expect(allReportIds.has(reportId)).toBe(true);
+        expect(report?.personas).toContain(subscription.persona);
+      }
+
+      const packTemplate = reportPackTemplates.find(
+        (item) => item.id === subscription.packTemplateId
+      );
+      expect(packTemplate?.persona).toBe(subscription.persona);
+
+      const automationStarter = reportAutomationStarters.find(
+        (item) => item.id === subscription.automationStarterId
+      );
+      expect(automationStarter?.persona).toBe(subscription.persona);
+
+      const decisionShortcut = reportDecisionShortcuts.find(
+        (item) => item.id === subscription.decisionShortcutId
+      );
+      expect(decisionShortcut?.persona).toBe(subscription.persona);
+
+      for (const ruleId of subscription.triggerRuleIds) {
+        const rule = reportAutomationTriggerRules.find((item) => item.id === ruleId);
+        expect(rule?.persona).toBe(subscription.persona);
+      }
     }
 
     for (const shortcut of reportDecisionShortcuts) {
@@ -712,6 +794,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Trigger rules");
     expect(reportsSource).toContain("triggerRulesSheet");
     expect(reportsSource).toContain("packTriggerRules");
+    expect(reportsSource).toContain("Delivery Subscriptions");
+    expect(reportsSource).toContain("Delivery subscriptions");
+    expect(reportsSource).toContain("deliverySubscriptionsSheet");
+    expect(reportsSource).toContain("packDeliverySubscriptions");
     expect(reportsSource).toContain("Automation Starters");
     expect(reportsSource).toContain("Automation starters");
     expect(reportsSource).toContain("automationStartersSheet");
@@ -749,6 +835,15 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Setup-needed rules");
     expect(reportsSource).toContain("Setup Steps");
     expect(reportsSource).toContain("Primary Action");
+    expect(reportsSource).toContain("Delivery Guardrail");
+    expect(reportsSource).toContain("deliveryGuardrail");
+    expect(reportsSource).toContain("reportDeliverySubscriptionSummaries");
+    expect(reportsSource).toContain("visibleReportDeliverySubscriptions");
+    expect(reportsSource).toContain("report-delivery-subscription-${subscription.id}");
+    expect(reportsSource).toContain("Open subscription");
+    expect(reportsSource).toContain("queueReportDeliverySubscription");
+    expect(reportsSource).toContain("/report-delivery/subscriptions/${subscriptionId}/queue");
+    expect(reportsSource).toContain("Queue delivery");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");
@@ -1000,6 +1095,28 @@ describe("report discoverability", () => {
     }
   });
 
+  it("serves report delivery subscriptions through an authenticated queue endpoint", () => {
+    expect(routesSource).toContain("registerReportDeliveryRoutes");
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/subscriptions"'
+    );
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/queue"'
+    );
+    expect(reportDeliveryRouteSource).toContain("storage.hasCompanyAccess(userId, companyId)");
+    expect(reportDeliveryRouteSource).toContain("createAndEmitNotification");
+    expect(reportDeliveryRouteSource).toContain("buildReportDeliveryNotificationInput");
+    expect(reportDeliveryRouteSource).toContain("getReportDeliveryPlans");
+    expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptions");
+    expect(reportDeliveryServiceSource).toContain("buildReportDeliveryPlan");
+    expect(reportDeliveryServiceSource).toContain("estimateReportDeliveryNextRun");
+    expect(reportDeliveryServiceSource).toContain("scheduledFor: new Date(plan.nextRunAt)");
+    expect(reportDeliveryServiceSource).toContain(
+      'relatedEntityType: "report_delivery_subscription"'
+    );
+    expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
+  });
+
   it("calculates shared report automation health for packs and dashboards", () => {
     expect(REPORT_AUTOMATION_HEALTH_HISTORY_KEY).toBe("nr_ai.report_automation_health_history");
 
@@ -1163,6 +1280,12 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("data-testid={`report-trigger-rule-${rule.id}`}");
     expect(reportsSource).toContain("triggerSeverityMeta[rule.severity]");
     expect(reportsSource).toContain("Open question");
+    expect(reportsSource).toContain("Delivery subscriptions");
+    expect(reportsSource).toContain("visibleReportDeliverySubscriptions");
+    expect(reportsSource).toContain(
+      "data-testid={`report-delivery-subscription-${subscription.id}`}"
+    );
+    expect(reportsSource).toContain("subscription.deliveryGuardrail");
     expect(reportsSource).toContain("Automation starters");
     expect(reportsSource).toContain("visibleReportAutomationStarters");
     expect(reportsSource).toContain("data-testid={`report-automation-starter-${starter.id}`}");

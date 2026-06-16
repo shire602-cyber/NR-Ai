@@ -11,6 +11,8 @@ import {
   reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportPackTemplateHref,
   reportPackTemplates,
   reportPersonaWorkspaces,
@@ -50,6 +52,10 @@ const moreLinks = [
   ...reportAutomationTriggerRules.map((rule) => ({
     label: rule.title,
     href: reportAutomationTriggerRuleHref(rule),
+  })),
+  ...reportDeliverySubscriptions.map((subscription) => ({
+    label: subscription.title,
+    href: reportDeliverySubscriptionHref(subscription),
   })),
   ...reportAutomationStarters.map((starter) => ({
     label: starter.title,

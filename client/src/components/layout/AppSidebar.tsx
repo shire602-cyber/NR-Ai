@@ -69,6 +69,8 @@ import {
   reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportPackTemplateHref,
   reportPackTemplates,
   reportPersonaWorkspaces,
@@ -175,6 +177,12 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         title: rule.title,
         url: reportAutomationTriggerRuleHref(rule),
         testId: `report-trigger-rule-${rule.id}`,
+      })),
+      ...reportDeliverySubscriptions.map((subscription) => ({
+        titleKey: subscription.title,
+        title: subscription.title,
+        url: reportDeliverySubscriptionHref(subscription),
+        testId: `report-delivery-subscription-${subscription.id}`,
       })),
       ...reportAutomationStarters.map((starter) => ({
         titleKey: starter.title,

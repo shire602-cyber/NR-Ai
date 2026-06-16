@@ -22,6 +22,7 @@ export type ReportSection =
   | "recommendations"
   | "automation-starters"
   | "trigger-rules"
+  | "delivery-subscriptions"
   | "pack-readiness"
   | "automation-command-center"
   | "automation-rules"
@@ -145,6 +146,24 @@ export interface ReportAutomationTriggerRule {
   automationStarterId: string;
   decisionShortcutId: string;
   actionLabel: string;
+  commandKeywords: string;
+}
+
+export interface ReportDeliverySubscription {
+  id: string;
+  persona: ReportPersona;
+  title: string;
+  audience: string;
+  cadence: string;
+  channel: string;
+  format: string;
+  recipients: string;
+  packTemplateId: string;
+  triggerRuleIds: string[];
+  reportIds: string[];
+  automationStarterId: string;
+  decisionShortcutId: string;
+  deliveryGuardrail: string;
   commandKeywords: string;
 }
 
@@ -1479,6 +1498,163 @@ export const reportAutomationTriggerRules: ReportAutomationTriggerRule[] = [
   },
 ];
 
+export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
+  {
+    id: "owner-weekly-executive-delivery",
+    persona: "owner",
+    title: "Owner weekly executive delivery",
+    audience: "Business owner, solo entrepreneur, and finance admin",
+    cadence: "Every Monday at 8:00 AM after bank, invoice, and receipt refresh",
+    channel: "Google Sheets plus email summary",
+    format: "Management pack workbook",
+    recipients: "Owner, finance admin, and tax preparer when tax warnings are open",
+    packTemplateId: "owner-weekly-command-pack",
+    triggerRuleIds: ["owner-cash-runway-risk", "owner-spend-variance-alert"],
+    reportIds: [
+      "profit-loss",
+      "customer-balances",
+      "ar-aging",
+      "cash-flow-forecast",
+      "budget-actual",
+      "vat-summary",
+    ],
+    automationStarterId: "owner-cash-control-autopilot",
+    decisionShortcutId: "owner-next-30-days",
+    deliveryGuardrail:
+      "Hold delivery until cash, collections, and spend alerts are reviewed or explicitly approved.",
+    commandKeywords:
+      "owner weekly executive delivery subscription scheduled send email google sheets cash profit",
+  },
+  {
+    id: "owner-tax-deadline-delivery",
+    persona: "owner",
+    title: "Owner tax deadline delivery",
+    audience: "Owner and tax preparer",
+    cadence: "Monthly plus 14 days before VAT or corporate tax deadlines",
+    channel: "Excel workbook with email checklist",
+    format: "Tax-ready workbook pack",
+    recipients: "Owner, tax preparer, and finance admin",
+    packTemplateId: "owner-tax-cash-pack",
+    triggerRuleIds: ["owner-tax-deadline-exposure", "owner-spend-variance-alert"],
+    reportIds: [
+      "vat-summary",
+      "vat-return",
+      "corporate-tax-estimate",
+      "expenses-category",
+      "cash-flow-forecast",
+    ],
+    automationStarterId: "owner-tax-spend-autopilot",
+    decisionShortcutId: "owner-tax-payroll-ready",
+    deliveryGuardrail:
+      "Block auto-send when filing support, payroll readiness, or deductible spend evidence is missing.",
+    commandKeywords:
+      "owner tax deadline delivery subscription vat corporate tax payroll email workbook",
+  },
+  {
+    id: "freelancer-client-chase-delivery",
+    persona: "freelancer",
+    title: "Freelancer client chase delivery",
+    audience: "Freelancer or solo operator",
+    cadence: "Every weekday morning while invoices are overdue, otherwise weekly",
+    channel: "Mobile Google Sheets link and email nudge",
+    format: "Client follow-up digest",
+    recipients: "Freelancer or solo operator",
+    packTemplateId: "freelancer-client-income-pack",
+    triggerRuleIds: ["freelancer-overdue-client-chase", "freelancer-client-concentration-warning"],
+    reportIds: [
+      "invoice-status",
+      "revenue-customer",
+      "customer-balances",
+      "profit-loss",
+      "cash-flow-forecast",
+    ],
+    automationStarterId: "freelancer-client-chase-autopilot",
+    decisionShortcutId: "freelancer-cash-chase",
+    deliveryGuardrail:
+      "Send only after invoice status refresh confirms current balances and no draft reminders are pending.",
+    commandKeywords:
+      "freelancer client chase delivery subscription invoices overdue mobile google sheets",
+  },
+  {
+    id: "freelancer-monthly-close-delivery",
+    persona: "freelancer",
+    title: "Freelancer monthly close delivery",
+    audience: "Freelancer and bookkeeper",
+    cadence: "Month-end plus three days before tax-close cutoff",
+    channel: "Google Sheets close pack",
+    format: "Monthly tax-close pack",
+    recipients: "Freelancer and bookkeeper",
+    packTemplateId: "freelancer-monthly-tax-pack",
+    triggerRuleIds: ["freelancer-receipt-gap-close", "freelancer-client-concentration-warning"],
+    reportIds: [
+      "profit-loss",
+      "expenses-vendor",
+      "expenses-category",
+      "vat-summary",
+      "cash-flow-forecast",
+    ],
+    automationStarterId: "freelancer-tax-close-autopilot",
+    decisionShortcutId: "freelancer-monthly-close-blockers",
+    deliveryGuardrail:
+      "Hold delivery while receipt gaps, VAT-ready expense support, or material client concentration notes are open.",
+    commandKeywords:
+      "freelancer monthly close delivery subscription receipts expenses vat google sheets",
+  },
+  {
+    id: "accountant-close-workpaper-delivery",
+    persona: "accountant",
+    title: "Accountant close workpaper delivery",
+    audience: "Accountant, reviewer, and controller",
+    cadence: "Daily during close and final send after reviewer sign-off",
+    channel: "Excel workpaper pack",
+    format: "Close review workbook",
+    recipients: "Accountant, reviewer, and controller",
+    packTemplateId: "accountant-close-workpaper-pack",
+    triggerRuleIds: ["accountant-close-exception-review", "accountant-tax-workpaper-gap"],
+    reportIds: [
+      "trial-balance",
+      "general-ledger",
+      "account-transactions",
+      "month-end-close-status",
+      "audit-trail",
+      "consolidated-statements",
+    ],
+    automationStarterId: "accountant-close-review-autopilot",
+    decisionShortcutId: "accountant-close-blockers",
+    deliveryGuardrail:
+      "Block final delivery until trial-balance differences, ledger source gaps, and tax workpaper issues are cleared.",
+    commandKeywords:
+      "accountant close workpaper delivery subscription trial balance ledger reviewer excel",
+  },
+  {
+    id: "accountant-advisory-pack-delivery",
+    persona: "accountant",
+    title: "Accountant advisory pack delivery",
+    audience: "Accountant and client owner",
+    cadence: "Monthly after close plus one business day before advisory review",
+    channel: "Google Sheets advisory pack with email summary",
+    format: "Client advisory pack",
+    recipients: "Accountant, reviewer, and client owner",
+    packTemplateId: "accountant-advisory-review-pack",
+    triggerRuleIds: ["accountant-advisory-movement-note", "accountant-close-exception-review"],
+    reportIds: [
+      "profit-loss",
+      "balance-sheet",
+      "period-comparison",
+      "cash-flow",
+      "budget-actual",
+      "sales-product-service",
+      "consolidated-statements",
+    ],
+    automationStarterId: "accountant-advisory-pack-autopilot",
+    decisionShortcutId: "accountant-advisory-pack",
+    deliveryGuardrail:
+      "Hold client delivery until advisory movement notes and close exceptions have owner-ready explanations.",
+    commandKeywords:
+      "accountant advisory delivery subscription client pack google sheets email comparison",
+  },
+];
+
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
 export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
@@ -1519,6 +1695,7 @@ const reportSectionAnchors: Record<ReportSection, string> = {
   recommendations: "recommended-reports-title",
   "automation-starters": "automation-starters-title",
   "trigger-rules": "trigger-rules-title",
+  "delivery-subscriptions": "report-delivery-subscriptions-title",
   "pack-readiness": "report-pack-readiness-title",
   "automation-command-center": "automation-command-center-title",
   "automation-rules": "report-automation-rules-title",
@@ -1600,6 +1777,16 @@ export function reportAutomationTriggerRuleHref(
   return `${reportsHref({ tab: primaryReport?.tab ?? workspace?.primaryTab, persona: rule.persona })}#report-trigger-rule-${
     rule.id
   }`;
+}
+
+export function reportDeliverySubscriptionHref(
+  subscription: Pick<ReportDeliverySubscription, "id" | "persona">
+): string {
+  const workspace = reportPersonaWorkspaces.find((item) => item.persona === subscription.persona);
+  return `${reportsHref({
+    tab: workspace?.primaryTab,
+    persona: subscription.persona,
+  })}#report-delivery-subscription-${subscription.id}`;
 }
 
 export function reportAutomationPlaybookHref(

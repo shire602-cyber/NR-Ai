@@ -52,6 +52,8 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("reportDecisionShortcutHref(shortcut)");
     expect(source).toContain("reportAutomationTriggerRules.map");
     expect(source).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(source).toContain("reportDeliverySubscriptions.map");
+    expect(source).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(source).toContain("reportAutomationStarters.map");
     expect(source).toContain("reportAutomationStarterHref(starter)");
     expect(source).toContain("reportPackTemplates.map");

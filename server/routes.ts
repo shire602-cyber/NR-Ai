@@ -24,6 +24,7 @@ import { registerJournalRoutes } from "./routes/journal.routes";
 import { registerAIRoutes } from "./routes/ai.routes";
 import { registerDashboardRoutes } from "./routes/dashboard.routes";
 import { registerReportRoutes } from "./routes/reports.routes";
+import { registerReportDeliveryRoutes } from "./routes/report-delivery.routes";
 import { registerIntegrationRoutes } from "./routes/integrations.routes";
 import { registerWhatsAppRoutes } from "./routes/whatsapp.routes";
 import { registerOCRRoutes } from "./routes/ocr.routes";
@@ -142,6 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);
   registerReportRoutes(app);
+  registerReportDeliveryRoutes(app);
   registerAnalyticsRoutes(app);
 
   // ─── Integrations ───────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +62,8 @@ import {
   reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportCatalog,
   reportAutomationPlaybookHref,
   reportPackTemplateHref,
@@ -3623,6 +3625,83 @@ export default function Reports() {
     );
   }, [personaFilter, reportAutomationTriggerRuleSummaries]);
 
+  const reportDeliverySubscriptionSummaries = useMemo(() => {
+    return reportDeliverySubscriptions.flatMap((subscription) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === subscription.persona);
+      if (!workspace) return [];
+
+      const reports = subscription.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const readyCount = reports.filter((report) => report.status !== "planned").length;
+      const packTemplate =
+        reportPackTemplateSummaries.find(
+          (template) => template.id === subscription.packTemplateId
+        ) ?? null;
+      const triggerRules = subscription.triggerRuleIds
+        .map((ruleId) => reportAutomationTriggerRuleSummaries.find((rule) => rule.id === ruleId))
+        .filter((rule): rule is (typeof reportAutomationTriggerRuleSummaries)[number] =>
+          Boolean(rule)
+        );
+      const automationStarter =
+        reportAutomationStarterSummaries.find(
+          (starter) => starter.id === subscription.automationStarterId
+        ) ?? null;
+      const decisionShortcut =
+        reportDecisionShortcutSummaries.find(
+          (shortcut) => shortcut.id === subscription.decisionShortcutId
+        ) ?? null;
+      const openWorkItemCount = triggerRules.reduce((sum, rule) => sum + rule.openWorkItemCount, 0);
+      const amountAtRisk = triggerRules.reduce((sum, rule) => sum + rule.amountAtRisk, 0);
+      const status =
+        openWorkItemCount > 0
+          ? "Review before send"
+          : readyCount === reports.length
+            ? "Ready to send"
+            : "Setup needed";
+
+      return [
+        {
+          ...subscription,
+          workspace,
+          reports,
+          readyCount,
+          packTemplate,
+          triggerRules,
+          automationStarter,
+          decisionShortcut,
+          openWorkItemCount,
+          amountAtRisk,
+          href: reportDeliverySubscriptionHref(subscription),
+          packTemplateHref: packTemplate?.href ?? reportDeliverySubscriptionHref(subscription),
+          automationStarterHref:
+            automationStarter?.href ?? reportDeliverySubscriptionHref(subscription),
+          decisionShortcutHref:
+            decisionShortcut?.href ?? reportDeliverySubscriptionHref(subscription),
+          status,
+          statusVariant:
+            status === "Ready to send"
+              ? ("success" as const)
+              : status === "Review before send"
+                ? ("warning" as const)
+                : ("neutral" as const),
+        },
+      ];
+    });
+  }, [
+    reportAutomationStarterSummaries,
+    reportAutomationTriggerRuleSummaries,
+    reportDecisionShortcutSummaries,
+    reportPackTemplateSummaries,
+    workspaceSummaries,
+  ]);
+
+  const visibleReportDeliverySubscriptions = useMemo(() => {
+    return reportDeliverySubscriptionSummaries.filter((subscription) =>
+      matchesReportPersona([subscription.persona], personaFilter)
+    );
+  }, [personaFilter, reportDeliverySubscriptionSummaries]);
+
   const reportPackAutomationQueue = useMemo(() => {
     return workspaceSummaries.map((workspace) => {
       const signals = automationQueue.filter((item) =>
@@ -4085,6 +4164,33 @@ export default function Reports() {
     reportPackReadinessNeedingReview
   );
 
+  const queueReportDeliverySubscription = useMutation({
+    mutationFn: (subscriptionId: string) => {
+      if (!selectedCompanyId) throw new Error("Select a company before queuing delivery.");
+      return apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`
+      );
+    },
+    onSuccess: (result: any) => {
+      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const nextRunLabel = result?.subscription?.nextRunLabel;
+      toast({
+        title: "Report delivery queued",
+        description: nextRunLabel
+          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
+          : `${subscriptionTitle} queued as an in-app reminder.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not queue report delivery",
+        description: error?.message || "Failed to queue report delivery",
+        variant: "destructive",
+      });
+    },
+  });
+
   const exportDateRangeSuffix =
     dateRange.from && dateRange.to
       ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -4164,6 +4270,9 @@ export default function Reports() {
     );
     const packTriggerRules = reportAutomationTriggerRuleSummaries.filter(
       (rule) => rule.persona === workspace.persona
+    );
+    const packDeliverySubscriptions = reportDeliverySubscriptionSummaries.filter(
+      (subscription) => subscription.persona === workspace.persona
     );
     const packSignals = automationQueue.filter((item) =>
       matchesReportPersona(item.personas, workspace.persona)
@@ -4268,6 +4377,7 @@ export default function Reports() {
         { metric: "Decision shortcuts", value: packDecisionShortcuts.length },
         { metric: "Automation starters", value: packAutomationStarters.length },
         { metric: "Trigger rules", value: packTriggerRules.length },
+        { metric: "Delivery subscriptions", value: packDeliverySubscriptions.length },
         { metric: "Pack templates", value: packTemplates.length },
         { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
         { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
@@ -4462,6 +4572,40 @@ export default function Reports() {
       })),
     };
 
+    const deliverySubscriptionsSheet: ExportData = {
+      sheetName: "Delivery Subscriptions",
+      columns: [
+        { header: "Subscription", key: "subscription", width: 38 },
+        { header: "Audience", key: "audience", width: 42 },
+        { header: "Cadence", key: "cadence", width: 54 },
+        { header: "Channel", key: "channel", width: 36 },
+        { header: "Format", key: "format", width: 32 },
+        { header: "Recipients", key: "recipients", width: 58 },
+        { header: "Pack Template", key: "packTemplate", width: 38 },
+        { header: "Ready Reports", key: "readyReports", width: 16 },
+        { header: "Trigger Rules", key: "triggerRules", width: 64 },
+        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
+        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
+        { header: "Delivery Guardrail", key: "deliveryGuardrail", width: 78 },
+        { header: "Workflow", key: "workflow", width: 42 },
+      ],
+      rows: packDeliverySubscriptions.map((subscription) => ({
+        subscription: subscription.title,
+        audience: subscription.audience,
+        cadence: subscription.cadence,
+        channel: subscription.channel,
+        format: subscription.format,
+        recipients: subscription.recipients,
+        packTemplate: subscription.packTemplate?.title ?? "",
+        readyReports: `${subscription.readyCount}/${subscription.reports.length}`,
+        triggerRules: subscription.triggerRules.map((rule) => rule.title).join(", "),
+        openWorkItemCount: subscription.openWorkItemCount,
+        amountAtRisk: `AED ${subscription.amountAtRisk.toFixed(2)}`,
+        deliveryGuardrail: subscription.deliveryGuardrail,
+        workflow: subscription.href,
+      })),
+    };
+
     const recommendedActions: ExportData = {
       sheetName: "Recommended Actions",
       columns: [
@@ -4543,6 +4687,7 @@ export default function Reports() {
         { metric: "Persona", value: workspace.persona },
         { metric: "Automation outcome", value: workspace.automationOutcome },
         { metric: "Total automation rules", value: packAutomationRules.length },
+        { metric: "Delivery subscriptions", value: packDeliverySubscriptions.length },
         { metric: "Ready auto-send rules", value: packReadyAutomationRules },
         { metric: "Rules needing review", value: packReviewAutomationRules },
         { metric: "Setup-needed rules", value: packSetupAutomationRules },
@@ -4781,6 +4926,7 @@ export default function Reports() {
       packTemplatesSheet,
       automationStartersSheet,
       triggerRulesSheet,
+      deliverySubscriptionsSheet,
       recommendedActions,
       reportRoadmapSheet,
       automationCommandCenter,
@@ -5424,6 +5570,157 @@ export default function Reports() {
                       </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href={rule.automationStarterHref}>Open automation</Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-delivery-subscriptions-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-delivery-subscriptions-title" className="text-xl font-semibold">
+              Delivery subscriptions
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Scheduled report packs that define cadence, recipients, channel, and guardrails before
+              auto-send. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge
+            variant={
+              visibleReportDeliverySubscriptions.some(
+                (subscription) => subscription.status !== "Ready to send"
+              )
+                ? "warning"
+                : "success"
+            }
+            dot
+          >
+            {visibleReportDeliverySubscriptions.length} subscriptions
+          </Badge>
+        </div>
+
+        {automationLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleReportDeliverySubscriptions.map((subscription) => {
+              const WorkspaceIcon = subscription.workspace.icon;
+
+              return (
+                <Card
+                  key={subscription.id}
+                  id={`report-delivery-subscription-${subscription.id}`}
+                  data-testid={`report-delivery-subscription-${subscription.id}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {subscription.title}
+                          </CardTitle>
+                          <CardDescription>{subscription.audience}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={subscription.statusVariant} dot>
+                        {subscription.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {subscription.cadence}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Channel</div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {subscription.channel}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Ready reports</div>
+                        <div className="mt-1 font-mono text-base font-semibold">
+                          {subscription.readyCount}/{subscription.reports.length}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Open work</div>
+                        <div className="mt-1 font-mono text-base font-semibold">
+                          {subscription.openWorkItemCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Format:</span>{" "}
+                        {subscription.format}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Recipients:</span>{" "}
+                        {subscription.recipients}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                        {subscription.deliveryGuardrail}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Trigger rules
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {subscription.triggerRules.map((rule) => (
+                          <Badge key={rule.id} variant={triggerSeverityMeta[rule.severity].variant}>
+                            {rule.title}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {subscription.reports.slice(0, 5).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {subscription.reports.length > 5 ? (
+                        <Badge variant="neutral">+{subscription.reports.length - 5}</Badge>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm">
+                        <Link href={subscription.href}>Open subscription</Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
+                        onClick={() => queueReportDeliverySubscription.mutate(subscription.id)}
+                      >
+                        Queue delivery
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={subscription.packTemplateHref}>Open pack</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={subscription.automationStarterHref}>Open automation</Link>
                       </Button>
                     </div>
                   </CardContent>

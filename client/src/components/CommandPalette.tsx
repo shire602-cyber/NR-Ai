@@ -40,6 +40,8 @@ import {
   reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
+  reportDeliverySubscriptionHref,
+  reportDeliverySubscriptions,
   reportAutomationPlaybookHref,
   reportHref,
   reportPackTemplateHref,
@@ -210,6 +212,27 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
+    ...reportDeliverySubscriptions.map((subscription): PaletteItem => {
+      const workspace = reportPersonaWorkspaces.find(
+        (item) => item.persona === subscription.persona
+      );
+      return {
+        id: `report-delivery-subscription-${subscription.id}`,
+        label: subscription.title,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
+        href: reportDeliverySubscriptionHref(subscription),
+        keywords: [
+          subscription.commandKeywords,
+          subscription.audience,
+          subscription.cadence,
+          subscription.channel,
+          subscription.recipients,
+          subscription.deliveryGuardrail,
+          "delivery subscription scheduled send report pack recipients",
+        ].join(" "),
+      };
+    }),
     ...reportPackTemplates.map((template): PaletteItem => {
       const workspace = reportPersonaWorkspaces.find((item) => item.persona === template.persona);
       return {
@@ -261,6 +284,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         icon: reportWorkspaceIcons[workspace.icon],
         href: reportSectionHref(workspace, "trigger-rules"),
         keywords: `${workspace.commandKeywords} trigger rules thresholds report automation alerts`,
+      },
+      {
+        id: `report-delivery-subscriptions-${workspace.persona}`,
+        label: `Delivery subscriptions - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "delivery-subscriptions"),
+        keywords: `${workspace.commandKeywords} delivery subscriptions scheduled send recipients report pack`,
       },
       {
         id: `report-automation-starters-${workspace.persona}`,
