@@ -104,6 +104,7 @@ import {
 } from "@/lib/reportCatalog";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Briefcase,
   Building2,
@@ -830,6 +831,23 @@ interface InventoryMovementTypeRow {
 }
 
 type PersonaFilter = "all" | ReportPersona;
+type ReportWorkflowCoverageCueId = "pack" | "schedule" | "alert" | "delivery";
+
+interface ReportWorkflowCoverageCue {
+  id: ReportWorkflowCoverageCueId;
+  label: string;
+  detail: string;
+  variant: BadgeProps["variant"];
+}
+
+interface ReportWorkflowCoverageContext {
+  persona: ReportPersona;
+  reportIds: string[];
+  packTemplateId?: string;
+  automationStarterId?: string;
+  triggerRuleIds?: string[];
+  deliverySubscriptionId?: string;
+}
 
 interface ReportWorkflowFinderResult {
   id: string;
@@ -840,6 +858,7 @@ interface ReportWorkflowFinderResult {
   href: string;
   persona: ReportPersona | null;
   badgeVariant: BadgeProps["variant"];
+  coverageCues: ReportWorkflowCoverageCue[];
 }
 
 interface AutomationQueueItem {
@@ -4273,6 +4292,74 @@ export default function Reports() {
   }, [matchesReportWorkflowSearch, personaFilter, reportDeliverySubscriptionSummaries]);
 
   const allReportWorkflowFinderResults = useMemo<ReportWorkflowFinderResult[]>(() => {
+    const reportIdsOverlap = (left: string[], right: string[]) => {
+      return left.some((reportId) => right.includes(reportId));
+    };
+    const buildReportWorkflowCoverageCues = ({
+      persona,
+      reportIds,
+      packTemplateId,
+      automationStarterId,
+      triggerRuleIds = [],
+      deliverySubscriptionId,
+    }: ReportWorkflowCoverageContext): ReportWorkflowCoverageCue[] => {
+      const packTemplate =
+        reportPackTemplateSummaries.find(
+          (template) =>
+            template.persona === persona &&
+            (template.id === packTemplateId || reportIdsOverlap(template.reportIds, reportIds))
+        ) ?? null;
+      const triggerRule =
+        reportAutomationTriggerRuleSummaries.find(
+          (rule) =>
+            rule.persona === persona &&
+            (triggerRuleIds.includes(rule.id) ||
+              rule.automationStarterId === automationStarterId ||
+              reportIdsOverlap(rule.reportIds, reportIds))
+        ) ?? null;
+      const deliverySubscription =
+        reportDeliverySubscriptionSummaries.find(
+          (subscription) =>
+            subscription.persona === persona &&
+            (subscription.id === deliverySubscriptionId ||
+              subscription.packTemplateId === packTemplateId ||
+              subscription.automationStarterId === automationStarterId ||
+              triggerRuleIds.some((ruleId) => subscription.triggerRuleIds.includes(ruleId)) ||
+              reportIdsOverlap(subscription.reportIds, reportIds))
+        ) ?? null;
+
+      return [
+        {
+          id: "pack",
+          label: packTemplate ? "Pack" : "No pack",
+          detail: packTemplate?.title ?? "No report pack template covers this workflow yet.",
+          variant: packTemplate ? ("success" as const) : ("outline" as const),
+        },
+        {
+          id: "schedule",
+          label: deliverySubscription ? "Scheduled" : "No schedule",
+          detail: deliverySubscription?.cadence ?? "No scheduled report send covers this workflow.",
+          variant: deliverySubscription ? ("info" as const) : ("outline" as const),
+        },
+        {
+          id: "alert",
+          label: triggerRule ? "Alert rule" : "No alert",
+          detail: triggerRule?.title ?? "No automation trigger rule covers this workflow yet.",
+          variant: triggerRule
+            ? triggerSeverityMeta[triggerRule.severity].variant
+            : ("outline" as const),
+        },
+        {
+          id: "delivery",
+          label: deliverySubscription ? "Delivery" : "No delivery",
+          detail: deliverySubscription
+            ? `${deliverySubscription.channel} · ${deliverySubscription.format}`
+            : "No delivery path covers this workflow yet.",
+          variant: deliverySubscription?.statusVariant ?? ("outline" as const),
+        },
+      ];
+    };
+
     const reportResults = filteredReports.map((report) => {
       const reportPersona =
         personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
@@ -4290,6 +4377,10 @@ export default function Reports() {
             : reportsHref({ persona: reportPersona })),
         persona: reportPersona,
         badgeVariant: status.variant,
+        coverageCues: buildReportWorkflowCoverageCues({
+          persona: reportPersona,
+          reportIds: [report.id],
+        }),
       };
     });
 
@@ -4302,6 +4393,11 @@ export default function Reports() {
       href: template.href,
       persona: template.persona,
       badgeVariant: "outline" as const,
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: template.persona,
+        reportIds: template.reportIds,
+        packTemplateId: template.id,
+      }),
     }));
 
     const comparisonResults = visibleReportComparisonPresets.map((preset) => ({
@@ -4313,6 +4409,10 @@ export default function Reports() {
       href: preset.href,
       persona: preset.persona,
       badgeVariant: preset.warningCount > 0 ? ("warning" as const) : ("success" as const),
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: preset.persona,
+        reportIds: preset.reportIds,
+      }),
     }));
 
     const automationStarterResults = visibleReportAutomationStarters.map((starter) => ({
@@ -4324,6 +4424,11 @@ export default function Reports() {
       href: starter.href,
       persona: starter.persona,
       badgeVariant: starter.openWorkItemCount > 0 ? ("warning" as const) : ("success" as const),
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: starter.persona,
+        reportIds: starter.reportIds,
+        automationStarterId: starter.id,
+      }),
     }));
 
     const deliveryResults = visibleReportDeliverySubscriptions.map((subscription) => ({
@@ -4335,6 +4440,14 @@ export default function Reports() {
       href: subscription.href,
       persona: subscription.persona,
       badgeVariant: subscription.statusVariant,
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: subscription.persona,
+        reportIds: subscription.reportIds,
+        packTemplateId: subscription.packTemplateId,
+        automationStarterId: subscription.automationStarterId,
+        triggerRuleIds: subscription.triggerRuleIds,
+        deliverySubscriptionId: subscription.id,
+      }),
     }));
 
     const triggerRuleResults = visibleReportAutomationTriggerRules.map((rule) => ({
@@ -4346,6 +4459,12 @@ export default function Reports() {
       href: rule.href,
       persona: rule.persona,
       badgeVariant: triggerSeverityMeta[rule.severity].variant,
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: rule.persona,
+        reportIds: rule.reportIds,
+        automationStarterId: rule.automationStarterId,
+        triggerRuleIds: [rule.id],
+      }),
     }));
 
     const decisionShortcutResults = visibleReportDecisionShortcuts.map((shortcut) => ({
@@ -4357,6 +4476,11 @@ export default function Reports() {
       href: shortcut.href,
       persona: shortcut.persona,
       badgeVariant: "info" as const,
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: shortcut.persona,
+        reportIds: shortcut.reportIds,
+        automationStarterId: shortcut.automationStarterId,
+      }),
     }));
 
     return [
@@ -4371,6 +4495,9 @@ export default function Reports() {
   }, [
     filteredReports,
     personaFilter,
+    reportAutomationTriggerRuleSummaries,
+    reportDeliverySubscriptionSummaries,
+    reportPackTemplateSummaries,
     visibleReportAutomationStarters,
     visibleReportAutomationTriggerRules,
     visibleReportComparisonPresets,
@@ -5075,6 +5202,7 @@ export default function Reports() {
           comparisonBadgeVariant(row) === "warning"
       ).length;
       const reportCount = workspace.reports.length;
+      const reportGapCount = Math.max(0, reportCount - workspace.readyReports);
       const deliveryIssueCount =
         failedRunCount + pausedDeliveryCount + setupDeliveryCount + reviewDeliveryCount;
       const automationScore = packReadiness?.automationHealth.score ?? workspace.readiness;
@@ -5146,8 +5274,11 @@ export default function Reports() {
         automationHealthVariant,
         automationRuleCount: automationRules.length,
         readyRuleCount,
+        automationRuleGapCount: Math.max(0, automationRules.length - readyRuleCount),
         deliverySubscriptionCount: deliverySubscriptions.length,
         readyDeliveryCount,
+        deliveryGapCount: Math.max(0, deliverySubscriptions.length - readyDeliveryCount),
+        reportGapCount,
         failedRunCount,
         openWorkItemCount,
         amountAtRisk,
@@ -6447,7 +6578,96 @@ export default function Reports() {
 
       <section
         className="space-y-4"
+        aria-labelledby="report-workflow-readiness-title"
+        data-testid="report-workflow-readiness"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-workflow-readiness-title" className="text-xl font-semibold">
+              Automation readiness
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Role-specific coverage gaps before report packs, alerts, and delivery automations run.
+            </p>
+          </div>
+          <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
+            {reportAutomationOperationsNeedingReview > 0
+              ? `${reportAutomationOperationsNeedingReview} need review`
+              : "Ready by role"}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {visibleReportAutomationOperations.map((item) => (
+            <div
+              key={item.workspace.persona}
+              className="rounded-md border border-border/70 p-4"
+              data-testid={`report-workflow-readiness-${item.workspace.persona}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {item.workspace.navLabel}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {item.readyReportCount}/{item.reportCount} reports ready
+                  </div>
+                </div>
+                <Badge variant={item.statusVariant} dot>
+                  {item.status}
+                </Badge>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-md bg-muted/30 p-2">
+                  <div className="text-muted-foreground">Score</div>
+                  <div className="mt-1 font-mono text-base font-semibold">
+                    {item.automationScore}%
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/30 p-2">
+                  <div className="text-muted-foreground">Rules</div>
+                  <div className="mt-1 font-mono text-base font-semibold">
+                    {item.readyRuleCount}/{item.automationRuleCount}
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/30 p-2">
+                  <div className="text-muted-foreground">Delivery</div>
+                  <div className="mt-1 font-mono text-base font-semibold">
+                    {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className="mt-3 text-xs text-muted-foreground"
+                data-testid={`report-workflow-readiness-gap-${item.workspace.persona}`}
+              >
+                {item.reportGapCount} report gaps · {item.automationRuleGapCount} rule gaps ·{" "}
+                {item.deliveryGapCount} delivery gaps
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <Badge variant={item.nextAction.badgeVariant}>{item.nextAction.badge}</Badge>
+                <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                  <Link
+                    href={item.nextAction.href}
+                    data-testid={`report-workflow-readiness-action-${item.workspace.persona}`}
+                  >
+                    {item.nextAction.label}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section
+        className="space-y-4"
         aria-labelledby="report-workflow-finder-title"
+        id="report-workflow-finder"
         data-testid="report-workflow-finder"
       >
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -6516,6 +6736,21 @@ export default function Reports() {
                     </div>
                   </div>
                   <div className="mt-3 truncate text-xs text-muted-foreground">{result.meta}</div>
+                  <div
+                    className="mt-3 flex flex-wrap gap-1.5"
+                    data-testid={`report-workflow-coverage-${result.id}`}
+                  >
+                    {result.coverageCues.map((cue) => (
+                      <Badge
+                        key={cue.id}
+                        variant={cue.variant}
+                        title={cue.detail}
+                        data-testid={`report-workflow-coverage-${result.id}-${cue.id}`}
+                      >
+                        {cue.label}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </Link>
             ))}

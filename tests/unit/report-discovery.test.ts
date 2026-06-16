@@ -716,6 +716,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("Report pack automation - ${workspace.title}");
 
     for (const workspace of reportPersonaWorkspaces) {
+      expect(reportSectionHref(workspace, "workflow-finder")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-workflow-finder-title`
+      );
       expect(reportSectionHref(workspace, "automation-operations")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-automation-operations-title`
       );
@@ -1093,12 +1096,30 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportWorkflowSearch");
     expect(reportsSource).toContain("normalizedReportWorkflowSearch");
     expect(reportsSource).toContain("matchesReportWorkflowSearch");
+    expect(reportsSource).toContain("ReportWorkflowCoverageCue");
+    expect(reportsSource).toContain("ReportWorkflowCoverageContext");
+    expect(reportsSource).toContain("buildReportWorkflowCoverageCues");
+    expect(reportsSource).toContain("reportIdsOverlap");
     expect(reportsSource).toContain("allReportWorkflowFinderResults");
     expect(reportsSource).toContain("reportWorkflowFinderResults");
+    expect(reportsSource).toContain("coverageCues: buildReportWorkflowCoverageCues");
+    expect(reportsSource).toContain('id: "pack"');
+    expect(reportsSource).toContain('id: "schedule"');
+    expect(reportsSource).toContain('id: "alert"');
+    expect(reportsSource).toContain('id: "delivery"');
+    expect(reportsSource).toContain('label: packTemplate ? "Pack" : "No pack"');
+    expect(reportsSource).toContain('label: deliverySubscription ? "Scheduled" : "No schedule"');
+    expect(reportsSource).toContain('label: triggerRule ? "Alert rule" : "No alert"');
+    expect(reportsSource).toContain('label: deliverySubscription ? "Delivery" : "No delivery"');
     expect(reportsSource).toContain('data-testid="report-workflow-finder"');
+    expect(reportsSource).toContain('id="report-workflow-finder"');
     expect(reportsSource).toContain('data-testid="input-report-workflow-search"');
     expect(reportsSource).toContain('data-testid="report-workflow-finder-count"');
     expect(reportsSource).toContain("data-testid={`report-workflow-finder-result-${result.id}`}");
+    expect(reportsSource).toContain("data-testid={`report-workflow-coverage-${result.id}`}");
+    expect(reportsSource).toContain(
+      "data-testid={`report-workflow-coverage-${result.id}-${cue.id}`}"
+    );
     expect(reportsSource).toContain('data-testid="report-workflow-finder-empty"');
     expect(reportsSource).toContain("Search reports, packs, comparisons, automations");
     expect(reportsSource).toContain("visibleReportPackTemplates.map((template) => ({");
@@ -1155,6 +1176,15 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("visibleReportDeliverySubscriptions");
     expect(reportsSource).toContain("reportAutomationOperationSummaries");
     expect(reportsSource).toContain("visibleReportAutomationOperations");
+    expect(reportsSource).toContain("reportGapCount");
+    expect(reportsSource).toContain("automationRuleGapCount");
+    expect(reportsSource).toContain("deliveryGapCount");
+    expect(reportsSource).toContain('data-testid="report-workflow-readiness"');
+    expect(reportsSource).toContain("report-workflow-readiness-${item.workspace.persona}");
+    expect(reportsSource).toContain("report-workflow-readiness-gap-${item.workspace.persona}");
+    expect(reportsSource).toContain("report-workflow-readiness-action-${item.workspace.persona}");
+    expect(reportsSource).toContain("Automation readiness");
+    expect(reportsSource).toContain("Role-specific coverage gaps before report packs");
     expect(reportsSource).toContain("report-automation-operations-${workspace.persona}");
     expect(reportsSource).toContain("report-automation-operations-title");
     expect(reportsSource).toContain("Recover failed delivery");
@@ -1589,12 +1619,30 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("deliveryRetryDisabled");
     expect(reportLaunchPickerSource).toContain("ReportLaunchDeliveryPreview");
     expect(reportLaunchPickerSource).toContain("deliverySubscriptionPreviewById");
+    expect(reportLaunchPickerSource).toContain("getPreferredReportWorkflowSearch");
+    expect(reportLaunchPickerSource).toContain("setPreferredReportWorkflowSearch");
+    expect(reportLaunchPickerSource).toContain("setQuery(getPreferredReportWorkflowSearch");
+    expect(reportLaunchPickerSource).toContain("updateLauncherQuery");
+    expect(reportLaunchPickerSource).toContain("reportLaunchWorkflowSearchScore");
+    expect(reportLaunchPickerSource).toContain("rankReportLaunchItems");
+    expect(reportLaunchPickerSource).toContain("searchScore");
+    expect(reportLaunchPickerSource).toContain("matchesReportLaunchWorkflowSearch");
     expect(reportLaunchPickerSource).toContain("matchesLauncherQuery");
     expect(reportLaunchPickerSource).toContain("visibleShortcuts");
     expect(reportLaunchPickerSource).toContain("visibleStarters");
     expect(reportLaunchPickerSource).toContain("visibleDeliverySubscriptions");
     expect(reportLaunchPickerSource).toContain("visibleComparisonPresets");
     expect(reportLaunchPickerSource).toContain("visiblePackTemplates");
+    expect(reportLaunchPickerSource).toContain('reportSectionHref(workspace, "workflow-finder")');
+    expect(reportLaunchPickerSource).toContain("workflowFinderHref");
+    expect(reportLaunchPickerSource).toContain("matchingAutomationPackHref");
+    expect(reportLaunchPickerSource).toContain("matchingAutomationPackLabel");
+    expect(reportLaunchPickerSource).toContain(
+      "visibleDeliverySubscriptions[0] ?? deliverySubscriptions[0]"
+    );
+    expect(reportLaunchPickerSource).toContain(
+      "visibleComparisonPresets[0] ?? comparisonPresets[0]"
+    );
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.summary");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.nextRunLabel");
     expect(reportLaunchPickerSource).toContain("deliveryPreview?.deliveryGuardrail");
@@ -1622,6 +1670,10 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("report-launch-pinned-command-open");
     expect(reportLaunchPickerSource).toContain("report-launch-pinned-command-queue");
     expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search"');
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search-context"');
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-context-actions"');
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-open-workflow-finder"');
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-open-matching-pack"');
     expect(reportLaunchPickerSource).toContain("report-launch-persona-${item}");
     expect(reportLaunchPickerSource).toContain("report-launch-report-${report.id}");
     expect(reportLaunchPickerSource).toContain(

@@ -18,6 +18,7 @@ export const reportPersonas = ["owner", "freelancer", "accountant"] as const;
 export type ReportTab = (typeof reportTabs)[number];
 export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportSection =
+  | "workflow-finder"
   | "automation-operations"
   | "decision-shortcuts"
   | "recommendations"
@@ -1771,6 +1772,7 @@ export function setPreferredReportDeliveryAutomationCommand(
 }
 
 const reportSectionAnchors: Record<ReportSection, string> = {
+  "workflow-finder": "report-workflow-finder-title",
   "automation-operations": "report-automation-operations-title",
   "decision-shortcuts": "decision-shortcuts-title",
   recommendations: "recommended-reports-title",

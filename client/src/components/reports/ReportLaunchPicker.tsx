@@ -25,12 +25,14 @@ import {
   reportPackTemplateHref,
   reportPackTemplates,
   getPreferredReportDeliveryAutomationCommand,
+  getPreferredReportWorkflowSearch,
   parseReportDeliveryAutomationCommand,
   reportHref,
   reportPersonas,
   reportPersonaWorkspaces,
   reportSectionHref,
   reportWorkspaceHref,
+  setPreferredReportWorkflowSearch,
   type ReportAutomationStarter,
   type ReportCatalogItem,
   type ReportComparisonPreset,
@@ -79,7 +81,10 @@ interface ReportLaunchPickerProps {
 
 type LaunchReport = Omit<ReportCatalogItem, "href"> & { href?: string | null };
 type LaunchComparisonPreset = ReportComparisonPreset & { href?: string | null };
+type LaunchDecisionShortcut = ReportDecisionShortcut & { href?: string | null };
+type LaunchDeliverySubscription = ReportDeliverySubscription & { href?: string | null };
 type LaunchPackTemplate = ReportPackTemplate & { href?: string | null };
+type ReportLaunchSearchValue = string | number | null | undefined;
 
 interface ReportDeliveryAutomationPreference {
   persona: ReportPersona;
@@ -108,6 +113,125 @@ function packTemplateHref(template: LaunchPackTemplate): string {
 
 function workspaceHref(workspace: ReportPersonaWorkspace & { href?: string | null }): string {
   return workspace.href ?? reportWorkspaceHref(workspace);
+}
+
+function reportLaunchSearchHaystack(values: ReportLaunchSearchValue[]): string {
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .map((value) => String(value))
+    .join(" ")
+    .toLowerCase();
+}
+
+function reportLaunchWorkflowSearchScore(
+  values: ReportLaunchSearchValue[],
+  normalizedSearch: string
+): number {
+  if (!normalizedSearch) return 0;
+  const haystack = reportLaunchSearchHaystack(values);
+  if (!haystack) return 0;
+  const terms = normalizedSearch.split(/\s+/).filter(Boolean);
+  const phraseScore = haystack.includes(normalizedSearch) ? 100 : 0;
+  return terms.reduce((score, term) => score + (haystack.includes(term) ? 10 : 0), phraseScore);
+}
+
+function matchesReportLaunchWorkflowSearch(
+  values: ReportLaunchSearchValue[],
+  normalizedSearch: string
+): boolean {
+  if (!normalizedSearch) return true;
+  const haystack = reportLaunchSearchHaystack(values);
+  if (!haystack) return false;
+  if (haystack.includes(normalizedSearch)) return true;
+  const terms = normalizedSearch.split(/\s+/).filter(Boolean);
+  return terms.length > 0 && terms.every((term) => haystack.includes(term));
+}
+
+function rankReportLaunchItems<T>(
+  items: T[],
+  normalizedSearch: string,
+  searchValues: (item: T) => ReportLaunchSearchValue[]
+): T[] {
+  if (!normalizedSearch) return items;
+
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      searchScore: reportLaunchWorkflowSearchScore(searchValues(item), normalizedSearch),
+    }))
+    .sort((a, b) => b.searchScore - a.searchScore || a.index - b.index)
+    .map(({ item }) => item);
+}
+
+function reportSearchValues(report: LaunchReport): ReportLaunchSearchValue[] {
+  return [
+    report.name,
+    report.category,
+    report.decisionQuestion,
+    report.comparison,
+    report.automation,
+    report.commandKeywords,
+  ];
+}
+
+function shortcutSearchValues(shortcut: LaunchDecisionShortcut): ReportLaunchSearchValue[] {
+  return [
+    shortcut.question,
+    shortcut.answer,
+    shortcut.commandKeywords,
+    shortcut.reportIds.join(" "),
+  ];
+}
+
+function starterSearchValues(
+  starter: ReportAutomationStarter & { href?: string | null }
+): ReportLaunchSearchValue[] {
+  return [
+    starter.title,
+    starter.audience,
+    starter.outcome,
+    starter.trigger,
+    starter.primaryAction,
+    starter.commandKeywords,
+  ];
+}
+
+function deliverySubscriptionSearchValues(
+  subscription: LaunchDeliverySubscription
+): ReportLaunchSearchValue[] {
+  return [
+    subscription.title,
+    subscription.audience,
+    subscription.cadence,
+    subscription.channel,
+    subscription.recipients,
+    subscription.deliveryGuardrail,
+    subscription.commandKeywords,
+  ];
+}
+
+function comparisonPresetSearchValues(preset: LaunchComparisonPreset): ReportLaunchSearchValue[] {
+  return [
+    preset.title,
+    preset.question,
+    preset.baseline,
+    preset.automationTrigger,
+    preset.commandKeywords,
+  ];
+}
+
+function packTemplateSearchValues(template: LaunchPackTemplate): ReportLaunchSearchValue[] {
+  return [
+    template.title,
+    template.audience,
+    template.outcome,
+    template.cadence,
+    template.delivery,
+    template.comparisonFocus,
+    template.automationTrigger,
+    template.commandKeywords,
+  ];
 }
 
 const reportLaunchPinnedCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
@@ -139,7 +263,7 @@ export function ReportLaunchPicker({
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => getPreferredReportWorkflowSearch(persona));
   const [storedDeliveryAutomationCommand, setStoredDeliveryAutomationCommand] =
     useState<ReportDeliveryAutomationCommand | null>(() =>
       getPreferredReportDeliveryAutomationCommand(persona)
@@ -150,10 +274,19 @@ export function ReportLaunchPicker({
   }, [persona]);
 
   useEffect(() => {
+    setQuery(getPreferredReportWorkflowSearch(selectedPersona));
     setStoredDeliveryAutomationCommand(
       getPreferredReportDeliveryAutomationCommand(selectedPersona)
     );
   }, [selectedPersona]);
+
+  const updateLauncherQuery = useCallback(
+    (value: string) => {
+      setQuery(value);
+      setPreferredReportWorkflowSearch(value, selectedPersona);
+    },
+    [selectedPersona]
+  );
 
   const catalogQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(selectedPersona),
@@ -177,12 +310,11 @@ export function ReportLaunchPicker({
     syncedCatalog?.workspaces[0] ??
     reportPersonaWorkspaces.find((item) => item.persona === selectedPersona) ??
     reportPersonaWorkspaces[0];
-  const normalizedQuery = query.trim().toLowerCase();
+  const trimmedQuery = query.trim();
+  const normalizedQuery = trimmedQuery.toLowerCase();
   const matchesLauncherQuery = useCallback(
-    (values: Array<string | null | undefined>) => {
-      if (!normalizedQuery) return true;
-      return values.join(" ").toLowerCase().includes(normalizedQuery);
-    },
+    (values: ReportLaunchSearchValue[]) =>
+      matchesReportLaunchWorkflowSearch(values, normalizedQuery),
     [normalizedQuery]
   );
   const reports = useMemo(() => {
@@ -192,25 +324,21 @@ export function ReportLaunchPicker({
         .filter((report) => report.personas.includes(selectedPersona))
         .map((report) => ({ ...report, href: reportHref(report) ?? null }));
 
-    return source
-      .filter((report) => report.status === "live")
-      .filter((report) => {
-        return matchesLauncherQuery([
-          report.name,
-          report.category,
-          report.decisionQuestion,
-          report.commandKeywords,
-        ]);
-      })
-      .slice(0, 5);
-  }, [matchesLauncherQuery, selectedPersona, syncedCatalog?.reports]);
-  const shortcuts =
+    return rankReportLaunchItems(
+      source
+        .filter((report) => report.status === "live")
+        .filter((report) => matchesLauncherQuery(reportSearchValues(report))),
+      normalizedQuery,
+      reportSearchValues
+    ).slice(0, 5);
+  }, [matchesLauncherQuery, normalizedQuery, selectedPersona, syncedCatalog?.reports]);
+  const shortcuts: LaunchDecisionShortcut[] =
     syncedCatalog?.decisionShortcuts ??
     reportDecisionShortcuts.filter((shortcut) => shortcut.persona === selectedPersona);
-  const starters =
+  const starters: Array<ReportAutomationStarter & { href?: string | null }> =
     syncedCatalog?.automationStarters ??
     reportAutomationStarters.filter((starter) => starter.persona === selectedPersona);
-  const deliverySubscriptions =
+  const deliverySubscriptions: LaunchDeliverySubscription[] =
     syncedCatalog?.deliverySubscriptions ??
     reportDeliverySubscriptions.filter((subscription) => subscription.persona === selectedPersona);
   const comparisonPresets: LaunchComparisonPreset[] =
@@ -219,56 +347,46 @@ export function ReportLaunchPicker({
   const packTemplates: LaunchPackTemplate[] =
     syncedCatalog?.packTemplates ??
     reportPackTemplates.filter((template) => template.persona === selectedPersona);
-  const visibleShortcuts = shortcuts.filter((shortcut) =>
-    matchesLauncherQuery([
-      shortcut.question,
-      shortcut.answer,
-      shortcut.commandKeywords,
-      shortcut.reportIds.join(" "),
-    ])
+  const visibleShortcuts = rankReportLaunchItems(
+    shortcuts.filter((shortcut) => matchesLauncherQuery(shortcutSearchValues(shortcut))),
+    normalizedQuery,
+    shortcutSearchValues
   );
-  const visibleStarters = starters.filter((starter) =>
-    matchesLauncherQuery([
-      starter.title,
-      starter.audience,
-      starter.outcome,
-      starter.trigger,
-      starter.primaryAction,
-      starter.commandKeywords,
-    ])
+  const visibleStarters = rankReportLaunchItems(
+    starters.filter((starter) => matchesLauncherQuery(starterSearchValues(starter))),
+    normalizedQuery,
+    starterSearchValues
   );
-  const visibleDeliverySubscriptions = deliverySubscriptions.filter((subscription) =>
-    matchesLauncherQuery([
-      subscription.title,
-      subscription.audience,
-      subscription.cadence,
-      subscription.channel,
-      subscription.recipients,
-      subscription.deliveryGuardrail,
-      subscription.commandKeywords,
-    ])
+  const visibleDeliverySubscriptions = rankReportLaunchItems(
+    deliverySubscriptions.filter((subscription) =>
+      matchesLauncherQuery(deliverySubscriptionSearchValues(subscription))
+    ),
+    normalizedQuery,
+    deliverySubscriptionSearchValues
   );
-  const visibleComparisonPresets = comparisonPresets.filter((preset) =>
-    matchesLauncherQuery([
-      preset.title,
-      preset.question,
-      preset.baseline,
-      preset.automationTrigger,
-      preset.commandKeywords,
-    ])
+  const visibleComparisonPresets = rankReportLaunchItems(
+    comparisonPresets.filter((preset) =>
+      matchesLauncherQuery(comparisonPresetSearchValues(preset))
+    ),
+    normalizedQuery,
+    comparisonPresetSearchValues
   );
-  const visiblePackTemplates = packTemplates.filter((template) =>
-    matchesLauncherQuery([
-      template.title,
-      template.audience,
-      template.outcome,
-      template.cadence,
-      template.delivery,
-      template.comparisonFocus,
-      template.automationTrigger,
-      template.commandKeywords,
-    ])
+  const visiblePackTemplates = rankReportLaunchItems(
+    packTemplates.filter((template) => matchesLauncherQuery(packTemplateSearchValues(template))),
+    normalizedQuery,
+    packTemplateSearchValues
   );
+  const workflowFinderHref = reportSectionHref(workspace, "workflow-finder");
+  const matchingAutomationPackHref = visiblePackTemplates[0]
+    ? packTemplateHref(visiblePackTemplates[0])
+    : visibleStarters[0]
+      ? starterHref(visibleStarters[0])
+      : reportSectionHref(workspace, "automation-starters");
+  const matchingAutomationPackLabel = visiblePackTemplates[0]
+    ? "Open matching pack"
+    : visibleStarters[0]
+      ? "Open matching automation"
+      : "Open automations";
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
   const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
@@ -279,7 +397,7 @@ export function ReportLaunchPicker({
   const pinnedDeliveryAutomationCommand = hasControlledDeliveryAutomationCommand
     ? preferredDeliveryAutomationCommand
     : (syncedDeliveryAutomationCommand ?? storedDeliveryAutomationCommand);
-  const primaryDeliverySubscription = deliverySubscriptions[0];
+  const primaryDeliverySubscription = visibleDeliverySubscriptions[0] ?? deliverySubscriptions[0];
   const primaryDeliveryPreview = primaryDeliverySubscription
     ? deliverySubscriptionPreviewById[primaryDeliverySubscription.id]
     : undefined;
@@ -298,13 +416,19 @@ export function ReportLaunchPicker({
         : reportSectionHref(workspace, "delivery-subscriptions");
     }
     if (pinnedDeliveryAutomationCommand === "comparison") {
-      const comparisonPreset = comparisonPresets[0];
+      const comparisonPreset = visibleComparisonPresets[0] ?? comparisonPresets[0];
       return comparisonPreset
         ? reportComparisonPresetHref(comparisonPreset)
         : reportSectionHref(workspace, "decision-shortcuts");
     }
     return reportSectionHref(workspace, "delivery-subscriptions");
-  }, [comparisonPresets, pinnedDeliveryAutomationCommand, primaryDeliverySubscription, workspace]);
+  }, [
+    comparisonPresets,
+    pinnedDeliveryAutomationCommand,
+    primaryDeliverySubscription,
+    visibleComparisonPresets,
+    workspace,
+  ]);
   const isPinnedQueueCommandDisabled =
     deliveryQueueDisabled ||
     primaryDeliveryPreview?.queueDisabled ||
@@ -333,16 +457,23 @@ export function ReportLaunchPicker({
                 : workspace.automationOutcome}
             </p>
           </div>
-          <Badge
-            variant={catalogQuery.isError ? "warning" : "info"}
-            data-testid="report-launch-sync"
-          >
-            {catalogQuery.isLoading
-              ? "Syncing"
-              : catalogQuery.isError
-                ? "Local catalog"
-                : `${syncedCatalog?.summary.liveReportCount ?? reports.length} synced reports`}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            {trimmedQuery ? (
+              <Badge variant="outline" data-testid="report-launch-search-context">
+                <span className="max-w-[12rem] truncate">Search: {trimmedQuery}</span>
+              </Badge>
+            ) : null}
+            <Badge
+              variant={catalogQuery.isError ? "warning" : "info"}
+              data-testid="report-launch-sync"
+            >
+              {catalogQuery.isLoading
+                ? "Syncing"
+                : catalogQuery.isError
+                  ? "Local catalog"
+                  : `${syncedCatalog?.summary.liveReportCount ?? reports.length} synced reports`}
+            </Badge>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
@@ -371,11 +502,28 @@ export function ReportLaunchPicker({
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => updateLauncherQuery(event.target.value)}
                 placeholder="Search reports, questions, and automations"
                 className="pl-9"
                 data-testid="report-launch-search"
               />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2" data-testid="report-launch-context-actions">
+              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+                <Link href={workflowFinderHref} data-testid="report-launch-open-workflow-finder">
+                  <Search className="h-3.5 w-3.5" />
+                  Open finder
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+                <Link
+                  href={matchingAutomationPackHref}
+                  data-testid="report-launch-open-matching-pack"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {matchingAutomationPackLabel}
+                </Link>
+              </Button>
             </div>
 
             <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
