@@ -994,6 +994,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("queueReportDeliverySubscription.mutate(subscriptionId)");
     expect(reportsSource).toContain("queueingDeliverySubscriptionId");
     expect(reportsSource).toContain("deliveryQueueDisabled");
+    expect(reportsSource).toContain(
+      "preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}"
+    );
     expect(reportsSource).toContain("ReportLaunchDeliveryPreview");
     expect(reportsSource).toContain("reportDeliveryLauncherPreviewById");
     expect(reportsSource).toContain("deliverySubscriptionPreviewById");
@@ -1294,6 +1297,16 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("reportAutomationStarters");
     expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptions");
     expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptionHref");
+    expect(reportLaunchPickerSource).toContain("getPreferredReportDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("preferredDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("storedDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("hasControlledDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("selectedPersona === persona");
+    expect(reportLaunchPickerSource).toContain("pinnedDeliveryAutomationCommand");
+    expect(reportLaunchPickerSource).toContain("reportComparisonPresetHref");
+    expect(reportLaunchPickerSource).toContain("reportComparisonPresets");
+    expect(reportLaunchPickerSource).toContain("reportSectionHref");
+    expect(reportLaunchPickerSource).toContain("reportLaunchPinnedCommandLabels");
     expect(reportLaunchPickerSource).toContain("report-delivery-launch-picker");
     expect(reportLaunchPickerSource).toContain("onQueueDeliverySubscription");
     expect(reportLaunchPickerSource).toContain("queueingDeliverySubscriptionId");
@@ -1307,7 +1320,12 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("latestRunDetail");
     expect(reportLaunchPickerSource).toContain("latestRunError");
     expect(reportLaunchPickerSource).toContain("isQueueDisabled");
+    expect(reportLaunchPickerSource).toContain("isPinnedQueueCommandDisabled");
     expect(reportLaunchPickerSource).toContain("report-launch-picker");
+    expect(reportLaunchPickerSource).toContain("report-launch-pinned-command");
+    expect(reportLaunchPickerSource).toContain("report-launch-pinned-command-${");
+    expect(reportLaunchPickerSource).toContain("report-launch-pinned-command-open");
+    expect(reportLaunchPickerSource).toContain("report-launch-pinned-command-queue");
     expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search"');
     expect(reportLaunchPickerSource).toContain("report-launch-persona-${item}");
     expect(reportLaunchPickerSource).toContain("report-launch-report-${report.id}");

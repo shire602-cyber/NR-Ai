@@ -6631,6 +6631,7 @@ export default function Reports() {
           }
           deliveryQueueDisabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
           deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
+          preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}
           className="shadow-none"
         />
 

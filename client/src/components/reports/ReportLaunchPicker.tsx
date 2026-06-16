@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, FileSpreadsheet, Search, Send, Sparkles } from "lucide-react";
+import { ArrowRight, FileSpreadsheet, Pin, Search, Send, Sparkles } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,16 +15,22 @@ import {
   reportAutomationStarterHref,
   reportAutomationStarters,
   reportCatalog,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
+  getPreferredReportDeliveryAutomationCommand,
   reportHref,
   reportPersonas,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportWorkspaceHref,
   type ReportAutomationStarter,
   type ReportCatalogItem,
+  type ReportComparisonPreset,
+  type ReportDeliveryAutomationCommand,
   type ReportDecisionShortcut,
   type ReportDeliverySubscription,
   type ReportPersona,
@@ -57,10 +63,12 @@ interface ReportLaunchPickerProps {
   queueingDeliverySubscriptionId?: string | null;
   deliveryQueueDisabled?: boolean;
   deliverySubscriptionPreviewById?: Record<string, ReportLaunchDeliveryPreview | undefined>;
+  preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
   className?: string;
 }
 
 type LaunchReport = Omit<ReportCatalogItem, "href"> & { href?: string | null };
+type LaunchComparisonPreset = ReportComparisonPreset & { href?: string | null };
 
 function reportItemHref(report: LaunchReport): string {
   return report.href ?? reportHref({ href: undefined, tab: report.tab }) ?? "/reports";
@@ -82,6 +90,20 @@ function workspaceHref(workspace: ReportPersonaWorkspace & { href?: string | nul
   return workspace.href ?? reportWorkspaceHref(workspace);
 }
 
+const reportLaunchPinnedCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
+  retry: "Retry recovery",
+  review: "Review guardrails",
+  queue: "Queue next pack",
+  comparison: "Open comparison",
+};
+
+const reportLaunchPinnedCommandDescriptions: Record<ReportDeliveryAutomationCommand, string> = {
+  retry: "Jump back to delivery recovery when a scheduled report pack fails.",
+  review: "Open the first delivery subscription that needs guardrail or setup review.",
+  queue: "Queue the next scheduled report pack from the launcher.",
+  comparison: "Open the persona comparison pack that explains current-vs-prior movement.",
+};
+
 export function ReportLaunchPicker({
   persona = "owner",
   mode = "general",
@@ -89,14 +111,25 @@ export function ReportLaunchPicker({
   queueingDeliverySubscriptionId = null,
   deliveryQueueDisabled = false,
   deliverySubscriptionPreviewById = {},
+  preferredDeliveryAutomationCommand,
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
   const [query, setQuery] = useState("");
+  const [storedDeliveryAutomationCommand, setStoredDeliveryAutomationCommand] =
+    useState<ReportDeliveryAutomationCommand | null>(() =>
+      getPreferredReportDeliveryAutomationCommand(persona)
+    );
 
   useEffect(() => {
     setSelectedPersona(persona);
   }, [persona]);
+
+  useEffect(() => {
+    setStoredDeliveryAutomationCommand(
+      getPreferredReportDeliveryAutomationCommand(selectedPersona)
+    );
+  }, [selectedPersona]);
 
   const catalogQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(selectedPersona),
@@ -138,6 +171,41 @@ export function ReportLaunchPicker({
   const deliverySubscriptions =
     syncedCatalog?.deliverySubscriptions ??
     reportDeliverySubscriptions.filter((subscription) => subscription.persona === selectedPersona);
+  const comparisonPresets: LaunchComparisonPreset[] =
+    syncedCatalog?.comparisonPresets ??
+    reportComparisonPresets.filter((preset) => preset.persona === selectedPersona);
+  const hasControlledDeliveryAutomationCommand =
+    selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
+  const pinnedDeliveryAutomationCommand = hasControlledDeliveryAutomationCommand
+    ? preferredDeliveryAutomationCommand
+    : storedDeliveryAutomationCommand;
+  const primaryDeliverySubscription = deliverySubscriptions[0];
+  const primaryDeliveryPreview = primaryDeliverySubscription
+    ? deliverySubscriptionPreviewById[primaryDeliverySubscription.id]
+    : undefined;
+  const pinnedDeliveryCommandHref = useMemo(() => {
+    if (!pinnedDeliveryAutomationCommand) return workspaceHref(workspace);
+    if (pinnedDeliveryAutomationCommand === "retry") {
+      return reportSectionHref(workspace, "pack-automation");
+    }
+    if (pinnedDeliveryAutomationCommand === "review") {
+      return primaryDeliverySubscription
+        ? deliveryHref(primaryDeliverySubscription)
+        : reportSectionHref(workspace, "delivery-subscriptions");
+    }
+    if (pinnedDeliveryAutomationCommand === "comparison") {
+      const comparisonPreset = comparisonPresets[0];
+      return comparisonPreset
+        ? reportComparisonPresetHref(comparisonPreset)
+        : reportSectionHref(workspace, "decision-shortcuts");
+    }
+    return reportSectionHref(workspace, "delivery-subscriptions");
+  }, [comparisonPresets, pinnedDeliveryAutomationCommand, primaryDeliverySubscription, workspace]);
+  const isPinnedQueueCommandDisabled =
+    deliveryQueueDisabled ||
+    primaryDeliveryPreview?.queueDisabled ||
+    primaryDeliveryPreview?.enabled === false ||
+    !primaryDeliverySubscription;
   const isDeliveryMode = mode === "delivery";
 
   return (
@@ -240,6 +308,59 @@ export function ReportLaunchPicker({
               </div>
 
               <div className="space-y-3">
+                {pinnedDeliveryAutomationCommand ? (
+                  <div
+                    className="rounded-md border border-accent/40 bg-accent/5 p-3"
+                    data-testid="report-launch-pinned-command"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                        <Pin className="h-3.5 w-3.5" /> Pinned automation
+                      </div>
+                      <Badge
+                        variant="success"
+                        data-testid={`report-launch-pinned-command-${pinnedDeliveryAutomationCommand}`}
+                      >
+                        {reportLaunchPinnedCommandLabels[pinnedDeliveryAutomationCommand]}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {reportLaunchPinnedCommandDescriptions[pinnedDeliveryAutomationCommand]}
+                    </div>
+                    <div className="mt-3">
+                      {pinnedDeliveryAutomationCommand === "queue" &&
+                      onQueueDeliverySubscription &&
+                      primaryDeliverySubscription ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          disabled={isPinnedQueueCommandDisabled}
+                          onClick={() =>
+                            onQueueDeliverySubscription(primaryDeliverySubscription.id)
+                          }
+                          data-testid="report-launch-pinned-command-queue"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          {queueingDeliverySubscriptionId === primaryDeliverySubscription.id
+                            ? "Queueing"
+                            : "Queue pinned pack"}
+                        </Button>
+                      ) : (
+                        <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                          <Link
+                            href={pinnedDeliveryCommandHref}
+                            data-testid="report-launch-pinned-command-open"
+                          >
+                            Open command <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
                 {isDeliveryMode ? (
                   <div className="rounded-md border border-border/70 p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
