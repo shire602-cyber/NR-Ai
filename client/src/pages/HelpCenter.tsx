@@ -35,10 +35,16 @@ const guides = [
     title: "Reconcile bank statements",
     text: "Import CSV/PDF statements, review suggested matches, and create entries for unmatched transactions.",
   },
+  {
+    icon: ShieldCheck,
+    title: "Migrate from mazeed or Wafeq",
+    text: "Use a go-live date, preserve source exports, import contacts and bank statements, and validate opening balances before live posting.",
+  },
 ];
 
 const slaItems = [
   "Launch onboarding support for setup, migration, VAT workflow questions, and first-month close.",
+  "Migration review covers mazeed, Wafeq, Zoho Books, and Excel export packs before live use.",
   "Email support for free and starter users; priority onboarding support for professional and enterprise users.",
   "Enterprise support terms, response windows, and uptime commitments are confirmed during activation.",
   "Critical accounting workflow issues are triaged ahead of feature requests during launch.",

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
+import { liveReportCatalog, reportHref, type ReportCommandIcon } from "@/lib/reportCatalog";
 
 interface PaletteItem {
   id: string;
@@ -45,6 +46,17 @@ interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+const reportCommandIcons: Record<ReportCommandIcon, PaletteItem["icon"]> = {
+  barChart: BarChart3,
+  book: BookMarked,
+  creditCard: CreditCard,
+  fileSpreadsheet: FileSpreadsheet,
+  fileText: FileText,
+  receipt: Receipt,
+  users: Users,
+  wallet: Wallet,
+};
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [, navigate] = useLocation();
@@ -90,166 +102,16 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       href: "/reports",
       shortcut: "g r",
     },
-    {
-      id: "report-profit-loss",
-      label: "Profit & Loss",
-      group: "Reports",
-      icon: BarChart3,
-      href: "/reports?tab=pl",
-      keywords: "reports pnl income statement revenue expenses",
-    },
-    {
-      id: "report-balance-sheet",
-      label: "Balance Sheet",
-      group: "Reports",
-      icon: FileSpreadsheet,
-      href: "/reports?tab=bs",
-      keywords: "reports assets liabilities equity financial position",
-    },
-    {
-      id: "report-vat-summary",
-      label: "VAT Summary",
-      group: "Reports",
-      icon: FileSpreadsheet,
-      href: "/reports?tab=vat",
-      keywords: "reports tax vat output input",
-    },
-    {
-      id: "report-cash-flow",
-      label: "Cash Flow Statement",
-      group: "Reports",
-      icon: Wallet,
-      href: "/advanced-reports?tab=cashflow",
-      keywords: "reports cash flow operating investing financing",
-    },
-    {
-      id: "report-ar-aging",
-      label: "A/R Aging",
-      group: "Reports",
-      icon: Users,
-      href: "/advanced-reports?tab=aging",
-      keywords: "reports receivables aging customers overdue collections",
-    },
-    {
-      id: "report-ap-aging",
-      label: "A/P Aging",
-      group: "Reports",
-      icon: CreditCard,
-      href: "/bill-pay?tab=summary",
-      keywords: "reports payables aging vendors bills due",
-    },
-    {
-      id: "report-trial-balance",
-      label: "Trial Balance",
-      group: "Reports",
-      icon: BookMarked,
-      href: "/reports?tab=trial",
-      keywords: "reports accounting debits credits close",
-    },
-    {
-      id: "report-vat-return",
-      label: "VAT Return",
-      group: "Reports",
-      icon: FileSpreadsheet,
-      href: "/vat-filing",
-      keywords: "reports tax filing return fta",
-    },
-    {
-      id: "report-period-comparison",
-      label: "Period Comparison",
-      group: "Reports",
-      icon: BarChart3,
-      href: "/advanced-reports?tab=comparison",
-      keywords: "reports comparison variance prior period",
-    },
-    {
-      id: "report-fx-gains-losses",
-      label: "FX Gains and Losses",
-      group: "Reports",
-      icon: Wallet,
-      href: "/exchange-rates",
-      keywords: "reports foreign currency exchange gains losses",
-    },
-    {
-      id: "report-general-ledger",
-      label: "General Ledger",
-      group: "Reports",
-      icon: BookMarked,
-      href: "/reports?tab=ledger",
-      keywords: "reports ledger journal accounts accountant",
-    },
-    {
-      id: "report-account-transactions",
-      label: "Account Transactions",
-      group: "Reports",
-      icon: BookMarked,
-      href: "/reports?tab=ledger",
-      keywords: "reports account transactions drilldown ledger",
-    },
-    {
-      id: "report-customer-balances",
-      label: "Customer Balance Summary",
-      group: "Reports",
-      icon: Users,
-      href: "/reports?tab=balances",
-      keywords: "reports customers receivables open balance collections",
-    },
-    {
-      id: "report-vendor-balances",
-      label: "Vendor Balance Summary",
-      group: "Reports",
-      icon: CreditCard,
-      href: "/reports?tab=balances",
-      keywords: "reports vendors payables open balance bill pay",
-    },
-    {
-      id: "report-invoice-status",
-      label: "Invoice Status",
-      group: "Reports",
-      icon: FileText,
-      href: "/reports?tab=sales",
-      keywords: "reports invoices sales overdue reminders",
-    },
-    {
-      id: "report-budget-actual",
-      label: "Budget vs Actual",
-      group: "Reports",
-      icon: BarChart3,
-      href: "/reports?tab=planning",
-      keywords: "reports budget actual variance planning",
-    },
-    {
-      id: "report-cash-flow-forecast",
-      label: "Cash Flow Forecast",
-      group: "Reports",
-      icon: Wallet,
-      href: "/reports?tab=planning",
-      keywords: "reports forecast cash runway planning",
-    },
-    {
-      id: "report-revenue-customer",
-      label: "Revenue by Customer",
-      group: "Reports",
-      icon: Users,
-      href: "/reports?tab=sales",
-      keywords: "reports revenue customer concentration sales",
-    },
-    {
-      id: "report-expenses-vendor",
-      label: "Expenses by Vendor",
-      group: "Reports",
-      icon: Receipt,
-      href: "/reports?tab=expenses",
-      keywords: "reports expenses vendors merchants spend",
-    },
-    {
-      id: "report-expenses-category",
-      label: "Expenses by Category",
-      group: "Reports",
-      icon: Receipt,
-      href: "/reports?tab=expenses",
-      keywords: "reports expenses categories spend budget",
-    },
+    ...liveReportCatalog.map(
+      (report): PaletteItem => ({
+        id: `report-${report.id}`,
+        label: report.name,
+        group: "Reports",
+        icon: reportCommandIcons[report.commandIcon],
+        href: reportHref(report),
+        keywords: report.commandKeywords,
+      })
+    ),
     {
       id: "nav-bank",
       label: "Bank Reconciliation",

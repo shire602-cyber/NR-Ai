@@ -115,17 +115,25 @@ describe("Public SaaS launch surface", () => {
       "Create VAT-ready invoices",
       "Import receipts and contacts",
       "Reconcile bank statements",
+      "Migrate from mazeed or Wafeq",
     ]) {
       expect(helpSource).toContain(expectedHelpTopic);
     }
 
     for (const expectedMigrationTopic of [
+      "Move from mazeed",
       "Move from Wafeq",
       "Move from Zoho Books",
       "Move from Excel",
     ]) {
       expect(migrationSource).toContain(expectedMigrationTopic);
     }
+
+    expect(migrationSource).toContain(
+      "Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
+    );
+    expect(migrationSource).toContain("Prior-system report packs from mazeed, Wafeq, Zoho Books");
+    expect(helpSource).toContain("Migration review covers mazeed, Wafeq, Zoho Books, and Excel");
   });
 
   it("keeps a public sample-data demo path for launch buyers", () => {

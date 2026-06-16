@@ -1,17 +1,21 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  liveReportCatalog,
+  reportCatalog,
+  reportHref,
+  reportTabs,
+} from "../../client/src/lib/reportCatalog";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
 describe("report discoverability", () => {
+  const catalogSource = read("client/src/lib/reportCatalog.ts");
   const commandSource = read("client/src/components/CommandPalette.tsx");
   const reportsSource = read("client/src/pages/Reports.tsx");
-  const catalogSource = reportsSource.match(
-    /const reportCatalog: ReportCatalogItem\[\] = \[([\s\S]*?)\];\n\nconst invoiceStatusLabels/
-  )?.[1];
 
   const expectedLiveReports = [
     "Profit & Loss",
@@ -37,14 +41,14 @@ describe("report discoverability", () => {
   ];
 
   it("keeps the Reports catalog at 20 live high-level reports", () => {
-    expect(catalogSource).toBeDefined();
-    expect(catalogSource?.match(/status: "live"/g)).toHaveLength(20);
+    expect(liveReportCatalog).toHaveLength(20);
 
     for (const label of expectedLiveReports) {
-      expect(catalogSource).toContain(`name: "${label}"`);
+      expect(liveReportCatalog.map((report) => report.name)).toContain(label);
     }
 
-    for (const persona of ["owner", "freelancer", "accountant"]) {
+    for (const persona of ["owner", "freelancer", "accountant"] as const) {
+      expect(reportCatalog.some((report) => report.personas.includes(persona))).toBe(true);
       expect(reportsSource).toContain(`persona: "${persona}"`);
       expect(reportsSource).toContain(`id: "${persona}"`);
     }
@@ -52,35 +56,31 @@ describe("report discoverability", () => {
 
   it("exposes all live reports through the global command palette", () => {
     expect(commandSource).toContain('group: "Reports"');
-    expect(commandSource.match(/id: "report-/g)).toHaveLength(20);
+    expect(commandSource).toContain("liveReportCatalog.map");
+    expect(commandSource).toContain("id: `report-${report.id}`");
+    expect(commandSource).toContain("href: reportHref(report)");
 
-    for (const expected of [
-      'href: "/reports?tab=pl"',
-      'href: "/reports?tab=bs"',
-      'href: "/reports?tab=vat"',
-      'href: "/reports?tab=trial"',
-      'href: "/reports?tab=sales"',
-      'href: "/reports?tab=balances"',
-      'href: "/reports?tab=expenses"',
-      'href: "/reports?tab=ledger"',
-      'href: "/reports?tab=planning"',
-    ]) {
-      expect(commandSource).toContain(expected);
+    for (const report of liveReportCatalog) {
+      expect(reportHref(report)).toBeTruthy();
     }
 
-    for (const label of expectedLiveReports) {
-      expect(commandSource).toContain(`label: "${label}"`);
+    for (const href of [
+      "/reports?tab=pl",
+      "/reports?tab=bs",
+      "/reports?tab=vat",
+      "/reports?tab=trial",
+      "/reports?tab=sales",
+      "/reports?tab=balances",
+      "/reports?tab=expenses",
+      "/reports?tab=ledger",
+      "/reports?tab=planning",
+    ]) {
+      expect(liveReportCatalog.map((report) => reportHref(report))).toContain(href);
     }
   });
 
   it("keeps report tab deep links bounded to known Reports tabs", () => {
-    expect(reportsSource).toContain("const reportTabs = [");
-    expect(reportsSource).toContain("type ReportTab = (typeof reportTabs)[number]");
-    expect(reportsSource).toContain("function reportTabFromSearch(search: string): ReportTab");
-    expect(reportsSource).toContain("return reportTabs.includes(tab as ReportTab)");
-    expect(reportsSource).toContain(': "pl"');
-
-    for (const tab of [
+    expect(reportTabs).toEqual([
       "pl",
       "bs",
       "vat",
@@ -90,8 +90,13 @@ describe("report discoverability", () => {
       "expenses",
       "ledger",
       "planning",
-    ]) {
-      expect(reportsSource).toContain(`"${tab}"`);
+    ]);
+    expect(catalogSource).toContain("type ReportTab = (typeof reportTabs)[number]");
+    expect(reportsSource).toContain("function reportTabFromSearch(search: string): ReportTab");
+    expect(reportsSource).toContain("return reportTabs.includes(tab as ReportTab)");
+    expect(reportsSource).toContain(': "pl"');
+
+    for (const tab of reportTabs) {
       expect(reportsSource).toContain(`value="${tab}"`);
     }
   });

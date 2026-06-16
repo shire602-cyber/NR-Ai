@@ -13,6 +13,16 @@ import { Badge } from "@/components/ui/badge";
 
 const migrationPaths = [
   {
+    title: "Move from mazeed",
+    steps: [
+      "Export customers, suppliers, chart of accounts, invoices, bills, expenses, tax summaries, and report packs from mazeed.",
+      "Choose a go-live date and keep pre-migration mazeed exports read-only for audit reference.",
+      "Import contacts and start future invoices, receipts, and bank statements in Muhasib.ai.",
+      "Recreate active recurring invoices, payment reminders, and approval routines after opening balances are agreed.",
+      "Compare opening P&L, balance sheet, AR, AP, VAT, and corporate tax support schedules before using live books.",
+    ],
+  },
+  {
     title: "Move from Wafeq",
     steps: [
       "Export customers, suppliers, invoices, bills, chart of accounts, and VAT reports from Wafeq.",
@@ -84,7 +94,7 @@ export default function MigrationGuides() {
               Migration Guides
             </Badge>
             <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-              Switch from Wafeq, Zoho Books, or Excel without losing audit trail.
+              Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail.
             </h1>
             <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
               Start clean from a go-live date, preserve old records, and validate balances before
@@ -94,7 +104,7 @@ export default function MigrationGuides() {
         </section>
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {migrationPaths.map((path) => (
               <Card key={path.title}>
                 <CardHeader>
@@ -155,6 +165,8 @@ export default function MigrationGuides() {
               <CardContent className="text-sm leading-6 text-muted-foreground">
                 Customer/contact imports support .xlsx and CSV. Bank reconciliation supports CSV
                 formats from Emirates NBD, ADCB, FAB, Mashreq, and generic statement layouts.
+                Prior-system report packs from mazeed, Wafeq, Zoho Books, or Excel should be stored
+                in Document Vault as read-only support files.
               </CardContent>
             </Card>
             <Card>

@@ -152,7 +152,7 @@ export default function TrustSecurity() {
               </div>
               <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
                 <li>Guided company setup and chart-of-accounts review.</li>
-                <li>Migration support from Excel, Wafeq exports, or Zoho exports.</li>
+                <li>Migration support from mazeed, Wafeq, Zoho Books, or Excel exports.</li>
                 <li>Escalation path for accounting workflow blockers during onboarding.</li>
                 <li>
                   Security and data-processing questions answered before enterprise activation.
