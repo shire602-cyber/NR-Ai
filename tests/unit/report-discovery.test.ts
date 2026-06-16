@@ -132,9 +132,12 @@ describe("report discoverability", () => {
 
   it("exposes all live reports through the global command palette", () => {
     expect(commandSource).toContain('group: "Reports"');
-    expect(commandSource).toContain("liveReportCatalog.map");
+    expect(commandSource).toContain("fetchReportCatalogDiscovery");
+    expect(commandSource).toContain("reportCatalogDiscoveryQueryKey(null)");
+    expect(commandSource).toContain("syncedReportCatalog?.reports ?? liveReportCatalog");
+    expect(commandSource).toContain("commandLiveReports.map");
     expect(commandSource).toContain("id: `report-${report.id}`");
-    expect(commandSource).toContain("href: reportHref(report)");
+    expect(commandSource).toContain("href: report.href ?? reportHref(report)");
     expect(commandSource).toContain("report.decisionQuestion");
 
     for (const report of liveReportCatalog) {
@@ -165,9 +168,12 @@ describe("report discoverability", () => {
       "freelancer",
       "accountant",
     ]);
-    expect(commandSource).toContain("reportPersonaWorkspaces.map");
+    expect(commandSource).toContain("commandReportWorkspaces.map");
+    expect(commandSource).toContain("syncedReportCatalog?.workspaces ?? reportPersonaWorkspaces");
     expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
-    expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
+    expect(commandSource).toContain(
+      "href: syncedHref(workspace) ?? reportWorkspaceHref(workspace)"
+    );
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("setPreferredReportPersona(persona)");
     expect(dashboardSource).toContain("fetchReportCatalogDiscovery");
@@ -442,29 +448,41 @@ describe("report discoverability", () => {
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-rules")');
     expect(commandSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-automation")');
-    expect(commandSource).toContain("reportDecisionShortcuts.map");
+    expect(commandSource).toContain("commandDecisionShortcuts.map");
     expect(commandSource).toContain("id: `report-decision-shortcut-${shortcut.id}`");
-    expect(commandSource).toContain("href: reportDecisionShortcutHref(shortcut)");
+    expect(commandSource).toContain(
+      "href: syncedHref(shortcut) ?? reportDecisionShortcutHref(shortcut)"
+    );
     expect(commandSource).toContain("decision question report shortcut");
-    expect(commandSource).toContain("reportAutomationTriggerRules.map");
+    expect(commandSource).toContain("commandTriggerRules.map");
     expect(commandSource).toContain("id: `report-trigger-rule-${rule.id}`");
-    expect(commandSource).toContain("href: reportAutomationTriggerRuleHref(rule)");
+    expect(commandSource).toContain(
+      "href: syncedHref(rule) ?? reportAutomationTriggerRuleHref(rule)"
+    );
     expect(commandSource).toContain("trigger rule threshold report automation alert");
-    expect(commandSource).toContain("reportDeliverySubscriptions.map");
+    expect(commandSource).toContain("commandDeliverySubscriptions.map");
     expect(commandSource).toContain("id: `report-delivery-subscription-${subscription.id}`");
-    expect(commandSource).toContain("href: reportDeliverySubscriptionHref(subscription)");
+    expect(commandSource).toContain(
+      "href: syncedHref(subscription) ?? reportDeliverySubscriptionHref(subscription)"
+    );
     expect(commandSource).toContain("delivery subscription scheduled send report pack recipients");
-    expect(commandSource).toContain("reportAutomationStarters.map");
+    expect(commandSource).toContain("commandAutomationStarters.map");
     expect(commandSource).toContain("id: `report-automation-starter-${starter.id}`");
-    expect(commandSource).toContain("href: reportAutomationStarterHref(starter)");
+    expect(commandSource).toContain(
+      "href: syncedHref(starter) ?? reportAutomationStarterHref(starter)"
+    );
     expect(commandSource).toContain("automation starter autopilot report pack");
-    expect(commandSource).toContain("reportPackTemplates.map");
+    expect(commandSource).toContain("commandPackTemplates.map");
     expect(commandSource).toContain("id: `report-pack-template-${template.id}`");
-    expect(commandSource).toContain("href: reportPackTemplateHref(template)");
+    expect(commandSource).toContain(
+      "href: syncedHref(template) ?? reportPackTemplateHref(template)"
+    );
     expect(commandSource).toContain("ready made report pack template");
-    expect(commandSource).toContain("reportComparisonPresets.map");
+    expect(commandSource).toContain("commandComparisonPresets.map");
     expect(commandSource).toContain("id: `report-comparison-preset-${preset.id}`");
-    expect(commandSource).toContain("href: reportComparisonPresetHref(preset)");
+    expect(commandSource).toContain(
+      "href: syncedHref(preset) ?? reportComparisonPresetHref(preset)"
+    );
     expect(commandSource).toContain("comparison preset report pack");
     expect(commandSource).toContain("id: `report-automation-operations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-decision-shortcuts-${workspace.persona}`");
@@ -743,11 +761,11 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Ready to auto-send");
     expect(reportsSource).toContain("workspace.automations.length");
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
-    expect(commandSource).toContain("reportPersonaWorkspaces.flatMap");
+    expect(commandSource).toContain("commandReportWorkspaces.flatMap");
     expect(commandSource).toContain("id: `report-automation-${playbook.id}`");
     expect(commandSource).toContain("label: `${playbook.title} - ${workspace.title}`");
     expect(commandSource).toContain(
-      "href: reportAutomationPlaybookHref(playbook, workspace.persona)"
+      "href: playbook.href ?? reportAutomationPlaybookHref(playbook, workspace.persona)"
     );
     expect(commandSource).toContain("automation playbook report pack");
 

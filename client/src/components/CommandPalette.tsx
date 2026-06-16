@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   CommandDialog,
@@ -30,6 +31,11 @@ import {
 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
+import {
+  fetchReportCatalogDiscovery,
+  reportCatalogDiscoveryQueryKey,
+  type ReportCatalogDiscovery,
+} from "@/lib/reportCatalogApi";
 import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
@@ -86,8 +92,36 @@ const reportWorkspaceIcons: Record<ReportWorkspaceIcon, PaletteItem["icon"]> = {
   users: Users,
 };
 
+function syncedHref(item: unknown): string | undefined {
+  if (!item || typeof item !== "object" || !("href" in item)) return undefined;
+  const href = (item as { href?: unknown }).href;
+  return typeof href === "string" && href ? href : undefined;
+}
+
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [, navigate] = useLocation();
+  const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
+    queryKey: reportCatalogDiscoveryQueryKey(null),
+    queryFn: () => fetchReportCatalogDiscovery(),
+    enabled: open,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const syncedReportCatalog = reportCatalogDiscoveryQuery.data;
+  const commandReportWorkspaces = syncedReportCatalog?.workspaces ?? reportPersonaWorkspaces;
+  const commandAutomationStarters =
+    syncedReportCatalog?.automationStarters ?? reportAutomationStarters;
+  const commandDecisionShortcuts =
+    syncedReportCatalog?.decisionShortcuts ?? reportDecisionShortcuts;
+  const commandTriggerRules = syncedReportCatalog?.triggerRules ?? reportAutomationTriggerRules;
+  const commandDeliverySubscriptions =
+    syncedReportCatalog?.deliverySubscriptions ?? reportDeliverySubscriptions;
+  const commandPackTemplates = syncedReportCatalog?.packTemplates ?? reportPackTemplates;
+  const commandComparisonPresets =
+    syncedReportCatalog?.comparisonPresets ?? reportComparisonPresets;
+  const commandLiveReports = (syncedReportCatalog?.reports ?? liveReportCatalog).filter(
+    (report) => report.status === "live"
+  );
 
   const items: PaletteItem[] = [
     {
@@ -130,24 +164,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       href: "/reports",
       shortcut: "g r",
     },
-    ...reportPersonaWorkspaces.map(
+    ...commandReportWorkspaces.map(
       (workspace): PaletteItem => ({
         id: `report-workspace-${workspace.persona}`,
         label: workspace.title,
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
-        href: reportWorkspaceHref(workspace),
+        href: syncedHref(workspace) ?? reportWorkspaceHref(workspace),
         keywords: workspace.commandKeywords,
       })
     ),
-    ...reportPersonaWorkspaces.flatMap((workspace) =>
+    ...commandReportWorkspaces.flatMap((workspace) =>
       workspace.automations.map(
         (playbook): PaletteItem => ({
           id: `report-automation-${playbook.id}`,
           label: `${playbook.title} - ${workspace.title}`,
           group: "Reports",
           icon: reportWorkspaceIcons[workspace.icon],
-          href: reportAutomationPlaybookHref(playbook, workspace.persona),
+          href: playbook.href ?? reportAutomationPlaybookHref(playbook, workspace.persona),
           keywords: [
             workspace.commandKeywords,
             playbook.trigger,
@@ -158,14 +192,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         })
       )
     ),
-    ...reportAutomationStarters.map((starter): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find((item) => item.persona === starter.persona);
+    ...commandAutomationStarters.map((starter): PaletteItem => {
+      const workspace = commandReportWorkspaces.find((item) => item.persona === starter.persona);
       return {
         id: `report-automation-starter-${starter.id}`,
         label: starter.title,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
-        href: reportAutomationStarterHref(starter),
+        href: syncedHref(starter) ?? reportAutomationStarterHref(starter),
         keywords: [
           starter.commandKeywords,
           starter.audience,
@@ -176,14 +210,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportDecisionShortcuts.map((shortcut): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find((item) => item.persona === shortcut.persona);
+    ...commandDecisionShortcuts.map((shortcut): PaletteItem => {
+      const workspace = commandReportWorkspaces.find((item) => item.persona === shortcut.persona);
       return {
         id: `report-decision-shortcut-${shortcut.id}`,
         label: shortcut.question,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
-        href: reportDecisionShortcutHref(shortcut),
+        href: syncedHref(shortcut) ?? reportDecisionShortcutHref(shortcut),
         keywords: [
           shortcut.commandKeywords,
           shortcut.answer,
@@ -194,14 +228,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportAutomationTriggerRules.map((rule): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find((item) => item.persona === rule.persona);
+    ...commandTriggerRules.map((rule): PaletteItem => {
+      const workspace = commandReportWorkspaces.find((item) => item.persona === rule.persona);
       return {
         id: `report-trigger-rule-${rule.id}`,
         label: rule.title,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
-        href: reportAutomationTriggerRuleHref(rule),
+        href: syncedHref(rule) ?? reportAutomationTriggerRuleHref(rule),
         keywords: [
           rule.commandKeywords,
           rule.condition,
@@ -212,8 +246,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportDeliverySubscriptions.map((subscription): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find(
+    ...commandDeliverySubscriptions.map((subscription): PaletteItem => {
+      const workspace = commandReportWorkspaces.find(
         (item) => item.persona === subscription.persona
       );
       return {
@@ -221,7 +255,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         label: subscription.title,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
-        href: reportDeliverySubscriptionHref(subscription),
+        href: syncedHref(subscription) ?? reportDeliverySubscriptionHref(subscription),
         keywords: [
           subscription.commandKeywords,
           subscription.audience,
@@ -233,14 +267,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportPackTemplates.map((template): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find((item) => item.persona === template.persona);
+    ...commandPackTemplates.map((template): PaletteItem => {
+      const workspace = commandReportWorkspaces.find((item) => item.persona === template.persona);
       return {
         id: `report-pack-template-${template.id}`,
         label: template.title,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
-        href: reportPackTemplateHref(template),
+        href: syncedHref(template) ?? reportPackTemplateHref(template),
         keywords: [
           template.commandKeywords,
           template.audience,
@@ -251,14 +285,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportComparisonPresets.map((preset): PaletteItem => {
-      const workspace = reportPersonaWorkspaces.find((item) => item.persona === preset.persona);
+    ...commandComparisonPresets.map((preset): PaletteItem => {
+      const workspace = commandReportWorkspaces.find((item) => item.persona === preset.persona);
       return {
         id: `report-comparison-preset-${preset.id}`,
         label: preset.title,
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
-        href: reportComparisonPresetHref(preset),
+        href: syncedHref(preset) ?? reportComparisonPresetHref(preset),
         keywords: [
           preset.commandKeywords,
           preset.question,
@@ -268,7 +302,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ].join(" "),
       };
     }),
-    ...reportPersonaWorkspaces.flatMap((workspace): PaletteItem[] => [
+    ...commandReportWorkspaces.flatMap((workspace): PaletteItem[] => [
       {
         id: `report-automation-operations-${workspace.persona}`,
         label: `Report automation operations - ${workspace.title}`,
@@ -350,13 +384,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         keywords: `${workspace.commandKeywords} scheduled send pack automation Google Sheets Excel`,
       },
     ]),
-    ...liveReportCatalog.map(
+    ...commandLiveReports.map(
       (report): PaletteItem => ({
         id: `report-${report.id}`,
         label: report.name,
         group: "Reports",
         icon: reportCommandIcons[report.commandIcon],
-        href: reportHref(report),
+        href: report.href ?? reportHref(report),
         keywords: `${report.commandKeywords} ${report.decisionQuestion}`,
       })
     ),
