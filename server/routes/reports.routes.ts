@@ -2,8 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { db } from "../db";
-import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { db, pool } from "../db";
+import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import {
   journalEntries,
   journalLines,
@@ -470,6 +470,107 @@ export function registerReportRoutes(app: Express) {
           sumCredits,
           difference: Math.abs(sumDebits - sumCredits),
         },
+      });
+    })
+  );
+
+  // Current customer/vendor balance summaries. These are current open balances,
+  // not historical as-of balances: vendor bills store only current amount_paid.
+  app.get(
+    "/api/companies/:id/reports/balance-summaries",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const [customerResult, vendorResult] = await Promise.all([
+        pool.query(
+          `WITH payments AS (
+            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
+            FROM invoice_payments
+            WHERE company_id = $1
+            GROUP BY invoice_id
+          )
+          SELECT
+            i.customer_name,
+            i.currency,
+            COUNT(*)::int AS invoice_count,
+            COALESCE(SUM(i.total), 0)::float AS total_invoiced,
+            COALESCE(SUM(COALESCE(p.paid_amount, 0)), 0)::float AS paid_amount,
+            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)), 0)::float AS open_balance,
+            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
+            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance_aed,
+            MAX(CASE
+              WHEN i.due_date < NOW()
+                AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
+              THEN DATE_PART('day', NOW() - i.due_date)
+              ELSE 0
+            END)::int AS max_days_overdue
+          FROM invoices i
+          LEFT JOIN payments p ON p.invoice_id = i.id
+          WHERE i.company_id = $1
+            AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
+            AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
+          GROUP BY i.customer_name, i.currency
+          ORDER BY open_balance DESC`,
+          [companyId]
+        ),
+        pool.query(
+          `SELECT
+            vendor_name,
+            currency,
+            COUNT(*)::int AS bill_count,
+            COALESCE(SUM(total_amount), 0)::float AS total_billed,
+            COALESCE(SUM(amount_paid), 0)::float AS paid_amount,
+            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0)), 0)::float AS open_balance,
+            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
+            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(GREATEST(total_amount - amount_paid, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
+            MAX(CASE
+              WHEN due_date < NOW() AND GREATEST(total_amount - amount_paid, 0) > 0
+              THEN DATE_PART('day', NOW() - due_date)
+              ELSE 0
+            END)::int AS max_days_overdue
+          FROM vendor_bills
+          WHERE company_id = $1
+            AND status NOT IN ('paid')
+            AND GREATEST(total_amount - amount_paid, 0) > 0
+          GROUP BY vendor_name, currency
+          ORDER BY open_balance DESC`,
+          [companyId]
+        ),
+      ]);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        customers: customerResult.rows.map((row: any) => ({
+          name: row.customer_name || "Unknown Customer",
+          currency: row.currency || "AED",
+          invoiceCount: Number(row.invoice_count) || 0,
+          totalInvoiced: Number(row.total_invoiced) || 0,
+          paidAmount: Number(row.paid_amount) || 0,
+          openBalance: Number(row.open_balance) || 0,
+          openBalanceAed: Number(row.open_balance_aed) || 0,
+          overdueBalance: Number(row.overdue_balance) || 0,
+          overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
+          maxDaysOverdue: Number(row.max_days_overdue) || 0,
+        })),
+        vendors: vendorResult.rows.map((row: any) => ({
+          name: row.vendor_name || "Unknown Vendor",
+          currency: row.currency || "AED",
+          billCount: Number(row.bill_count) || 0,
+          totalBilled: Number(row.total_billed) || 0,
+          paidAmount: Number(row.paid_amount) || 0,
+          openBalance: Number(row.open_balance) || 0,
+          openBalanceAed: Number(row.open_balance_aed) || 0,
+          overdueBalance: Number(row.overdue_balance) || 0,
+          overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
+          maxDaysOverdue: Number(row.max_days_overdue) || 0,
+        })),
       });
     })
   );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  prepareBalanceSummaryReportsForExport,
   prepareLedgerReportsForExport,
   preparePlanningReportsForExport,
 } from "../../client/src/lib/export";
@@ -156,6 +157,64 @@ describe("report export helpers", () => {
     expect(sheets[4].rows[0]).toMatchObject({
       number: 1,
       insight: "Marketing is over budget; review campaign pacing.",
+    });
+  });
+
+  it("builds buyer-friendly customer and vendor balance workbook sheets", () => {
+    const sheets = prepareBalanceSummaryReportsForExport({
+      generatedAt: "2026-06-16T00:00:00.000Z",
+      customerOpenAed: 15750,
+      customerOverdueAed: 5250,
+      customerCount: 2,
+      vendorOpenAed: 6100,
+      vendorOverdueAed: 2100,
+      vendorCount: 1,
+      netBalanceAed: 9650,
+      customers: [
+        {
+          name: "Pearl Trading LLC",
+          currency: "AED",
+          invoiceCount: 3,
+          openBalance: 10500,
+          openBalanceAed: 10500,
+          overdueBalance: 5250,
+          overdueBalanceAed: 5250,
+          maxDaysOverdue: 18,
+        },
+      ],
+      vendors: [
+        {
+          name: "Office Supplies FZE",
+          currency: "AED",
+          billCount: 2,
+          openBalance: 6100,
+          openBalanceAed: 6100,
+          overdueBalance: 2100,
+          overdueBalanceAed: 2100,
+          maxDaysOverdue: 7,
+        },
+      ],
+    });
+
+    expect(sheets.map((sheet) => sheet.sheetName)).toEqual([
+      "Balance Summary",
+      "Customer Balances",
+      "Vendor Balances",
+    ]);
+    expect(sheets[0].rows).toContainEqual({
+      metric: "Net receivable less payable (AED)",
+      value: "9650.00",
+    });
+    expect(sheets[1].rows[0]).toMatchObject({
+      name: "Pearl Trading LLC",
+      invoiceCount: 3,
+      overdueBalanceAed: "5250.00",
+      maxDaysOverdue: 18,
+    });
+    expect(sheets[2].rows[0]).toMatchObject({
+      name: "Office Supplies FZE",
+      billCount: 2,
+      openBalanceAed: "6100.00",
     });
   });
 });

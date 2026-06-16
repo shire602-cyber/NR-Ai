@@ -835,3 +835,86 @@ export function preparePlanningReportsForExport(report: any): ExportData[] {
     },
   ];
 }
+
+export function prepareBalanceSummaryReportsForExport(report: any): ExportData[] {
+  const customers = report?.customers ?? [];
+  const vendors = report?.vendors ?? [];
+
+  return [
+    {
+      sheetName: "Balance Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 22 },
+      ],
+      rows: [
+        {
+          metric: "Customer open balance (AED)",
+          value: formatExportAmount(report?.customerOpenAed),
+        },
+        {
+          metric: "Customer overdue balance (AED)",
+          value: formatExportAmount(report?.customerOverdueAed),
+        },
+        { metric: "Customers with balances", value: report?.customerCount ?? 0 },
+        { metric: "Vendor open balance (AED)", value: formatExportAmount(report?.vendorOpenAed) },
+        {
+          metric: "Vendor overdue balance (AED)",
+          value: formatExportAmount(report?.vendorOverdueAed),
+        },
+        { metric: "Vendors with balances", value: report?.vendorCount ?? 0 },
+        {
+          metric: "Net receivable less payable (AED)",
+          value: formatExportAmount(report?.netBalanceAed),
+        },
+        { metric: "Generated at", value: formatDateForExport(report?.generatedAt) },
+      ],
+    },
+    {
+      sheetName: "Customer Balances",
+      columns: [
+        { header: "Customer", key: "name", width: 30 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Invoices", key: "invoiceCount", width: 10 },
+        { header: "Open Balance", key: "openBalance", width: 16 },
+        { header: "Open Balance (AED)", key: "openBalanceAed", width: 20 },
+        { header: "Overdue Balance", key: "overdueBalance", width: 18 },
+        { header: "Overdue Balance (AED)", key: "overdueBalanceAed", width: 22 },
+        { header: "Max Days Overdue", key: "maxDaysOverdue", width: 18 },
+      ],
+      rows: customers.map((row: any) => ({
+        name: row.name || "Unknown Customer",
+        currency: row.currency || "AED",
+        invoiceCount: row.invoiceCount ?? 0,
+        openBalance: formatExportAmount(row.openBalance),
+        openBalanceAed: formatExportAmount(row.openBalanceAed),
+        overdueBalance: formatExportAmount(row.overdueBalance),
+        overdueBalanceAed: formatExportAmount(row.overdueBalanceAed),
+        maxDaysOverdue: row.maxDaysOverdue ?? 0,
+      })),
+    },
+    {
+      sheetName: "Vendor Balances",
+      columns: [
+        { header: "Vendor", key: "name", width: 30 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Bills", key: "billCount", width: 10 },
+        { header: "Open Balance", key: "openBalance", width: 16 },
+        { header: "Open Balance (AED)", key: "openBalanceAed", width: 20 },
+        { header: "Overdue Balance", key: "overdueBalance", width: 18 },
+        { header: "Overdue Balance (AED)", key: "overdueBalanceAed", width: 22 },
+        { header: "Max Days Overdue", key: "maxDaysOverdue", width: 18 },
+      ],
+      rows: vendors.map((row: any) => ({
+        name: row.name || "Unknown Vendor",
+        currency: row.currency || "AED",
+        billCount: row.billCount ?? 0,
+        openBalance: formatExportAmount(row.openBalance),
+        openBalanceAed: formatExportAmount(row.openBalanceAed),
+        overdueBalance: formatExportAmount(row.overdueBalance),
+        overdueBalanceAed: formatExportAmount(row.overdueBalanceAed),
+        maxDaysOverdue: row.maxDaysOverdue ?? 0,
+      })),
+    },
+  ];
+}

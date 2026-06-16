@@ -35,6 +35,7 @@ import {
   prepareVATSummaryForExport,
   prepareTrialBalanceForExport,
   prepareInvoiceStatusForExport,
+  prepareBalanceSummaryReportsForExport,
   prepareExpenseReportsForExport,
   prepareLedgerReportsForExport,
   preparePlanningReportsForExport,
@@ -318,10 +319,51 @@ interface CashFlowForecastReport {
   insights: string[];
 }
 
+interface CustomerBalanceRow {
+  name: string;
+  currency: string;
+  invoiceCount: number;
+  totalInvoiced: number;
+  paidAmount: number;
+  openBalance: number;
+  openBalanceAed: number;
+  overdueBalance: number;
+  overdueBalanceAed: number;
+  maxDaysOverdue: number;
+}
+
+interface VendorBalanceRow {
+  name: string;
+  currency: string;
+  billCount: number;
+  totalBilled: number;
+  paidAmount: number;
+  openBalance: number;
+  openBalanceAed: number;
+  overdueBalance: number;
+  overdueBalanceAed: number;
+  maxDaysOverdue: number;
+}
+
+interface BalanceSummaryReport {
+  generatedAt: string;
+  customers: CustomerBalanceRow[];
+  vendors: VendorBalanceRow[];
+}
+
 type ReportPersona = "owner" | "freelancer" | "accountant";
 type PersonaFilter = "all" | ReportPersona;
 type ReportStatus = "live" | "api" | "planned";
-type ReportTab = "pl" | "bs" | "vat" | "trial" | "sales" | "expenses" | "ledger" | "planning";
+type ReportTab =
+  | "pl"
+  | "bs"
+  | "vat"
+  | "trial"
+  | "sales"
+  | "balances"
+  | "expenses"
+  | "ledger"
+  | "planning";
 
 interface ReportCatalogItem {
   name: string;
@@ -361,14 +403,14 @@ const personaWorkspaces: PersonaWorkspace[] = [
     title: "Owner workspace",
     focus: "Cash, profit, receivables, tax, and payroll decisions.",
     icon: Briefcase,
-    primaryTab: "pl",
+    primaryTab: "balances",
   },
   {
     persona: "freelancer",
     title: "Freelancer workspace",
     focus: "Client income, unpaid invoices, expenses, and monthly tax readiness.",
     icon: Users,
-    primaryTab: "pl",
+    primaryTab: "sales",
   },
   {
     persona: "accountant",
@@ -500,20 +542,20 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Customer Balance Summary",
     category: "Sales",
-    status: "planned",
+    status: "live",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Open balance",
     automation: "Collections queue",
-    href: "/contacts",
+    tab: "balances",
   },
   {
     name: "Vendor Balance Summary",
     category: "Purchases",
-    status: "planned",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Open balance",
     automation: "Bill pay queue",
-    href: "/bill-pay",
+    tab: "balances",
   },
   {
     name: "Invoice Status",
@@ -874,6 +916,13 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     });
 
+  const { data: balanceSummaries, isLoading: balancesLoading } = useQuery<BalanceSummaryReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-summaries"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/reports/balance-summaries`),
+    enabled: !!selectedCompanyId,
+  });
+
   const trialBalanceSummary = useMemo(() => {
     const rows = trialBalance?.rows ?? [];
     const activeAccounts = rows.filter((row) => Math.abs(row.balance) > 0.005).length;
@@ -977,6 +1026,29 @@ export default function Reports() {
   ]);
 
   const salesLoading = invoicesLoading || overdueLoading;
+
+  const balanceReport = useMemo(() => {
+    const customers = balanceSummaries?.customers ?? [];
+    const vendors = balanceSummaries?.vendors ?? [];
+    const customerOpenAed = customers.reduce((sum, row) => sum + row.openBalanceAed, 0);
+    const customerOverdueAed = customers.reduce((sum, row) => sum + row.overdueBalanceAed, 0);
+    const vendorOpenAed = vendors.reduce((sum, row) => sum + row.openBalanceAed, 0);
+    const vendorOverdueAed = vendors.reduce((sum, row) => sum + row.overdueBalanceAed, 0);
+    return {
+      generatedAt: balanceSummaries?.generatedAt,
+      customers,
+      vendors,
+      customerCount: customers.length,
+      vendorCount: vendors.length,
+      customerOpenAed,
+      customerOverdueAed,
+      vendorOpenAed,
+      vendorOverdueAed,
+      netBalanceAed: customerOpenAed - vendorOpenAed,
+      overdueCustomerCount: customers.filter((row) => row.overdueBalanceAed > 0).length,
+      overdueVendorCount: vendors.filter((row) => row.overdueBalanceAed > 0).length,
+    };
+  }, [balanceSummaries]);
 
   const reportReceipts = useMemo(() => {
     return receipts.filter((receipt) => receiptInDateRange(receipt, dateRange));
@@ -1225,6 +1297,9 @@ export default function Reports() {
         `invoice_status${dateRangeStr}`
       );
       toast({ title: "Export successful", description: "Invoice Status exported to Excel" });
+    } else if (activeTab === "balances") {
+      exportToExcel(prepareBalanceSummaryReportsForExport(balanceReport), "balance_summaries");
+      toast({ title: "Export successful", description: "Balance summaries exported to Excel" });
     } else if (activeTab === "expenses") {
       exportToExcel(
         prepareExpenseReportsForExport(expenseReport),
@@ -1281,6 +1356,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         prepareInvoiceStatusForExport(invoiceStatusReport),
         `Invoice Status${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "balances") {
+      result = await exportToGoogleSheets(
+        prepareBalanceSummaryReportsForExport(balanceReport),
+        "Balance Summaries",
         selectedCompanyId
       );
     } else if (activeTab === "expenses") {
@@ -1607,7 +1688,7 @@ export default function Reports() {
         onValueChange={(value) => setActiveTab(value as ReportTab)}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto w-full max-w-6xl grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
+        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
           <TabsTrigger value="pl" data-testid="tab-profit-loss">
             {t.profitLoss}
           </TabsTrigger>
@@ -1619,6 +1700,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="sales" data-testid="tab-invoice-status">
             Sales
+          </TabsTrigger>
+          <TabsTrigger value="balances" data-testid="tab-balance-summaries">
+            Balances
           </TabsTrigger>
           <TabsTrigger value="expenses" data-testid="tab-expense-reports">
             Expenses
@@ -2234,6 +2318,272 @@ export default function Reports() {
                   No invoices found for this period.
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="balances" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {formatCurrency(balanceReport.customerOpenAed, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="space-y-1">
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(balanceReport.customerOverdueAed, "AED", locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {balanceReport.overdueCustomerCount} customers
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {formatCurrency(balanceReport.vendorOpenAed, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Net AR Less AP</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <Scale className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {formatCurrency(balanceReport.netBalanceAed, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Customer balance summary</CardTitle>
+                    <CardDescription>
+                      Current open receivables from issued invoices, net of recorded payments.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/payment-chasing">Open collections</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-72" />
+                ) : balanceReport.customers.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[760px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer</TableHead>
+                          <TableHead className="text-right">Invoices</TableHead>
+                          <TableHead className="text-right">Open</TableHead>
+                          <TableHead className="text-right">Overdue</TableHead>
+                          <TableHead className="text-right">Oldest</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {balanceReport.customers.slice(0, 10).map((row) => (
+                          <TableRow key={`${row.name}-${row.currency}`}>
+                            <TableCell>
+                              <div className="font-medium">{row.name}</div>
+                              <Badge
+                                className="mt-1"
+                                variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
+                                dot
+                              >
+                                {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.invoiceCount}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="font-mono font-medium">
+                                {formatCurrency(row.openBalance, row.currency, locale)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatCurrency(row.openBalanceAed, "AED", locale)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="font-mono font-medium">
+                                {formatCurrency(row.overdueBalance, row.currency, locale)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.maxDaysOverdue} days
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No open customer balances.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Vendor balance summary</CardTitle>
+                    <CardDescription>
+                      Current open payables from vendor bills, net of recorded payments.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-72" />
+                ) : balanceReport.vendors.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[760px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead className="text-right">Bills</TableHead>
+                          <TableHead className="text-right">Open</TableHead>
+                          <TableHead className="text-right">Overdue</TableHead>
+                          <TableHead className="text-right">Oldest</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {balanceReport.vendors.slice(0, 10).map((row) => (
+                          <TableRow key={`${row.name}-${row.currency}`}>
+                            <TableCell>
+                              <div className="font-medium">{row.name}</div>
+                              <Badge
+                                className="mt-1"
+                                variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
+                                dot
+                              >
+                                {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{row.billCount}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="font-mono font-medium">
+                                {formatCurrency(row.openBalance, row.currency, locale)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatCurrency(row.openBalanceAed, "AED", locale)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="font-mono font-medium">
+                                {formatCurrency(row.overdueBalance, row.currency, locale)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.maxDaysOverdue} days
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No open vendor balances.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Balance automation queues</CardTitle>
+              <CardDescription>
+                Current open-balance signals for collections and payable follow-up.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Collections queue</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {balanceReport.overdueCustomerCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Bill pay queue</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {balanceReport.overdueVendorCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Last refreshed</div>
+                  <div className="text-sm font-medium">
+                    {formatReportDate(balanceReport.generatedAt)}
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
