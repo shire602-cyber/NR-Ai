@@ -91,8 +91,10 @@ describe("CT workbook export", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
 
+    const support = workbook.getWorksheet("Filing Support Notes");
     const grid = workbook.getWorksheet("CT Workpaper");
     const comp = workbook.getWorksheet("CT Computation");
+    expect(support).toBeDefined();
     expect(grid).toBeDefined();
     expect(comp).toBeDefined();
 
@@ -103,6 +105,10 @@ describe("CT workbook export", () => {
       });
       return out.join("|");
     };
+    expect(text(support!)).toContain("Support export only");
+    expect(text(support!)).toContain("does not submit, file, or mark a return as filed");
+    expect(text(support!)).toContain("Corporate tax payable");
+    expect(text(support!)).toContain("Pearl Trading LLC");
     expect(text(grid!)).toContain("Product sales");
     expect(text(grid!)).toContain("Salaries");
     expect(text(comp!)).toContain("Corporate tax payable");

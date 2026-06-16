@@ -72,6 +72,140 @@ function workpaperRows(ctReturn: CorporateTaxReturn): CtWorkpaperRow[] {
   return Array.isArray(workpaper?.rows) ? workpaper.rows : [];
 }
 
+function workpaperSourceLabel(ctReturn: CorporateTaxReturn): string {
+  const source = (ctReturn.workpaper as { source?: string } | null)?.source;
+  if (source === "manual_workpaper") return "Manual workpaper";
+  if (source === "journal_calculation") return "Pulled from books";
+  return "Not captured";
+}
+
+function addSupportNotesSheet(
+  workbook: ExcelJS.Workbook,
+  ctReturn: CorporateTaxReturn,
+  company: Pick<Company, "name" | "trnVatNumber"> | null
+): void {
+  const sheet = workbook.addWorksheet("Filing Support Notes", {
+    properties: { defaultRowHeight: 18 },
+  });
+  sheet.columns = [
+    { key: "field", width: 34 },
+    { key: "value", width: 28 },
+    { key: "note", width: 66 },
+  ];
+
+  addTitleBlock(sheet, ctReturn, company, "Corporate Tax Filing Support", 3);
+
+  const headerRow = sheet.addRow(["Field", "Value", "Review note"]);
+  styleHeaderRow(headerRow);
+
+  const rows = workpaperRows(ctReturn);
+  const taxableAmount = Math.max(
+    0,
+    money(ctReturn.taxableIncome) - money(ctReturn.exemptionThreshold)
+  );
+  const supportRows: Array<[string, string | number, string, "money" | "plain" | "percent"]> = [
+    [
+      "Submission note",
+      "Support export only",
+      "This workbook is prepared for review and manual filing support. It does not submit, file, or mark a return as filed.",
+      "plain",
+    ],
+    ["Company", company?.name ?? "—", "Confirm legal entity before using the figures.", "plain"],
+    ["TRN", company?.trnVatNumber ?? "—", "Shown for reference if available.", "plain"],
+    [
+      "Tax period",
+      `${isoDate(ctReturn.taxPeriodStart)} to ${isoDate(ctReturn.taxPeriodEnd)}`,
+      "Confirm the accounting period before filing.",
+      "plain",
+    ],
+    ["Return status", String(ctReturn.status), "Status inside Muhasib.ai.", "plain"],
+    [
+      "Workpaper source",
+      workpaperSourceLabel(ctReturn),
+      "Source of the support schedule.",
+      "plain",
+    ],
+    ["Workpaper rows", rows.length, "Revenue and expense lines included in the export.", "plain"],
+    ["Total revenue", money(ctReturn.totalRevenue), "From the saved CT return.", "money"],
+    ["Total expenses", money(ctReturn.totalExpenses), "From the saved CT return.", "money"],
+    [
+      "Taxable income",
+      money(ctReturn.taxableIncome),
+      "After saved deductions/adjustments.",
+      "money",
+    ],
+    [
+      "0% band threshold",
+      money(ctReturn.exemptionThreshold),
+      "Stored threshold for this return.",
+      "money",
+    ],
+    ["Income above threshold", taxableAmount, "Amount subject to the stored CT rate.", "money"],
+    [
+      "Corporate tax rate",
+      Number(ctReturn.taxRate ?? 0),
+      "Stored rate for this return.",
+      "percent",
+    ],
+    [
+      "Corporate tax payable",
+      money(ctReturn.taxPayable),
+      "Final payable amount in this export.",
+      "money",
+    ],
+    [
+      "Loss brought forward",
+      money(ctReturn.lossBroughtForward),
+      "Prior-period loss pool used in the computation if applicable.",
+      "money",
+    ],
+    [
+      "Loss carried forward",
+      money(ctReturn.lossCarriedForward),
+      "Remaining loss pool after this computation if applicable.",
+      "money",
+    ],
+    [
+      "Small business relief",
+      ctReturn.smallBusinessRelief ? "Elected/applied" : "Not applied",
+      "Reflects the saved return state.",
+      "plain",
+    ],
+    [
+      "Related-party notes",
+      ctReturn.relatedPartyNotes ?? "—",
+      "Review transfer-pricing or related-party notes before filing.",
+      "plain",
+    ],
+  ];
+
+  supportRows.forEach(([field, value, note, kind], index) => {
+    const row = sheet.addRow([field, value, note]);
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: "Calibri", size: 11, bold: field === "Submission note" };
+      cell.alignment = { vertical: "middle", wrapText: true, indent: 1 };
+      if (index % 2 === 1) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA_COLOR } };
+      }
+      if (colNumber === 2 && kind === "money" && typeof cell.value === "number") {
+        cell.numFmt = AED_FMT;
+        cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+      }
+      if (colNumber === 2 && kind === "percent" && typeof cell.value === "number") {
+        cell.numFmt = "0.00%";
+        cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+      }
+      if (field === "Submission note") {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_COLOR } };
+      }
+    });
+  });
+
+  sheet.pageSetup.orientation = "landscape";
+  sheet.pageSetup.fitToPage = true;
+  sheet.pageSetup.fitToWidth = 1;
+}
+
 function addWorkpaperSheet(
   workbook: ExcelJS.Workbook,
   ctReturn: CorporateTaxReturn,
@@ -235,6 +369,7 @@ export async function buildCtReturnWorkbook(
   workbook.title = "Muhasib Corporate Tax Workpaper";
   workbook.company = "Muhasib.ai";
 
+  addSupportNotesSheet(workbook, ctReturn, company);
   addWorkpaperSheet(workbook, ctReturn, company);
   addComputationSheet(workbook, ctReturn, company);
 
