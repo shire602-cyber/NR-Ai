@@ -73,6 +73,15 @@ interface PaletteItem {
   keywords?: string;
 }
 
+interface CommandPaletteReportDeliveryRun {
+  id: string;
+  subscriptionId: string;
+  status: string;
+  scheduledFor: string;
+  createdAt: string;
+  errorMessage: string | null;
+}
+
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -109,6 +118,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [queueingDeliverySubscriptionId, setQueueingDeliverySubscriptionId] = useState<
     string | null
   >(null);
+  const [retryingDeliveryRunId, setRetryingDeliveryRunId] = useState<string | null>(null);
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(null),
     queryFn: () => fetchReportCatalogDiscovery(),
@@ -131,6 +141,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const commandLiveReports = (syncedReportCatalog?.reports ?? liveReportCatalog).filter(
     (report) => report.status === "live"
   );
+
+  const commandReportDeliveryRunsQuery = useQuery<{ runs: CommandPaletteReportDeliveryRun[] }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "runs", "command-palette"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/runs?limit=30`),
+    enabled: open && Boolean(selectedCompanyId),
+    retry: 1,
+  });
+
+  const commandFailedDeliveryRuns = (commandReportDeliveryRunsQuery.data?.runs ?? [])
+    .filter((run) => run.status === "failed")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
 
   const queueReportDeliveryFromPalette = async (subscriptionId: string, fallbackTitle: string) => {
     if (!selectedCompanyId) {
@@ -169,6 +192,43 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       });
     } finally {
       setQueueingDeliverySubscriptionId(null);
+    }
+  };
+
+  const retryReportDeliveryFromPalette = async (runId: string, fallbackTitle: string) => {
+    if (!selectedCompanyId) {
+      toast({
+        title: "Select a company first",
+        description: "Choose a company before retrying an automated report delivery.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRetryingDeliveryRunId(runId);
+    try {
+      const result = await apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/runs/${runId}/retry`
+      );
+      const subscriptionTitle = result?.subscription?.title ?? fallbackTitle;
+
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "report-delivery"],
+      });
+
+      toast({
+        title: "Report delivery retry queued",
+        description: `${subscriptionTitle} was requeued from the command palette.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not retry report delivery",
+        description: error?.message || "Failed to retry the report delivery.",
+        variant: "destructive",
+      });
+    } finally {
+      setRetryingDeliveryRunId(null);
     }
   };
 
@@ -336,6 +396,33 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           subscription.deliveryGuardrail,
           "queue now send schedule automated report pack from anywhere command palette",
         ].join(" "),
+      };
+    }),
+    ...commandFailedDeliveryRuns.map((run): PaletteItem => {
+      const subscription = commandDeliverySubscriptions.find(
+        (item) => item.id === run.subscriptionId
+      );
+      const workspace = subscription
+        ? commandReportWorkspaces.find((item) => item.persona === subscription.persona)
+        : null;
+      const fallbackTitle = subscription?.title ?? "Report delivery";
+      const isRetrying = retryingDeliveryRunId === run.id;
+      return {
+        id: `report-retry-delivery-${run.id}`,
+        label: `${isRetrying ? "Retrying" : "Retry"} ${fallbackTitle}`,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
+        action: () => retryReportDeliveryFromPalette(run.id, fallbackTitle),
+        keywords: [
+          subscription?.commandKeywords,
+          subscription?.audience,
+          subscription?.channel,
+          subscription?.recipients,
+          run.errorMessage ?? "",
+          "retry failed delivery recover report pack automation command palette from anywhere",
+        ]
+          .filter(Boolean)
+          .join(" "),
       };
     }),
     ...commandPackTemplates.map((template): PaletteItem => {

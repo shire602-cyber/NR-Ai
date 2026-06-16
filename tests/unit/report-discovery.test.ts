@@ -147,14 +147,22 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("report.decisionQuestion");
     expect(commandSource).toContain("useDefaultCompany");
     expect(commandSource).toContain("useQueryClient");
+    expect(commandSource).toContain("CommandPaletteReportDeliveryRun");
+    expect(commandSource).toContain("commandReportDeliveryRunsQuery");
+    expect(commandSource).toContain("commandFailedDeliveryRuns");
     expect(commandSource).toContain("queueReportDeliveryFromPalette");
     expect(commandSource).toContain("id: `report-queue-delivery-${subscription.id}`");
     expect(commandSource).toContain("/report-delivery/subscriptions/${subscriptionId}/queue");
+    expect(commandSource).toContain("retryReportDeliveryFromPalette");
+    expect(commandSource).toContain("id: `report-retry-delivery-${run.id}`");
+    expect(commandSource).toContain("/report-delivery/runs/${runId}/retry");
     expect(commandSource).toContain(
       'queryKey: ["/api/companies", selectedCompanyId, "report-delivery"]'
     );
     expect(commandSource).toContain("queue now send schedule automated report pack from anywhere");
     expect(commandSource).toContain("Could not queue report pack");
+    expect(commandSource).toContain("retry failed delivery recover report pack automation");
+    expect(commandSource).toContain("Could not retry report delivery");
 
     for (const report of liveReportCatalog) {
       expect(reportHref(report)).toBeTruthy();
