@@ -43,6 +43,8 @@ import {
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
 import {
+  clearPreferredReportPersona,
+  getPreferredReportPersona,
   reportCatalog,
   reportAutomationPlaybookHref,
   reportPersonas,
@@ -51,6 +53,7 @@ import {
   reportHref,
   reportsHref,
   reportWorkspaceHref,
+  setPreferredReportPersona,
   type ReportPersona,
   type ReportStatus,
   type ReportTab,
@@ -510,9 +513,14 @@ function reportTabFromSearch(search: string): ReportTab {
   return reportTabs.includes(tab as ReportTab) ? (tab as ReportTab) : "pl";
 }
 
-function personaFilterFromSearch(search: string): PersonaFilter {
+function personaFilterFromSearch(
+  search: string,
+  fallbackPersona: ReportPersona | null = null
+): PersonaFilter {
   const persona = new URLSearchParams(search).get("persona");
-  return reportPersonas.includes(persona as ReportPersona) ? (persona as ReportPersona) : "all";
+  return reportPersonas.includes(persona as ReportPersona)
+    ? (persona as ReportPersona)
+    : (fallbackPersona ?? "all");
 }
 
 function matchesReportPersona(personas: ReportPersona[], persona: PersonaFilter): boolean {
@@ -609,15 +617,29 @@ export default function Reports() {
     return reportTabFromSearch(locationSearch || window.location.search);
   }, [locationSearch]);
 
+  const [preferredReportPersona, setPreferredReportPersonaState] = useState<ReportPersona | null>(
+    () => getPreferredReportPersona()
+  );
+
   const personaFilter = useMemo(() => {
-    return personaFilterFromSearch(locationSearch || window.location.search);
-  }, [locationSearch]);
+    return personaFilterFromSearch(
+      locationSearch || window.location.search,
+      preferredReportPersona
+    );
+  }, [locationSearch, preferredReportPersona]);
 
   const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
     navigate(reportsHref({ tab, persona }));
   };
 
   const setReportPersonaFilter = (persona: PersonaFilter) => {
+    if (persona === "all") {
+      clearPreferredReportPersona();
+      setPreferredReportPersonaState(null);
+    } else {
+      setPreferredReportPersona(persona);
+      setPreferredReportPersonaState(persona);
+    }
     navigate(reportsHref({ tab: activeTab, persona }));
   };
 

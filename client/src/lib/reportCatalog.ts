@@ -589,6 +589,38 @@ export const reportCatalog: ReportCatalogItem[] = [
 
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
+export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
+
+export function parseReportPersona(value: string | null | undefined): ReportPersona | null {
+  return reportPersonas.includes(value as ReportPersona) ? (value as ReportPersona) : null;
+}
+
+export function getPreferredReportPersona(): ReportPersona | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    return parseReportPersona(window.localStorage.getItem(REPORT_PERSONA_PREFERENCE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function setPreferredReportPersona(persona: ReportPersona): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(REPORT_PERSONA_PREFERENCE_KEY, persona);
+  } catch {}
+}
+
+export function clearPreferredReportPersona(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(REPORT_PERSONA_PREFERENCE_KEY);
+  } catch {}
+}
+
 const reportSectionAnchors: Record<ReportSection, string> = {
   recommendations: "recommended-reports-title",
   "pack-readiness": "report-pack-readiness-title",

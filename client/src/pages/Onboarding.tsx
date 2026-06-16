@@ -19,7 +19,13 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
-import { reportPersonaWorkspaces, reportWorkspaceHref } from "@/lib/reportCatalog";
+import {
+  getPreferredReportPersona,
+  reportPersonaWorkspaces,
+  reportWorkspaceHref,
+  setPreferredReportPersona,
+  type ReportPersona,
+} from "@/lib/reportCatalog";
 import { z } from "zod";
 import {
   Sparkles,
@@ -1178,15 +1184,18 @@ function FirstDocStep({
 // ─── Step: Complete ─────────────────────────────────────────────────────────
 
 function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
+  const [, setLocation] = useLocation();
+  const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(
+    () => getPreferredReportPersona() ?? "owner"
+  );
+  const selectedWorkspace =
+    reportPersonaWorkspaces.find((workspace) => workspace.persona === selectedPersona) ??
+    reportPersonaWorkspaces[0];
+
   const features = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: FileText, label: "Invoices", href: "/invoices" },
     { icon: Receipt, label: "Receipts", href: "/receipts" },
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      icon: BarChart3,
-      label: workspace.navLabel,
-      href: reportWorkspaceHref(workspace),
-    })),
     { icon: BookOpen, label: "Chart of Accounts", href: "/chart-of-accounts" },
     { icon: Users, label: "Contacts", href: "/contacts" },
   ];
@@ -1211,6 +1220,58 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         </p>
       </div>
 
+      <div className="space-y-3 max-w-2xl mx-auto">
+        <div className="flex items-center justify-center gap-2 text-sm font-medium">
+          <BarChart3 className="w-4 h-4 text-primary" />
+          Reporting workspace
+        </div>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left"
+          data-testid="onboarding-report-workspaces"
+        >
+          {reportPersonaWorkspaces.map((workspace) => {
+            const selected = workspace.persona === selectedPersona;
+            return (
+              <button
+                key={workspace.persona}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => {
+                  setSelectedPersona(workspace.persona);
+                  setPreferredReportPersona(workspace.persona);
+                }}
+                data-testid={`onboarding-report-workspace-${workspace.persona}`}
+                className={`rounded-md border p-4 transition-all ${
+                  selected
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border hover:border-primary hover:bg-primary/5"
+                }`}
+              >
+                <p className="text-sm font-semibold">{workspace.navLabel}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {workspace.focus}
+                </p>
+                <p className="mt-3 text-[11px] font-medium text-primary">
+                  {workspace.automations.length} automation lanes
+                </p>
+              </button>
+            );
+          })}
+        </div>
+        <Button
+          size="lg"
+          onClick={() => {
+            setPreferredReportPersona(selectedWorkspace.persona);
+            setLocation(reportWorkspaceHref(selectedWorkspace));
+          }}
+          className="gap-2 px-8"
+          data-testid="onboarding-open-report-workspace"
+        >
+          Open {selectedWorkspace.navLabel}
+          <ArrowRight className="w-4 h-4" />
+        </Button>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg mx-auto">
         {features.map(({ icon: Icon, label, href }) => (
           <Link key={label} href={href}>
@@ -1225,7 +1286,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
       </div>
 
       <Button
-        size="lg"
+        variant="outline"
         onClick={onGoToDashboard}
         className="gap-2 px-8"
         data-testid="onboarding-go-dashboard"

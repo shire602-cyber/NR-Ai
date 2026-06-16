@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   liveReportCatalog,
+  parseReportPersona,
   reportAutomationPlaybookHref,
   reportCatalog,
   reportHref,
@@ -100,21 +101,48 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("reportPersonaWorkspaces.map");
     expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
     expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
+    expect(catalogSource).toContain("REPORT_PERSONA_PREFERENCE_KEY");
+    expect(catalogSource).toContain("getPreferredReportPersona");
+    expect(catalogSource).toContain("setPreferredReportPersona");
+    expect(catalogSource).toContain("clearPreferredReportPersona");
     expect(mobileNavSource).toContain("reportPersonaWorkspaces.map");
     expect(mobileNavSource).toContain("workspace.navLabel");
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
     expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
     expect(onboardingSource).toContain("workspace.navLabel");
-    expect(onboardingSource).toContain("reportWorkspaceHref(workspace)");
+    expect(onboardingSource).toContain("getPreferredReportPersona() ??");
+    expect(onboardingSource).toContain('?? "owner"');
+    expect(onboardingSource).toContain("setSelectedPersona(workspace.persona)");
+    expect(onboardingSource).toContain("setPreferredReportPersona(workspace.persona)");
+    expect(onboardingSource).toContain("setPreferredReportPersona(selectedWorkspace.persona)");
+    expect(onboardingSource).toContain('data-testid="onboarding-report-workspaces"');
+    expect(onboardingSource).toContain("onboarding-report-workspace-${workspace.persona}");
+    expect(onboardingSource).toContain('data-testid="onboarding-open-report-workspace"');
+    expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
+    expect(onboardingSource).toContain("workspace.automations.length");
     expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
     expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
     expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
     expect(i18nSource).toContain("ownerReports");
     expect(i18nSource).toContain("freelancerReports");
     expect(i18nSource).toContain("accountantReports");
-    expect(reportsSource).toContain("function personaFilterFromSearch(search: string)");
+    expect(reportsSource).toContain("function personaFilterFromSearch(");
+    expect(reportsSource).toContain("fallbackPersona: ReportPersona | null = null");
+    expect(reportsSource).toContain("getPreferredReportPersona()");
+    expect(reportsSource).toContain("setPreferredReportPersonaState");
+    expect(reportsSource).toContain("clearPreferredReportPersona()");
+    expect(reportsSource).toContain("setPreferredReportPersona(persona)");
+    expect(reportsSource).toContain("personaFilterFromSearch(");
+    expect(reportsSource).toContain("locationSearch || window.location.search");
+    expect(reportsSource).toContain("preferredReportPersona");
     expect(reportsSource).toContain("return reportPersonas.includes(persona as ReportPersona)");
     expect(reportsSource).toContain("navigate(reportWorkspaceHref(workspace))");
+
+    expect(parseReportPersona("owner")).toBe("owner");
+    expect(parseReportPersona("freelancer")).toBe("freelancer");
+    expect(parseReportPersona("accountant")).toBe("accountant");
+    expect(parseReportPersona("all")).toBeNull();
+    expect(parseReportPersona(null)).toBeNull();
 
     for (const workspace of reportPersonaWorkspaces) {
       expect(reportWorkspaceHref(workspace)).toBe(
