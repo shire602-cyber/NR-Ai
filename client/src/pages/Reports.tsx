@@ -62,8 +62,10 @@ import {
   buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   clearPreferredReportPersona,
+  getPreferredReportDeliveryAutomationCommand,
   getPreferredReportPersona,
   getReportAutomationHealthHistory,
+  parseReportDeliveryAutomationCommand,
   recordReportAutomationHealthSnapshots,
   reportComparisonPresetHref,
   reportComparisonPresets,
@@ -83,8 +85,10 @@ import {
   reportsHref,
   reportWorkspaceHref,
   setPreferredReportPersona,
+  setPreferredReportDeliveryAutomationCommand,
   type ReportCatalogItem,
   type ReportAutomationTriggerSeverity,
+  type ReportDeliveryAutomationCommand,
   type ReportPersona,
   type ReportStatus,
   type ReportTab,
@@ -108,6 +112,7 @@ import {
   DollarSign,
   ListFilter,
   Pencil,
+  Pin,
   RotateCcw,
   Save,
   X,
@@ -891,6 +896,13 @@ const reportDeliveryRunStatusFilters: Array<{
   { id: "failed", label: "Failed" },
 ];
 
+const reportDeliveryAutomationCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
+  retry: "Retry recovery",
+  review: "Review guardrails",
+  queue: "Queue next pack",
+  comparison: "Open comparison",
+};
+
 const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
   briefcase: Briefcase,
   clipboardCheck: ClipboardCheck,
@@ -1635,6 +1647,16 @@ function matchesReportDeliveryRunStatusFilter(
   return status === filter;
 }
 
+function reportDeliveryAutomationCommandCardClass(
+  command: ReportDeliveryAutomationCommand,
+  pinnedCommand: ReportDeliveryAutomationCommand | null
+): string {
+  return [
+    "rounded-md border p-2",
+    command === pinnedCommand ? "border-accent bg-accent/5" : "border-transparent bg-secondary/40",
+  ].join(" ");
+}
+
 function deliveryPreviewCheckVariant(
   status: ReportDeliveryPlanPreview["checklist"][number]["status"]
 ): BadgeProps["variant"] {
@@ -1658,6 +1680,12 @@ export default function Reports() {
   >(null);
   const [reportDeliveryRunStatusFilter, setReportDeliveryRunStatusFilter] =
     useState<ReportDeliveryRunStatusFilter>("all");
+  const [pinnedReportDeliveryAutomationCommands, setPinnedReportDeliveryAutomationCommands] =
+    useState<Record<ReportPersona, ReportDeliveryAutomationCommand | null>>(() => ({
+      owner: getPreferredReportDeliveryAutomationCommand("owner"),
+      freelancer: getPreferredReportDeliveryAutomationCommand("freelancer"),
+      accountant: getPreferredReportDeliveryAutomationCommand("accountant"),
+    }));
   const [reportDeliverySettingsDraft, setReportDeliverySettingsDraft] =
     useState<ReportDeliverySettingsDraft>({
       cadence: "",
@@ -1709,6 +1737,25 @@ export default function Reports() {
       : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
   const reportDeliveryLauncherPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
+  const pinnedReportDeliveryAutomationCommand =
+    pinnedReportDeliveryAutomationCommands[reportDeliveryLauncherPersona];
+  const pinReportDeliveryAutomationCommand = useCallback(
+    (command: ReportDeliveryAutomationCommand) => {
+      const parsedCommand = parseReportDeliveryAutomationCommand(command);
+      if (!parsedCommand) return;
+
+      setPreferredReportDeliveryAutomationCommand(reportDeliveryLauncherPersona, parsedCommand);
+      setPinnedReportDeliveryAutomationCommands((current) => ({
+        ...current,
+        [reportDeliveryLauncherPersona]: parsedCommand,
+      }));
+      toast({
+        title: "Automation command pinned",
+        description: `${reportDeliveryAutomationCommandLabels[parsedCommand]} is pinned for ${personaFilterLabel.toLowerCase()} workflows.`,
+      });
+    },
+    [personaFilterLabel, reportDeliveryLauncherPersona, toast]
+  );
 
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
@@ -6675,6 +6722,228 @@ export default function Reports() {
                 </Link>
               </Button>
             ) : null}
+          </div>
+        </div>
+
+        <div
+          className="rounded-md border border-border/70 p-3"
+          data-testid="report-delivery-command-strip"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-foreground">Automation command strip</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                One-click recovery, guardrail review, delivery queueing, and comparison paths for{" "}
+                {personaFilterLabel.toLowerCase()} workflows.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={pinnedReportDeliveryAutomationCommand ? "success" : "neutral"}
+                dot
+                data-testid="report-delivery-command-pinned"
+              >
+                {pinnedReportDeliveryAutomationCommand
+                  ? `Pinned: ${reportDeliveryAutomationCommandLabels[pinnedReportDeliveryAutomationCommand]}`
+                  : "No pinned command"}
+              </Badge>
+              <Badge variant="info" dot>
+                {personaFilterLabel}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-2 xl:grid-cols-4">
+            <div
+              className={reportDeliveryAutomationCommandCardClass(
+                "retry",
+                pinnedReportDeliveryAutomationCommand
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                  Retry recovery
+                </div>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={pinnedReportDeliveryAutomationCommand === "retry" ? "default" : "ghost"}
+                  aria-pressed={pinnedReportDeliveryAutomationCommand === "retry"}
+                  onClick={() => pinReportDeliveryAutomationCommand("retry")}
+                  data-testid="report-delivery-command-pin-retry"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Requeue the latest failed scheduled report pack.
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={
+                  !selectedCompanyId ||
+                  retryReportDeliveryRun.isPending ||
+                  !reportDeliveryAutomationCommandTargets.retryRunId
+                }
+                onClick={() => {
+                  const runId = reportDeliveryAutomationCommandTargets.retryRunId;
+                  if (!runId) return;
+                  retryReportDeliveryRun.mutate(runId);
+                }}
+                data-testid="report-delivery-command-retry"
+              >
+                Retry now
+              </Button>
+            </div>
+
+            <div
+              className={reportDeliveryAutomationCommandCardClass(
+                "review",
+                pinnedReportDeliveryAutomationCommand
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  Review guardrails
+                </div>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={pinnedReportDeliveryAutomationCommand === "review" ? "default" : "ghost"}
+                  aria-pressed={pinnedReportDeliveryAutomationCommand === "review"}
+                  onClick={() => pinReportDeliveryAutomationCommand("review")}
+                  data-testid="report-delivery-command-pin-review"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Open the first delivery needing setup, enablement, or review.
+              </div>
+              {reportDeliveryAutomationCommandTargets.reviewSubscription ? (
+                <Button asChild size="sm" variant="outline" className="mt-2">
+                  <Link
+                    href={reportDeliveryAutomationCommandTargets.reviewSubscription.href}
+                    data-testid="report-delivery-command-review"
+                  >
+                    Open review
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled
+                  data-testid="report-delivery-command-review"
+                >
+                  No review
+                </Button>
+              )}
+            </div>
+
+            <div
+              className={reportDeliveryAutomationCommandCardClass(
+                "queue",
+                pinnedReportDeliveryAutomationCommand
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <Send className="h-3.5 w-3.5 text-muted-foreground" />
+                  Queue next pack
+                </div>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={pinnedReportDeliveryAutomationCommand === "queue" ? "default" : "ghost"}
+                  aria-pressed={pinnedReportDeliveryAutomationCommand === "queue"}
+                  onClick={() => pinReportDeliveryAutomationCommand("queue")}
+                  data-testid="report-delivery-command-pin-queue"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Queue the next enabled delivery subscription for this role.
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={
+                  !selectedCompanyId ||
+                  queueReportDeliverySubscription.isPending ||
+                  !reportDeliveryAutomationCommandTargets.queueSubscription
+                }
+                onClick={() => {
+                  const subscriptionId =
+                    reportDeliveryAutomationCommandTargets.queueSubscription?.id;
+                  if (!subscriptionId) return;
+                  queueReportDeliverySubscription.mutate(subscriptionId);
+                }}
+                data-testid="report-delivery-command-queue"
+              >
+                Queue pack
+              </Button>
+            </div>
+
+            <div
+              className={reportDeliveryAutomationCommandCardClass(
+                "comparison",
+                pinnedReportDeliveryAutomationCommand
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                  Open comparison
+                </div>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={
+                    pinnedReportDeliveryAutomationCommand === "comparison" ? "default" : "ghost"
+                  }
+                  aria-pressed={pinnedReportDeliveryAutomationCommand === "comparison"}
+                  onClick={() => pinReportDeliveryAutomationCommand("comparison")}
+                  data-testid="report-delivery-command-pin-comparison"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Review the highest-priority comparison pack for this persona.
+              </div>
+              {reportDeliveryAutomationCommandTargets.comparisonPreset ? (
+                <Button asChild size="sm" variant="outline" className="mt-2">
+                  <Link
+                    href={reportDeliveryAutomationCommandTargets.comparisonPreset.href}
+                    data-testid="report-delivery-command-comparison"
+                  >
+                    Open comparison
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled
+                  data-testid="report-delivery-command-comparison"
+                >
+                  No comparison
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 

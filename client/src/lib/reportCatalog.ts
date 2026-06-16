@@ -29,6 +29,7 @@ export type ReportSection =
   | "automation-rules"
   | "pack-automation";
 export type ReportStatus = "live" | "api" | "planned";
+export type ReportDeliveryAutomationCommand = "retry" | "review" | "queue" | "comparison";
 export type ReportRoadmapImpact = "high" | "medium" | "low";
 export type ReportAutomationTriggerSeverity = "critical" | "review" | "info";
 export type ReportAutomationHealthVariant = "success" | "warning" | "danger";
@@ -1659,6 +1660,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
 export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
+export const REPORT_DELIVERY_AUTOMATION_COMMAND_KEY = "nr_ai.report_delivery_automation_command";
 export const REPORT_AUTOMATION_HEALTH_HISTORY_KEY = "nr_ai.report_automation_health_history";
 
 export function parseReportPersona(value: string | null | undefined): ReportPersona | null {
@@ -1688,6 +1690,43 @@ export function clearPreferredReportPersona(): void {
 
   try {
     window.localStorage.removeItem(REPORT_PERSONA_PREFERENCE_KEY);
+  } catch {}
+}
+
+export function parseReportDeliveryAutomationCommand(
+  value: string | null | undefined
+): ReportDeliveryAutomationCommand | null {
+  return value === "retry" || value === "review" || value === "queue" || value === "comparison"
+    ? value
+    : null;
+}
+
+function reportDeliveryAutomationCommandKey(persona: ReportPersona): string {
+  return `${REPORT_DELIVERY_AUTOMATION_COMMAND_KEY}.${persona}`;
+}
+
+export function getPreferredReportDeliveryAutomationCommand(
+  persona: ReportPersona
+): ReportDeliveryAutomationCommand | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    return parseReportDeliveryAutomationCommand(
+      window.localStorage.getItem(reportDeliveryAutomationCommandKey(persona))
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function setPreferredReportDeliveryAutomationCommand(
+  persona: ReportPersona,
+  command: ReportDeliveryAutomationCommand
+): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(reportDeliveryAutomationCommandKey(persona), command);
   } catch {}
 }
 
