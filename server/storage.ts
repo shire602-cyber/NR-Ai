@@ -9,6 +9,8 @@ import type {
   InsertCompanyReportDeliverySubscription,
   CompanyReportDeliveryRun,
   InsertCompanyReportDeliveryRun,
+  CompanyReportDeliverySchedulerScan,
+  InsertCompanyReportDeliverySchedulerScan,
   Account,
   InsertAccount,
   JournalEntry,
@@ -168,6 +170,7 @@ import {
   companyUsers,
   companyReportDeliverySubscriptions,
   companyReportDeliveryRuns,
+  companyReportDeliverySchedulerScans,
   firmStaffAssignments,
   accounts,
   journalEntries,
@@ -331,7 +334,21 @@ export interface IStorage {
     companyId: string,
     options?: { subscriptionId?: string; limit?: number }
   ): Promise<CompanyReportDeliveryRun[]>;
+  getReportDeliveryRun(
+    companyId: string,
+    runId: string
+  ): Promise<CompanyReportDeliveryRun | undefined>;
   createReportDeliveryRun(run: InsertCompanyReportDeliveryRun): Promise<CompanyReportDeliveryRun>;
+  getReportDeliverySchedulerScans(
+    companyId: string,
+    options?: { limit?: number }
+  ): Promise<CompanyReportDeliverySchedulerScan[]>;
+  getLatestReportDeliverySchedulerScan(
+    companyId: string
+  ): Promise<CompanyReportDeliverySchedulerScan | undefined>;
+  createReportDeliverySchedulerScan(
+    scan: InsertCompanyReportDeliverySchedulerScan
+  ): Promise<CompanyReportDeliverySchedulerScan>;
   /**
    * Check whether the user has access to a company. Optional firmRole allows
    * firm_owner (all client companies) or firm_admin (assigned client companies)
@@ -1173,10 +1190,50 @@ export class DatabaseStorage implements IStorage {
       .limit(options.limit ?? 20);
   }
 
+  async getReportDeliveryRun(
+    companyId: string,
+    runId: string
+  ): Promise<CompanyReportDeliveryRun | undefined> {
+    const [row] = await db
+      .select()
+      .from(companyReportDeliveryRuns)
+      .where(
+        and(eq(companyReportDeliveryRuns.companyId, companyId), eq(companyReportDeliveryRuns.id, runId))
+      )
+      .limit(1);
+    return row;
+  }
+
   async createReportDeliveryRun(
     run: InsertCompanyReportDeliveryRun
   ): Promise<CompanyReportDeliveryRun> {
     const [row] = await db.insert(companyReportDeliveryRuns).values(run).returning();
+    return row;
+  }
+
+  async getReportDeliverySchedulerScans(
+    companyId: string,
+    options: { limit?: number } = {}
+  ): Promise<CompanyReportDeliverySchedulerScan[]> {
+    return await db
+      .select()
+      .from(companyReportDeliverySchedulerScans)
+      .where(eq(companyReportDeliverySchedulerScans.companyId, companyId))
+      .orderBy(desc(companyReportDeliverySchedulerScans.finishedAt))
+      .limit(options.limit ?? 10);
+  }
+
+  async getLatestReportDeliverySchedulerScan(
+    companyId: string
+  ): Promise<CompanyReportDeliverySchedulerScan | undefined> {
+    const [row] = await this.getReportDeliverySchedulerScans(companyId, { limit: 1 });
+    return row;
+  }
+
+  async createReportDeliverySchedulerScan(
+    scan: InsertCompanyReportDeliverySchedulerScan
+  ): Promise<CompanyReportDeliverySchedulerScan> {
+    const [row] = await db.insert(companyReportDeliverySchedulerScans).values(scan).returning();
     return row;
   }
 

@@ -12,6 +12,7 @@ import { assertPeriodNotLocked } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
+import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 
 const log = createLogger("scheduler");
 
@@ -223,8 +224,19 @@ export function initScheduler() {
     }
   });
 
+  // Run hourly: queue due report delivery subscriptions after readiness checks
+  cron.schedule("20 * * * *", async () => {
+    try {
+      log.info("Running report delivery subscription scan...");
+      await scanDueReportDeliveries();
+      log.info("Report delivery subscription scan complete");
+    } catch (err) {
+      log.error({ err }, "Scheduler error during report delivery scan");
+    }
+  });
+
   log.info(
-    "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly"
+    "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly, report delivery scan hourly"
   );
 }
 

@@ -46,13 +46,23 @@ describe("report discoverability", () => {
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
   const reportDeliveryServiceSource = read("server/services/report-delivery.service.ts");
+  const reportDeliverySchedulerSource = read(
+    "server/services/report-delivery-scheduler.service.ts"
+  );
   const routesSource = read("server/routes.ts");
+  const schedulerSource = read("server/services/scheduler.service.ts");
   const storageSource = read("server/storage.ts");
   const schemaSource = read("shared/schema.ts");
   const reportDeliveryMigrationSource = read(
     "migrations/0075_report_delivery_subscription_settings.sql"
   );
   const reportDeliveryRunsMigrationSource = read("migrations/0076_report_delivery_runs.sql");
+  const reportDeliverySchedulerScansMigrationSource = read(
+    "migrations/0077_report_delivery_scheduler_scans.sql"
+  );
+  const reportDeliveryRunFailuresMigrationSource = read(
+    "migrations/0078_report_delivery_run_failures.sql"
+  );
   const reportsRouteSource = read("server/routes/reports.routes.ts");
   const expenseClaimsRouteSource = read("server/routes/expense-claims.routes.ts");
   const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
@@ -853,6 +863,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("/report-delivery/subscriptions/${subscriptionId}/settings");
     expect(reportsSource).toContain("reportDeliveryPlansQuery");
     expect(reportsSource).toContain("reportDeliveryRunsQuery");
+    expect(reportsSource).toContain("reportDeliverySchedulerHealthQuery");
+    expect(reportsSource).toContain("report-delivery-scheduler-health");
     expect(reportsSource).toContain("Queue delivery");
     expect(reportsSource).toContain("report-delivery-settings-editor-${subscription.id}");
     expect(reportsSource).toContain("report-delivery-preview-${subscription.id}");
@@ -1127,6 +1139,9 @@ describe("report discoverability", () => {
       '"/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/settings"'
     );
     expect(reportDeliveryRouteSource).toContain('"/api/companies/:companyId/report-delivery/runs"');
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/scheduler-health"'
+    );
     expect(reportDeliveryRouteSource).toContain("storage.hasCompanyAccess(userId, companyId)");
     expect(reportDeliveryRouteSource).toContain(
       "storage.getReportDeliverySubscriptionSettings(companyId)"
@@ -1134,6 +1149,8 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain("storage.upsertReportDeliverySubscriptionSetting");
     expect(reportDeliveryRouteSource).toContain("storage.getReportDeliveryRuns");
     expect(reportDeliveryRouteSource).toContain("storage.createReportDeliveryRun");
+    expect(reportDeliveryRouteSource).toContain("storage.getLatestReportDeliverySchedulerScan");
+    expect(reportDeliveryRouteSource).toContain("storage.getReportDeliverySchedulerScans");
     expect(reportDeliveryRouteSource).toContain("createAndEmitNotification");
     expect(reportDeliveryRouteSource).toContain("buildReportDeliveryNotificationInput");
     expect(reportDeliveryRouteSource).toContain("buildReportDeliveryRunInput");
@@ -1145,16 +1162,20 @@ describe("report discoverability", () => {
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryPlan");
     expect(reportDeliveryServiceSource).toContain("ReportDeliveryPreview");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryRunInput");
+    expect(reportDeliveryServiceSource).toContain("buildReportDeliveryNotificationForPlan");
     expect(reportDeliveryServiceSource).toContain("estimateReportDeliveryNextRun");
     expect(reportDeliveryServiceSource).toContain("settingsSource");
     expect(reportDeliveryServiceSource).toContain('status: "ready" | "setup" | "paused"');
-    expect(reportDeliveryServiceSource).toContain("scheduledFor: new Date(plan.nextRunAt)");
+    expect(reportDeliveryServiceSource).toContain(
+      "const scheduledFor = input.scheduledFor ?? new Date(plan.nextRunAt)"
+    );
     expect(reportDeliveryServiceSource).toContain(
       'relatedEntityType: "report_delivery_subscription"'
     );
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
     expect(schemaSource).toContain("companyReportDeliverySubscriptions");
     expect(schemaSource).toContain("companyReportDeliveryRuns");
+    expect(schemaSource).toContain("companyReportDeliverySchedulerScans");
     expect(schemaSource).toContain("company_report_delivery_subscriptions_unique");
     expect(reportDeliveryMigrationSource).toContain(
       'CREATE TABLE IF NOT EXISTS "company_report_delivery_subscriptions"'
@@ -1166,10 +1187,27 @@ describe("report discoverability", () => {
       'CREATE TABLE IF NOT EXISTS "company_report_delivery_runs"'
     );
     expect(reportDeliveryRunsMigrationSource).toContain('"snapshot" jsonb NOT NULL');
+    expect(reportDeliveryRunFailuresMigrationSource).toContain('"retried_from_run_id" uuid');
+    expect(reportDeliveryRunFailuresMigrationSource).toContain('"error_message" text');
+    expect(reportDeliverySchedulerScansMigrationSource).toContain(
+      'CREATE TABLE IF NOT EXISTS "company_report_delivery_scheduler_scans"'
+    );
+    expect(reportDeliverySchedulerScansMigrationSource).toContain('"queued_runs" integer');
     expect(storageSource).toContain("getReportDeliverySubscriptionSettings");
     expect(storageSource).toContain("upsertReportDeliverySubscriptionSetting");
     expect(storageSource).toContain("getReportDeliveryRuns");
     expect(storageSource).toContain("createReportDeliveryRun");
+    expect(storageSource).toContain("getReportDeliverySchedulerScans");
+    expect(storageSource).toContain("createReportDeliverySchedulerScan");
+    expect(reportDeliverySchedulerSource).toContain("scanDueReportDeliveries");
+    expect(reportDeliverySchedulerSource).toContain("getReportDeliveryScheduleDecision");
+    expect(reportDeliverySchedulerSource).toContain("buildReportDeliveryNotificationForPlan");
+    expect(reportDeliverySchedulerSource).toContain("buildReportDeliveryRunInput");
+    expect(reportDeliverySchedulerSource).toContain("resolveCompanyActorUserId");
+    expect(reportDeliverySchedulerSource).toContain("createAndEmitNotification");
+    expect(reportDeliverySchedulerSource).toContain("createReportDeliverySchedulerScan");
+    expect(schedulerSource).toContain("scanDueReportDeliveries");
+    expect(schedulerSource).toContain("Report delivery subscription scan");
   });
 
   it("calculates shared report automation health for packs and dashboards", () => {

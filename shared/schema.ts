@@ -502,6 +502,8 @@ export const companyReportDeliveryRuns = pgTable(
     status: text("status").notNull().default("queued"), // queued | sent | failed | cancelled
     readinessStatus: text("readiness_status").notNull(), // ready | setup | paused
     notificationId: uuid("notification_id"),
+    retriedFromRunId: uuid("retried_from_run_id"),
+    errorMessage: text("error_message"),
     scheduledFor: timestamp("scheduled_for").notNull(),
     queuedBy: uuid("queued_by").references(() => users.id, { onDelete: "set null" }),
     channel: text("channel").notNull(),
@@ -540,6 +542,54 @@ export const insertCompanyReportDeliveryRunSchema = createInsertSchema(
 
 export type InsertCompanyReportDeliveryRun = z.infer<typeof insertCompanyReportDeliveryRunSchema>;
 export type CompanyReportDeliveryRun = typeof companyReportDeliveryRuns.$inferSelect;
+
+export const companyReportDeliverySchedulerScans = pgTable(
+  "company_report_delivery_scheduler_scans",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("success"), // success | error
+    startedAt: timestamp("started_at").notNull(),
+    finishedAt: timestamp("finished_at").notNull(),
+    scannedSubscriptions: integer("scanned_subscriptions").notNull().default(0),
+    queuedRuns: integer("queued_runs").notNull().default(0),
+    skippedPaused: integer("skipped_paused").notNull().default(0),
+    skippedSetup: integer("skipped_setup").notNull().default(0),
+    skippedNotDue: integer("skipped_not_due").notNull().default(0),
+    skippedNoActor: integer("skipped_no_actor").notNull().default(0),
+    errors: integer("errors").notNull().default(0),
+    message: text("message"),
+    snapshot: jsonb("snapshot")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdIdx: index("idx_company_report_delivery_scheduler_scans_company_id").on(
+      table.companyId
+    ),
+    finishedAtIdx: index("idx_company_report_delivery_scheduler_scans_finished_at").on(
+      table.finishedAt
+    ),
+  })
+);
+
+export const insertCompanyReportDeliverySchedulerScanSchema = createInsertSchema(
+  companyReportDeliverySchedulerScans
+).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCompanyReportDeliverySchedulerScan = z.infer<
+  typeof insertCompanyReportDeliverySchedulerScanSchema
+>;
+export type CompanyReportDeliverySchedulerScan =
+  typeof companyReportDeliverySchedulerScans.$inferSelect;
 
 // ===========================
 // Firm Staff Assignments

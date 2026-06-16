@@ -204,6 +204,21 @@ interface ReportDeliveryRunSummary {
   createdAt: string;
 }
 
+interface ReportDeliverySchedulerScanSummary {
+  id: string;
+  status: "success" | "error";
+  startedAt: string;
+  finishedAt: string;
+  scannedSubscriptions: number;
+  queuedRuns: number;
+  skippedPaused: number;
+  skippedSetup: number;
+  skippedNotDue: number;
+  skippedNoActor: number;
+  errors: number;
+  message: string | null;
+}
+
 type ConsolidatedStatementStatus = "included" | "unbalanced" | "multi_currency" | "failed";
 
 interface ConsolidatedStatementEntityRow {
@@ -3745,6 +3760,26 @@ export default function Reports() {
     enabled: !!selectedCompanyId,
   });
 
+  const reportDeliverySchedulerHealthQuery = useQuery<{
+    latestScan: ReportDeliverySchedulerScanSummary | null;
+    recentScans: ReportDeliverySchedulerScanSummary[];
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "scheduler-health"],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/report-delivery/scheduler-health?limit=5`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
+  const latestReportDeliverySchedulerScan =
+    reportDeliverySchedulerHealthQuery.data?.latestScan ?? null;
+  const reportDeliverySchedulerGuardrailSkips = latestReportDeliverySchedulerScan
+    ? latestReportDeliverySchedulerScan.skippedPaused +
+      latestReportDeliverySchedulerScan.skippedSetup
+    : 0;
+
   const reportDeliveryPlanById = useMemo(() => {
     return new Map(
       (reportDeliveryPlansQuery.data?.subscriptions ?? []).map((plan) => [plan.id, plan])
@@ -5594,6 +5629,56 @@ export default function Reports() {
           <Badge variant="info" dot>
             {visibleReportAutomationStarters.length} starters
           </Badge>
+        </div>
+
+        <div
+          className="grid grid-cols-2 gap-2 text-xs lg:grid-cols-5"
+          data-testid="report-delivery-scheduler-health"
+        >
+          <div className="rounded-md border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-muted-foreground">Last scan</div>
+              <Badge
+                variant={
+                  latestReportDeliverySchedulerScan?.status === "error"
+                    ? "danger"
+                    : latestReportDeliverySchedulerScan
+                      ? "success"
+                      : "neutral"
+                }
+                dot
+              >
+                {latestReportDeliverySchedulerScan?.status ?? "pending"}
+              </Badge>
+            </div>
+            <div className="mt-1 font-medium text-foreground">
+              {formatDeliveryRunTimestamp(latestReportDeliverySchedulerScan?.finishedAt)}
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-muted-foreground">Queued by scan</div>
+            <div className="mt-1 font-mono text-base font-semibold">
+              {latestReportDeliverySchedulerScan?.queuedRuns ?? 0}
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-muted-foreground">Guardrail skips</div>
+            <div className="mt-1 font-mono text-base font-semibold">
+              {reportDeliverySchedulerGuardrailSkips}
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-muted-foreground">Actor skips</div>
+            <div className="mt-1 font-mono text-base font-semibold">
+              {latestReportDeliverySchedulerScan?.skippedNoActor ?? 0}
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-muted-foreground">Scan errors</div>
+            <div className="mt-1 font-mono text-base font-semibold">
+              {latestReportDeliverySchedulerScan?.errors ?? 0}
+            </div>
+          </div>
         </div>
 
         {automationLoading ? (

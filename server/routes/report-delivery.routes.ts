@@ -41,6 +41,10 @@ const reportDeliveryRunsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });
 
+const reportDeliverySchedulerHealthQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(20).optional(),
+});
+
 export function registerReportDeliveryRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/report-delivery/subscriptions",
@@ -84,6 +88,26 @@ export function registerReportDeliveryRoutes(app: Express) {
       });
 
       res.json({ runs });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/report-delivery/scheduler-health",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const query = reportDeliverySchedulerHealthQuerySchema.parse(req.query);
+      const [latestScan, recentScans] = await Promise.all([
+        storage.getLatestReportDeliverySchedulerScan(companyId),
+        storage.getReportDeliverySchedulerScans(companyId, { limit: query.limit ?? 5 }),
+      ]);
+
+      res.json({ latestScan: latestScan ?? null, recentScans });
     })
   );
 

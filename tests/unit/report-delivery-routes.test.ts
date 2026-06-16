@@ -22,6 +22,8 @@ vi.mock("../../server/storage", () => ({
     getReportDeliverySubscriptionSettings: vi.fn(async () => []),
     upsertReportDeliverySubscriptionSetting: vi.fn(),
     getReportDeliveryRuns: vi.fn(async () => []),
+    getLatestReportDeliverySchedulerScan: vi.fn(async () => null),
+    getReportDeliverySchedulerScans: vi.fn(async () => []),
     createReportDeliveryRun: vi.fn(async (run: any) => ({
       id: "run-1",
       ...run,
@@ -82,6 +84,8 @@ describe("report delivery subscriptions", () => {
     vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([]);
     vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockReset();
     vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([]);
+    vi.mocked(storage.getLatestReportDeliverySchedulerScan).mockResolvedValue(null);
+    vi.mocked(storage.getReportDeliverySchedulerScans).mockResolvedValue([]);
     vi.mocked(storage.createReportDeliveryRun).mockClear();
     vi.mocked(createAndEmitNotification).mockClear();
   });
@@ -254,6 +258,45 @@ describe("report delivery subscriptions", () => {
       subscriptionId: "owner-weekly-executive-delivery",
       limit: 5,
     });
+  });
+
+  it("returns report delivery scheduler health for the company", async () => {
+    const scan = {
+      id: "scan-1",
+      companyId,
+      status: "success",
+      startedAt: new Date("2026-06-22T09:00:00.000Z"),
+      finishedAt: new Date("2026-06-22T09:00:03.000Z"),
+      scannedSubscriptions: 6,
+      queuedRuns: 3,
+      skippedPaused: 1,
+      skippedSetup: 1,
+      skippedNotDue: 1,
+      skippedNoActor: 0,
+      errors: 0,
+      message: null,
+      snapshot: {},
+      createdAt: new Date("2026-06-22T09:00:03.000Z"),
+    };
+    vi.mocked(storage.getLatestReportDeliverySchedulerScan).mockResolvedValue(scan);
+    vi.mocked(storage.getReportDeliverySchedulerScans).mockResolvedValue([scan]);
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/scheduler-health?limit=3`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.latestScan).toMatchObject({
+      id: "scan-1",
+      status: "success",
+      queuedRuns: 3,
+      skippedSetup: 1,
+    });
+    expect(res.body.recentScans).toHaveLength(1);
+    expect(storage.getLatestReportDeliverySchedulerScan).toHaveBeenCalledWith(companyId);
+    expect(storage.getReportDeliverySchedulerScans).toHaveBeenCalledWith(companyId, { limit: 3 });
   });
 
   it("updates company delivery settings", async () => {

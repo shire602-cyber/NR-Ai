@@ -284,25 +284,45 @@ export function buildReportDeliveryNotificationInput(input: {
   subscriptionId: string;
   now?: Date;
   settings?: ReportDeliverySetting[];
+  scheduledFor?: Date;
 }): { notification: InsertNotification; plan: ReportDeliveryPlan } | null {
   const plan = getReportDeliveryPlan(input.subscriptionId, input.now, input.settings ?? []);
   if (!plan) return null;
 
   return {
     plan,
-    notification: {
+    notification: buildReportDeliveryNotificationForPlan({
       userId: input.userId,
       companyId: input.companyId,
-      type: "system",
-      title: `Report delivery queued: ${plan.title}`,
-      message: `${plan.format} scheduled for ${plan.nextRunLabel}. ${plan.channel}. Guardrail: ${plan.deliveryGuardrail}`,
-      priority: plan.status === "ready" ? "normal" : "high",
-      relatedEntityType: "report_delivery_subscription",
-      actionUrl: plan.href,
-      isRead: false,
-      isDismissed: false,
-      scheduledFor: new Date(plan.nextRunAt),
-    },
+      plan,
+      scheduledFor: input.scheduledFor,
+    }),
+  };
+}
+
+export function buildReportDeliveryNotificationForPlan(input: {
+  userId: string;
+  companyId: string;
+  plan: ReportDeliveryPlan;
+  scheduledFor?: Date;
+}): InsertNotification {
+  const { plan } = input;
+
+  const scheduledFor = input.scheduledFor ?? new Date(plan.nextRunAt);
+  const scheduledForLabel = formatNextRunLabel(scheduledFor);
+
+  return {
+    userId: input.userId,
+    companyId: input.companyId,
+    type: "system",
+    title: `Report delivery queued: ${plan.title}`,
+    message: `${plan.format} scheduled for ${scheduledForLabel}. ${plan.channel}. Guardrail: ${plan.deliveryGuardrail}`,
+    priority: plan.status === "ready" ? "normal" : "high",
+    relatedEntityType: "report_delivery_subscription",
+    actionUrl: plan.href,
+    isRead: false,
+    isDismissed: false,
+    scheduledFor,
   };
 }
 
@@ -310,17 +330,25 @@ export function buildReportDeliveryRunInput(input: {
   companyId: string;
   queuedBy: string;
   plan: ReportDeliveryPlan;
+  status?: "queued" | "failed" | "sent" | "cancelled";
+  errorMessage?: string | null;
   notificationId?: string | null;
+  retriedFromRunId?: string | null;
+  scheduledFor?: Date;
 }): InsertCompanyReportDeliveryRun {
   const { plan } = input;
+  const scheduledFor = input.scheduledFor ?? new Date(plan.nextRunAt);
+  const scheduledForLabel = formatNextRunLabel(scheduledFor);
 
   return {
     companyId: input.companyId,
     subscriptionId: plan.id,
-    status: "queued",
+    status: input.status ?? "queued",
     readinessStatus: plan.status,
     notificationId: input.notificationId ?? null,
-    scheduledFor: new Date(plan.nextRunAt),
+    retriedFromRunId: input.retriedFromRunId ?? null,
+    errorMessage: input.errorMessage ?? null,
+    scheduledFor,
     queuedBy: input.queuedBy,
     channel: plan.channel,
     format: plan.format,
@@ -334,8 +362,10 @@ export function buildReportDeliveryRunInput(input: {
       persona: plan.persona,
       audience: plan.audience,
       href: plan.href,
-      nextRunAt: plan.nextRunAt,
-      nextRunLabel: plan.nextRunLabel,
+      nextRunAt: scheduledFor.toISOString(),
+      nextRunLabel: scheduledForLabel,
+      errorMessage: input.errorMessage ?? null,
+      retriedFromRunId: input.retriedFromRunId ?? null,
       settingsSource: plan.settingsSource,
       reports: plan.reports,
       triggerRules: plan.triggerRules,
