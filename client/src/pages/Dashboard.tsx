@@ -24,6 +24,7 @@ import {
   reportAutomationTriggerRules,
   calculateReportAutomationHealth,
   getPreferredReportPersona,
+  getPreferredReportWorkflowSearch,
   parseReportDeliveryAutomationCommand,
   reportAutomationPlaybookHref,
   reportAutomationStarterHref,
@@ -455,6 +456,25 @@ function dashboardDeliveryRunStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function dashboardReportWorkflowSearchScore(
+  values: Array<string | number | null | undefined>,
+  normalizedSearch: string
+): number {
+  if (!normalizedSearch) return 0;
+
+  const haystack = values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .map((value) => String(value))
+    .join(" ")
+    .toLowerCase();
+
+  let score = haystack.includes(normalizedSearch) ? 100 : 0;
+  for (const term of normalizedSearch.split(/\s+/).filter(Boolean)) {
+    if (haystack.includes(term)) score += 10;
+  }
+  return score;
+}
+
 // ─── Quick action ────────────────────────────────────────────────────────────
 
 function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
@@ -533,6 +553,11 @@ function CustomerDashboard() {
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
+  const preferredReportWorkflowSearch = useMemo(
+    () => getPreferredReportWorkflowSearch(preferredReportWorkspace.persona).trim(),
+    [preferredReportWorkspace.persona]
+  );
+  const normalizedPreferredReportWorkflowSearch = preferredReportWorkflowSearch.toLowerCase();
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(preferredReportWorkspace.persona),
     queryFn: () => fetchReportCatalogDiscovery(preferredReportWorkspace.persona),
@@ -594,8 +619,25 @@ function CustomerDashboard() {
   const preferredWorkspaceReports = useMemo(() => {
     return preferredWorkspaceCatalogReports
       .filter((report) => report.status !== "planned")
+      .map((report, index) => ({
+        report,
+        index,
+        searchScore: dashboardReportWorkflowSearchScore(
+          [
+            report.name,
+            report.category,
+            report.comparison,
+            report.automation,
+            report.decisionQuestion,
+            report.commandKeywords,
+          ],
+          normalizedPreferredReportWorkflowSearch
+        ),
+      }))
+      .sort((a, b) => b.searchScore - a.searchScore || a.index - b.index)
+      .map(({ report }) => report)
       .slice(0, 4);
-  }, [preferredWorkspaceCatalogReports]);
+  }, [normalizedPreferredReportWorkflowSearch, preferredWorkspaceCatalogReports]);
   const preferredReportPackReadiness = useMemo(() => {
     const readyReports = preferredWorkspaceCatalogReports.filter(
       (report) => report.status !== "planned"
@@ -648,9 +690,24 @@ function CustomerDashboard() {
           reports,
           readyReports,
           href: reportPackTemplateHref(template),
+          searchScore: dashboardReportWorkflowSearchScore(
+            [
+              template.title,
+              template.audience,
+              template.outcome,
+              template.cadence,
+              template.delivery,
+              template.comparisonFocus,
+              template.automationTrigger,
+              template.commandKeywords,
+              reports.map((report) => report.name).join(" "),
+            ],
+            normalizedPreferredReportWorkflowSearch
+          ),
         };
-      });
-  }, [preferredReportWorkspace.persona]);
+      })
+      .sort((a, b) => b.searchScore - a.searchScore);
+  }, [normalizedPreferredReportWorkflowSearch, preferredReportWorkspace.persona]);
   const preferredReportAutomationStarters = useMemo(() => {
     return reportAutomationStarters
       .filter((starter) => starter.persona === preferredReportWorkspace.persona)
@@ -673,9 +730,24 @@ function CustomerDashboard() {
           readyReports,
           playbooks,
           href: reportAutomationStarterHref(starter),
+          searchScore: dashboardReportWorkflowSearchScore(
+            [
+              starter.title,
+              starter.audience,
+              starter.outcome,
+              starter.setupTime,
+              starter.trigger,
+              starter.primaryAction,
+              starter.commandKeywords,
+              reports.map((report) => report.name).join(" "),
+              playbooks.map((playbook) => playbook.title).join(" "),
+            ],
+            normalizedPreferredReportWorkflowSearch
+          ),
         };
-      });
-  }, [preferredReportWorkspace]);
+      })
+      .sort((a, b) => b.searchScore - a.searchScore);
+  }, [normalizedPreferredReportWorkflowSearch, preferredReportWorkspace]);
   const preferredReportDecisionShortcuts = useMemo(() => {
     return reportDecisionShortcuts
       .filter((shortcut) => shortcut.persona === preferredReportWorkspace.persona)
@@ -694,9 +766,21 @@ function CustomerDashboard() {
           primaryReportHref: primaryReport
             ? (reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut))
             : reportDecisionShortcutHref(shortcut),
+          searchScore: dashboardReportWorkflowSearchScore(
+            [
+              shortcut.question,
+              shortcut.answer,
+              shortcut.commandKeywords,
+              shortcut.reportIds.join(" "),
+              primaryReport?.name,
+              reports.map((report) => report.name).join(" "),
+            ],
+            normalizedPreferredReportWorkflowSearch
+          ),
         };
-      });
-  }, [preferredReportWorkspace.persona]);
+      })
+      .sort((a, b) => b.searchScore - a.searchScore);
+  }, [normalizedPreferredReportWorkflowSearch, preferredReportWorkspace.persona]);
   const preferredReportComparisonPresets = useMemo(() => {
     return reportComparisonPresets
       .filter((preset) => preset.persona === preferredReportWorkspace.persona)
@@ -709,9 +793,21 @@ function CustomerDashboard() {
           ...preset,
           reports,
           href: reportComparisonPresetHref(preset),
+          searchScore: dashboardReportWorkflowSearchScore(
+            [
+              preset.title,
+              preset.question,
+              preset.baseline,
+              preset.automationTrigger,
+              preset.commandKeywords,
+              reports.map((report) => report.name).join(" "),
+            ],
+            normalizedPreferredReportWorkflowSearch
+          ),
         };
-      });
-  }, [preferredReportWorkspace.persona]);
+      })
+      .sort((a, b) => b.searchScore - a.searchScore);
+  }, [normalizedPreferredReportWorkflowSearch, preferredReportWorkspace.persona]);
   const preferredReportTriggerRules = useMemo(() => {
     return reportAutomationTriggerRules
       .filter((rule) => rule.persona === preferredReportWorkspace.persona)
@@ -2157,9 +2253,18 @@ function CustomerDashboard() {
                       {preferredReportWorkspace.automationOutcome}
                     </div>
                   </div>
-                  <Badge variant="info" dot>
-                    {preferredWorkspaceReports.length} ready reports
-                  </Badge>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    {preferredReportWorkflowSearch ? (
+                      <Badge variant="outline" data-testid="dashboard-report-search-context">
+                        <span className="max-w-[12rem] truncate">
+                          Search: {preferredReportWorkflowSearch}
+                        </span>
+                      </Badge>
+                    ) : null}
+                    <Badge variant="info" dot>
+                      {preferredWorkspaceReports.length} ready reports
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">

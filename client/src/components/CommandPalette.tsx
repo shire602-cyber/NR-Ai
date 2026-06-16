@@ -52,6 +52,8 @@ import {
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
   reportAutomationPlaybookHref,
+  getPreferredReportPersona,
+  getPreferredReportWorkflowSearch,
   reportHref,
   reportPackTemplateHref,
   reportPackTemplates,
@@ -109,6 +111,23 @@ function syncedHref(item: unknown): string | undefined {
   if (!item || typeof item !== "object" || !("href" in item)) return undefined;
   const href = (item as { href?: unknown }).href;
   return typeof href === "string" && href ? href : undefined;
+}
+
+function reportWorkflowSearchScore(item: PaletteItem, normalizedSearch: string): number {
+  if (item.group !== "Reports" || !normalizedSearch) return 0;
+
+  const label = item.label.toLowerCase();
+  const description = item.description?.toLowerCase() ?? "";
+  const haystack = `${label} ${description} ${item.keywords ?? ""}`.toLowerCase();
+  let score = haystack.includes(normalizedSearch) ? 100 : 0;
+
+  for (const term of normalizedSearch.split(/\s+/).filter(Boolean)) {
+    if (label.includes(term)) score += 20;
+    if (description.includes(term)) score += 10;
+    if (haystack.includes(term)) score += 5;
+  }
+
+  return score;
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
@@ -649,7 +668,26 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
   ];
 
-  const grouped = items.reduce<Record<string, PaletteItem[]>>((acc, item) => {
+  const preferredReportPersona = getPreferredReportPersona() ?? "all";
+  const preferredReportWorkflowSearch = getPreferredReportWorkflowSearch(preferredReportPersona)
+    .trim()
+    .toLowerCase();
+  const orderedItems = preferredReportWorkflowSearch
+    ? items
+        .map((item, index) => ({
+          item,
+          index,
+          score: reportWorkflowSearchScore(item, preferredReportWorkflowSearch),
+        }))
+        .sort((a, b) => {
+          if (a.item.group !== b.item.group) return a.index - b.index;
+          if (a.item.group !== "Reports") return a.index - b.index;
+          return b.score - a.score || a.index - b.index;
+        })
+        .map(({ item }) => item)
+    : items;
+
+  const grouped = orderedItems.reduce<Record<string, PaletteItem[]>>((acc, item) => {
     (acc[item.group] ??= []).push(item);
     return acc;
   }, {});

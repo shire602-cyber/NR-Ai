@@ -144,6 +144,12 @@ describe("report discoverability", () => {
     expect(commandSource).toContain(
       'value={`${item.label} ${item.description ?? ""} ${item.keywords ?? ""}`}'
     );
+    expect(commandSource).toContain("getPreferredReportPersona");
+    expect(commandSource).toContain("getPreferredReportWorkflowSearch");
+    expect(commandSource).toContain("reportWorkflowSearchScore");
+    expect(commandSource).toContain("preferredReportWorkflowSearch");
+    expect(commandSource).toContain("orderedItems");
+    expect(commandSource).toContain("score: reportWorkflowSearchScore");
     expect(commandSource).toContain("commandLiveReports.map");
     expect(commandSource).toContain("id: `report-${report.id}`");
     expect(commandSource).toContain(
@@ -214,6 +220,12 @@ describe("report discoverability", () => {
     );
     expect(commandSource).toContain("description: workspace.focus");
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
+    expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
+    expect(dashboardSource).toContain("dashboardReportWorkflowSearchScore");
+    expect(dashboardSource).toContain("normalizedPreferredReportWorkflowSearch");
+    expect(dashboardSource).toContain("searchScore");
+    expect(dashboardSource).toContain(".sort((a, b) => b.searchScore - a.searchScore");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-search-context"');
     expect(dashboardSource).toContain("setPreferredReportPersona(persona)");
     expect(dashboardSource).toContain("fetchReportCatalogDiscovery");
     expect(dashboardSource).toContain(
