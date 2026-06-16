@@ -37,7 +37,7 @@ export interface ReportCatalogDiscovery {
   summary: ReportCatalogDiscoverySummary;
   personas: ReportPersona[];
   tabs: ReportTab[];
-  reports: Array<ReportCatalogItem & { href: string | null }>;
+  reports: Array<Omit<ReportCatalogItem, "href"> & { href: string | null }>;
   workspaces: Array<
     ReportPersonaWorkspace & {
       href: string;

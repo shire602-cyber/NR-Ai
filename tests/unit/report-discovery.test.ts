@@ -38,6 +38,7 @@ describe("report discoverability", () => {
   const catalogSource = read("client/src/lib/reportCatalog.ts");
   const commandSource = read("client/src/components/CommandPalette.tsx");
   const dashboardSource = read("client/src/pages/Dashboard.tsx");
+  const reportLaunchPickerSource = read("client/src/components/reports/ReportLaunchPicker.tsx");
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
   const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
@@ -137,7 +138,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("syncedReportCatalog?.reports ?? liveReportCatalog");
     expect(commandSource).toContain("commandLiveReports.map");
     expect(commandSource).toContain("id: `report-${report.id}`");
-    expect(commandSource).toContain("href: report.href ?? reportHref(report)");
+    expect(commandSource).toContain(
+      "href: report.href ?? reportHref({ href: undefined, tab: report.tab })"
+    );
     expect(commandSource).toContain("report.decisionQuestion");
 
     for (const report of liveReportCatalog) {
@@ -181,6 +184,8 @@ describe("report discoverability", () => {
       "reportCatalogDiscoveryQueryKey(preferredReportWorkspace.persona)"
     );
     expect(dashboardSource).toContain('data-testid="dashboard-report-catalog-sync"');
+    expect(dashboardSource).toContain("ReportLaunchPicker");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-launch-picker"');
     expect(dashboardSource).toContain("syncedLiveReports");
     expect(dashboardSource).toContain("syncedAutomationLanes");
     expect(dashboardSource).toContain("selectDashboardReportPersona");
@@ -941,6 +946,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportDeliverySettingsDraft.format");
     expect(reportsSource).toContain("reportDeliverySettingsDraft.recipients");
     expect(reportsSource).toContain("reportDeliverySettingsDraft.deliveryGuardrail");
+    expect(reportsSource).toContain("ReportLaunchPicker");
+    expect(reportsSource).toContain("reportDeliveryLauncherPersona");
+    expect(reportsSource).toContain('mode="delivery"');
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
     expect(reportsSource).toContain("packRuleReportBundleCount");
@@ -1223,6 +1231,21 @@ describe("report discoverability", () => {
     expect(reportCatalogApiSource).toContain("fetchReportCatalogDiscovery");
     expect(reportCatalogApiSource).toContain('"/api/reports/catalog"');
     expect(reportCatalogApiSource).toContain("new URLSearchParams({ persona })");
+    expect(reportLaunchPickerSource).toContain("fetchReportCatalogDiscovery");
+    expect(reportLaunchPickerSource).toContain("reportCatalogDiscoveryQueryKey(selectedPersona)");
+    expect(reportLaunchPickerSource).toContain("reportCatalog");
+    expect(reportLaunchPickerSource).toContain("reportDecisionShortcuts");
+    expect(reportLaunchPickerSource).toContain("reportAutomationStarters");
+    expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptions");
+    expect(reportLaunchPickerSource).toContain("reportDeliverySubscriptionHref");
+    expect(reportLaunchPickerSource).toContain("report-delivery-launch-picker");
+    expect(reportLaunchPickerSource).toContain("report-launch-picker");
+    expect(reportLaunchPickerSource).toContain('data-testid="report-launch-search"');
+    expect(reportLaunchPickerSource).toContain("report-launch-persona-${item}");
+    expect(reportLaunchPickerSource).toContain("report-launch-report-${report.id}");
+    expect(reportLaunchPickerSource).toContain(
+      "report-launch-delivery-subscription-${subscription.id}"
+    );
   });
 
   it("serves report delivery subscriptions through an authenticated queue endpoint", () => {

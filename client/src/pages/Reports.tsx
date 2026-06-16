@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
+import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
@@ -1679,6 +1680,8 @@ export default function Reports() {
     personaFilter === "all"
       ? "Showing all role signals."
       : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
+  const reportDeliveryLauncherPersona: ReportPersona =
+    personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
 
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
@@ -6376,6 +6379,12 @@ export default function Reports() {
             {visibleReportDeliverySubscriptions.length} subscriptions
           </Badge>
         </div>
+
+        <ReportLaunchPicker
+          persona={reportDeliveryLauncherPersona}
+          mode="delivery"
+          className="shadow-none"
+        />
 
         {automationLoading ? (
           <Skeleton className="h-56 w-full" />

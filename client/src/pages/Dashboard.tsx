@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge, StatusBadge, type BadgeProps } from "@/components/ui/badge";
+import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -2048,6 +2049,10 @@ function CustomerDashboard() {
             delay={0.2}
           />
         </div>
+      </section>
+
+      <section data-testid="dashboard-report-launch-picker">
+        <ReportLaunchPicker persona={preferredReportWorkspace.persona} />
       </section>
 
       {/* ── Recent activity ─────────────────────────────────────────────── */}

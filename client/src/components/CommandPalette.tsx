@@ -390,7 +390,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         label: report.name,
         group: "Reports",
         icon: reportCommandIcons[report.commandIcon],
-        href: report.href ?? reportHref(report),
+        href: report.href ?? reportHref({ href: undefined, tab: report.tab }),
         keywords: `${report.commandKeywords} ${report.decisionQuestion}`,
       })
     ),
