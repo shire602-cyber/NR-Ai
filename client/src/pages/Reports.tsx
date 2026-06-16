@@ -35,6 +35,7 @@ import {
   prepareBalanceSheetForExport,
   prepareVATSummaryForExport,
   prepareCorporateTaxEstimateForExport,
+  prepareMonthEndCloseStatusForExport,
   prepareTrialBalanceForExport,
   prepareInvoiceStatusForExport,
   prepareBalanceSummaryReportsForExport,
@@ -201,6 +202,34 @@ interface CustomerRevenueRow {
   amountAed: number;
 }
 
+interface ProductServiceSalesRow {
+  productService: string;
+  invoiceCount: number;
+  lineCount: number;
+  quantity: number;
+  amountAed: number;
+  vatAed: number;
+  averageUnitPriceAed: number;
+  supplyTypes: string[];
+}
+
+interface SalesProductServiceReport {
+  period: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  totals: {
+    productServiceCount: number;
+    invoiceCount: number;
+    lineCount: number;
+    quantity: number;
+    amountAed: number;
+    vatAed: number;
+    topProductServiceShare: number;
+  };
+  rows: ProductServiceSalesRow[];
+}
+
 interface OverdueCustomerRow {
   customerName: string;
   currency: string;
@@ -300,6 +329,21 @@ interface LedgerSourceRow {
   needsReview: boolean;
 }
 
+interface MonthEndChecklistItem {
+  id: number;
+  title: string;
+  description: string;
+  status: "complete" | "incomplete";
+  details?: string;
+}
+
+interface MonthEndCloseStatusReport {
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  checklist: MonthEndChecklistItem[];
+}
+
 interface BudgetPlanReportRow {
   id: string;
   name: string;
@@ -388,6 +432,64 @@ interface BalanceSummaryReport {
   generatedAt: string;
   customers: CustomerBalanceRow[];
   vendors: VendorBalanceRow[];
+}
+
+interface FixedAssetReportRow {
+  id: string;
+  asset_name: string;
+  asset_number: string | null;
+  category: string;
+  purchase_date: string;
+  purchase_cost: string | number;
+  salvage_value: string | number | null;
+  useful_life_years: number | null;
+  depreciation_method: string | null;
+  accumulated_depreciation: string | number;
+  net_book_value: string | number;
+  location: string | null;
+  serial_number: string | null;
+  status: string;
+  disposal_date: string | null;
+  disposal_amount: string | number | null;
+  needs_capitalization_je?: boolean;
+}
+
+interface FixedAssetCategorySummaryRow {
+  category: string;
+  count: number;
+  totalCost: number;
+  totalAccumulatedDepreciation: number;
+  totalNetBookValue: number;
+}
+
+interface FixedAssetSummaryReport {
+  totalAssets: number;
+  totalCost: number;
+  totalAccumulatedDepreciation: number;
+  totalNetBookValue: number;
+  byCategory: FixedAssetCategorySummaryRow[];
+}
+
+interface InventoryProductReportRow {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  unitPrice: string | number;
+  costPrice: string | number | null;
+  currentStock: number;
+  lowStockThreshold: number | null;
+  isActive: boolean;
+}
+
+interface InventoryMovementReportRow {
+  id: string;
+  productId: string;
+  type: "purchase" | "sale" | "adjustment" | "return";
+  quantity: number;
+  unitCost: string | number | null;
+  reference: string | null;
+  createdAt: string | null;
 }
 
 type PersonaFilter = "all" | ReportPersona;
@@ -503,6 +605,16 @@ function receiptVatAed(receipt: ReceiptReportRow): number {
   return (Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt);
 }
 
+function fixedAssetAmount(value: string | number | null | undefined): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function inventoryAmount(value: string | number | null | undefined): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function journalEntryInDateRange(entry: JournalEntryReportRow, dateRange: DateRange): boolean {
   return valueInDateRange(entry.date, dateRange);
 }
@@ -532,6 +644,12 @@ function invoiceStatusVariant(status: string): BadgeProps["variant"] {
   if (status === "partial") return "warning";
   if (status === "void" || status === "cancelled") return "danger";
   return "neutral";
+}
+
+function fixedAssetStatusVariant(status: string): BadgeProps["variant"] {
+  if (status === "active") return "success";
+  if (status === "disposed") return "neutral";
+  return "warning";
 }
 
 function corporateTaxEstimateStatus(report?: CorporateTaxEstimateReport | null): {
@@ -752,6 +870,7 @@ export default function Reports() {
     dateRange.from && dateRange.to
       ? `?startDate=${format(dateRange.from, "yyyy-MM-dd")}&endDate=${format(dateRange.to, "yyyy-MM-dd")}`
       : "";
+  const salesProductServiceParams = dateParams;
   const trialBalanceParams =
     dateRange.from && dateRange.to
       ? `?from=${format(dateRange.from, "yyyy-MM-dd")}&to=${format(dateRange.to, "yyyy-MM-dd")}`
@@ -776,6 +895,9 @@ export default function Reports() {
     comparisonCurrentRange.to,
     "MMM dd, yyyy"
   )}`;
+  const monthEndPeriodAnchor = dateRange.to ?? new Date();
+  const monthEndPeriod = format(monthEndPeriodAnchor, "yyyy-MM");
+  const monthEndPeriodLabel = format(monthEndPeriodAnchor, "MMMM yyyy");
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
@@ -948,6 +1070,23 @@ export default function Reports() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: salesProductServiceReport, isLoading: salesProductServiceLoading } =
+    useQuery<SalesProductServiceReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "sales-product-service",
+        salesProductServiceParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/sales-product-service${salesProductServiceParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
   const { data: overdueReport, isLoading: overdueLoading } = useQuery<OverdueResponse>({
     queryKey: ["/api/chasing/overdue", selectedCompanyId],
     queryFn: () => apiRequest("GET", `/api/chasing/overdue/${selectedCompanyId}`),
@@ -965,6 +1104,17 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
+
+  const { data: monthEndCloseStatus, isLoading: monthEndCloseLoading } =
+    useQuery<MonthEndCloseStatusReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "month-end", "checklist", monthEndPeriod],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/month-end/checklist?period=${monthEndPeriod}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
 
   const { data: budgetPlans = [], isLoading: budgetPlansLoading } = useQuery<BudgetPlanReportRow[]>(
     {
@@ -991,12 +1141,51 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     });
 
-  const { data: balanceSummaries, isLoading: balancesLoading } = useQuery<BalanceSummaryReport>({
-    queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-summaries"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${selectedCompanyId}/reports/balance-summaries`),
+  const { data: balanceSummaries, isLoading: balanceSummariesLoading } =
+    useQuery<BalanceSummaryReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-summaries"],
+      queryFn: () =>
+        apiRequest("GET", `/api/companies/${selectedCompanyId}/reports/balance-summaries`),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: fixedAssets = [], isLoading: fixedAssetsLoading } = useQuery<FixedAssetReportRow[]>(
+    {
+      queryKey: ["/api/companies", selectedCompanyId, "fixed-assets"],
+      queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/fixed-assets`),
+      enabled: !!selectedCompanyId,
+    }
+  );
+
+  const { data: fixedAssetSummary, isLoading: fixedAssetSummaryLoading } =
+    useQuery<FixedAssetSummaryReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "fixed-assets", "summary"],
+      queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/fixed-assets/summary`),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: inventoryProducts = [], isLoading: inventoryProductsLoading } = useQuery<
+    InventoryProductReportRow[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/products`),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: inventoryMovements = [], isLoading: inventoryMovementsLoading } = useQuery<
+    InventoryMovementReportRow[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "inventory-movements"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/inventory-movements`),
+    enabled: !!selectedCompanyId,
+  });
+
+  const balancesLoading =
+    balanceSummariesLoading ||
+    fixedAssetsLoading ||
+    fixedAssetSummaryLoading ||
+    inventoryProductsLoading ||
+    inventoryMovementsLoading;
 
   const trialBalanceSummary = useMemo(() => {
     const rows = trialBalance?.rows ?? [];
@@ -1042,6 +1231,13 @@ export default function Reports() {
   }, [reportInvoices]);
 
   const overdueRows = useMemo(() => overdueReport?.rows ?? [], [overdueReport?.rows]);
+  const productServiceSalesRows = useMemo(
+    () => salesProductServiceReport?.rows ?? [],
+    [salesProductServiceReport?.rows]
+  );
+  const topProductServiceSalesRow = productServiceSalesRows[0];
+  const productServiceTopShare = salesProductServiceReport?.totals.topProductServiceShare ?? 0;
+
   const overdueCustomerRows = useMemo<OverdueCustomerRow[]>(() => {
     const summaries = new Map<string, OverdueCustomerRow>();
     for (const row of overdueRows) {
@@ -1089,6 +1285,16 @@ export default function Reports() {
       overdueOutstanding: overdueReport?.totalOutstanding ?? 0,
       statusSummary,
       customerRevenue,
+      productServiceRows: productServiceSalesRows,
+      productServiceTotals: salesProductServiceReport?.totals ?? {
+        productServiceCount: 0,
+        invoiceCount: 0,
+        lineCount: 0,
+        quantity: 0,
+        amountAed: 0,
+        vatAed: 0,
+        topProductServiceShare: 0,
+      },
       invoices: reportInvoices,
     };
   }, [
@@ -1096,11 +1302,110 @@ export default function Reports() {
     overdueCustomerRows,
     overdueReport?.totalOutstanding,
     overdueRows,
+    productServiceSalesRows,
     reportInvoices,
+    salesProductServiceReport?.totals,
     statusSummary,
   ]);
 
   const salesLoading = invoicesLoading || overdueLoading;
+
+  const inventoryValuationReport = useMemo(() => {
+    const movementCountByProduct = new Map<string, number>();
+    for (const movement of inventoryMovements) {
+      movementCountByProduct.set(
+        movement.productId,
+        (movementCountByProduct.get(movement.productId) ?? 0) + 1
+      );
+    }
+
+    const rows = inventoryProducts
+      .map((product) => {
+        const currentStock = Number(product.currentStock ?? 0) || 0;
+        const unitCost = inventoryAmount(product.costPrice);
+        const unitPrice = inventoryAmount(product.unitPrice);
+        const stockValueAed = currentStock * unitCost;
+        const lowStockThreshold = product.lowStockThreshold;
+        return {
+          ...product,
+          currentStock,
+          lowStockThreshold,
+          unitCost,
+          unitPrice,
+          grossMarginAed: unitPrice - unitCost,
+          stockValueAed,
+          movementCount: movementCountByProduct.get(product.id) ?? 0,
+          isLowStock:
+            lowStockThreshold !== null &&
+            lowStockThreshold !== undefined &&
+            currentStock <= lowStockThreshold,
+          isNegativeStock: currentStock < 0,
+          isMissingCost: currentStock !== 0 && unitCost <= 0,
+        };
+      })
+      .sort((a, b) => b.stockValueAed - a.stockValueAed || a.name.localeCompare(b.name));
+
+    const activeRows = rows.filter((row) => row.isActive);
+    const lowStockCount = activeRows.filter((row) => row.isLowStock).length;
+    const negativeStockCount = activeRows.filter((row) => row.isNegativeStock).length;
+    const missingCostCount = activeRows.filter((row) => row.isMissingCost).length;
+
+    return {
+      rows,
+      activeRows,
+      productCount: rows.length,
+      activeProductCount: activeRows.length,
+      totalUnits: activeRows.reduce((sum, row) => sum + row.currentStock, 0),
+      totalStockValueAed: activeRows.reduce((sum, row) => sum + row.stockValueAed, 0),
+      lowStockCount,
+      negativeStockCount,
+      missingCostCount,
+      movementCount: inventoryMovements.length,
+      reviewCount: lowStockCount + negativeStockCount + missingCostCount,
+    };
+  }, [inventoryMovements, inventoryProducts]);
+
+  const fixedAssetRegisterReport = useMemo(() => {
+    const rows = fixedAssets
+      .map((asset) => ({
+        ...asset,
+        purchaseCost: fixedAssetAmount(asset.purchase_cost),
+        salvageValue: fixedAssetAmount(asset.salvage_value),
+        accumulatedDepreciation: fixedAssetAmount(asset.accumulated_depreciation),
+        netBookValue: fixedAssetAmount(asset.net_book_value),
+      }))
+      .sort((a, b) => b.netBookValue - a.netBookValue || a.asset_name.localeCompare(b.asset_name));
+    const activeRows = rows.filter((asset) => asset.status === "active");
+    const capitalizationReviewCount = activeRows.filter(
+      (asset) => asset.needs_capitalization_je
+    ).length;
+    const depreciationReviewCount = activeRows.filter(
+      (asset) =>
+        asset.category !== "Land" &&
+        Number(asset.useful_life_years ?? 0) > 0 &&
+        asset.netBookValue > asset.salvageValue + 0.005
+    ).length;
+
+    return {
+      rows,
+      activeRows,
+      byCategory: fixedAssetSummary?.byCategory ?? [],
+      totalAssets: fixedAssetSummary?.totalAssets ?? activeRows.length,
+      totalCost:
+        fixedAssetSummary?.totalCost ??
+        activeRows.reduce((sum, asset) => sum + asset.purchaseCost, 0),
+      totalAccumulatedDepreciation:
+        fixedAssetSummary?.totalAccumulatedDepreciation ??
+        activeRows.reduce((sum, asset) => sum + asset.accumulatedDepreciation, 0),
+      totalNetBookValue:
+        fixedAssetSummary?.totalNetBookValue ??
+        activeRows.reduce((sum, asset) => sum + asset.netBookValue, 0),
+      disposedAssetCount: rows.filter((asset) => asset.status !== "active").length,
+      capitalizationReviewCount,
+      depreciationReviewCount,
+      reviewCount: capitalizationReviewCount + depreciationReviewCount,
+    };
+  }, [fixedAssetSummary, fixedAssets]);
 
   const balanceReport = useMemo(() => {
     const customers = balanceSummaries?.customers ?? [];
@@ -1122,8 +1427,10 @@ export default function Reports() {
       netBalanceAed: customerOpenAed - vendorOpenAed,
       overdueCustomerCount: customers.filter((row) => row.overdueBalanceAed > 0).length,
       overdueVendorCount: vendors.filter((row) => row.overdueBalanceAed > 0).length,
+      inventory: inventoryValuationReport,
+      fixedAssets: fixedAssetRegisterReport,
     };
-  }, [balanceSummaries]);
+  }, [balanceSummaries, fixedAssetRegisterReport, inventoryValuationReport]);
 
   const reportReceipts = useMemo(() => {
     return receipts.filter((receipt) => receiptInDateRange(receipt, dateRange));
@@ -1440,6 +1747,38 @@ export default function Reports() {
 
   const ledgerLoading = journalLoading;
 
+  const monthEndChecklist = useMemo(
+    () => monthEndCloseStatus?.checklist ?? [],
+    [monthEndCloseStatus?.checklist]
+  );
+  const monthEndCompletedChecks = monthEndChecklist.filter(
+    (item) => item.status === "complete"
+  ).length;
+  const monthEndReviewChecks = Math.max(0, monthEndChecklist.length - monthEndCompletedChecks);
+  const monthEndReadinessPercent = monthEndChecklist.length
+    ? Math.round((monthEndCompletedChecks / monthEndChecklist.length) * 100)
+    : 0;
+  const monthEndCloseExportReport = useMemo(
+    () => ({
+      ...(monthEndCloseStatus ?? {
+        period: monthEndPeriod,
+        periodStart: "",
+        periodEnd: "",
+        checklist: [],
+      }),
+      completedChecks: monthEndCompletedChecks,
+      reviewChecks: monthEndReviewChecks,
+      readinessPercent: monthEndReadinessPercent,
+    }),
+    [
+      monthEndCloseStatus,
+      monthEndCompletedChecks,
+      monthEndPeriod,
+      monthEndReadinessPercent,
+      monthEndReviewChecks,
+    ]
+  );
+
   const planningReport = useMemo(() => {
     const varianceLines = varianceReport?.varianceLines ?? [];
     const budgetTotal = varianceLines.reduce((sum, line) => sum + line.totals.budget, 0);
@@ -1502,6 +1841,7 @@ export default function Reports() {
     corporateTaxLoading ||
     trialBalanceLoading ||
     ledgerLoading ||
+    monthEndCloseLoading ||
     planningLoading;
 
   const automationQueue = useMemo<AutomationQueueItem[]>(() => {
@@ -1539,6 +1879,40 @@ export default function Reports() {
         href: "/bill-pay?tab=summary",
       },
       {
+        id: "inventory-risk",
+        title: "Inventory valuation",
+        signal:
+          inventoryValuationReport.reviewCount > 0 ? "Stock review items" : "Inventory valued",
+        detail:
+          inventoryValuationReport.reviewCount > 0
+            ? `${inventoryValuationReport.reviewCount} products need stock, reorder, or costing review.`
+            : `${inventoryValuationReport.activeProductCount} active products valued for the balance report.`,
+        count: inventoryValuationReport.reviewCount,
+        amount: inventoryValuationReport.totalStockValueAed,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: FileSpreadsheet,
+        actionLabel: "Open inventory",
+        href: "/inventory",
+      },
+      {
+        id: "fixed-asset-review",
+        title: "Fixed asset register",
+        signal:
+          fixedAssetRegisterReport.reviewCount > 0 ? "Asset review items" : "Asset register ready",
+        detail:
+          fixedAssetRegisterReport.capitalizationReviewCount > 0
+            ? `${fixedAssetRegisterReport.capitalizationReviewCount} assets need capitalization journal review.`
+            : `${fixedAssetRegisterReport.totalAssets} active assets with depreciation and NBV tracked.`,
+        count: fixedAssetRegisterReport.reviewCount,
+        amount: fixedAssetRegisterReport.totalNetBookValue,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: Building2,
+        actionLabel: "Open fixed assets",
+        href: "/fixed-assets",
+      },
+      {
         id: "receipt-posting",
         title: "Receipt posting",
         signal: "Receipts waiting",
@@ -1561,6 +1935,21 @@ export default function Reports() {
         icon: FileText,
         actionLabel: "Open filing",
         href: "/vat-filing",
+      },
+      {
+        id: "sales-mix",
+        title: "Sales mix concentration",
+        signal: topProductServiceSalesRow
+          ? `${topProductServiceSalesRow.productService} leads sales`
+          : "No line-item sales",
+        detail: "Review product/service concentration before forecasting or pricing changes.",
+        count: productServiceTopShare >= 50 ? 1 : 0,
+        amount: topProductServiceSalesRow?.amountAed ?? 0,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: BarChart3,
+        actionLabel: "Open sales mix",
+        tab: "sales",
       },
       {
         id: "corporate-tax",
@@ -1587,6 +1976,20 @@ export default function Reports() {
         tab: closeReviewCount > 0 && !trialBalanceSummary.isBalanced ? "trial" : "ledger",
       },
       {
+        id: "month-end-close",
+        title: "Month-end close status",
+        signal: "Close checklist",
+        detail:
+          monthEndReviewChecks > 0
+            ? `${monthEndReviewChecks} close checks need review for ${monthEndPeriodLabel}.`
+            : `${monthEndPeriodLabel} close checklist is complete.`,
+        count: monthEndReviewChecks,
+        personas: ["accountant"],
+        icon: ClipboardCheck,
+        actionLabel: "Open close status",
+        tab: "close",
+      },
+      {
         id: "planning-risk",
         title: "Planning guardrails",
         signal: "Budget and cash alerts",
@@ -1607,10 +2010,21 @@ export default function Reports() {
     balanceReport.vendorOverdueAed,
     corporateTaxEstimate?.taxPayable,
     expenseReport.unpostedReceipts,
+    fixedAssetRegisterReport.capitalizationReviewCount,
+    fixedAssetRegisterReport.reviewCount,
+    fixedAssetRegisterReport.totalAssets,
+    fixedAssetRegisterReport.totalNetBookValue,
+    inventoryValuationReport.activeProductCount,
+    inventoryValuationReport.reviewCount,
+    inventoryValuationReport.totalStockValueAed,
     ledgerReport.reviewEntries,
+    monthEndPeriodLabel,
+    monthEndReviewChecks,
     planningReport.cashWarning,
     planningReport.overBudgetLines,
     planningReport.variance,
+    productServiceTopShare,
+    topProductServiceSalesRow,
     trialBalanceSummary.isBalanced,
     vatSummary?.netVATPayable,
   ]);
@@ -1982,11 +2396,11 @@ export default function Reports() {
     );
     addSheets(["trial-balance"], prepareTrialBalanceForExport(trialBalance));
     addSheets(
-      ["invoice-status", "revenue-customer"],
+      ["invoice-status", "revenue-customer", "sales-product-service"],
       prepareInvoiceStatusForExport(invoiceStatusReport)
     );
     addSheets(
-      ["customer-balances", "vendor-balances"],
+      ["customer-balances", "vendor-balances", "inventory-valuation", "fixed-asset-register"],
       prepareBalanceSummaryReportsForExport(balanceReport)
     );
     addSheets(
@@ -1996,6 +2410,10 @@ export default function Reports() {
     addSheets(
       ["general-ledger", "account-transactions"],
       prepareLedgerReportsForExport(ledgerReport)
+    );
+    addSheets(
+      ["month-end-close-status"],
+      prepareMonthEndCloseStatusForExport(monthEndCloseExportReport)
     );
     addSheets(
       ["budget-actual", "cash-flow-forecast"],
@@ -2455,8 +2873,11 @@ export default function Reports() {
       );
       toast({ title: "Export successful", description: "Invoice Status exported to Excel" });
     } else if (activeTab === "balances") {
-      exportToExcel(prepareBalanceSummaryReportsForExport(balanceReport), "balance_summaries");
-      toast({ title: "Export successful", description: "Balance summaries exported to Excel" });
+      exportToExcel(
+        prepareBalanceSummaryReportsForExport(balanceReport),
+        `balance_reports${dateRangeStr}`
+      );
+      toast({ title: "Export successful", description: "Balance reports exported to Excel" });
     } else if (activeTab === "expenses") {
       exportToExcel(
         prepareExpenseReportsForExport(expenseReport),
@@ -2466,6 +2887,15 @@ export default function Reports() {
     } else if (activeTab === "ledger") {
       exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
       toast({ title: "Export successful", description: "General Ledger exported to Excel" });
+    } else if (activeTab === "close" && monthEndCloseStatus) {
+      exportToExcel(
+        prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
+        `month_end_close_status_${monthEndPeriod}`
+      );
+      toast({
+        title: "Export successful",
+        description: "Month-End Close Status exported to Excel",
+      });
     } else if (activeTab === "planning") {
       exportToExcel(
         preparePlanningReportsForExport(planningReport),
@@ -2524,7 +2954,7 @@ export default function Reports() {
     } else if (activeTab === "balances") {
       result = await exportToGoogleSheets(
         prepareBalanceSummaryReportsForExport(balanceReport),
-        "Balance Summaries",
+        `Balance Reports${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "expenses") {
@@ -2537,6 +2967,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         prepareLedgerReportsForExport(ledgerReport),
         `General Ledger${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "close" && monthEndCloseStatus) {
+      result = await exportToGoogleSheets(
+        prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
+        `Month-End Close Status (${monthEndPeriodLabel})`,
         selectedCompanyId
       );
     } else if (activeTab === "planning") {
@@ -3921,7 +4357,7 @@ export default function Reports() {
         onValueChange={(value) => setActiveTab(value as ReportTab)}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
+        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-11">
           <TabsTrigger value="pl" data-testid="tab-profit-loss">
             {t.profitLoss}
           </TabsTrigger>
@@ -3948,6 +4384,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="ledger" data-testid="tab-ledger-reports">
             Ledger
+          </TabsTrigger>
+          <TabsTrigger value="close" data-testid="tab-month-end-close-status">
+            Close
           </TabsTrigger>
           <TabsTrigger value="planning" data-testid="tab-planning-reports">
             Planning
@@ -4368,6 +4807,125 @@ export default function Reports() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
+                  <CardTitle>Inventory valuation</CardTitle>
+                  <CardDescription>
+                    Stock quantity, cost value, reorder risk, and costing exceptions.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/inventory">Open inventory</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <Skeleton className="h-80" />
+              ) : inventoryValuationReport.rows.length ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Active products</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.activeProductCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Stock value</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(inventoryValuationReport.totalStockValueAed, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Low stock</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.lowStockCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Costing review</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.missingCostCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[940px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Unit</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Stock</TableHead>
+                          <TableHead className="text-right">Unit cost</TableHead>
+                          <TableHead className="text-right">Value</TableHead>
+                          <TableHead className="text-right">Movements</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {inventoryValuationReport.rows.slice(0, 12).map((product) => (
+                          <TableRow key={product.id}>
+                            <TableCell>
+                              <div className="font-medium">{product.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {product.sku || "No SKU"}
+                              </div>
+                            </TableCell>
+                            <TableCell>{product.unit}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  product.isNegativeStock || product.isMissingCost
+                                    ? "warning"
+                                    : product.isLowStock
+                                      ? "info"
+                                      : product.isActive
+                                        ? "success"
+                                        : "neutral"
+                                }
+                                dot
+                              >
+                                {product.isNegativeStock
+                                  ? "Negative stock"
+                                  : product.isMissingCost
+                                    ? "Missing cost"
+                                    : product.isLowStock
+                                      ? "Low stock"
+                                      : product.isActive
+                                        ? "Valued"
+                                        : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {product.currentStock.toLocaleString(locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(product.unitCost, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(product.stockValueAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {product.movementCount}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No inventory products found yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
                   <CardTitle>Corporate Tax Estimate</CardTitle>
                   <CardDescription>
                     {corporateTaxEstimate
@@ -4508,6 +5066,74 @@ export default function Reports() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Sales by product/service</CardTitle>
+                  <CardDescription>
+                    Line-item sales mix, AED value, VAT, and service concentration.
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant={productServiceTopShare >= 50 ? "warning" : "success"}
+                  dot={productServiceSalesRows.length > 0}
+                >
+                  {productServiceSalesRows.length
+                    ? `${productServiceTopShare.toFixed(1)}% top share`
+                    : "No line items"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {salesProductServiceLoading ? (
+                <Skeleton className="h-64" />
+              ) : productServiceSalesRows.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product / service</TableHead>
+                      <TableHead className="text-right">Invoices</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="text-right">Sales</TableHead>
+                      <TableHead className="text-right">VAT</TableHead>
+                      <TableHead className="text-right">Avg unit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {productServiceSalesRows.slice(0, 12).map((row) => (
+                      <TableRow key={row.productService}>
+                        <TableCell>
+                          <div className="font-medium">{row.productService}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.lineCount} lines - {row.supplyTypes.join(", ")}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          {formatCurrency(row.amountAed, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(row.vatAed, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No invoice line-item sales found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
@@ -4941,13 +5567,150 @@ export default function Reports() {
 
           <Card>
             <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Fixed asset register</CardTitle>
+                  <CardDescription>
+                    Asset cost, accumulated depreciation, net book value, and capitalization review.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/fixed-assets">Open fixed assets</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <Skeleton className="h-96" />
+              ) : fixedAssetRegisterReport.rows.length ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Active assets</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {fixedAssetRegisterReport.totalAssets}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Asset cost</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Net book value</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(fixedAssetRegisterReport.totalNetBookValue, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Review items</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {fixedAssetRegisterReport.reviewCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[960px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Asset</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Purchase date</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Cost</TableHead>
+                            <TableHead className="text-right">Depreciation</TableHead>
+                            <TableHead className="text-right">NBV</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {fixedAssetRegisterReport.rows.slice(0, 12).map((asset) => (
+                            <TableRow key={asset.id}>
+                              <TableCell>
+                                <div className="font-medium">{asset.asset_name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {asset.asset_number || asset.serial_number || "No asset number"}
+                                </div>
+                              </TableCell>
+                              <TableCell>{asset.category}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(asset.purchase_date)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
+                                  {asset.needs_capitalization_je
+                                    ? "Capitalization review"
+                                    : asset.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(asset.purchaseCost, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(asset.accumulatedDepreciation, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(asset.netBookValue, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div className="rounded-md border p-4">
+                      <div className="mb-3">
+                        <div className="font-medium">Category valuation</div>
+                        <div className="text-xs text-muted-foreground">
+                          Active assets grouped by category.
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {fixedAssetRegisterReport.byCategory.length ? (
+                          fixedAssetRegisterReport.byCategory.slice(0, 8).map((category) => (
+                            <div
+                              key={category.category}
+                              className="flex items-center justify-between gap-4 text-sm"
+                            >
+                              <div>
+                                <div className="font-medium">{category.category}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {category.count} assets
+                                </div>
+                              </div>
+                              <div className="text-right font-mono">
+                                {formatCurrency(category.totalNetBookValue, "AED", locale)}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-muted-foreground">
+                            No active asset categories.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No fixed assets registered yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Balance automation queues</CardTitle>
               <CardDescription>
                 Current open-balance signals for collections and payable follow-up.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">Collections queue</div>
                   <div className="font-mono text-2xl font-semibold">
@@ -4958,6 +5721,18 @@ export default function Reports() {
                   <div className="text-xs text-muted-foreground">Bill pay queue</div>
                   <div className="font-mono text-2xl font-semibold">
                     {balanceReport.overdueVendorCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Inventory review</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {inventoryValuationReport.reviewCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Asset review</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {fixedAssetRegisterReport.reviewCount}
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
@@ -5700,6 +6475,125 @@ export default function Reports() {
               ) : (
                 <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                   No posted journal lines found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="close" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">{monthEndReadinessPercent}%</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">{monthEndCompletedChecks}</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">{monthEndReviewChecks}</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Close Period</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="font-mono text-2xl font-bold">{monthEndPeriod}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Month-End Close Status</CardTitle>
+                  <CardDescription>
+                    {monthEndCloseStatus
+                      ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
+                      : monthEndPeriodLabel}
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/month-end">Open month-end</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {monthEndCloseLoading ? (
+                <Skeleton className="h-80" />
+              ) : monthEndChecklist.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Check</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Details</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {monthEndChecklist.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{item.title}</TableCell>
+                        <TableCell>
+                          <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
+                            {item.status === "complete" ? "Complete" : "Needs review"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {item.description}
+                        </TableCell>
+                        <TableCell className="text-sm">{item.details}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No month-end close checks found for this period.
                 </div>
               )}
             </CardContent>

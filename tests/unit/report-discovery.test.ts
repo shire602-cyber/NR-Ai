@@ -31,6 +31,10 @@ describe("report discoverability", () => {
   const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
+  const exportSource = read("client/src/lib/export.ts");
+  const reportsRouteSource = read("server/routes/reports.routes.ts");
+  const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
+  const inventoryRouteSource = read("server/routes/inventory.routes.ts");
 
   const expectedLiveReports = [
     "Profit & Loss",
@@ -48,16 +52,20 @@ describe("report discoverability", () => {
     "Corporate Tax Estimate",
     "Customer Balance Summary",
     "Vendor Balance Summary",
+    "Inventory Valuation",
+    "Fixed Asset Register",
     "Invoice Status",
+    "Month-End Close Status",
     "Budget vs Actual",
     "Cash Flow Forecast",
     "Revenue by Customer",
+    "Sales by Product/Service",
     "Expenses by Vendor",
     "Expenses by Category",
   ];
 
-  it("keeps the Reports catalog at 21 live high-level reports", () => {
-    expect(liveReportCatalog).toHaveLength(21);
+  it("keeps the Reports catalog at 25 live high-level reports", () => {
+    expect(liveReportCatalog).toHaveLength(25);
 
     for (const label of expectedLiveReports) {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
@@ -93,6 +101,7 @@ describe("report discoverability", () => {
       "/reports?tab=balances",
       "/reports?tab=expenses",
       "/reports?tab=ledger",
+      "/reports?tab=close",
       "/reports?tab=planning",
     ]) {
       expect(liveReportCatalog.map((report) => reportHref(report))).toContain(href);
@@ -284,6 +293,23 @@ describe("report discoverability", () => {
     expect(ownerTaxPlaybook?.tab).toBe("tax");
     expect(accountantTaxPlaybook?.reportIds).toContain("corporate-tax-estimate");
     expect(accountantTaxPlaybook?.tab).toBe("tax");
+    const accountantClosePlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "accountant")
+      ?.automations.find((playbook) => playbook.id === "accountant-close-review");
+
+    const ownerCollectionsPlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "owner")
+      ?.automations.find((playbook) => playbook.id === "owner-cash-collections");
+    const accountantAdvisoryPlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "accountant")
+      ?.automations.find((playbook) => playbook.id === "accountant-advisory-pack");
+
+    expect(accountantClosePlaybook?.reportIds).toContain("month-end-close-status");
+    expect(accountantClosePlaybook?.reportIds).toContain("inventory-valuation");
+    expect(accountantClosePlaybook?.reportIds).toContain("fixed-asset-register");
+    expect(accountantClosePlaybook?.tab).toBe("close");
+    expect(ownerCollectionsPlaybook?.reportIds).toContain("sales-product-service");
+    expect(accountantAdvisoryPlaybook?.reportIds).toContain("sales-product-service");
   });
 
   it("offers persona report packs with an index and automation workbook", () => {
@@ -381,6 +407,46 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Open Corporate Tax");
     expect(reportsSource).toContain("corporate_tax_estimate");
     expect(reportsSource).toContain("Corporate Tax Estimate");
+    expect(reportsSource).toContain("salesProductServiceReport");
+    expect(reportsSource).toContain("productServiceSalesRows");
+    expect(reportsSource).toContain("Sales by product/service");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="tax"'),
+        reportsSource.indexOf('<TabsContent value="sales"')
+      )
+    ).not.toContain("Sales by product/service");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="sales"'),
+        reportsSource.indexOf('<TabsContent value="balances"')
+      )
+    ).toContain("Sales by product/service");
+    expect(exportSource).toContain("Sales by Product Service");
+    expect(reportsSource).toContain("sales-product-service");
+    expect(reportsRouteSource).toContain("/api/companies/:id/reports/sales-product-service");
+    expect(reportsRouteSource).toContain("inArray(invoiceLines.invoiceId, invoiceIds)");
+    expect(reportsSource).toContain("monthEndCloseStatus");
+    expect(reportsSource).toContain("Month-End Close Status");
+    expect(reportsSource).toContain("/month-end/checklist");
+    expect(reportsSource).toContain('data-testid="tab-month-end-close-status"');
+    expect(exportSource).toContain("prepareMonthEndCloseStatusForExport");
+    expect(exportSource).toContain("Month-End Checklist");
+    expect(reportsSource).toContain("fixedAssetRegisterReport");
+    expect(reportsSource).toContain("inventoryValuationReport");
+    expect(reportsSource).toContain("Inventory valuation");
+    expect(reportsSource).toContain("/inventory-movements");
+    expect(exportSource).toContain("Inventory Valuation");
+    expect(exportSource).toContain("Inventory Summary");
+    expect(inventoryRouteSource).toContain("/api/companies/:companyId/products");
+    expect(inventoryRouteSource).toContain("/api/companies/:companyId/inventory-movements");
+    expect(reportsSource).toContain("Fixed asset register");
+    expect(reportsSource).toContain("/fixed-assets");
+    expect(reportsSource).toContain("/fixed-assets/summary");
+    expect(exportSource).toContain("Fixed Asset Register");
+    expect(exportSource).toContain("Fixed Assets by Category");
+    expect(fixedAssetsRouteSource).toContain("/api/companies/:companyId/fixed-assets");
+    expect(fixedAssetsRouteSource).toContain("/api/companies/:companyId/fixed-assets/summary");
 
     for (const workspace of reportPersonaWorkspaces) {
       expect(
@@ -478,6 +544,7 @@ describe("report discoverability", () => {
       "balances",
       "expenses",
       "ledger",
+      "close",
       "planning",
     ]);
     expect(catalogSource).toContain("type ReportTab = (typeof reportTabs)[number]");
@@ -485,6 +552,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("return reportTabs.includes(tab as ReportTab)");
     expect(reportsSource).toContain(': "pl"');
     expect(reportsSource).toContain('data-testid="tab-corporate-tax"');
+    expect(reportsSource).toContain('data-testid="tab-month-end-close-status"');
     expect(reportsSource).toContain('data-testid="text-corporate-tax-payable"');
 
     for (const tab of reportTabs) {
@@ -571,10 +639,14 @@ describe("report discoverability", () => {
     for (const queueId of [
       "collections",
       "bill-pay",
+      "inventory-risk",
       "receipt-posting",
       "vat-readiness",
+      "sales-mix",
       "corporate-tax",
+      "fixed-asset-review",
       "close-review",
+      "month-end-close",
       "planning-risk",
     ]) {
       expect(reportsSource).toContain(`id: "${queueId}"`);
@@ -583,9 +655,12 @@ describe("report discoverability", () => {
     for (const destination of [
       'href: "/payment-chasing"',
       'href: "/bill-pay?tab=summary"',
+      'href: "/inventory"',
+      'href: "/fixed-assets"',
       'href: "/vat-filing"',
       'tab: "expenses"',
       'tab: "tax"',
+      'tab: "close"',
       'tab: "planning"',
     ]) {
       expect(reportsSource).toContain(destination);

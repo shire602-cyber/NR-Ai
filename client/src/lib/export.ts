@@ -560,6 +560,30 @@ export function prepareInvoiceStatusForExport(report: any): ExportData[] {
         })) ?? [],
     },
     {
+      sheetName: "Sales by Product Service",
+      columns: [
+        { header: "Product / Service", key: "productService", width: 34 },
+        { header: "Invoices", key: "invoiceCount", width: 12 },
+        { header: "Lines", key: "lineCount", width: 10 },
+        { header: "Quantity", key: "quantity", width: 14 },
+        { header: "Sales (AED)", key: "amountAed", width: 18 },
+        { header: "VAT (AED)", key: "vatAed", width: 16 },
+        { header: "Average Unit (AED)", key: "averageUnitPriceAed", width: 20 },
+        { header: "Supply Types", key: "supplyTypes", width: 28 },
+      ],
+      rows:
+        report?.productServiceRows?.map((row: any) => ({
+          productService: row.productService,
+          invoiceCount: row.invoiceCount,
+          lineCount: row.lineCount,
+          quantity: formatExportAmount(row.quantity),
+          amountAed: formatExportAmount(row.amountAed),
+          vatAed: formatExportAmount(row.vatAed),
+          averageUnitPriceAed: formatExportAmount(row.averageUnitPriceAed),
+          supplyTypes: Array.isArray(row.supplyTypes) ? row.supplyTypes.join(", ") : "",
+        })) ?? [],
+    },
+    {
       sheetName: "Reminder Routing",
       columns: [
         { header: "Customer", key: "customerName", width: 30 },
@@ -808,6 +832,44 @@ export function prepareLedgerReportsForExport(report: any): ExportData[] {
   ];
 }
 
+export function prepareMonthEndCloseStatusForExport(report: any): ExportData[] {
+  return [
+    {
+      sheetName: "Month-End Close Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 30 },
+        { header: "Value", key: "value", width: 24 },
+      ],
+      rows: [
+        { metric: "Period", value: report?.period ?? "" },
+        { metric: "Period start", value: formatDateForExport(report?.periodStart) },
+        { metric: "Period end", value: formatDateForExport(report?.periodEnd) },
+        { metric: "Readiness %", value: formatExportPercent(report?.readinessPercent) },
+        { metric: "Completed checks", value: report?.completedChecks ?? 0 },
+        { metric: "Checks needing review", value: report?.reviewChecks ?? 0 },
+      ],
+    },
+    {
+      sheetName: "Month-End Checklist",
+      columns: [
+        { header: "No.", key: "number", width: 8 },
+        { header: "Check", key: "title", width: 34 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Description", key: "description", width: 48 },
+        { header: "Details", key: "details", width: 60 },
+      ],
+      rows:
+        report?.checklist?.map((item: any) => ({
+          number: item.id,
+          title: item.title,
+          status: item.status === "complete" ? "Complete" : "Needs review",
+          description: item.description,
+          details: item.details ?? "",
+        })) ?? [],
+    },
+  ];
+}
+
 export function preparePlanningReportsForExport(report: any): ExportData[] {
   const budget = report?.budget;
   const lowestProjection = report?.lowestProjection;
@@ -927,6 +989,11 @@ export function preparePlanningReportsForExport(report: any): ExportData[] {
 export function prepareBalanceSummaryReportsForExport(report: any): ExportData[] {
   const customers = report?.customers ?? [];
   const vendors = report?.vendors ?? [];
+  const inventory = report?.inventory ?? {};
+  const inventoryRows = inventory.rows ?? [];
+  const fixedAssets = report?.fixedAssets ?? {};
+  const fixedAssetRows = fixedAssets.rows ?? [];
+  const fixedAssetCategories = fixedAssets.byCategory ?? [];
 
   return [
     {
@@ -955,8 +1022,143 @@ export function prepareBalanceSummaryReportsForExport(report: any): ExportData[]
           metric: "Net receivable less payable (AED)",
           value: formatExportAmount(report?.netBalanceAed),
         },
+        { metric: "Active inventory products", value: inventory.activeProductCount ?? 0 },
+        {
+          metric: "Inventory valuation (AED)",
+          value: formatExportAmount(inventory.totalStockValueAed),
+        },
+        { metric: "Inventory review items", value: inventory.reviewCount ?? 0 },
         { metric: "Generated at", value: formatDateForExport(report?.generatedAt) },
       ],
+    },
+    {
+      sheetName: "Inventory Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 22 },
+      ],
+      rows: [
+        { metric: "Products", value: inventory.productCount ?? 0 },
+        { metric: "Active products", value: inventory.activeProductCount ?? 0 },
+        { metric: "Total units", value: formatExportAmount(inventory.totalUnits) },
+        {
+          metric: "Stock value (AED)",
+          value: formatExportAmount(inventory.totalStockValueAed),
+        },
+        { metric: "Low-stock products", value: inventory.lowStockCount ?? 0 },
+        { metric: "Negative-stock products", value: inventory.negativeStockCount ?? 0 },
+        { metric: "Missing-cost products", value: inventory.missingCostCount ?? 0 },
+        { metric: "Inventory movements", value: inventory.movementCount ?? 0 },
+      ],
+    },
+    {
+      sheetName: "Inventory Valuation",
+      columns: [
+        { header: "Product", key: "name", width: 30 },
+        { header: "SKU", key: "sku", width: 18 },
+        { header: "Unit", key: "unit", width: 10 },
+        { header: "Active", key: "isActive", width: 10 },
+        { header: "Current Stock", key: "currentStock", width: 16 },
+        { header: "Unit Cost (AED)", key: "unitCost", width: 18 },
+        { header: "Stock Value (AED)", key: "stockValueAed", width: 20 },
+        { header: "Low Stock Threshold", key: "lowStockThreshold", width: 20 },
+        { header: "Movement Count", key: "movementCount", width: 16 },
+        { header: "Review", key: "review", width: 28 },
+      ],
+      rows: inventoryRows.map((row: any) => ({
+        name: row.name || "Unnamed product",
+        sku: row.sku || "",
+        unit: row.unit || "",
+        isActive: row.isActive ? "Yes" : "No",
+        currentStock: row.currentStock ?? 0,
+        unitCost: formatExportAmount(row.unitCost ?? row.costPrice),
+        stockValueAed: formatExportAmount(row.stockValueAed),
+        lowStockThreshold: row.lowStockThreshold ?? "",
+        movementCount: row.movementCount ?? 0,
+        review: row.isNegativeStock
+          ? "Negative stock"
+          : row.isMissingCost
+            ? "Missing cost"
+            : row.isLowStock
+              ? "Low stock"
+              : "",
+      })),
+    },
+    {
+      sheetName: "Fixed Asset Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 22 },
+      ],
+      rows: [
+        { metric: "Active assets", value: fixedAssets.totalAssets ?? 0 },
+        { metric: "Total cost (AED)", value: formatExportAmount(fixedAssets.totalCost) },
+        {
+          metric: "Accumulated depreciation (AED)",
+          value: formatExportAmount(fixedAssets.totalAccumulatedDepreciation),
+        },
+        {
+          metric: "Net book value (AED)",
+          value: formatExportAmount(fixedAssets.totalNetBookValue),
+        },
+        { metric: "Disposed assets", value: fixedAssets.disposedAssetCount ?? 0 },
+        {
+          metric: "Capitalization review items",
+          value: fixedAssets.capitalizationReviewCount ?? 0,
+        },
+        {
+          metric: "Depreciation review items",
+          value: fixedAssets.depreciationReviewCount ?? 0,
+        },
+      ],
+    },
+    {
+      sheetName: "Fixed Assets by Category",
+      columns: [
+        { header: "Category", key: "category", width: 24 },
+        { header: "Assets", key: "count", width: 10 },
+        { header: "Cost (AED)", key: "totalCost", width: 18 },
+        {
+          header: "Accumulated Depreciation (AED)",
+          key: "totalAccumulatedDepreciation",
+          width: 28,
+        },
+        { header: "Net Book Value (AED)", key: "totalNetBookValue", width: 22 },
+      ],
+      rows: fixedAssetCategories.map((row: any) => ({
+        category: row.category || "Uncategorized",
+        count: row.count ?? 0,
+        totalCost: formatExportAmount(row.totalCost),
+        totalAccumulatedDepreciation: formatExportAmount(row.totalAccumulatedDepreciation),
+        totalNetBookValue: formatExportAmount(row.totalNetBookValue),
+      })),
+    },
+    {
+      sheetName: "Fixed Asset Register",
+      columns: [
+        { header: "Asset", key: "assetName", width: 30 },
+        { header: "Asset #", key: "assetNumber", width: 16 },
+        { header: "Category", key: "category", width: 20 },
+        { header: "Purchase Date", key: "purchaseDate", width: 14 },
+        { header: "Cost (AED)", key: "purchaseCost", width: 16 },
+        { header: "Accumulated Depreciation (AED)", key: "accumulatedDepreciation", width: 28 },
+        { header: "Net Book Value (AED)", key: "netBookValue", width: 22 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Review", key: "review", width: 32 },
+      ],
+      rows: fixedAssetRows.map((row: any) => ({
+        assetName: row.asset_name || "Unnamed asset",
+        assetNumber: row.asset_number || "",
+        category: row.category || "Uncategorized",
+        purchaseDate: formatDateForExport(row.purchase_date),
+        purchaseCost: formatExportAmount(row.purchaseCost ?? row.purchase_cost),
+        accumulatedDepreciation: formatExportAmount(
+          row.accumulatedDepreciation ?? row.accumulated_depreciation
+        ),
+        netBookValue: formatExportAmount(row.netBookValue ?? row.net_book_value),
+        status: row.status || "",
+        review: row.needs_capitalization_je ? "Capitalization journal review" : "",
+      })),
     },
     {
       sheetName: "Customer Balances",

@@ -30,7 +30,11 @@ Scope: this file applies to the whole repository.
   `npm run test:coverage` for the baseline coverage ratchet.
 - Run the broader readiness sweep with `npm run audit:campaign`; it chains type/contract checks,
   audit inventory, frontend API coverage, production dependency audit, unit tests, and build.
+- For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
+  `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.
+- Generate audit evidence with `npm run audit:matrix > docs/audit/audit-matrix.generated.md` and
+  `npm run audit:inventory -- --markdown > docs/audit/audit-inventory.generated.md`.
 - Lint with `npm run lint`; use `npm run lint:fix` only when you intend to modify files.
 - Check formatting with `npm run format:check`; use `npm run format` only when you intend to
   modify files. `migrations/meta/` is generated Drizzle metadata and is ignored by Prettier.

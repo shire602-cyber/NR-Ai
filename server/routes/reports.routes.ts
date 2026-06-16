@@ -133,7 +133,7 @@ export function registerReportRoutes(app: Express) {
       }
 
       const cashFlowData: any[] = [];
-      let currentDate = new Date(startDate);
+      const currentDate = new Date(startDate);
 
       while (currentDate <= now) {
         let periodEnd: Date;
@@ -571,6 +571,133 @@ export function registerReportRoutes(app: Express) {
           overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
           maxDaysOverdue: Number(row.max_days_overdue) || 0,
         })),
+      });
+    })
+  );
+
+  // Sales by Product/Service report — groups issued invoice lines by line description.
+  app.get(
+    "/api/companies/:id/reports/sales-product-service",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+      const { startDate, endDate, from, to } = req.query as {
+        startDate?: string;
+        endDate?: string;
+        from?: string;
+        to?: string;
+      };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const periodStart = startDate ?? from;
+      const periodEnd = endDate ?? to;
+      const fromDate = periodStart ? uaeDayStart(periodStart) : undefined;
+      const toDate = periodEnd ? uaeDayEnd(periodEnd) : undefined;
+
+      const invoiceRows: Invoice[] = (
+        await db
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.companyId, companyId),
+              fromDate ? gte(invoices.date, fromDate) : undefined,
+              toDate ? lte(invoices.date, toDate) : undefined
+            )
+          )
+      ).filter(
+        (invoice: Invoice) =>
+          invoice.status !== "draft" && invoice.status !== "void" && invoice.status !== "cancelled"
+      );
+
+      const invoiceIds = invoiceRows.map((invoice) => invoice.id);
+      const lineRows: InvoiceLine[] =
+        invoiceIds.length > 0
+          ? await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds))
+          : [];
+      const invoiceById = new Map(invoiceRows.map((invoice) => [invoice.id, invoice]));
+      const groupedRows = new Map<
+        string,
+        {
+          productService: string;
+          invoiceIds: Set<string>;
+          lineCount: number;
+          quantity: number;
+          amountAed: number;
+          vatAed: number;
+          supplyTypes: Set<string>;
+        }
+      >();
+
+      for (const line of lineRows) {
+        const invoice = invoiceById.get(line.invoiceId);
+        if (!invoice) continue;
+
+        const productService = line.description.trim().replace(/\s+/g, " ") || "Unlabeled item";
+        const exchangeRate = Number(invoice.exchangeRate ?? 1);
+        const rate = Number.isFinite(exchangeRate) && exchangeRate > 0 ? exchangeRate : 1;
+        const quantity = Number(line.quantity ?? 0) || 0;
+        const unitPrice = Number(line.unitPrice ?? 0) || 0;
+        const vatRate = Number(line.vatRate ?? UAE_VAT_RATE) || 0;
+        const amountAed = quantity * unitPrice * rate;
+        const vatAed = amountAed * vatRate;
+        const row = groupedRows.get(productService) ?? {
+          productService,
+          invoiceIds: new Set<string>(),
+          lineCount: 0,
+          quantity: 0,
+          amountAed: 0,
+          vatAed: 0,
+          supplyTypes: new Set<string>(),
+        };
+
+        row.invoiceIds.add(line.invoiceId);
+        row.lineCount += 1;
+        row.quantity += quantity;
+        row.amountAed += amountAed;
+        row.vatAed += vatAed;
+        row.supplyTypes.add(line.vatSupplyType ?? "standard_rated");
+        groupedRows.set(productService, row);
+      }
+
+      const rows = Array.from(groupedRows.values())
+        .map((row) => ({
+          productService: row.productService,
+          invoiceCount: row.invoiceIds.size,
+          lineCount: row.lineCount,
+          quantity: Math.round(row.quantity * 100) / 100,
+          amountAed: Math.round(row.amountAed * 100) / 100,
+          vatAed: Math.round(row.vatAed * 100) / 100,
+          averageUnitPriceAed:
+            row.quantity > 0 ? Math.round((row.amountAed / row.quantity) * 100) / 100 : 0,
+          supplyTypes: Array.from(row.supplyTypes).sort(),
+        }))
+        .sort(
+          (a, b) => b.amountAed - a.amountAed || a.productService.localeCompare(b.productService)
+        );
+      const totalAmountAed = rows.reduce((sum, row) => sum + row.amountAed, 0);
+
+      res.json({
+        period: {
+          startDate: periodStart ?? null,
+          endDate: periodEnd ?? null,
+        },
+        totals: {
+          productServiceCount: rows.length,
+          invoiceCount: invoiceRows.length,
+          lineCount: lineRows.length,
+          quantity: Math.round(rows.reduce((sum, row) => sum + row.quantity, 0) * 100) / 100,
+          amountAed: Math.round(totalAmountAed * 100) / 100,
+          vatAed: Math.round(rows.reduce((sum, row) => sum + row.vatAed, 0) * 100) / 100,
+          topProductServiceShare:
+            totalAmountAed > 0 && rows[0]
+              ? Math.round((rows[0].amountAed / totalAmountAed) * 10000) / 100
+              : 0,
+        },
+        rows,
       });
     })
   );

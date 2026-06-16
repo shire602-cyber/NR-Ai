@@ -194,10 +194,73 @@ describe("report export helpers", () => {
           maxDaysOverdue: 7,
         },
       ],
+      inventory: {
+        productCount: 1,
+        activeProductCount: 1,
+        totalUnits: 12,
+        totalStockValueAed: 9600,
+        lowStockCount: 1,
+        negativeStockCount: 0,
+        missingCostCount: 0,
+        movementCount: 3,
+        reviewCount: 1,
+        rows: [
+          {
+            name: "Router bit set",
+            sku: "INV-001",
+            unit: "pcs",
+            isActive: true,
+            currentStock: 12,
+            unitCost: 800,
+            stockValueAed: 9600,
+            lowStockThreshold: 15,
+            movementCount: 3,
+            isLowStock: true,
+            isNegativeStock: false,
+            isMissingCost: false,
+          },
+        ],
+      },
+      fixedAssets: {
+        totalAssets: 1,
+        totalCost: 42000,
+        totalAccumulatedDepreciation: 7000,
+        totalNetBookValue: 35000,
+        disposedAssetCount: 0,
+        capitalizationReviewCount: 1,
+        depreciationReviewCount: 1,
+        byCategory: [
+          {
+            category: "Equipment",
+            count: 1,
+            totalCost: 42000,
+            totalAccumulatedDepreciation: 7000,
+            totalNetBookValue: 35000,
+          },
+        ],
+        rows: [
+          {
+            asset_name: "CNC Router",
+            asset_number: "FA-001",
+            category: "Equipment",
+            purchase_date: "2026-01-15",
+            purchaseCost: 42000,
+            accumulatedDepreciation: 7000,
+            netBookValue: 35000,
+            status: "active",
+            needs_capitalization_je: true,
+          },
+        ],
+      },
     });
 
     expect(sheets.map((sheet) => sheet.sheetName)).toEqual([
       "Balance Summary",
+      "Inventory Summary",
+      "Inventory Valuation",
+      "Fixed Asset Summary",
+      "Fixed Assets by Category",
+      "Fixed Asset Register",
       "Customer Balances",
       "Vendor Balances",
     ]);
@@ -205,13 +268,35 @@ describe("report export helpers", () => {
       metric: "Net receivable less payable (AED)",
       value: "9650.00",
     });
-    expect(sheets[1].rows[0]).toMatchObject({
+    expect(sheets[1].rows).toContainEqual({
+      metric: "Stock value (AED)",
+      value: "9600.00",
+    });
+    expect(sheets[2].rows[0]).toMatchObject({
+      name: "Router bit set",
+      stockValueAed: "9600.00",
+      review: "Low stock",
+    });
+    expect(sheets[3].rows).toContainEqual({
+      metric: "Net book value (AED)",
+      value: "35000.00",
+    });
+    expect(sheets[4].rows[0]).toMatchObject({
+      category: "Equipment",
+      totalNetBookValue: "35000.00",
+    });
+    expect(sheets[5].rows[0]).toMatchObject({
+      assetName: "CNC Router",
+      netBookValue: "35000.00",
+      review: "Capitalization journal review",
+    });
+    expect(sheets[6].rows[0]).toMatchObject({
       name: "Pearl Trading LLC",
       invoiceCount: 3,
       overdueBalanceAed: "5250.00",
       maxDaysOverdue: 18,
     });
-    expect(sheets[2].rows[0]).toMatchObject({
+    expect(sheets[7].rows[0]).toMatchObject({
       name: "Office Supplies FZE",
       billCount: 2,
       openBalanceAed: "6100.00",
