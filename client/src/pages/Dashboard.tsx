@@ -603,6 +603,73 @@ function CustomerDashboard() {
     });
   }, [dashboardComparisonRows, preferredReportPackReadiness]);
 
+  const preferredAutomationNextAction = useMemo<{
+    title: string;
+    detail: string;
+    href: string;
+    cta: string;
+    badge: string;
+    badgeVariant: BadgeProps["variant"];
+  }>(() => {
+    const warningComparison = dashboardComparisonRows.find(
+      (row) => dashboardComparisonBadgeVariant(row) === "warning"
+    );
+
+    if (warningComparison) {
+      return {
+        title: `Review ${warningComparison.label.toLowerCase()} movement`,
+        detail: `${warningComparison.label} moved ${formatDashboardComparisonPercent(
+          warningComparison.percentChange
+        )} vs prior month for ${preferredReportWorkspace.navLabel.toLowerCase()}.`,
+        href: warningComparison.href,
+        cta: "Open report",
+        badge: "Movement",
+        badgeVariant: "warning",
+      };
+    }
+
+    if (
+      reportAutomationHealth.reviewSignals > 0 ||
+      preferredReportPackReadiness.plannedReports > 0
+    ) {
+      return {
+        title: "Review automation readiness",
+        detail: `${reportAutomationHealth.reviewSignals} review signals and ${preferredReportPackReadiness.plannedReports} planned report gaps before scheduled pack delivery.`,
+        href: reportSectionHref(preferredReportWorkspace, "automation-rules"),
+        cta: "Open rules",
+        badge: "Review",
+        badgeVariant: "warning",
+      };
+    }
+
+    const primaryPlaybook = preferredReportWorkspace.automations[0];
+
+    if (primaryPlaybook) {
+      return {
+        title: primaryPlaybook.title,
+        detail: `${primaryPlaybook.trigger}. ${preferredReportWorkspace.packSchedule.automation}`,
+        href: reportAutomationPlaybookHref(primaryPlaybook, preferredReportWorkspace.persona),
+        cta: primaryPlaybook.cta,
+        badge: "Ready lane",
+        badgeVariant: "success",
+      };
+    }
+
+    return {
+      title: "Open automation center",
+      detail: preferredReportWorkspace.packSchedule.automation,
+      href: reportSectionHref(preferredReportWorkspace, "automation-command-center"),
+      cta: "Open center",
+      badge: "Ready",
+      badgeVariant: "success",
+    };
+  }, [
+    dashboardComparisonRows,
+    preferredReportPackReadiness.plannedReports,
+    preferredReportWorkspace,
+    reportAutomationHealth.reviewSignals,
+  ]);
+
   const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
   const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
   const margin = stats?.revenue > 0 ? (profit / stats.revenue) * 100 : 0;
@@ -1078,6 +1145,36 @@ function CustomerDashboard() {
                   <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                       Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              <div
+                className="mt-4 rounded-md border border-border/70 p-4"
+                data-testid="dashboard-next-automation-action"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Next automation action
+                      </div>
+                      <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
+                        {preferredAutomationNextAction.badge}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-foreground">
+                      {preferredAutomationNextAction.title}
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {preferredAutomationNextAction.detail}
+                    </p>
+                  </div>
+                  <Link href={preferredAutomationNextAction.href}>
+                    <Button variant="outline" size="sm" className="shrink-0">
+                      {preferredAutomationNextAction.cta}
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>

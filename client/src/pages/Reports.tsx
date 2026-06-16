@@ -58,6 +58,7 @@ import {
   reportAutomationPlaybookHref,
   reportPersonas,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportTabs,
   reportHref,
   reportsHref,
@@ -6006,6 +6007,14 @@ export default function Reports() {
                       data-testid={`button-open-workspace-${workspace.persona}`}
                     >
                       Open reports
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={reportSectionHref(workspace, "automation-command-center")}
+                        data-testid={`button-open-automation-center-${workspace.persona}`}
+                      >
+                        Open automations
+                      </Link>
                     </Button>
                     <Button
                       type="button"

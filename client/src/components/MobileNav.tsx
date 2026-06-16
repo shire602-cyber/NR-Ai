@@ -2,7 +2,11 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
 import { useState, useCallback } from "react";
-import { reportPersonaWorkspaces, reportWorkspaceHref } from "@/lib/reportCatalog";
+import {
+  reportPersonaWorkspaces,
+  reportSectionHref,
+  reportWorkspaceHref,
+} from "@/lib/reportCatalog";
 
 interface NavItem {
   label: string;
@@ -24,6 +28,10 @@ const moreLinks = [
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.navLabel,
     href: reportWorkspaceHref(workspace),
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: workspace.automationNavLabel,
+    href: reportSectionHref(workspace, "automation-command-center"),
   })),
   { label: "Accounts", href: "/chart-of-accounts" },
   { label: "Journal", href: "/journal" },

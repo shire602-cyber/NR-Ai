@@ -22,6 +22,7 @@ import { useTranslation } from "@/lib/i18n";
 import {
   getPreferredReportPersona,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportWorkspaceHref,
   setPreferredReportPersona,
   type ReportPersona,
@@ -1258,18 +1259,33 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             );
           })}
         </div>
-        <Button
-          size="lg"
-          onClick={() => {
-            setPreferredReportPersona(selectedWorkspace.persona);
-            setLocation(reportWorkspaceHref(selectedWorkspace));
-          }}
-          className="gap-2 px-8"
-          data-testid="onboarding-open-report-workspace"
-        >
-          Open {selectedWorkspace.navLabel}
-          <ArrowRight className="w-4 h-4" />
-        </Button>
+        <div className="flex flex-col justify-center gap-2 sm:flex-row">
+          <Button
+            size="lg"
+            onClick={() => {
+              setPreferredReportPersona(selectedWorkspace.persona);
+              setLocation(reportWorkspaceHref(selectedWorkspace));
+            }}
+            className="gap-2 px-8"
+            data-testid="onboarding-open-report-workspace"
+          >
+            Open {selectedWorkspace.navLabel}
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              setPreferredReportPersona(selectedWorkspace.persona);
+              setLocation(reportSectionHref(selectedWorkspace, "automation-command-center"));
+            }}
+            className="gap-2 px-8"
+            data-testid="onboarding-open-automation-center"
+          >
+            Open {selectedWorkspace.automationNavLabel}
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg mx-auto">

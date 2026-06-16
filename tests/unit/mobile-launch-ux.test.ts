@@ -45,7 +45,9 @@ describe("Mobile launch UX guards", () => {
 
     expect(source).toContain("reportPersonaWorkspaces.map");
     expect(source).toContain("workspace.navLabel");
+    expect(source).toContain("workspace.automationNavLabel");
     expect(source).toContain("reportWorkspaceHref(workspace)");
+    expect(source).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(source).toContain('location.startsWith(href + "?")');
   });
 });

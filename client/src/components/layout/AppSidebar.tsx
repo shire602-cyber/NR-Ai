@@ -62,6 +62,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportWorkspaceHref,
   type ReportPersona,
 } from "@/lib/reportCatalog";
@@ -86,6 +87,12 @@ const reportWorkspaceTitleKeys: Record<ReportPersona, string> = {
   owner: "ownerReports",
   freelancer: "freelancerReports",
   accountant: "accountantReports",
+};
+
+const reportAutomationCenterTitleKeys: Record<ReportPersona, string> = {
+  owner: "ownerAutomationCenter",
+  freelancer: "freelancerAutomationCenter",
+  accountant: "accountantAutomationCenter",
 };
 
 const CUSTOMER_GROUPS: NavGroup[] = [
@@ -140,6 +147,10 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: reportWorkspaceTitleKeys[workspace.persona],
         url: reportWorkspaceHref(workspace),
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: reportAutomationCenterTitleKeys[workspace.persona],
+        url: reportSectionHref(workspace, "automation-command-center"),
       })),
       { titleKey: "financialStatements", url: "/financial-statements" },
       { titleKey: "vatFiling", url: "/vat-filing" },

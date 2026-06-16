@@ -147,6 +147,11 @@ describe("report discoverability", () => {
     expect(catalogSource).toContain("calculateReportAutomationHealth");
     expect(dashboardSource).toContain("calculateReportAutomationHealth({");
     expect(dashboardSource).toContain("reportAutomationHealth");
+    expect(dashboardSource).toContain("preferredAutomationNextAction");
+    expect(dashboardSource).toContain('data-testid="dashboard-next-automation-action"');
+    expect(dashboardSource).toContain("Next automation action");
+    expect(dashboardSource).toContain("Review automation readiness");
+    expect(dashboardSource).toContain("Ready lane");
     expect(dashboardSource).toContain('data-testid="dashboard-report-automation-health"');
     expect(dashboardSource).toContain("Automation health");
     expect(dashboardSource).toContain("Review automation health");
@@ -193,6 +198,8 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("Open automation rules");
     expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
     expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
+    expect(dashboardSource).toContain("preferredAutomationNextAction.href");
+    expect(dashboardSource).toContain("preferredAutomationNextAction.cta");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.cadence");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.delivery");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.automation");
@@ -200,11 +207,15 @@ describe("report discoverability", () => {
     expect(catalogSource).toContain("getPreferredReportPersona");
     expect(catalogSource).toContain("setPreferredReportPersona");
     expect(catalogSource).toContain("clearPreferredReportPersona");
+    expect(catalogSource).toContain("automationNavLabel");
     expect(mobileNavSource).toContain("reportPersonaWorkspaces.map");
     expect(mobileNavSource).toContain("workspace.navLabel");
+    expect(mobileNavSource).toContain("workspace.automationNavLabel");
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
+    expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
     expect(onboardingSource).toContain("workspace.navLabel");
+    expect(onboardingSource).toContain("selectedWorkspace.automationNavLabel");
     expect(onboardingSource).toContain("getPreferredReportPersona() ??");
     expect(onboardingSource).toContain('?? "owner"');
     expect(onboardingSource).toContain("setSelectedPersona(workspace.persona)");
@@ -213,14 +224,23 @@ describe("report discoverability", () => {
     expect(onboardingSource).toContain('data-testid="onboarding-report-workspaces"');
     expect(onboardingSource).toContain("onboarding-report-workspace-${workspace.persona}");
     expect(onboardingSource).toContain('data-testid="onboarding-open-report-workspace"');
+    expect(onboardingSource).toContain('data-testid="onboarding-open-automation-center"');
     expect(onboardingSource).toContain("reportWorkspaceHref(selectedWorkspace)");
+    expect(onboardingSource).toContain(
+      'reportSectionHref(selectedWorkspace, "automation-command-center")'
+    );
     expect(onboardingSource).toContain("workspace.automations.length");
     expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
     expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
+    expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
+    expect(sidebarSource).toContain("reportAutomationCenterTitleKeys[workspace.persona]");
     expect(i18nSource).toContain("ownerReports");
     expect(i18nSource).toContain("freelancerReports");
     expect(i18nSource).toContain("accountantReports");
+    expect(i18nSource).toContain("ownerAutomationCenter");
+    expect(i18nSource).toContain("freelancerAutomationCenter");
+    expect(i18nSource).toContain("accountantAutomationCenter");
     expect(reportsSource).toContain("function personaFilterFromSearch(");
     expect(reportsSource).toContain("fallbackPersona: ReportPersona | null = null");
     expect(reportsSource).toContain("getPreferredReportPersona()");
@@ -455,7 +475,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");
     expect(reportsSource).toContain("reportHref(report) ?? reportWorkspaceHref(workspace)");
+    expect(reportsSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
+    expect(reportsSource).toContain("button-open-automation-center-${workspace.persona}");
     expect(reportsSource).toContain("button-export-workspace-pack-${workspace.persona}");
     expect(reportsSource).toContain("button-export-workspace-pack-sheets-${workspace.persona}");
     expect(reportsSource).toContain("exportToGoogleSheets(");
