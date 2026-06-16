@@ -105,6 +105,7 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
+  ListFilter,
   Pencil,
   RotateCcw,
   Save,
@@ -210,6 +211,8 @@ interface ReportDeliveryRunSummary {
   errorMessage: string | null;
   createdAt: string;
 }
+
+type ReportDeliveryRunStatusFilter = "all" | "queued" | "sent" | "failed";
 
 interface ReportDeliverySchedulerScanSummary {
   id: string;
@@ -875,6 +878,16 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "owner", label: "Owner / Solo" },
   { id: "freelancer", label: "Freelancer" },
   { id: "accountant", label: "Accountant" },
+];
+
+const reportDeliveryRunStatusFilters: Array<{
+  id: ReportDeliveryRunStatusFilter;
+  label: string;
+}> = [
+  { id: "all", label: "All runs" },
+  { id: "queued", label: "Queued" },
+  { id: "sent", label: "Sent" },
+  { id: "failed", label: "Failed" },
 ];
 
 const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
@@ -1613,6 +1626,14 @@ function deliveryRunStatusVariant(status: string): BadgeProps["variant"] {
   return "info";
 }
 
+function matchesReportDeliveryRunStatusFilter(
+  status: string,
+  filter: ReportDeliveryRunStatusFilter
+): boolean {
+  if (filter === "all") return true;
+  return status === filter;
+}
+
 function deliveryPreviewCheckVariant(
   status: ReportDeliveryPlanPreview["checklist"][number]["status"]
 ): BadgeProps["variant"] {
@@ -1634,6 +1655,8 @@ export default function Reports() {
   const [editingReportDeliverySubscriptionId, setEditingReportDeliverySubscriptionId] = useState<
     string | null
   >(null);
+  const [reportDeliveryRunStatusFilter, setReportDeliveryRunStatusFilter] =
+    useState<ReportDeliveryRunStatusFilter>("all");
   const [reportDeliverySettingsDraft, setReportDeliverySettingsDraft] =
     useState<ReportDeliverySettingsDraft>({
       cadence: "",
@@ -3919,6 +3942,47 @@ export default function Reports() {
       matchesReportPersona([subscription.persona], personaFilter)
     );
   }, [personaFilter, reportDeliverySubscriptionSummaries]);
+
+  const reportDeliveryRunStatusCounts = useMemo(() => {
+    const counts: Record<ReportDeliveryRunStatusFilter, number> = {
+      all: 0,
+      queued: 0,
+      sent: 0,
+      failed: 0,
+    };
+
+    for (const subscription of visibleReportDeliverySubscriptions) {
+      for (const run of subscription.deliveryRuns) {
+        counts.all += 1;
+        if (run.status === "queued" || run.status === "sent" || run.status === "failed") {
+          counts[run.status] += 1;
+        }
+      }
+    }
+
+    return counts;
+  }, [visibleReportDeliverySubscriptions]);
+
+  const reportDeliveryRunTimelineRows = useMemo(() => {
+    return visibleReportDeliverySubscriptions
+      .flatMap((subscription) =>
+        subscription.deliveryRuns.map((run) => ({
+          ...run,
+          persona: subscription.persona,
+          workspaceLabel: subscription.workspace.navLabel,
+          subscriptionTitle: subscription.title,
+          subscriptionHref: subscription.href,
+        }))
+      )
+      .filter((run) =>
+        matchesReportDeliveryRunStatusFilter(run.status, reportDeliveryRunStatusFilter)
+      )
+      .sort(
+        (first, second) =>
+          new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
+      )
+      .slice(0, 6);
+  }, [reportDeliveryRunStatusFilter, visibleReportDeliverySubscriptions]);
 
   const reportDeliveryLauncherPreviewById = useMemo(() => {
     return reportDeliverySubscriptionSummaries.reduce<Record<string, ReportLaunchDeliveryPreview>>(
@@ -6432,6 +6496,90 @@ export default function Reports() {
           deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
           className="shadow-none"
         />
+
+        <div
+          className="rounded-md border border-border/70 p-3"
+          data-testid="report-delivery-run-timeline"
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ListFilter className="h-4 w-4 text-muted-foreground" />
+                Delivery run timeline
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Filter queued, sent, and failed report-pack automations within the current{" "}
+                {personaFilterLabel.toLowerCase()} view.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Delivery run status">
+              {reportDeliveryRunStatusFilters.map((filter) => (
+                <Button
+                  key={filter.id}
+                  type="button"
+                  size="sm"
+                  variant={reportDeliveryRunStatusFilter === filter.id ? "default" : "outline"}
+                  onClick={() => setReportDeliveryRunStatusFilter(filter.id)}
+                  data-testid={`report-delivery-run-filter-${filter.id}`}
+                >
+                  {filter.label}
+                  <span className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px]">
+                    {reportDeliveryRunStatusCounts[filter.id]}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {reportDeliveryRunTimelineRows.length > 0 ? (
+            <div
+              className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2"
+              data-testid="report-delivery-run-timeline-rows"
+            >
+              {reportDeliveryRunTimelineRows.map((run) => (
+                <div
+                  key={run.id}
+                  className="rounded-md bg-secondary/40 p-2 text-xs"
+                  data-testid={`report-delivery-run-timeline-${run.id}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={deliveryRunStatusVariant(run.status)} dot>
+                        {run.status}
+                      </Badge>
+                      <span className="font-medium text-foreground">
+                        {formatDeliveryRunTimestamp(run.createdAt)}
+                      </span>
+                    </div>
+                    <Badge variant="outline">{run.workspaceLabel}</Badge>
+                  </div>
+                  <div className="mt-2 font-medium text-foreground">{run.subscriptionTitle}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
+                    {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                  </div>
+                  {run.errorMessage ? (
+                    <div className="mt-1 text-destructive">{run.errorMessage}</div>
+                  ) : null}
+                  <div className="mt-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={run.subscriptionHref}>Open subscription</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              className="mt-3 rounded-md bg-secondary/40 p-3 text-xs text-muted-foreground"
+              data-testid="report-delivery-run-timeline-empty"
+            >
+              {reportDeliveryRunStatusFilter === "all"
+                ? `No delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`
+                : `No ${reportDeliveryRunStatusFilter} delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`}
+            </div>
+          )}
+        </div>
 
         {automationLoading ? (
           <Skeleton className="h-56 w-full" />

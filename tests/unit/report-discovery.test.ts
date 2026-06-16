@@ -931,7 +931,18 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportDeliveryRunsQuery");
     expect(reportsSource).toContain("reportDeliverySchedulerHealthQuery");
     expect(reportsSource).toContain("retryReportDeliveryRun");
+    expect(reportsSource).toContain("ReportDeliveryRunStatusFilter");
+    expect(reportsSource).toContain("reportDeliveryRunStatusFilters");
+    expect(reportsSource).toContain("reportDeliveryRunStatusFilter");
+    expect(reportsSource).toContain("setReportDeliveryRunStatusFilter");
+    expect(reportsSource).toContain("matchesReportDeliveryRunStatusFilter");
+    expect(reportsSource).toContain("reportDeliveryRunStatusCounts");
+    expect(reportsSource).toContain("reportDeliveryRunTimelineRows");
     expect(reportsSource).toContain("report-delivery-scheduler-health");
+    expect(reportsSource).toContain("report-delivery-run-timeline");
+    expect(reportsSource).toContain("report-delivery-run-filter-${filter.id}");
+    expect(reportsSource).toContain("report-delivery-run-timeline-${run.id}");
+    expect(reportsSource).toContain("report-delivery-run-timeline-empty");
     expect(reportsSource).toContain("Queue delivery");
     expect(reportsSource).toContain("Retry delivery");
     expect(reportsSource).toContain("/report-delivery/runs/${runId}/retry");

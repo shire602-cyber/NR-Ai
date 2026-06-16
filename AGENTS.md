@@ -119,8 +119,9 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command
   palette shortcuts, persona workspaces, report operations navigation, report decision-question
   metadata, decision shortcut paths, automation starter paths, report trigger-rule paths, delivery
-  subscription paths/settings controls, delivery previews/run history, comparison presets, report
-  coverage maps, report pack templates/exports, or report deep-link behavior changes.
+  subscription paths/settings controls, delivery previews/run-history timeline filters, comparison
+  presets, report coverage maps, report pack templates/exports, or report deep-link behavior
+  changes.
 - Use `npx vitest run tests/unit/report-catalog-routes.test.ts` after the authenticated report
   catalog discovery API, typed client, contract guard, or persona catalog filtering changes.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after shared report launcher/picker
