@@ -279,6 +279,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Pack Index");
     expect(reportsSource).toContain("Pack Summary");
     expect(reportsSource).toContain("Recommended Actions");
+    expect(reportsSource).toContain("Report Roadmap");
     expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Automation Health Trend");
     expect(reportsSource).toContain("Delivery Checklist");
@@ -293,6 +294,17 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("packRecommendations");
     expect(reportsSource).toContain("Recommended actions");
     expect(reportsSource).toContain("reportPackDeliveryReadiness");
+    expect(reportsSource).toContain("reportRoadmap");
+    expect(reportsSource).toContain("visibleReportRoadmap");
+    expect(reportsSource).toContain("visiblePlannedReportCount");
+    expect(reportsSource).toContain("plannedAutomationHooks");
+    expect(reportsSource).toContain("Planned report gaps");
+    expect(reportsSource).toContain("Roadmap status");
+    expect(reportsSource).toContain("Automation Unlock");
+    expect(reportsSource).toContain("report-roadmap-${workspace.persona}");
+    expect(reportsSource).toContain("Next report unlocks");
+    expect(reportsSource).toContain("Automation unlocks");
+    expect(reportsSource).toContain("Open next workflow");
     expect(reportsSource).toContain("visibleReportPackReadiness");
     expect(reportsSource).toContain("reportPackReadinessNeedingReview");
     expect(reportsSource).toContain("calculateReportAutomationHealth");

@@ -1537,6 +1537,44 @@ export default function Reports() {
     );
   }, [automationCoverageSummary, personaFilter]);
 
+  const reportRoadmap = useMemo(() => {
+    return workspaceSummaries.map((workspace) => {
+      const plannedAutomationHooks = Array.from(
+        new Set(workspace.plannedReports.map((report) => report.automation))
+      );
+      const plannedCategories = Array.from(
+        new Set(workspace.plannedReports.map((report) => report.category))
+      );
+      const nextReports = workspace.plannedReports.slice(0, 4);
+
+      return {
+        workspace,
+        plannedReports: workspace.plannedReports,
+        nextReports,
+        plannedAutomationHooks,
+        plannedCategories,
+        liveReportCount: workspace.reports.length - workspace.plannedReports.length,
+        plannedReportCount: workspace.plannedReports.length,
+        roadmapStatus: workspace.plannedReports.length > 0 ? "Roadmap gaps" : "Coverage complete",
+        nextWorkflow:
+          nextReports.length > 0
+            ? (reportHref(nextReports[0]) ?? reportWorkspaceHref(workspace))
+            : reportWorkspaceHref(workspace),
+      };
+    });
+  }, [workspaceSummaries]);
+
+  const visibleReportRoadmap = useMemo(() => {
+    return reportRoadmap.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportRoadmap]);
+
+  const visiblePlannedReportCount = visibleReportRoadmap.reduce(
+    (sum, item) => sum + item.plannedReportCount,
+    0
+  );
+
   const personaReportRecommendations = useMemo(() => {
     return workspaceSummaries.map((workspace) => {
       const recommendations: Array<{
@@ -1809,6 +1847,8 @@ export default function Reports() {
           packReadiness.automationHealth
         )
       : null;
+    const packRoadmap =
+      reportRoadmap.find((item) => item.workspace.persona === workspace.persona) ?? null;
 
     const packIndex: ExportData = {
       sheetName: "Pack Index",
@@ -1847,6 +1887,8 @@ export default function Reports() {
         },
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
+        { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
+        { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
         { metric: "Recommended actions", value: packRecommendations.length },
@@ -1899,6 +1941,33 @@ export default function Reports() {
             ? reportsHref({ tab: recommendation.tab, persona: workspace.persona })
             : reportWorkspaceHref(workspace)),
       })),
+    };
+
+    const reportRoadmapSheet: ExportData = {
+      sheetName: "Report Roadmap",
+      columns: [
+        { header: "Report", key: "report", width: 32 },
+        { header: "Status", key: "status", width: 18 },
+        { header: "Category", key: "category", width: 24 },
+        { header: "Comparison", key: "comparison", width: 28 },
+        { header: "Automation Unlock", key: "automation", width: 34 },
+        { header: "Workflow", key: "workflow", width: 40 },
+      ],
+      rows: workspace.reports
+        .slice()
+        .sort((a, b) => {
+          const aPlanned = a.status === "planned" ? 0 : 1;
+          const bPlanned = b.status === "planned" ? 0 : 1;
+          return aPlanned - bPlanned || a.name.localeCompare(b.name);
+        })
+        .map((report) => ({
+          report: report.name,
+          status: reportStatusMeta[report.status].label,
+          category: report.category,
+          comparison: report.comparison,
+          automation: report.automation,
+          workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
+        })),
     };
 
     const automationHealth: ExportData = {
@@ -2082,6 +2151,7 @@ export default function Reports() {
       packIndex,
       packSummary,
       recommendedActions,
+      reportRoadmapSheet,
       automationHealth,
       automationHealthTrend,
       deliveryChecklist,
@@ -2850,6 +2920,124 @@ export default function Reports() {
             })}
           </div>
         )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-roadmap-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-roadmap-title" className="text-xl font-semibold">
+              Report roadmap
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Planned report gaps by role, with the automation unlocks each workspace gains next.{" "}
+              {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant={visiblePlannedReportCount > 0 ? "warning" : "success"} dot>
+            {visiblePlannedReportCount} planned
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleReportRoadmap.map((item) => {
+            const workspace = item.workspace;
+            const WorkspaceIcon = workspace.icon;
+
+            return (
+              <Card key={workspace.persona} data-testid={`report-roadmap-${workspace.persona}`}>
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{workspace.title}</CardTitle>
+                        <CardDescription>{workspace.focus}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant={item.plannedReportCount > 0 ? "warning" : "success"} dot>
+                      {item.roadmapStatus}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Live now</div>
+                      <div className="font-mono text-lg font-semibold">{item.liveReportCount}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Planned</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {item.plannedReportCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Categories</div>
+                      <div className="font-mono text-lg font-semibold">
+                        {item.plannedCategories.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Next report unlocks
+                    </div>
+                    {item.nextReports.length > 0 ? (
+                      item.nextReports.map((report) => (
+                        <div
+                          key={report.id}
+                          className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-medium">{report.name}</div>
+                              <Badge variant="outline">{report.category}</Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {report.comparison} - {report.automation}
+                            </div>
+                          </div>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={reportHref(report) ?? reportWorkspaceHref(workspace)}>
+                              Open area
+                            </Link>
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                        All target reports for this workspace are live or API-backed.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Automation unlocks
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(item.plannedAutomationHooks.length > 0
+                        ? item.plannedAutomationHooks
+                        : ["No planned automation gaps"]
+                      ).map((hook) => (
+                        <Badge key={hook} variant="outline">
+                          {hook}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={item.nextWorkflow}>Open next workflow</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="report-pack-automation-title">
