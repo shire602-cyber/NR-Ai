@@ -94,7 +94,9 @@ describe("customer launch E2E surface", () => {
     const mobileRoutes = extractStringArray(scriptSource, "MOBILE_ROUTES");
     const allowedRoutes = [...publicRoutes, ...customerRoutes];
 
-    expect(allowedRoutes).toEqual(expect.arrayContaining(["/demo", "/trust", "/help"]));
+    expect(allowedRoutes).toEqual(
+      expect.arrayContaining(["/demo", "/trust", "/help", "/services"])
+    );
     expect(allowedRoutes).toEqual(
       expect.arrayContaining(["/invoices", "/receipts", "/bank-reconciliation", "/vat-filing"])
     );
@@ -121,6 +123,15 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("page.setViewportSize({ width: 390, height: 844 })");
     expect(scriptSource).toContain("scrollWidth > clientWidth + 8");
     expect(scriptSource).toContain("mobile overflow");
+  });
+
+  it("fails public-route QA when rendered launch pages contain unsupported claims", () => {
+    expect(scriptSource).toContain("PUBLIC_UNSUPPORTED_CLAIMS");
+    expect(scriptSource).toContain("unsupportedClaim");
+    expect(scriptSource).toContain("public claim ${route}");
+    expect(scriptSource).toContain("SOC 2 Type II");
+    expect(scriptSource).toContain("Trusted by 500\\+ UAE businesses");
+    expect(scriptSource).toContain("direct EmaraTax");
   });
 
   it("actively probes NR-only and admin surfaces as forbidden for customers", () => {

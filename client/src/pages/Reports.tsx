@@ -4793,6 +4793,13 @@ export default function Reports() {
       packAutomationRules.length > 0
         ? Math.round((packReadyAutomationRules / packAutomationRules.length) * 100)
         : 0;
+    const packOperations =
+      reportAutomationOperationSummaries.find(
+        (item) => item.workspace.persona === workspace.persona
+      ) ?? null;
+    const operationsWorkflow = reportSectionHref(workspace, "automation-operations");
+    const commandCenterWorkflow = reportSectionHref(workspace, "automation-command-center");
+    const deliveryWorkflow = reportSectionHref(workspace, "delivery-subscriptions");
 
     const packIndex: ExportData = {
       sheetName: "Pack Index",
@@ -4816,6 +4823,96 @@ export default function Reports() {
       })),
     };
 
+    const operationsControl: ExportData = {
+      sheetName: "Operations Control",
+      columns: [
+        { header: "Field", key: "field", width: 34 },
+        { header: "Value", key: "value", width: 70 },
+        { header: "Workflow", key: "workflow", width: 48 },
+      ],
+      rows: [
+        { field: "Workspace", value: workspace.title, workflow: reportWorkspaceHref(workspace) },
+        { field: "Persona", value: workspace.persona, workflow: operationsWorkflow },
+        {
+          field: "Operations status",
+          value: packOperations?.status ?? "Not available",
+          workflow: operationsWorkflow,
+        },
+        {
+          field: "Next action",
+          value: packOperations?.nextAction.label ?? "Not available",
+          workflow: packOperations?.nextAction.href ?? operationsWorkflow,
+        },
+        {
+          field: "Next action detail",
+          value: packOperations?.nextAction.detail ?? "Not available",
+          workflow: packOperations?.nextAction.href ?? operationsWorkflow,
+        },
+        {
+          field: "Automation health",
+          value: packOperations
+            ? `${packOperations.automationScore}/100`
+            : packReadiness
+              ? `${packReadiness.automationHealth.score}/100`
+              : "Not available",
+          workflow: operationsWorkflow,
+        },
+        {
+          field: "Reports ready",
+          value: packOperations
+            ? `${packOperations.readyReportCount}/${packOperations.reportCount}`
+            : `${workspace.readyReports}/${workspace.reports.length}`,
+          workflow: reportWorkspaceHref(workspace),
+        },
+        {
+          field: "Auto-send rules ready",
+          value: packOperations
+            ? `${packOperations.readyRuleCount}/${packOperations.automationRuleCount}`
+            : `${packReadyAutomationRules}/${packAutomationRules.length}`,
+          workflow: commandCenterWorkflow,
+        },
+        {
+          field: "Deliveries ready",
+          value: packOperations
+            ? `${packOperations.readyDeliveryCount}/${packOperations.deliverySubscriptionCount}`
+            : `${
+                packDeliverySubscriptions.filter(
+                  (subscription) => subscription.status === "Ready to send"
+                ).length
+              }/${packDeliverySubscriptions.length}`,
+          workflow: deliveryWorkflow,
+        },
+        {
+          field: "Failed delivery runs",
+          value: packOperations?.failedRunCount ?? 0,
+          workflow: deliveryWorkflow,
+        },
+        {
+          field: "Open work items",
+          value: packOperations?.openWorkItemCount ?? packRuleOpenWorkItemCount,
+          workflow: commandCenterWorkflow,
+        },
+        {
+          field: "Amount at risk",
+          value: `AED ${(packOperations?.amountAtRisk ?? packRuleAmountAtRisk).toFixed(2)}`,
+          workflow: commandCenterWorkflow,
+        },
+        {
+          field: "Comparison warnings",
+          value:
+            packOperations?.comparisonWarnings ??
+            packReadiness?.automationHealth.comparisonWarnings ??
+            0,
+          workflow: reportSectionHref(workspace, "recommendations"),
+        },
+        {
+          field: "Recommended actions",
+          value: packOperations?.recommendationCount ?? packRecommendations.length,
+          workflow: reportSectionHref(workspace, "recommendations"),
+        },
+      ],
+    };
+
     const packSummary: ExportData = {
       sheetName: "Pack Summary",
       columns: [
@@ -4831,6 +4928,14 @@ export default function Reports() {
         {
           metric: "Pack status",
           value: openPackSignals.length > 0 ? "Review before send" : "Ready to send",
+        },
+        {
+          metric: "Operations status",
+          value: packOperations?.status ?? "Not available",
+        },
+        {
+          metric: "Operations next action",
+          value: packOperations?.nextAction.label ?? "Not available",
         },
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
@@ -5382,6 +5487,7 @@ export default function Reports() {
     return [
       packIndex,
       packSummary,
+      operationsControl,
       coverageMap,
       decisionShortcutsSheet,
       packTemplatesSheet,

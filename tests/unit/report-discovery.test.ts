@@ -838,6 +838,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Recommended Actions");
     expect(reportsSource).toContain("Report Roadmap");
     expect(reportsSource).toContain("Automation Command Center");
+    expect(reportsSource).toContain("Operations Control");
     expect(reportsSource).toContain("Report automation operations");
     expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Automation Health Trend");
@@ -856,6 +857,11 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("packComparisonPresets");
     expect(reportsSource).toContain("reportComparisonPresetSummaries");
     expect(reportsSource).toContain("packRecommendations");
+    expect(reportsSource).toContain("operationsControl");
+    expect(reportsSource).toContain("packOperations");
+    expect(reportsSource).toContain("Operations status");
+    expect(reportsSource).toContain("Operations next action");
+    expect(reportsSource).toContain("Failed delivery runs");
     expect(reportsSource).toContain("packCoverageMap");
     expect(reportsSource).toContain("packTemplates");
     expect(reportsSource).toContain("reportPackTemplateSummaries");
@@ -965,6 +971,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Amount at risk");
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");
+    expect(reportsSource).toContain("Operations Control");
+    expect(reportsSource).toContain("operationsControl");
+    expect(reportsSource).toContain("packSummary,\n      operationsControl");
+    expect(reportsSource).toContain('reportSectionHref(workspace, "automation-operations")');
     expect(reportsSource).toContain("reportHref(report) ?? reportWorkspaceHref(workspace)");
     expect(reportsSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");

@@ -34,7 +34,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
-const PUBLIC_ROUTES = ["/", "/demo", "/trust", "/help", "/migration-guides", "/pricing"];
+const PUBLIC_ROUTES = [
+  "/",
+  "/demo",
+  "/trust",
+  "/help",
+  "/migration-guides",
+  "/pricing",
+  "/services",
+];
 
 const CUSTOMER_ROUTES = [
   "/dashboard",
@@ -76,6 +84,8 @@ const FORBIDDEN_API_STATUS_PATHS = [
 
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const PRIVATE_TEXT = /WhatsApp|Document Chasing|Firm Command|NR Accountant|Value Ops/i;
+const PUBLIC_UNSUPPORTED_CLAIMS =
+  /SOC 2 Type II|FTA[-\s]?registered|FTA Accredited|bank-grade|bank-level|direct EmaraTax|VAT-compliant|UAE-compliant|Trusted by 500\+ UAE businesses|Join 500\+ UAE businesses|500\+ UAE businesses|hundreds of UAE businesses|UAE businesses on Muhasib|In VAT filed last quarter|AI categorisation accuracy|AI categorization accuracy|99(?:\.8)?%|99%\+|95%\+|50,000\+|25\+\s*hours|20\+\s*hours|filings meet every regulatory requirement/i;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 async function resolveExecutablePath() {
@@ -295,7 +305,11 @@ async function main() {
 
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
-    await crawlRoute(route);
+    const bodyText = await crawlRoute(route);
+    const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
+    if (unsupportedClaim) {
+      await fail(`public claim ${route}`, { unsupportedClaim });
+    }
   }
 
   if (PUBLIC_ONLY) {
