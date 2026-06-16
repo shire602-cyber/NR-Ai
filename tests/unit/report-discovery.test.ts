@@ -1441,6 +1441,10 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("latestRunError");
     expect(reportLaunchPickerSource).toContain("report-launch-retry-delivery-${subscription.id}");
     expect(reportLaunchPickerSource).toContain('data-testid="report-launch-pinned-command-retry"');
+    expect(reportLaunchPickerSource).toContain("comparisonPresets.slice(0, 2).map");
+    expect(reportLaunchPickerSource).toContain("reportComparisonPresetHref(preset)");
+    expect(reportLaunchPickerSource).toContain("report-launch-comparison-preset-${preset.id}");
+    expect(reportLaunchPickerSource).toContain("preset.automationTrigger");
     expect(reportLaunchPickerSource).toContain("isQueueDisabled");
     expect(reportLaunchPickerSource).toContain("isPinnedRetryCommandDisabled");
     expect(reportLaunchPickerSource).toContain("isPinnedQueueCommandDisabled");
