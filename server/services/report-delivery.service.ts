@@ -10,7 +10,19 @@ import {
   type ReportDeliverySubscription,
   type ReportPersona,
 } from "../../client/src/lib/reportCatalog";
-import type { InsertNotification } from "../../shared/schema";
+import type { CompanyReportDeliverySubscription, InsertNotification } from "../../shared/schema";
+
+export type ReportDeliverySetting = Pick<
+  CompanyReportDeliverySubscription,
+  | "subscriptionId"
+  | "enabled"
+  | "cadenceOverride"
+  | "channelOverride"
+  | "formatOverride"
+  | "recipientsOverride"
+  | "deliveryGuardrailOverride"
+  | "updatedAt"
+>;
 
 export interface ReportDeliveryPlan {
   id: string;
@@ -22,10 +34,13 @@ export interface ReportDeliveryPlan {
   format: string;
   recipients: string;
   deliveryGuardrail: string;
+  enabled: boolean;
+  settingsSource: "catalog" | "company";
+  settingsUpdatedAt: string | null;
   href: string;
   nextRunAt: string;
   nextRunLabel: string;
-  status: "ready" | "setup";
+  status: "ready" | "setup" | "paused";
   reportCount: number;
   readyReportCount: number;
   triggerRuleCount: number;
@@ -109,8 +124,15 @@ function formatNextRunLabel(nextRunAt: Date): string {
 
 export function buildReportDeliveryPlan(
   subscription: ReportDeliverySubscription,
-  now = new Date()
+  now = new Date(),
+  setting?: ReportDeliverySetting | null
 ): ReportDeliveryPlan {
+  const cadence = setting?.cadenceOverride || subscription.cadence;
+  const channel = setting?.channelOverride || subscription.channel;
+  const format = setting?.formatOverride || subscription.format;
+  const recipients = setting?.recipientsOverride || subscription.recipients;
+  const deliveryGuardrail = setting?.deliveryGuardrailOverride || subscription.deliveryGuardrail;
+  const enabled = setting?.enabled ?? true;
   const reports = subscription.reportIds
     .map((reportId) => reportCatalog.find((report) => report.id === reportId))
     .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
@@ -127,22 +149,25 @@ export function buildReportDeliveryPlan(
   const decisionShortcut = reportDecisionShortcuts.find(
     (shortcut) => shortcut.id === subscription.decisionShortcutId
   );
-  const nextRunAt = estimateReportDeliveryNextRun(subscription, now);
+  const nextRunAt = estimateReportDeliveryNextRun({ cadence }, now);
 
   return {
     id: subscription.id,
     persona: subscription.persona,
     title: subscription.title,
     audience: subscription.audience,
-    cadence: subscription.cadence,
-    channel: subscription.channel,
-    format: subscription.format,
-    recipients: subscription.recipients,
-    deliveryGuardrail: subscription.deliveryGuardrail,
+    cadence,
+    channel,
+    format,
+    recipients,
+    deliveryGuardrail,
+    enabled,
+    settingsSource: setting ? "company" : "catalog",
+    settingsUpdatedAt: setting?.updatedAt ? new Date(setting.updatedAt).toISOString() : null,
     href: reportDeliverySubscriptionHref(subscription),
     nextRunAt: nextRunAt.toISOString(),
     nextRunLabel: formatNextRunLabel(nextRunAt),
-    status: readyReportCount === reports.length ? "ready" : "setup",
+    status: !enabled ? "paused" : readyReportCount === reports.length ? "ready" : "setup",
     reportCount: reports.length,
     readyReportCount,
     triggerRuleCount: triggerRules.length,
@@ -170,19 +195,32 @@ export function getReportDeliveryPlans(
   options: {
     persona?: ReportPersona | null;
     now?: Date;
+    settings?: ReportDeliverySetting[];
   } = {}
 ): ReportDeliveryPlan[] {
+  const settingsBySubscriptionId = new Map(
+    (options.settings ?? []).map((setting) => [setting.subscriptionId, setting])
+  );
+
   return reportDeliverySubscriptions
     .filter((subscription) => !options.persona || subscription.persona === options.persona)
-    .map((subscription) => buildReportDeliveryPlan(subscription, options.now));
+    .map((subscription) =>
+      buildReportDeliveryPlan(
+        subscription,
+        options.now,
+        settingsBySubscriptionId.get(subscription.id)
+      )
+    );
 }
 
 export function getReportDeliveryPlan(
   subscriptionId: string,
-  now = new Date()
+  now = new Date(),
+  settings: ReportDeliverySetting[] = []
 ): ReportDeliveryPlan | null {
   const subscription = reportDeliverySubscriptions.find((item) => item.id === subscriptionId);
-  return subscription ? buildReportDeliveryPlan(subscription, now) : null;
+  const setting = settings.find((item) => item.subscriptionId === subscriptionId);
+  return subscription ? buildReportDeliveryPlan(subscription, now, setting) : null;
 }
 
 export function buildReportDeliveryNotificationInput(input: {
@@ -190,8 +228,9 @@ export function buildReportDeliveryNotificationInput(input: {
   companyId: string;
   subscriptionId: string;
   now?: Date;
+  settings?: ReportDeliverySetting[];
 }): { notification: InsertNotification; plan: ReportDeliveryPlan } | null {
-  const plan = getReportDeliveryPlan(input.subscriptionId, input.now);
+  const plan = getReportDeliveryPlan(input.subscriptionId, input.now, input.settings ?? []);
   if (!plan) return null;
 
   return {

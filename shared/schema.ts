@@ -440,6 +440,56 @@ export type InsertCompanyUser = z.infer<typeof insertCompanyUserSchema>;
 export type CompanyUser = typeof companyUsers.$inferSelect;
 
 // ===========================
+// Company Report Delivery Settings
+// ===========================
+export const companyReportDeliverySubscriptions = pgTable(
+  "company_report_delivery_subscriptions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    subscriptionId: text("subscription_id").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    cadenceOverride: text("cadence_override"),
+    channelOverride: text("channel_override"),
+    formatOverride: text("format_override"),
+    recipientsOverride: text("recipients_override"),
+    deliveryGuardrailOverride: text("delivery_guardrail_override"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companySubscriptionUnique: unique("company_report_delivery_subscriptions_unique").on(
+      table.companyId,
+      table.subscriptionId
+    ),
+    companyIdIdx: index("idx_company_report_delivery_subscriptions_company_id").on(table.companyId),
+    subscriptionIdIdx: index("idx_company_report_delivery_subscriptions_subscription_id").on(
+      table.subscriptionId
+    ),
+  })
+);
+
+export const insertCompanyReportDeliverySubscriptionSchema = createInsertSchema(
+  companyReportDeliverySubscriptions
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCompanyReportDeliverySubscription = z.infer<
+  typeof insertCompanyReportDeliverySubscriptionSchema
+>;
+export type CompanyReportDeliverySubscription =
+  typeof companyReportDeliverySubscriptions.$inferSelect;
+
+// ===========================
 // Firm Staff Assignments
 // ===========================
 // Links firm_admin users to specific client companies they can manage.

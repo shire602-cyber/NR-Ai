@@ -19,6 +19,8 @@ vi.mock("../../server/middleware/auth", () => ({
 vi.mock("../../server/storage", () => ({
   storage: {
     hasCompanyAccess: vi.fn(async () => true),
+    getReportDeliverySubscriptionSettings: vi.fn(async () => []),
+    upsertReportDeliverySubscriptionSetting: vi.fn(),
   },
 }));
 
@@ -48,13 +50,18 @@ function appWithRoutes() {
 async function request(
   app: express.Express,
   method: string,
-  path: string
+  path: string,
+  body?: unknown
 ): Promise<{ status: number; body: any }> {
   const server = app.listen(0);
   try {
     const addr = server.address();
     if (typeof addr === "string" || !addr) throw new Error("no address");
-    const res = await fetch(`http://127.0.0.1:${addr.port}${path}`, { method });
+    const res = await fetch(`http://127.0.0.1:${addr.port}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     return { status: res.status, body: await res.json() };
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -64,6 +71,8 @@ async function request(
 describe("report delivery subscriptions", () => {
   beforeEach(() => {
     vi.mocked(storage.hasCompanyAccess).mockResolvedValue(true);
+    vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([]);
+    vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockReset();
     vi.mocked(createAndEmitNotification).mockClear();
   });
 
@@ -84,6 +93,39 @@ describe("report delivery subscriptions", () => {
     expect(plans[0].readyReportCount).toBe(plans[0].reportCount);
     expect(plans[0].nextRunAt).toBe("2026-06-22T08:00:00.000Z");
     expect(plans[0].packTemplate?.title).toBe("Owner weekly command pack");
+  });
+
+  it("applies company delivery settings to catalog plans", () => {
+    const plans = getReportDeliveryPlans({
+      persona: "owner",
+      now: new Date("2026-06-16T10:00:00.000Z"),
+      settings: [
+        {
+          subscriptionId: "owner-weekly-executive-delivery",
+          enabled: false,
+          cadenceOverride: "Daily at 8:00 AM",
+          channelOverride: "Email only",
+          formatOverride: "PDF digest",
+          recipientsOverride: "Owner",
+          deliveryGuardrailOverride: "Manual approval required",
+          updatedAt: new Date("2026-06-16T09:30:00.000Z"),
+        },
+      ],
+    });
+
+    expect(plans[0]).toMatchObject({
+      id: "owner-weekly-executive-delivery",
+      enabled: false,
+      status: "paused",
+      settingsSource: "company",
+      cadence: "Daily at 8:00 AM",
+      channel: "Email only",
+      format: "PDF digest",
+      recipients: "Owner",
+      deliveryGuardrail: "Manual approval required",
+      settingsUpdatedAt: "2026-06-16T09:30:00.000Z",
+    });
+    expect(plans[0].nextRunAt).toBe("2026-06-17T08:00:00.000Z");
   });
 
   it("builds a notification payload for queued delivery", () => {
@@ -122,6 +164,55 @@ describe("report delivery subscriptions", () => {
       "freelancer",
     ]);
     expect(res.body.subscriptions[0].href).toContain("#report-delivery-subscription-");
+    expect(storage.getReportDeliverySubscriptionSettings).toHaveBeenCalledWith(companyId);
+  });
+
+  it("updates company delivery settings", async () => {
+    vi.mocked(storage.upsertReportDeliverySubscriptionSetting).mockResolvedValue({
+      id: "setting-1",
+      companyId,
+      subscriptionId: "owner-weekly-executive-delivery",
+      enabled: false,
+      cadenceOverride: "Daily at 8:00 AM",
+      channelOverride: null,
+      formatOverride: null,
+      recipientsOverride: null,
+      deliveryGuardrailOverride: "Manual approval required",
+      createdBy: userId,
+      updatedBy: userId,
+      createdAt: new Date("2026-06-16T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+    });
+
+    const res = await request(
+      appWithRoutes(),
+      "PATCH",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/settings`,
+      {
+        enabled: false,
+        cadence: "Daily at 8:00 AM",
+        deliveryGuardrail: "Manual approval required",
+      }
+    );
+
+    expect(res.status).toBe(200);
+    expect(storage.upsertReportDeliverySubscriptionSetting).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        enabled: false,
+        cadenceOverride: "Daily at 8:00 AM",
+        deliveryGuardrailOverride: "Manual approval required",
+        createdBy: userId,
+        updatedBy: userId,
+      })
+    );
+    expect(res.body.subscription).toMatchObject({
+      id: "owner-weekly-executive-delivery",
+      enabled: false,
+      status: "paused",
+      settingsSource: "company",
+    });
   });
 
   it("queues a report delivery notification for the current user", async () => {
@@ -143,6 +234,36 @@ describe("report delivery subscriptions", () => {
           "/reports?tab=balances&persona=owner#report-delivery-subscription-owner-weekly-executive-delivery",
       })
     );
+  });
+
+  it("does not queue paused report delivery subscriptions", async () => {
+    vi.mocked(storage.getReportDeliverySubscriptionSettings).mockResolvedValue([
+      {
+        id: "setting-1",
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        enabled: false,
+        cadenceOverride: null,
+        channelOverride: null,
+        formatOverride: null,
+        recipientsOverride: null,
+        deliveryGuardrailOverride: null,
+        createdBy: userId,
+        updatedBy: userId,
+        createdAt: new Date("2026-06-16T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-16T10:00:00.000Z"),
+      },
+    ]);
+
+    const res = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/queue`
+    );
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe("Report delivery subscription is paused");
+    expect(createAndEmitNotification).not.toHaveBeenCalled();
   });
 
   it("rejects users without company access", async () => {

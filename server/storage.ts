@@ -5,6 +5,8 @@ import type {
   InsertCompany,
   CompanyUser,
   InsertCompanyUser,
+  CompanyReportDeliverySubscription,
+  InsertCompanyReportDeliverySubscription,
   Account,
   InsertAccount,
   JournalEntry,
@@ -162,6 +164,7 @@ import {
   users,
   companies,
   companyUsers,
+  companyReportDeliverySubscriptions,
   firmStaffAssignments,
   accounts,
   journalEntries,
@@ -311,6 +314,16 @@ export interface IStorage {
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
   resolveCompanyActorUserId(companyId: string): Promise<string | null>;
   getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]>;
+  getReportDeliverySubscriptionSettings(
+    companyId: string
+  ): Promise<CompanyReportDeliverySubscription[]>;
+  getReportDeliverySubscriptionSetting(
+    companyId: string,
+    subscriptionId: string
+  ): Promise<CompanyReportDeliverySubscription | undefined>;
+  upsertReportDeliverySubscriptionSetting(
+    setting: InsertCompanyReportDeliverySubscription
+  ): Promise<CompanyReportDeliverySubscription>;
   /**
    * Check whether the user has access to a company. Optional firmRole allows
    * firm_owner (all client companies) or firm_admin (assigned client companies)
@@ -1071,6 +1084,66 @@ export class DatabaseStorage implements IStorage {
       if (firmOwner?.id) return firmOwner.id;
     }
     return null;
+  }
+
+  async getReportDeliverySubscriptionSettings(
+    companyId: string
+  ): Promise<CompanyReportDeliverySubscription[]> {
+    return await db
+      .select()
+      .from(companyReportDeliverySubscriptions)
+      .where(eq(companyReportDeliverySubscriptions.companyId, companyId))
+      .orderBy(companyReportDeliverySubscriptions.subscriptionId);
+  }
+
+  async getReportDeliverySubscriptionSetting(
+    companyId: string,
+    subscriptionId: string
+  ): Promise<CompanyReportDeliverySubscription | undefined> {
+    const [setting] = await db
+      .select()
+      .from(companyReportDeliverySubscriptions)
+      .where(
+        and(
+          eq(companyReportDeliverySubscriptions.companyId, companyId),
+          eq(companyReportDeliverySubscriptions.subscriptionId, subscriptionId)
+        )
+      )
+      .limit(1);
+    return setting || undefined;
+  }
+
+  async upsertReportDeliverySubscriptionSetting(
+    setting: InsertCompanyReportDeliverySubscription
+  ): Promise<CompanyReportDeliverySubscription> {
+    const updateSet: Partial<InsertCompanyReportDeliverySubscription> & { updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+
+    if (setting.enabled !== undefined) updateSet.enabled = setting.enabled;
+    if (setting.cadenceOverride !== undefined) updateSet.cadenceOverride = setting.cadenceOverride;
+    if (setting.channelOverride !== undefined) updateSet.channelOverride = setting.channelOverride;
+    if (setting.formatOverride !== undefined) updateSet.formatOverride = setting.formatOverride;
+    if (setting.recipientsOverride !== undefined)
+      updateSet.recipientsOverride = setting.recipientsOverride;
+    if (setting.deliveryGuardrailOverride !== undefined) {
+      updateSet.deliveryGuardrailOverride = setting.deliveryGuardrailOverride;
+    }
+    if (setting.updatedBy !== undefined) updateSet.updatedBy = setting.updatedBy;
+
+    const [row] = await db
+      .insert(companyReportDeliverySubscriptions)
+      .values(setting)
+      .onConflictDoUpdate({
+        target: [
+          companyReportDeliverySubscriptions.companyId,
+          companyReportDeliverySubscriptions.subscriptionId,
+        ],
+        set: updateSet,
+      })
+      .returning();
+
+    return row;
   }
 
   async hasCompanyAccess(

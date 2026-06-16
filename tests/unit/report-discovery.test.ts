@@ -47,6 +47,11 @@ describe("report discoverability", () => {
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
   const reportDeliveryServiceSource = read("server/services/report-delivery.service.ts");
   const routesSource = read("server/routes.ts");
+  const storageSource = read("server/storage.ts");
+  const schemaSource = read("shared/schema.ts");
+  const reportDeliveryMigrationSource = read(
+    "migrations/0075_report_delivery_subscription_settings.sql"
+  );
   const reportsRouteSource = read("server/routes/reports.routes.ts");
   const expenseClaimsRouteSource = read("server/routes/expense-claims.routes.ts");
   const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
@@ -843,6 +848,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Open subscription");
     expect(reportsSource).toContain("queueReportDeliverySubscription");
     expect(reportsSource).toContain("/report-delivery/subscriptions/${subscriptionId}/queue");
+    expect(reportsSource).toContain("saveReportDeliverySubscriptionSettings");
+    expect(reportsSource).toContain("/report-delivery/subscriptions/${subscriptionId}/settings");
+    expect(reportsSource).toContain("reportDeliveryPlansQuery");
     expect(reportsSource).toContain("Queue delivery");
     expect(reportsSource).toContain("packReadyAutomationRules");
     expect(reportsSource).toContain("packAutoSendCoveragePercent");
@@ -1103,18 +1111,40 @@ describe("report discoverability", () => {
     expect(reportDeliveryRouteSource).toContain(
       '"/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/queue"'
     );
+    expect(reportDeliveryRouteSource).toContain(
+      '"/api/companies/:companyId/report-delivery/subscriptions/:subscriptionId/settings"'
+    );
     expect(reportDeliveryRouteSource).toContain("storage.hasCompanyAccess(userId, companyId)");
+    expect(reportDeliveryRouteSource).toContain(
+      "storage.getReportDeliverySubscriptionSettings(companyId)"
+    );
+    expect(reportDeliveryRouteSource).toContain("storage.upsertReportDeliverySubscriptionSetting");
     expect(reportDeliveryRouteSource).toContain("createAndEmitNotification");
     expect(reportDeliveryRouteSource).toContain("buildReportDeliveryNotificationInput");
+    expect(reportDeliveryRouteSource).toContain("getReportDeliveryPlan");
     expect(reportDeliveryRouteSource).toContain("getReportDeliveryPlans");
+    expect(reportDeliveryRouteSource).toContain("Report delivery subscription is paused");
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptions");
+    expect(reportDeliveryServiceSource).toContain("ReportDeliverySetting");
     expect(reportDeliveryServiceSource).toContain("buildReportDeliveryPlan");
     expect(reportDeliveryServiceSource).toContain("estimateReportDeliveryNextRun");
+    expect(reportDeliveryServiceSource).toContain("settingsSource");
+    expect(reportDeliveryServiceSource).toContain('status: "ready" | "setup" | "paused"');
     expect(reportDeliveryServiceSource).toContain("scheduledFor: new Date(plan.nextRunAt)");
     expect(reportDeliveryServiceSource).toContain(
       'relatedEntityType: "report_delivery_subscription"'
     );
     expect(reportDeliveryServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
+    expect(schemaSource).toContain("companyReportDeliverySubscriptions");
+    expect(schemaSource).toContain("company_report_delivery_subscriptions_unique");
+    expect(reportDeliveryMigrationSource).toContain(
+      'CREATE TABLE IF NOT EXISTS "company_report_delivery_subscriptions"'
+    );
+    expect(reportDeliveryMigrationSource).toContain(
+      'CONSTRAINT "company_report_delivery_subscriptions_unique"'
+    );
+    expect(storageSource).toContain("getReportDeliverySubscriptionSettings");
+    expect(storageSource).toContain("upsertReportDeliverySubscriptionSetting");
   });
 
   it("calculates shared report automation health for packs and dashboards", () => {

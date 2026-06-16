@@ -3625,10 +3625,37 @@ export default function Reports() {
     );
   }, [personaFilter, reportAutomationTriggerRuleSummaries]);
 
+  const reportDeliveryPlansQuery = useQuery<{
+    subscriptions: Array<{
+      id: string;
+      enabled: boolean;
+      status: "ready" | "setup" | "paused";
+      cadence: string;
+      channel: string;
+      format: string;
+      recipients: string;
+      deliveryGuardrail: string;
+      nextRunLabel: string;
+      settingsSource: "catalog" | "company";
+    }>;
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "subscriptions"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/subscriptions`),
+    enabled: !!selectedCompanyId,
+  });
+
+  const reportDeliveryPlanById = useMemo(() => {
+    return new Map(
+      (reportDeliveryPlansQuery.data?.subscriptions ?? []).map((plan) => [plan.id, plan])
+    );
+  }, [reportDeliveryPlansQuery.data?.subscriptions]);
+
   const reportDeliverySubscriptionSummaries = useMemo(() => {
     return reportDeliverySubscriptions.flatMap((subscription) => {
       const workspace = workspaceSummaries.find((item) => item.persona === subscription.persona);
       if (!workspace) return [];
+      const deliveryPlan = reportDeliveryPlanById.get(subscription.id);
 
       const reports = subscription.reportIds
         .map((reportId) => reportCatalog.find((report) => report.id === reportId))
@@ -3653,16 +3680,21 @@ export default function Reports() {
         ) ?? null;
       const openWorkItemCount = triggerRules.reduce((sum, rule) => sum + rule.openWorkItemCount, 0);
       const amountAtRisk = triggerRules.reduce((sum, rule) => sum + rule.amountAtRisk, 0);
-      const status =
-        openWorkItemCount > 0
+      const enabled = deliveryPlan?.enabled ?? true;
+      const status = !enabled
+        ? "Paused"
+        : openWorkItemCount > 0
           ? "Review before send"
-          : readyCount === reports.length
-            ? "Ready to send"
-            : "Setup needed";
+          : (deliveryPlan?.status ?? "ready") === "setup"
+            ? "Setup needed"
+            : readyCount === reports.length
+              ? "Ready to send"
+              : "Setup needed";
 
       return [
         {
           ...subscription,
+          enabled,
           workspace,
           reports,
           readyCount,
@@ -3672,6 +3704,13 @@ export default function Reports() {
           decisionShortcut,
           openWorkItemCount,
           amountAtRisk,
+          cadence: deliveryPlan?.cadence ?? subscription.cadence,
+          channel: deliveryPlan?.channel ?? subscription.channel,
+          format: deliveryPlan?.format ?? subscription.format,
+          recipients: deliveryPlan?.recipients ?? subscription.recipients,
+          deliveryGuardrail: deliveryPlan?.deliveryGuardrail ?? subscription.deliveryGuardrail,
+          nextRunLabel: deliveryPlan?.nextRunLabel ?? "",
+          settingsSource: deliveryPlan?.settingsSource ?? "catalog",
           href: reportDeliverySubscriptionHref(subscription),
           packTemplateHref: packTemplate?.href ?? reportDeliverySubscriptionHref(subscription),
           automationStarterHref:
@@ -3689,6 +3728,7 @@ export default function Reports() {
       ];
     });
   }, [
+    reportDeliveryPlanById,
     reportAutomationStarterSummaries,
     reportAutomationTriggerRuleSummaries,
     reportDecisionShortcutSummaries,
@@ -4164,6 +4204,32 @@ export default function Reports() {
     reportPackReadinessNeedingReview
   );
 
+  const saveReportDeliverySubscriptionSettings = useMutation({
+    mutationFn: ({ subscriptionId, enabled }: { subscriptionId: string; enabled: boolean }) => {
+      if (!selectedCompanyId) throw new Error("Select a company before updating delivery.");
+      return apiRequest(
+        "PATCH",
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/settings`,
+        { enabled }
+      );
+    },
+    onSuccess: (result: any) => {
+      reportDeliveryPlansQuery.refetch();
+      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      toast({
+        title: result?.subscription?.enabled ? "Report delivery enabled" : "Report delivery paused",
+        description: `${subscriptionTitle} now uses company delivery settings.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not update report delivery",
+        description: error?.message || "Failed to update report delivery settings",
+        variant: "destructive",
+      });
+    },
+  });
+
   const queueReportDeliverySubscription = useMutation({
     mutationFn: (subscriptionId: string) => {
       if (!selectedCompanyId) throw new Error("Select a company before queuing delivery.");
@@ -4173,6 +4239,7 @@ export default function Reports() {
       );
     },
     onSuccess: (result: any) => {
+      reportDeliveryPlansQuery.refetch();
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
@@ -5664,6 +5731,23 @@ export default function Reports() {
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Next delivery</div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {subscription.enabled
+                            ? subscription.nextRunLabel || "Calculated on queue"
+                            : "Paused"}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Settings</div>
+                        <div className="mt-1 font-medium capitalize text-foreground">
+                          {subscription.settingsSource}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
                         <span className="font-medium text-foreground">Format:</span>{" "}
@@ -5711,10 +5795,30 @@ export default function Reports() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={!selectedCompanyId || queueReportDeliverySubscription.isPending}
+                        disabled={
+                          !selectedCompanyId ||
+                          !subscription.enabled ||
+                          queueReportDeliverySubscription.isPending
+                        }
                         onClick={() => queueReportDeliverySubscription.mutate(subscription.id)}
                       >
                         Queue delivery
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          !selectedCompanyId || saveReportDeliverySubscriptionSettings.isPending
+                        }
+                        onClick={() =>
+                          saveReportDeliverySubscriptionSettings.mutate({
+                            subscriptionId: subscription.id,
+                            enabled: !subscription.enabled,
+                          })
+                        }
+                      >
+                        {subscription.enabled ? "Pause delivery" : "Enable delivery"}
                       </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href={subscription.packTemplateHref}>Open pack</Link>
