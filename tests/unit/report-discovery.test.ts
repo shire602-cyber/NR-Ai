@@ -45,6 +45,7 @@ describe("report discoverability", () => {
     "FX Gains and Losses",
     "General Ledger",
     "Account Transactions",
+    "Corporate Tax Estimate",
     "Customer Balance Summary",
     "Vendor Balance Summary",
     "Invoice Status",
@@ -55,8 +56,8 @@ describe("report discoverability", () => {
     "Expenses by Category",
   ];
 
-  it("keeps the Reports catalog at 20 live high-level reports", () => {
-    expect(liveReportCatalog).toHaveLength(20);
+  it("keeps the Reports catalog at 21 live high-level reports", () => {
+    expect(liveReportCatalog).toHaveLength(21);
 
     for (const label of expectedLiveReports) {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
@@ -86,6 +87,7 @@ describe("report discoverability", () => {
       "/reports?tab=pl",
       "/reports?tab=bs",
       "/reports?tab=vat",
+      "/reports?tab=tax",
       "/reports?tab=trial",
       "/reports?tab=sales",
       "/reports?tab=balances",
@@ -270,6 +272,18 @@ describe("report discoverability", () => {
         expect(liveReportCount).toBeGreaterThanOrEqual(3);
       }
     }
+
+    const ownerTaxPlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "owner")
+      ?.automations.find((playbook) => playbook.id === "owner-vat-readiness");
+    const accountantTaxPlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "accountant")
+      ?.automations.find((playbook) => playbook.id === "accountant-tax-workpapers");
+
+    expect(ownerTaxPlaybook?.reportIds).toContain("corporate-tax-estimate");
+    expect(ownerTaxPlaybook?.tab).toBe("tax");
+    expect(accountantTaxPlaybook?.reportIds).toContain("corporate-tax-estimate");
+    expect(accountantTaxPlaybook?.tab).toBe("tax");
   });
 
   it("offers persona report packs with an index and automation workbook", () => {
@@ -360,6 +374,13 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportPacksNeedingReview");
     expect(reportsSource).toContain("Review before send");
     expect(reportsSource).toContain("Send pack");
+    expect(reportsSource).toContain("prepareCorporateTaxEstimateForExport");
+    expect(reportsSource).toContain("corporateTaxEstimate");
+    expect(reportsSource).toContain("/corporate-tax/calculate");
+    expect(reportsSource).toContain("corporateTaxBridgeRows");
+    expect(reportsSource).toContain("Open Corporate Tax");
+    expect(reportsSource).toContain("corporate_tax_estimate");
+    expect(reportsSource).toContain("Corporate Tax Estimate");
 
     for (const workspace of reportPersonaWorkspaces) {
       expect(
@@ -451,6 +472,7 @@ describe("report discoverability", () => {
       "pl",
       "bs",
       "vat",
+      "tax",
       "trial",
       "sales",
       "balances",
@@ -462,6 +484,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("function reportTabFromSearch(search: string): ReportTab");
     expect(reportsSource).toContain("return reportTabs.includes(tab as ReportTab)");
     expect(reportsSource).toContain(': "pl"');
+    expect(reportsSource).toContain('data-testid="tab-corporate-tax"');
+    expect(reportsSource).toContain('data-testid="text-corporate-tax-payable"');
 
     for (const tab of reportTabs) {
       expect(reportsSource).toContain(`value="${tab}"`);
@@ -549,6 +573,7 @@ describe("report discoverability", () => {
       "bill-pay",
       "receipt-posting",
       "vat-readiness",
+      "corporate-tax",
       "close-review",
       "planning-risk",
     ]) {
@@ -560,6 +585,7 @@ describe("report discoverability", () => {
       'href: "/bill-pay?tab=summary"',
       'href: "/vat-filing"',
       'tab: "expenses"',
+      'tab: "tax"',
       'tab: "planning"',
     ]) {
       expect(reportsSource).toContain(destination);

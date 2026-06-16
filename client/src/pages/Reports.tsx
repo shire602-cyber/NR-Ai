@@ -34,6 +34,7 @@ import {
   prepareProfitLossForExport,
   prepareBalanceSheetForExport,
   prepareVATSummaryForExport,
+  prepareCorporateTaxEstimateForExport,
   prepareTrialBalanceForExport,
   prepareInvoiceStatusForExport,
   prepareBalanceSummaryReportsForExport,
@@ -113,6 +114,21 @@ interface VATSummaryReport {
   purchasesSubtotal: number;
   purchasesVAT: number;
   netVATPayable: number;
+}
+
+interface CorporateTaxEstimateReport {
+  periodStart: string;
+  periodEnd: string;
+  totalRevenue: number;
+  totalExpenses: number;
+  grossProfit: number;
+  totalDeductions: number;
+  taxableIncome: number;
+  exemptionThreshold: number;
+  taxableAmount: number;
+  taxRate: number;
+  taxPayable: number;
+  journalEntriesProcessed: number;
 }
 
 interface TrialBalanceRow {
@@ -518,6 +534,42 @@ function invoiceStatusVariant(status: string): BadgeProps["variant"] {
   return "neutral";
 }
 
+function corporateTaxEstimateStatus(report?: CorporateTaxEstimateReport | null): {
+  label: string;
+  detail: string;
+  variant: BadgeProps["variant"];
+} {
+  if (!report) {
+    return {
+      label: "Pending estimate",
+      detail: "Waiting for posted journal data.",
+      variant: "neutral",
+    };
+  }
+
+  if (report.taxPayable > 0.005) {
+    return {
+      label: "Tax due",
+      detail: "Review the tax workpaper before drafting the return.",
+      variant: "warning",
+    };
+  }
+
+  if (report.taxableIncome <= 0) {
+    return {
+      label: "No taxable income",
+      detail: "The selected period is at or below break-even before adjustments.",
+      variant: "success",
+    };
+  }
+
+  return {
+    label: "Below threshold",
+    detail: "Taxable income is below the zero-rate band used by the workspace.",
+    variant: "success",
+  };
+}
+
 function reportTabFromSearch(search: string): ReportTab {
   const tab = new URLSearchParams(search).get("tab");
   return reportTabs.includes(tab as ReportTab) ? (tab as ReportTab) : "pl";
@@ -717,6 +769,13 @@ export default function Reports() {
   )} - ${format(comparisonRanges.previous.to, "MMM dd, yyyy")}`;
   const comparisonCurrentRange = comparisonRanges.current;
   const comparisonPreviousRange = comparisonRanges.previous;
+  const corporateTaxPeriodStart = format(comparisonCurrentRange.from, "yyyy-MM-dd");
+  const corporateTaxPeriodEnd = format(comparisonCurrentRange.to, "yyyy-MM-dd");
+  const corporateTaxParams = `?periodStart=${corporateTaxPeriodStart}&periodEnd=${corporateTaxPeriodEnd}`;
+  const corporateTaxPeriodLabel = `${format(comparisonCurrentRange.from, "MMM dd, yyyy")} - ${format(
+    comparisonCurrentRange.to,
+    "MMM dd, yyyy"
+  )}`;
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
@@ -732,6 +791,75 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     enabled: !!selectedCompanyId,
   });
+
+  const { data: corporateTaxEstimate, isLoading: corporateTaxLoading } =
+    useQuery<CorporateTaxEstimateReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "corporate-tax",
+        "calculate",
+        corporateTaxPeriodStart,
+        corporateTaxPeriodEnd,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/corporate-tax/calculate${corporateTaxParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const corporateTaxStatus = useMemo(
+    () => corporateTaxEstimateStatus(corporateTaxEstimate),
+    [corporateTaxEstimate]
+  );
+
+  const corporateTaxBridgeRows = useMemo(
+    () => [
+      {
+        metric: "Revenue",
+        amount: corporateTaxEstimate?.totalRevenue ?? 0,
+        note: "Posted income accounts in the selected period.",
+      },
+      {
+        metric: "Less: expenses",
+        amount: -(corporateTaxEstimate?.totalExpenses ?? 0),
+        note: "Posted expense accounts in the selected period.",
+      },
+      {
+        metric: "Gross profit",
+        amount: corporateTaxEstimate?.grossProfit ?? 0,
+        note: "Revenue less expenses before tax-specific deductions.",
+      },
+      {
+        metric: "Less: deductions",
+        amount: -(corporateTaxEstimate?.totalDeductions ?? 0),
+        note: "Adjustable in the Corporate Tax workspace.",
+      },
+      {
+        metric: "Taxable income",
+        amount: corporateTaxEstimate?.taxableIncome ?? 0,
+        note: "Income before applying the zero-rate band.",
+      },
+      {
+        metric: "Less: zero-rate band",
+        amount: -(corporateTaxEstimate?.exemptionThreshold ?? 0),
+        note: "Threshold returned by the Corporate Tax calculation endpoint.",
+      },
+      {
+        metric: "Income above zero-rate band",
+        amount: corporateTaxEstimate?.taxableAmount ?? 0,
+        note: "Positive income above the zero-rate band before applying the returned rate.",
+      },
+      {
+        metric: "Corporate tax payable",
+        amount: corporateTaxEstimate?.taxPayable ?? 0,
+        note: corporateTaxStatus.detail,
+      },
+    ],
+    [corporateTaxEstimate, corporateTaxStatus.detail]
+  );
 
   const { data: comparisonCurrentProfitLoss, isLoading: comparisonCurrentPlLoading } =
     useQuery<ProfitLossReport>({
@@ -1371,12 +1499,14 @@ export default function Reports() {
     balancesLoading ||
     expensesLoading ||
     vatLoading ||
+    corporateTaxLoading ||
     trialBalanceLoading ||
     ledgerLoading ||
     planningLoading;
 
   const automationQueue = useMemo<AutomationQueueItem[]>(() => {
     const vatNet = vatSummary?.netVATPayable ?? 0;
+    const corporateTaxPayable = corporateTaxEstimate?.taxPayable ?? 0;
     const closeReviewCount = ledgerReport.reviewEntries + (trialBalanceSummary.isBalanced ? 0 : 1);
     const planningRiskCount =
       (planningReport.cashWarning === "On track" ? 0 : 1) + planningReport.overBudgetLines;
@@ -1433,6 +1563,19 @@ export default function Reports() {
         href: "/vat-filing",
       },
       {
+        id: "corporate-tax",
+        title: "Corporate tax estimate",
+        signal: corporateTaxPayable > 0.005 ? "Tax payable" : "No current tax due",
+        detail: "Review the Corporate Tax estimate and update the workpaper before draft filing.",
+        count: corporateTaxPayable > 0.005 ? 1 : 0,
+        amount: Math.max(0, corporateTaxPayable),
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: Scale,
+        actionLabel: "Open estimate",
+        tab: "tax",
+      },
+      {
         id: "close-review",
         title: "Close review",
         signal: "Review items",
@@ -1462,6 +1605,7 @@ export default function Reports() {
     balanceReport.overdueCustomerCount,
     balanceReport.overdueVendorCount,
     balanceReport.vendorOverdueAed,
+    corporateTaxEstimate?.taxPayable,
     expenseReport.unpostedReceipts,
     ledgerReport.reviewEntries,
     planningReport.cashWarning,
@@ -1832,6 +1976,10 @@ export default function Reports() {
     addSheets(["profit-loss"], prepareProfitLossForExport(profitLoss));
     addSheets(["balance-sheet"], prepareBalanceSheetForExport(balanceSheet));
     addSheets(["vat-summary"], prepareVATSummaryForExport(vatSummary));
+    addSheets(
+      ["corporate-tax-estimate"],
+      prepareCorporateTaxEstimateForExport(corporateTaxEstimate)
+    );
     addSheets(["trial-balance"], prepareTrialBalanceForExport(trialBalance));
     addSheets(
       ["invoice-status", "revenue-customer"],
@@ -2288,6 +2436,15 @@ export default function Reports() {
     } else if (activeTab === "vat" && vatSummary) {
       exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
       toast({ title: "Export successful", description: "VAT Summary exported to Excel" });
+    } else if (activeTab === "tax" && corporateTaxEstimate) {
+      exportToExcel(
+        prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
+        `corporate_tax_estimate${dateRangeStr}`
+      );
+      toast({
+        title: "Export successful",
+        description: "Corporate Tax Estimate exported to Excel",
+      });
     } else if (activeTab === "trial" && trialBalance) {
       exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
       toast({ title: "Export successful", description: "Trial Balance exported to Excel" });
@@ -2344,6 +2501,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareVATSummaryForExport(vatSummary)],
         `VAT Summary${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "tax" && corporateTaxEstimate) {
+      result = await exportToGoogleSheets(
+        prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
+        `Corporate Tax Estimate${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "trial" && trialBalance) {
@@ -3758,7 +3921,7 @@ export default function Reports() {
         onValueChange={(value) => setActiveTab(value as ReportTab)}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
           <TabsTrigger value="pl" data-testid="tab-profit-loss">
             {t.profitLoss}
           </TabsTrigger>
@@ -3767,6 +3930,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="vat" data-testid="tab-vat-summary">
             {t.vatSummary}
+          </TabsTrigger>
+          <TabsTrigger value="tax" data-testid="tab-corporate-tax">
+            Corporate Tax
           </TabsTrigger>
           <TabsTrigger value="sales" data-testid="tab-invoice-status">
             Sales
@@ -4109,6 +4275,153 @@ export default function Reports() {
                         : "Amount to be refunded by the Federal Tax Authority"}
                     </p>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="tax" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Tax Payable</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <Scale className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {corporateTaxLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div
+                    className="font-mono text-2xl font-bold"
+                    data-testid="text-corporate-tax-payable"
+                  >
+                    {formatCurrency(corporateTaxEstimate?.taxPayable ?? 0, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Taxable Income</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {corporateTaxLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {formatCurrency(corporateTaxEstimate?.taxableIncome ?? 0, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Above Band</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {corporateTaxLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <>
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(corporateTaxEstimate?.taxableAmount ?? 0, "AED", locale)}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Posted Journals</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {corporateTaxLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Corporate Tax Estimate</CardTitle>
+                  <CardDescription>
+                    {corporateTaxEstimate
+                      ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
+                      : corporateTaxPeriodLabel}
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/corporate-tax">Open Corporate Tax</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {corporateTaxLoading ? (
+                <Skeleton className="h-80" />
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <Badge variant={corporateTaxStatus.variant} dot>
+                        {corporateTaxStatus.label}
+                      </Badge>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {corporateTaxStatus.detail}
+                      </p>
+                    </div>
+                    <p className="max-w-md text-sm text-muted-foreground">
+                      Estimate only. Open Corporate Tax to adjust the workpaper or save a draft;
+                      this report does not submit to the FTA or post accounting entries.
+                    </p>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Bridge</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Note</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {corporateTaxBridgeRows.map((row) => (
+                        <TableRow key={row.metric}>
+                          <TableCell className="font-medium">{row.metric}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.amount, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {row.note}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>

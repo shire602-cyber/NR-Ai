@@ -394,6 +394,94 @@ export function prepareVATSummaryForExport(vatSummary: any): ExportData {
   };
 }
 
+export function prepareCorporateTaxEstimateForExport(report: any): ExportData[] {
+  const taxPayable = Number(report?.taxPayable ?? 0) || 0;
+  const taxableIncome = Number(report?.taxableIncome ?? 0) || 0;
+  const status =
+    taxPayable > 0.005 ? "Tax due" : taxableIncome <= 0 ? "No taxable income" : "Below threshold";
+
+  return [
+    {
+      sheetName: "Corporate Tax Estimate",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 24 },
+      ],
+      rows: [
+        { metric: "Period start", value: formatDateForExport(report?.periodStart) },
+        { metric: "Period end", value: formatDateForExport(report?.periodEnd) },
+        { metric: "Total revenue (AED)", value: formatExportAmount(report?.totalRevenue) },
+        { metric: "Total expenses (AED)", value: formatExportAmount(report?.totalExpenses) },
+        { metric: "Gross profit (AED)", value: formatExportAmount(report?.grossProfit) },
+        { metric: "Deductions (AED)", value: formatExportAmount(report?.totalDeductions) },
+        { metric: "Taxable income (AED)", value: formatExportAmount(report?.taxableIncome) },
+        {
+          metric: "Zero-rate band / threshold (AED)",
+          value: formatExportAmount(report?.exemptionThreshold),
+        },
+        {
+          metric: "Income above zero-rate band (AED)",
+          value: formatExportAmount(report?.taxableAmount),
+        },
+        { metric: "Tax rate", value: formatExportPercent((Number(report?.taxRate) || 0) * 100) },
+        { metric: "Tax payable (AED)", value: formatExportAmount(report?.taxPayable) },
+        { metric: "Journal entries processed", value: report?.journalEntriesProcessed ?? 0 },
+        { metric: "Status", value: status },
+      ],
+    },
+    {
+      sheetName: "Corporate Tax Bridge",
+      columns: [
+        { header: "Bridge", key: "bridge", width: 34 },
+        { header: "Amount (AED)", key: "amount", width: 18 },
+        { header: "Note", key: "note", width: 60 },
+      ],
+      rows: [
+        {
+          bridge: "Revenue",
+          amount: formatExportAmount(report?.totalRevenue),
+          note: "Posted income accounts in the selected period.",
+        },
+        {
+          bridge: "Less: expenses",
+          amount: formatExportAmount(-(Number(report?.totalExpenses ?? 0) || 0)),
+          note: "Posted expense accounts in the selected period.",
+        },
+        {
+          bridge: "Gross profit",
+          amount: formatExportAmount(report?.grossProfit),
+          note: "Revenue less expenses before tax-specific deductions.",
+        },
+        {
+          bridge: "Less: deductions",
+          amount: formatExportAmount(-(Number(report?.totalDeductions ?? 0) || 0)),
+          note: "Adjustable in the Corporate Tax workspace.",
+        },
+        {
+          bridge: "Taxable income",
+          amount: formatExportAmount(report?.taxableIncome),
+          note: "Income before applying the zero-rate band.",
+        },
+        {
+          bridge: "Less: zero-rate band",
+          amount: formatExportAmount(-(Number(report?.exemptionThreshold ?? 0) || 0)),
+          note: "Threshold returned by the Corporate Tax calculation endpoint.",
+        },
+        {
+          bridge: "Income above zero-rate band",
+          amount: formatExportAmount(report?.taxableAmount),
+          note: "Positive income above the zero-rate band before applying the returned rate.",
+        },
+        {
+          bridge: "Corporate tax payable",
+          amount: formatExportAmount(report?.taxPayable),
+          note: "Estimate only; review the Corporate Tax workpaper before filing.",
+        },
+      ],
+    },
+  ];
+}
+
 export function prepareTrialBalanceForExport(trialBalance: any): ExportData {
   const rows =
     trialBalance?.rows?.map((row: any) => ({
