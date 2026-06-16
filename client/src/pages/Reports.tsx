@@ -416,6 +416,12 @@ const reportStatusMeta: Record<ReportStatus, { label: string; variant: BadgeProp
   planned: { label: "Planned", variant: "neutral" },
 };
 
+const roadmapImpactMeta = {
+  high: { label: "High impact", variant: "warning" },
+  medium: { label: "Medium impact", variant: "info" },
+  low: { label: "Low impact", variant: "neutral" },
+} as const satisfies Record<string, { label: string; variant: BadgeProps["variant"] }>;
+
 const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "all", label: "All" },
   { id: "owner", label: "Owner" },
@@ -1539,28 +1545,41 @@ export default function Reports() {
 
   const reportRoadmap = useMemo(() => {
     return workspaceSummaries.map((workspace) => {
+      const prioritizedPlannedReports = workspace.plannedReports
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.roadmapPriority?.score ?? 0) - (a.roadmapPriority?.score ?? 0) ||
+            a.name.localeCompare(b.name)
+        );
       const plannedAutomationHooks = Array.from(
-        new Set(workspace.plannedReports.map((report) => report.automation))
+        new Set(prioritizedPlannedReports.map((report) => report.automation))
       );
       const plannedCategories = Array.from(
-        new Set(workspace.plannedReports.map((report) => report.category))
+        new Set(prioritizedPlannedReports.map((report) => report.category))
       );
       const plannedWorkflowDependencies = Array.from(
         new Set(
-          workspace.plannedReports
+          prioritizedPlannedReports
             .map((report) => report.roadmapPrerequisites?.workflowDependency)
             .filter((dependency): dependency is string => Boolean(dependency))
         )
       );
-      const nextReports = workspace.plannedReports.slice(0, 4);
+      const nextReports = prioritizedPlannedReports.slice(0, 4);
+      const topPriorityReport = nextReports[0] ?? null;
+      const topPriorityImpact =
+        topPriorityReport?.roadmapPriority?.impactByPersona[workspace.persona];
 
       return {
         workspace,
-        plannedReports: workspace.plannedReports,
+        plannedReports: prioritizedPlannedReports,
         nextReports,
         plannedAutomationHooks,
         plannedCategories,
         plannedWorkflowDependencies,
+        topPriorityReport,
+        topPriorityImpact,
+        topPriorityScore: topPriorityReport?.roadmapPriority?.score ?? 0,
         liveReportCount: workspace.reports.length - workspace.plannedReports.length,
         plannedReportCount: workspace.plannedReports.length,
         prerequisiteCount: workspace.plannedReports.filter((report) => report.roadmapPrerequisites)
@@ -1900,6 +1919,12 @@ export default function Reports() {
         { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
         { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
         { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
+        {
+          metric: "Top roadmap priority",
+          value: packRoadmap?.topPriorityReport
+            ? `${packRoadmap.topPriorityReport.name} (${packRoadmap.topPriorityScore})`
+            : "Not available",
+        },
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
         { metric: "Recommended actions", value: packRecommendations.length },
@@ -1959,6 +1984,9 @@ export default function Reports() {
       columns: [
         { header: "Report", key: "report", width: 32 },
         { header: "Status", key: "status", width: 18 },
+        { header: "Priority Score", key: "priorityScore", width: 16 },
+        { header: "Persona Impact", key: "personaImpact", width: 18 },
+        { header: "Priority Rationale", key: "priorityRationale", width: 56 },
         { header: "Category", key: "category", width: 24 },
         { header: "Comparison", key: "comparison", width: 28 },
         { header: "Automation Unlock", key: "automation", width: 34 },
@@ -1972,11 +2000,18 @@ export default function Reports() {
         .sort((a, b) => {
           const aPlanned = a.status === "planned" ? 0 : 1;
           const bPlanned = b.status === "planned" ? 0 : 1;
-          return aPlanned - bPlanned || a.name.localeCompare(b.name);
+          return (
+            aPlanned - bPlanned ||
+            (b.roadmapPriority?.score ?? 0) - (a.roadmapPriority?.score ?? 0) ||
+            a.name.localeCompare(b.name)
+          );
         })
         .map((report) => ({
           report: report.name,
           status: reportStatusMeta[report.status].label,
+          priorityScore: report.roadmapPriority?.score ?? "",
+          personaImpact: report.roadmapPriority?.impactByPersona[workspace.persona] ?? "",
+          priorityRationale: report.roadmapPriority?.rationale ?? "",
           category: report.category,
           comparison: report.comparison,
           automation: report.automation,
@@ -3004,52 +3039,96 @@ export default function Reports() {
                     </div>
                   </div>
 
+                  {item.topPriorityReport ? (
+                    <div className="rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-medium uppercase text-muted-foreground">
+                            Top roadmap priority
+                          </div>
+                          <div className="mt-1 text-sm font-medium">
+                            {item.topPriorityReport.name}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant="warning">{item.topPriorityScore}</Badge>
+                          {item.topPriorityImpact ? (
+                            <Badge variant={roadmapImpactMeta[item.topPriorityImpact].variant} dot>
+                              {roadmapImpactMeta[item.topPriorityImpact].label}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {item.topPriorityReport.roadmapPriority?.rationale}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
                       Next report unlocks
                     </div>
                     {item.nextReports.length > 0 ? (
-                      item.nextReports.map((report) => (
-                        <div
-                          key={report.id}
-                          className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
-                        >
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-sm font-medium">{report.name}</div>
-                              <Badge variant="outline">{report.category}</Badge>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {report.comparison} - {report.automation}
-                            </div>
-                            {report.roadmapPrerequisites ? (
-                              <div className="grid gap-2 pt-2 text-xs text-muted-foreground">
-                                <div>
-                                  <span className="font-medium text-foreground">Data source:</span>{" "}
-                                  {report.roadmapPrerequisites.dataSource}
-                                </div>
-                                <div>
-                                  <span className="font-medium text-foreground">
-                                    Workflow dependency:
-                                  </span>{" "}
-                                  {report.roadmapPrerequisites.workflowDependency}
-                                </div>
-                                <div>
-                                  <span className="font-medium text-foreground">
-                                    Automation rule:
-                                  </span>{" "}
-                                  {report.roadmapPrerequisites.automationRule}
-                                </div>
+                      item.nextReports.map((report) => {
+                        const impact = report.roadmapPriority?.impactByPersona[workspace.persona];
+                        return (
+                          <div
+                            key={report.id}
+                            className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-sm font-medium">{report.name}</div>
+                                <Badge variant="outline">{report.category}</Badge>
+                                {typeof report.roadmapPriority?.score === "number" ? (
+                                  <Badge variant="warning">{report.roadmapPriority.score}</Badge>
+                                ) : null}
+                                {impact ? (
+                                  <Badge variant={roadmapImpactMeta[impact].variant} dot>
+                                    {roadmapImpactMeta[impact].label}
+                                  </Badge>
+                                ) : null}
                               </div>
-                            ) : null}
+                              <div className="text-xs text-muted-foreground">
+                                {report.comparison} - {report.automation}
+                              </div>
+                              {report.roadmapPriority?.rationale ? (
+                                <div className="text-xs text-muted-foreground">
+                                  {report.roadmapPriority.rationale}
+                                </div>
+                              ) : null}
+                              {report.roadmapPrerequisites ? (
+                                <div className="grid gap-2 pt-2 text-xs text-muted-foreground">
+                                  <div>
+                                    <span className="font-medium text-foreground">
+                                      Data source:
+                                    </span>{" "}
+                                    {report.roadmapPrerequisites.dataSource}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-foreground">
+                                      Workflow dependency:
+                                    </span>{" "}
+                                    {report.roadmapPrerequisites.workflowDependency}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-foreground">
+                                      Automation rule:
+                                    </span>{" "}
+                                    {report.roadmapPrerequisites.automationRule}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={reportHref(report) ?? reportWorkspaceHref(workspace)}>
+                                Open area
+                              </Link>
+                            </Button>
                           </div>
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={reportHref(report) ?? reportWorkspaceHref(workspace)}>
-                              Open area
-                            </Link>
-                          </Button>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="rounded-md border p-3 text-sm text-muted-foreground">
                         All target reports for this workspace are live or API-backed.

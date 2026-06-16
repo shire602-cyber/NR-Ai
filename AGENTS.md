@@ -6,7 +6,7 @@ Scope: this file applies to the whole repository.
 
 - `client/` contains the React/Vite frontend. Vite aliases `@` to `client/src`.
 - `client/src/lib/reportCatalog.ts` is the shared source for Reports catalog/workspace metadata,
-  automation playbooks, roadmap prerequisites, automation-health scoring/history, persona
+  automation playbooks, roadmap prerequisites/priorities, automation-health scoring/history, persona
   preference storage, and command-palette report shortcuts; avoid duplicating report labels or deep
   links elsewhere.
 - `server/` contains the Express API, middleware, routes, services, and startup code.

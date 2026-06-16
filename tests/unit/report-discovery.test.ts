@@ -300,9 +300,17 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("plannedAutomationHooks");
     expect(reportsSource).toContain("plannedWorkflowDependencies");
     expect(reportsSource).toContain("prerequisiteCount");
+    expect(reportsSource).toContain("topPriorityReport");
+    expect(reportsSource).toContain("topPriorityImpact");
+    expect(reportsSource).toContain("topPriorityScore");
     expect(reportsSource).toContain("Planned report gaps");
     expect(reportsSource).toContain("Roadmap prerequisites");
     expect(reportsSource).toContain("Roadmap status");
+    expect(reportsSource).toContain("Top roadmap priority");
+    expect(reportsSource).toContain("roadmapImpactMeta");
+    expect(reportsSource).toContain("Priority Score");
+    expect(reportsSource).toContain("Persona Impact");
+    expect(reportsSource).toContain("Priority Rationale");
     expect(reportsSource).toContain("Automation Unlock");
     expect(reportsSource).toContain("Data Source Needed");
     expect(reportsSource).toContain("Workflow Dependency");
@@ -372,6 +380,13 @@ describe("report discoverability", () => {
       expect(report.roadmapPrerequisites?.dataSource).toBeTruthy();
       expect(report.roadmapPrerequisites?.workflowDependency).toBeTruthy();
       expect(report.roadmapPrerequisites?.automationRule).toBeTruthy();
+      expect(report.roadmapPriority?.score).toBeGreaterThan(0);
+      expect(report.roadmapPriority?.score).toBeLessThanOrEqual(100);
+      expect(report.roadmapPriority?.rationale).toBeTruthy();
+
+      for (const persona of report.personas) {
+        expect(report.roadmapPriority?.impactByPersona[persona]).toMatch(/^(high|medium|low)$/);
+      }
     }
   });
 

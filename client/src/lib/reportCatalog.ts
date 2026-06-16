@@ -16,6 +16,7 @@ export type ReportTab = (typeof reportTabs)[number];
 export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportSection = "recommendations" | "pack-readiness" | "pack-automation";
 export type ReportStatus = "live" | "api" | "planned";
+export type ReportRoadmapImpact = "high" | "medium" | "low";
 export type ReportAutomationHealthVariant = "success" | "warning" | "danger";
 export type ReportAutomationHealthTrendDirection = "up" | "down" | "flat" | "new";
 export type ReportAutomationHealthTrendVariant = "success" | "warning" | "neutral" | "info";
@@ -42,6 +43,11 @@ export interface ReportCatalogItem {
     dataSource: string;
     workflowDependency: string;
     automationRule: string;
+  };
+  roadmapPriority?: {
+    score: number;
+    impactByPersona: Partial<Record<ReportPersona, ReportRoadmapImpact>>;
+    rationale: string;
   };
   commandIcon: ReportCommandIcon;
   commandKeywords: string;
@@ -405,6 +411,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       automationRule:
         "Flag taxable-profit thresholds, disallowed expenses, and filing-deadline risk.",
     },
+    roadmapPriority: {
+      score: 95,
+      impactByPersona: { owner: "high", accountant: "high" },
+      rationale: "High-stakes tax planning and filing visibility for owners and advisors.",
+    },
     href: "/corporate-tax",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports corporate tax estimate liability",
@@ -494,6 +505,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       workflowDependency: "Invoice item catalog and product/service tagging in Invoices.",
       automationRule: "Alert on low margin, top service concentration, and missing item tags.",
     },
+    roadmapPriority: {
+      score: 82,
+      impactByPersona: { owner: "high", accountant: "medium" },
+      rationale: "Improves revenue mix visibility and margin automation for owner decisions.",
+    },
     href: "/invoices",
     commandIcon: "fileText",
     commandKeywords: "reports sales products services margin",
@@ -535,6 +551,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       workflowDependency: "Inventory item master with cost and stock-count reconciliation.",
       automationRule: "Flag negative stock, stale valuation, and valuation-method mismatches.",
     },
+    roadmapPriority: {
+      score: 78,
+      impactByPersona: { owner: "medium", accountant: "high" },
+      rationale: "Unlocks stock valuation, balance sheet support, and accountant review controls.",
+    },
     href: "/inventory",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports inventory valuation stock",
@@ -551,6 +572,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       dataSource: "Stock receipts, issues, transfers, and adjustments linked to each item.",
       workflowDependency: "Inventory movement ledger with reorder points and item categories.",
       automationRule: "Trigger reorder and shrinkage alerts when movement breaches thresholds.",
+    },
+    roadmapPriority: {
+      score: 72,
+      impactByPersona: { owner: "medium", accountant: "medium" },
+      rationale: "Adds operational stock movement visibility after valuation foundations exist.",
     },
     href: "/inventory",
     commandIcon: "fileSpreadsheet",
@@ -570,6 +596,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       workflowDependency: "Fixed Assets workspace with capitalization policy and asset tagging.",
       automationRule: "Review purchases above capitalization thresholds and missing asset fields.",
     },
+    roadmapPriority: {
+      score: 80,
+      impactByPersona: { owner: "medium", accountant: "high" },
+      rationale: "Creates the asset subledger needed for depreciation and close workpapers.",
+    },
     href: "/fixed-assets",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports fixed assets register capitalization",
@@ -587,6 +618,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       workflowDependency:
         "Fixed Assets depreciation setup and journal-posting destination accounts.",
       automationRule: "Suggest monthly depreciation journals and flag assets missing methods.",
+    },
+    roadmapPriority: {
+      score: 74,
+      impactByPersona: { accountant: "high" },
+      rationale: "Turns fixed asset setup into repeatable close automation for accountants.",
     },
     href: "/fixed-assets",
     commandIcon: "fileSpreadsheet",
@@ -606,6 +642,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       automationRule:
         "Flag payroll variance, missing approvals, and unexpected employee-cost movement.",
     },
+    roadmapPriority: {
+      score: 86,
+      impactByPersona: { owner: "high", accountant: "medium" },
+      rationale: "Payroll is a high-frequency cost center with strong owner cash-flow impact.",
+    },
     href: "/payroll",
     commandIcon: "fileSpreadsheet",
     commandKeywords: "reports payroll summary wages",
@@ -622,6 +663,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       dataSource: "Payroll runs with WPS employee identifiers, bank routing, and SIF fields.",
       workflowDependency: "Payroll WPS configuration with employee bank validation.",
       automationRule: "Block SIF export when required WPS or bank fields are incomplete.",
+    },
+    roadmapPriority: {
+      score: 88,
+      impactByPersona: { owner: "high", accountant: "high" },
+      rationale: "UAE payroll compliance and SIF readiness are critical automation gaps.",
     },
     href: "/payroll",
     commandIcon: "fileSpreadsheet",
@@ -641,6 +687,11 @@ export const reportCatalog: ReportCatalogItem[] = [
         "Expense Claims workflow with approver routing and reimbursement posting.",
       automationRule: "Route stale claims, duplicate receipts, and policy exceptions for review.",
     },
+    roadmapPriority: {
+      score: 70,
+      impactByPersona: { owner: "medium", accountant: "medium" },
+      rationale: "Improves spend governance once receipts and approval routing are active.",
+    },
     href: "/expense-claims",
     commandIcon: "receipt",
     commandKeywords: "reports expense claims approval",
@@ -657,6 +708,12 @@ export const reportCatalog: ReportCatalogItem[] = [
       dataSource: "Close tasks, reconciliations, trial-balance checks, and reviewer assignments.",
       workflowDependency: "Month-End workspace with task templates and period lock controls.",
       automationRule: "Escalate overdue close tasks and unresolved reconciliation exceptions.",
+    },
+    roadmapPriority: {
+      score: 92,
+      impactByPersona: { accountant: "high" },
+      rationale:
+        "Month-end status is the strongest accountant workflow unlock for close automation.",
     },
     href: "/month-end",
     commandIcon: "book",
@@ -675,6 +732,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       workflowDependency: "History activity stream with entity-level mutation tracking.",
       automationRule: "Summarize unusual edits, privileged actions, and post-close changes.",
     },
+    roadmapPriority: {
+      score: 76,
+      impactByPersona: { accountant: "high" },
+      rationale: "Audit evidence improves reviewer confidence and post-close exception handling.",
+    },
     href: "/history",
     commandIcon: "book",
     commandKeywords: "reports audit trail history risk",
@@ -691,6 +753,11 @@ export const reportCatalog: ReportCatalogItem[] = [
       dataSource: "Multi-company chart mapping, ownership rules, eliminations, and period locks.",
       workflowDependency: "Financial Statements workspace with consolidation mappings.",
       automationRule: "Flag unmapped accounts, intercompany balances, and missing company closes.",
+    },
+    roadmapPriority: {
+      score: 84,
+      impactByPersona: { accountant: "high" },
+      rationale: "Consolidation expands accountant advisory packs for multi-entity clients.",
     },
     href: "/financial-statements",
     commandIcon: "fileSpreadsheet",
