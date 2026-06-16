@@ -1174,6 +1174,10 @@ export default function BankReconciliation() {
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
+                    <span>Comma, semicolon, and tab-delimited Excel exports are supported</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
                     <span>Amount + Dr/Cr type columns are supported</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">

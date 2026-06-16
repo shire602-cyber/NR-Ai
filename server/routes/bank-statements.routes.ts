@@ -93,7 +93,7 @@ function detectBankFormat(headers: string[]): BankFormat {
  * Parse a raw CSV string into normalized transaction rows.
  * Handles quoted fields and various line endings.
  */
-function parseCsvRow(line: string): string[] {
+function parseCsvRow(line: string, delimiter = ","): string[] {
   const fields: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -107,7 +107,7 @@ function parseCsvRow(line: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (ch === "," && !inQuotes) {
+    } else if (ch === delimiter && !inQuotes) {
       fields.push(current.trim());
       current = "";
     } else {
@@ -118,9 +118,17 @@ function parseCsvRow(line: string): string[] {
   return fields;
 }
 
+function normalizeNumberGlyphs(value: string): string {
+  return value
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - "٠".charCodeAt(0)))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - "۰".charCodeAt(0)))
+    .replace(/٫/g, ".")
+    .replace(/٬/g, ",");
+}
+
 function parseDate(raw: string): Date | null {
   if (!raw) return null;
-  const cleaned = raw.trim().replace(/\//g, "-");
+  const cleaned = normalizeNumberGlyphs(raw).trim().replace(/\//g, "-");
 
   // Try YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(cleaned)) {
@@ -158,11 +166,7 @@ function parseDate(raw: string): Date | null {
 
 function parseAmount(raw: string): number {
   if (!raw) return 0;
-  const normalizedDigits = raw
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - "٠".charCodeAt(0)))
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - "۰".charCodeAt(0)))
-    .replace(/٫/g, ".")
-    .replace(/٬/g, ",");
+  const normalizedDigits = normalizeNumberGlyphs(raw);
   // Remove currency symbols, commas, spaces; handle parentheses as negative
   const negative =
     normalizedDigits.trim().startsWith("(") ||
@@ -303,8 +307,8 @@ function mapRow(fields: string[], headers: string[], format: BankFormat): Parsed
   const txnDate = parseDate(dateStr);
   if (!txnDate) return null;
 
-  const debit = parseAmount(debitStr);
-  const credit = parseAmount(creditStr);
+  const debit = Math.abs(parseAmount(debitStr));
+  const credit = Math.abs(parseAmount(creditStr));
   const balance = balanceStr ? parseAmount(balanceStr) : null;
 
   // Skip rows with no monetary value
@@ -342,23 +346,31 @@ export function parseBankCsv(csvContent: string): {
     return { transactions: [], format: "generic", errors: ["CSV has no data rows"] };
   }
 
-  // Find header row — first row with more than 2 comma-separated fields
+  const delimiters = [",", ";", "\t"];
+  let delimiter = ",";
   let headerIdx = 0;
+  let headerFieldCount = 0;
   for (let i = 0; i < Math.min(10, lines.length); i++) {
-    const fields = parseCsvRow(lines[i]);
-    if (fields.length >= 3) {
-      headerIdx = i;
+    for (const candidate of delimiters) {
+      const fields = parseCsvRow(lines[i], candidate);
+      if (fields.length > headerFieldCount) {
+        headerIdx = i;
+        delimiter = candidate;
+        headerFieldCount = fields.length;
+      }
+    }
+    if (headerFieldCount >= 3) {
       break;
     }
   }
 
-  const headers = parseCsvRow(lines[headerIdx]);
+  const headers = parseCsvRow(lines[headerIdx], delimiter);
   const format = detectBankFormat(headers);
   const transactions: ParsedTransaction[] = [];
   const errors: string[] = [];
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
-    const fields = parseCsvRow(lines[i]);
+    const fields = parseCsvRow(lines[i], delimiter);
     if (fields.every((f) => !f)) continue; // blank row
 
     try {
