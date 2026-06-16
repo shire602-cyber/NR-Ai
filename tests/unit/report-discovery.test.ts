@@ -864,11 +864,15 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportDeliveryPlansQuery");
     expect(reportsSource).toContain("reportDeliveryRunsQuery");
     expect(reportsSource).toContain("reportDeliverySchedulerHealthQuery");
+    expect(reportsSource).toContain("retryReportDeliveryRun");
     expect(reportsSource).toContain("report-delivery-scheduler-health");
     expect(reportsSource).toContain("Queue delivery");
+    expect(reportsSource).toContain("Retry delivery");
+    expect(reportsSource).toContain("/report-delivery/runs/${runId}/retry");
     expect(reportsSource).toContain("report-delivery-settings-editor-${subscription.id}");
     expect(reportsSource).toContain("report-delivery-preview-${subscription.id}");
     expect(reportsSource).toContain("report-delivery-run-history-${subscription.id}");
+    expect(reportsSource).toContain("run.errorMessage");
     expect(reportsSource).toContain("Edit settings");
     expect(reportsSource).toContain("Save delivery settings");
     expect(reportsSource).toContain("reportDeliverySettingsDraft.cadence");
@@ -1188,6 +1192,8 @@ describe("report discoverability", () => {
     expect(schemaSource).toContain("companyReportDeliveryRuns");
     expect(schemaSource).toContain("companyReportDeliverySchedulerScans");
     expect(schemaSource).toContain("company_report_delivery_subscriptions_unique");
+    expect(schemaSource).toContain("retriedFromRunId");
+    expect(schemaSource).toContain("errorMessage");
     expect(reportDeliveryMigrationSource).toContain(
       'CREATE TABLE IF NOT EXISTS "company_report_delivery_subscriptions"'
     );
@@ -1218,6 +1224,9 @@ describe("report discoverability", () => {
     expect(reportDeliverySchedulerSource).toContain("resolveCompanyActorUserId");
     expect(reportDeliverySchedulerSource).toContain("createAndEmitNotification");
     expect(reportDeliverySchedulerSource).toContain("createReportDeliverySchedulerScan");
+    expect(reportDeliverySchedulerSource).toContain('status: "failed"');
+    expect(reportDeliverySchedulerSource).toContain("errorMessage: message");
+    expect(reportDeliverySchedulerSource).toContain("Failed to queue scheduled report delivery");
     expect(schedulerSource).toContain("scanDueReportDeliveries");
     expect(schedulerSource).toContain("Report delivery subscription scan");
   });

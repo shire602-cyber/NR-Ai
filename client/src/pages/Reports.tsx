@@ -102,6 +102,7 @@ import {
   TrendingDown,
   DollarSign,
   Pencil,
+  RotateCcw,
   Save,
   X,
   Users,
@@ -201,6 +202,8 @@ interface ReportDeliveryRunSummary {
   reportCount: number;
   readyReportCount: number;
   triggerRuleCount: number;
+  retriedFromRunId: string | null;
+  errorMessage: string | null;
   createdAt: string;
 }
 
@@ -4445,6 +4448,7 @@ export default function Reports() {
     onSuccess: (result: any) => {
       reportDeliveryPlansQuery.refetch();
       reportDeliveryRunsQuery.refetch();
+      reportDeliverySchedulerHealthQuery.refetch();
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
@@ -4455,9 +4459,38 @@ export default function Reports() {
       });
     },
     onError: (error: any) => {
+      reportDeliveryRunsQuery.refetch();
+      reportDeliverySchedulerHealthQuery.refetch();
       toast({
         title: "Could not queue report delivery",
         description: error?.message || "Failed to queue report delivery",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const retryReportDeliveryRun = useMutation({
+    mutationFn: (runId: string) => {
+      if (!selectedCompanyId) throw new Error("Select a company before retrying delivery.");
+      return apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/runs/${runId}/retry`
+      );
+    },
+    onSuccess: (result: any) => {
+      reportDeliveryPlansQuery.refetch();
+      reportDeliveryRunsQuery.refetch();
+      reportDeliverySchedulerHealthQuery.refetch();
+      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      toast({
+        title: "Report delivery retry queued",
+        description: `${subscriptionTitle} was requeued after recovery.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not retry report delivery",
+        description: error?.message || "Failed to retry report delivery",
         variant: "destructive",
       });
     },
@@ -6231,7 +6264,7 @@ export default function Reports() {
                           {subscription.deliveryRuns.slice(0, 2).map((run) => (
                             <div
                               key={run.id}
-                              className="flex items-start justify-between gap-2 rounded-md bg-secondary/40 p-2"
+                              className="flex flex-col gap-2 rounded-md bg-secondary/40 p-2 sm:flex-row sm:items-start sm:justify-between"
                             >
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-1">
@@ -6246,18 +6279,45 @@ export default function Reports() {
                                   Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
                                   {run.readyReportCount}/{run.reportCount} reports - {run.channel}
                                 </div>
+                                {run.status === "failed" ? (
+                                  <div className="mt-1 text-destructive">
+                                    {run.errorMessage ??
+                                      "Retry after fixing delivery settings or guardrails."}
+                                  </div>
+                                ) : null}
+                                {run.retriedFromRunId ? (
+                                  <div className="mt-1 text-muted-foreground">
+                                    Requeued from a failed delivery run.
+                                  </div>
+                                ) : null}
                               </div>
-                              <Badge
-                                variant={
-                                  run.readinessStatus === "ready"
-                                    ? "success"
-                                    : run.readinessStatus === "paused"
-                                      ? "neutral"
-                                      : "warning"
-                                }
-                              >
-                                {run.readinessStatus}
-                              </Badge>
+                              <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                                <Badge
+                                  variant={
+                                    run.readinessStatus === "ready"
+                                      ? "success"
+                                      : run.readinessStatus === "paused"
+                                        ? "neutral"
+                                        : "warning"
+                                  }
+                                >
+                                  {run.readinessStatus}
+                                </Badge>
+                                {run.status === "failed" ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={
+                                      !selectedCompanyId || retryReportDeliveryRun.isPending
+                                    }
+                                    onClick={() => retryReportDeliveryRun.mutate(run.id)}
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    Retry delivery
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>

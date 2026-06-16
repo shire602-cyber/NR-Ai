@@ -1198,7 +1198,10 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(companyReportDeliveryRuns)
       .where(
-        and(eq(companyReportDeliveryRuns.companyId, companyId), eq(companyReportDeliveryRuns.id, runId))
+        and(
+          eq(companyReportDeliveryRuns.companyId, companyId),
+          eq(companyReportDeliveryRuns.id, runId)
+        )
       )
       .limit(1);
     return row;

@@ -115,9 +115,9 @@ Scope: this file applies to the whole repository.
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery
   subscription service, route, persisted settings, run history, notification queueing, or
-  scheduling-plan changes.
+  failure-retry API/scheduling-plan changes.
 - Use `npx vitest run tests/unit/report-delivery-scheduler.test.ts` after report delivery cadence,
-  due-scan, guardrail, scheduler telemetry, or scheduler cron changes.
+  due-scan, guardrail, failure recovery, scheduler telemetry, or scheduler cron changes.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes. The
   WhatsApp surface is NR firm-management-only and must not appear in public or customer SaaS UI.
 - Document chasing is also an NR firm-management-only feature. Keep its UI under

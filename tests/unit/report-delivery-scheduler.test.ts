@@ -198,4 +198,37 @@ describe("report delivery scheduler", () => {
       })
     );
   });
+
+  it("records failed scheduled runs and continues scanning remaining subscriptions", async () => {
+    vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Email provider down"));
+
+    const result = await scanDueReportDeliveries(new Date("2026-06-22T09:00:00.000Z"));
+
+    expect(result).toMatchObject({
+      scannedCompanies: 1,
+      scannedSubscriptions: 6,
+      queuedRuns: 2,
+      errors: 1,
+    });
+    expect(createAndEmitNotification).toHaveBeenCalledTimes(3);
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        queuedBy: userId,
+        status: "failed",
+        errorMessage: "Email provider down",
+        scheduledFor: new Date("2026-06-22T09:00:00.000Z"),
+      })
+    );
+    expect(storage.createReportDeliverySchedulerScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        status: "error",
+        queuedRuns: 2,
+        errors: 1,
+        message: "Email provider down",
+      })
+    );
+  });
 });

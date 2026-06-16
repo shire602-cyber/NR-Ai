@@ -195,6 +195,8 @@ describe("report delivery subscriptions", () => {
       status: "queued",
       readinessStatus: "ready",
       notificationId: "notification-1",
+      retriedFromRunId: null,
+      errorMessage: null,
       queuedBy: userId,
       reportCount: plan.reportCount,
       readyReportCount: plan.readyReportCount,
@@ -233,6 +235,8 @@ describe("report delivery subscriptions", () => {
         status: "queued",
         readinessStatus: "ready",
         notificationId: "notification-1",
+        retriedFromRunId: null,
+        errorMessage: null,
         scheduledFor: new Date("2026-06-22T08:00:00.000Z"),
         queuedBy: userId,
         channel: "Google Sheets plus email summary",
@@ -456,6 +460,42 @@ describe("report delivery subscriptions", () => {
         status: "queued",
       })
     );
+  });
+
+  it("rejects retrying report delivery runs that are not failed", async () => {
+    vi.mocked(storage.getReportDeliveryRun).mockResolvedValue({
+      id: "queued-run-1",
+      companyId,
+      subscriptionId: "owner-weekly-executive-delivery",
+      status: "queued",
+      readinessStatus: "ready",
+      notificationId: "notification-1",
+      retriedFromRunId: null,
+      errorMessage: null,
+      scheduledFor: new Date("2026-06-22T08:00:00.000Z"),
+      queuedBy: userId,
+      channel: "Google Sheets plus email summary",
+      format: "Management pack workbook",
+      recipients: "Owner",
+      deliveryGuardrail: "Review guardrail",
+      reportCount: 6,
+      readyReportCount: 6,
+      triggerRuleCount: 2,
+      snapshot: {},
+      createdAt: new Date("2026-06-22T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-22T09:00:00.000Z"),
+    });
+
+    const res = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/runs/queued-run-1/retry`
+    );
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe("Only failed report delivery runs can be retried");
+    expect(createAndEmitNotification).not.toHaveBeenCalled();
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
   });
 
   it("does not queue paused report delivery subscriptions", async () => {

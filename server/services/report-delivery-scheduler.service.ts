@@ -183,6 +183,10 @@ function latestRunForSubscription(
   return runs.find((run) => run.subscriptionId === subscriptionId) ?? null;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown scheduler error";
+}
+
 async function recordCompanySchedulerScan(
   companyId: string,
   companyResult: CompanyReportDeliverySchedulerScanResult
@@ -251,31 +255,60 @@ export async function scanDueReportDeliveries(
           continue;
         }
 
-        const notification = await createAndEmitNotification(
-          buildReportDeliveryNotificationForPlan({
-            userId: actorUserId,
-            companyId: company.id,
-            plan,
-            scheduledFor: decision.scheduledFor,
-          })
-        );
+        try {
+          const notification = await createAndEmitNotification(
+            buildReportDeliveryNotificationForPlan({
+              userId: actorUserId,
+              companyId: company.id,
+              plan,
+              scheduledFor: decision.scheduledFor,
+            })
+          );
 
-        await storage.createReportDeliveryRun(
-          buildReportDeliveryRunInput({
-            companyId: company.id,
-            queuedBy: actorUserId,
-            plan,
-            notificationId: notification.id,
-            scheduledFor: decision.scheduledFor,
-          })
-        );
-        companyResult.queuedRuns += 1;
-        companyResult.queuedSubscriptionIds.push(plan.id);
+          await storage.createReportDeliveryRun(
+            buildReportDeliveryRunInput({
+              companyId: company.id,
+              queuedBy: actorUserId,
+              plan,
+              notificationId: notification.id,
+              scheduledFor: decision.scheduledFor,
+            })
+          );
+          companyResult.queuedRuns += 1;
+          companyResult.queuedSubscriptionIds.push(plan.id);
+        } catch (err) {
+          const message = errorMessage(err);
+          companyResult.status = "error";
+          companyResult.errors += 1;
+          companyResult.message = companyResult.message ?? message;
+          log.error(
+            { err, companyId: company.id, subscriptionId: plan.id },
+            "Failed to queue scheduled report delivery"
+          );
+
+          try {
+            await storage.createReportDeliveryRun(
+              buildReportDeliveryRunInput({
+                companyId: company.id,
+                queuedBy: actorUserId,
+                plan,
+                status: "failed",
+                errorMessage: message,
+                scheduledFor: decision.scheduledFor,
+              })
+            );
+          } catch (recordErr) {
+            log.error(
+              { err: recordErr, companyId: company.id, subscriptionId: plan.id },
+              "Failed to persist scheduled report delivery failure"
+            );
+          }
+        }
       }
     } catch (err) {
       companyResult.status = "error";
       companyResult.errors += 1;
-      companyResult.message = err instanceof Error ? err.message : "Unknown scheduler error";
+      companyResult.message = errorMessage(err);
       log.error({ err, companyId: company.id }, "Failed to scan report delivery subscriptions");
     } finally {
       companyResult.finishedAt = new Date();
