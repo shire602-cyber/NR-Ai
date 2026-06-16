@@ -140,9 +140,15 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("handleExportWorkspacePack");
     expect(reportsSource).toContain("handleExportWorkspacePackToSheets");
     expect(reportsSource).toContain("Pack Index");
+    expect(reportsSource).toContain("Pack Summary");
+    expect(reportsSource).toContain("Comparison Snapshot");
     expect(reportsSource).toContain("Pack Cadence");
     expect(reportsSource).toContain("Pack Automation Status");
     expect(reportsSource).toContain("Automation Playbooks");
+    expect(reportsSource).toContain("comparisonCurrentLabel");
+    expect(reportsSource).toContain("comparisonPreviousLabel");
+    expect(reportsSource).toContain("packComparisonRows");
+    expect(reportsSource).toContain("Amount at risk");
     expect(reportsSource).toContain("Included in workbook");
     expect(reportsSource).toContain("Open workflow");
     expect(reportsSource).toContain("reportHref(report) ?? reportWorkspaceHref(workspace)");

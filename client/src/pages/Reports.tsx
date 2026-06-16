@@ -1555,7 +1555,10 @@ export default function Reports() {
         { metric: "Persona", value: workspace.persona },
         { metric: "Current period", value: comparisonCurrentLabel },
         { metric: "Prior period", value: comparisonPreviousLabel },
-        { metric: "Pack status", value: openPackSignals.length > 0 ? "Review before send" : "Ready to send" },
+        {
+          metric: "Pack status",
+          value: openPackSignals.length > 0 ? "Review before send" : "Ready to send",
+        },
         { metric: "Workspace reports", value: workspace.reports.length },
         { metric: "Ready reports", value: workspace.readyReports },
         { metric: "Workbook sheets", value: workbookSheets.length },

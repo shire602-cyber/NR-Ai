@@ -100,7 +100,7 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/mobile-launch-ux.test.ts` after mobile layout changes on invoices,
   receipts, banking, VAT, or other launch-critical SaaS screens.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command
-  palette shortcuts, or report deep-link behavior changes.
+  palette shortcuts, persona workspaces, report pack exports, or report deep-link behavior changes.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes. The
   WhatsApp surface is NR firm-management-only and must not appear in public or customer SaaS UI.
 - Document chasing is also an NR firm-management-only feature. Keep its UI under
