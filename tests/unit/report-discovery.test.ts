@@ -228,6 +228,21 @@ describe("report discoverability", () => {
     }
   });
 
+  it("surfaces persona next-best report recommendations", () => {
+    expect(reportsSource).toContain("Recommended reports");
+    expect(reportsSource).toContain("Next-best report actions");
+    expect(reportsSource).toContain("personaReportRecommendations");
+    expect(reportsSource).toContain("visiblePersonaRecommendations");
+    expect(reportsSource).toContain("recommended-reports-${workspace.persona}");
+    expect(reportsSource).toContain("queue-${workspace.persona}-${item.id}");
+    expect(reportsSource).toContain("comparison-${workspace.persona}-${row.id}");
+    expect(reportsSource).toContain("primary-${workspace.persona}-${workspace.topReadyReport.id}");
+    expect(reportsSource).toContain("formatComparisonPercent(row.percentChange)");
+    expect(reportsSource).toContain("comparisonBadgeVariant(row)");
+    expect(reportsSource).toContain("reportStatusMeta[workspace.topReadyReport.status]");
+    expect(reportsSource).toContain("recommendations.slice(0, 3)");
+  });
+
   it("filters comparison and automation signals by selected persona", () => {
     expect(reportsSource).toContain("function matchesReportPersona");
     expect(reportsSource).toContain("personaScopeDescription");

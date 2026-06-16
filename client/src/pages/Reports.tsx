@@ -1506,6 +1506,85 @@ export default function Reports() {
     );
   }, [automationCoverageSummary, personaFilter]);
 
+  const personaReportRecommendations = useMemo(() => {
+    return workspaceSummaries.map((workspace) => {
+      const recommendations: Array<{
+        id: string;
+        title: string;
+        detail: string;
+        badge: string;
+        badgeVariant: BadgeProps["variant"];
+        amount?: number;
+        tab?: ReportTab;
+        href?: string;
+      }> = [];
+
+      const queueItems = automationQueue
+        .filter((item) => matchesReportPersona(item.personas, workspace.persona))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => {
+          const amountDelta = (b.amount ?? 0) - (a.amount ?? 0);
+          return Math.abs(amountDelta) > 0.005 ? amountDelta : b.count - a.count;
+        });
+
+      for (const item of queueItems.slice(0, 2)) {
+        recommendations.push({
+          id: `queue-${workspace.persona}-${item.id}`,
+          title: item.title,
+          detail: item.detail,
+          badge: `${item.count} open`,
+          badgeVariant: "warning",
+          amount: item.amount,
+          tab: item.tab,
+          href: item.href,
+        });
+      }
+
+      const comparisonItems = comparisonRows
+        .filter((row) => matchesReportPersona(row.personas, workspace.persona))
+        .filter((row) => Math.abs(row.delta) > 0.005)
+        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+      for (const row of comparisonItems) {
+        if (recommendations.length >= 3) break;
+        if (recommendations.some((item) => item.tab === row.tab && !item.href)) continue;
+
+        recommendations.push({
+          id: `comparison-${workspace.persona}-${row.id}`,
+          title: row.label,
+          detail: `${row.signal}: ${formatComparisonPercent(row.percentChange)} vs prior period`,
+          badge: "Movement",
+          badgeVariant: comparisonBadgeVariant(row),
+          amount: row.delta,
+          tab: row.tab,
+        });
+      }
+
+      if (workspace.topReadyReport && recommendations.length < 3) {
+        recommendations.push({
+          id: `primary-${workspace.persona}-${workspace.topReadyReport.id}`,
+          title: workspace.topReadyReport.name,
+          detail: workspace.topReadyReport.automation,
+          badge: reportStatusMeta[workspace.topReadyReport.status].label,
+          badgeVariant: reportStatusMeta[workspace.topReadyReport.status].variant,
+          tab: workspace.topReadyReport.tab,
+          href: workspace.topReadyReport.href,
+        });
+      }
+
+      return {
+        workspace,
+        recommendations: recommendations.slice(0, 3),
+      };
+    });
+  }, [automationQueue, comparisonRows, workspaceSummaries]);
+
+  const visiblePersonaRecommendations = useMemo(() => {
+    return personaReportRecommendations.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, personaReportRecommendations]);
+
   const exportDateRangeSuffix =
     dateRange.from && dateRange.to
       ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -1927,6 +2006,97 @@ export default function Reports() {
           </DropdownMenu>
         }
       />
+
+      <section className="space-y-4" aria-labelledby="recommended-reports-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="recommended-reports-title" className="text-xl font-semibold">
+              Recommended reports
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Next-best report actions based on open automation queues and current-vs-prior
+              movement. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visiblePersonaRecommendations.length} role views
+          </Badge>
+        </div>
+
+        {automationLoading || comparisonLoading ? (
+          <Skeleton className="h-52 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            {visiblePersonaRecommendations.map((item) => {
+              const workspace = item.workspace;
+              const WorkspaceIcon = workspace.icon;
+
+              return (
+                <Card
+                  key={workspace.persona}
+                  data-testid={`recommended-reports-${workspace.persona}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {workspace.title}
+                          </CardTitle>
+                          <CardDescription>{workspace.focus}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant="outline">{workspace.readyReports} ready</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {item.recommendations.map((recommendation) => (
+                      <div key={recommendation.id} className="rounded-md border p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-medium">{recommendation.title}</div>
+                              <Badge variant={recommendation.badgeVariant} dot>
+                                {recommendation.badge}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {recommendation.detail}
+                            </div>
+                            {typeof recommendation.amount === "number" ? (
+                              <div className="font-mono text-xs text-muted-foreground">
+                                {formatCurrency(recommendation.amount, "AED", locale)}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {recommendation.href ? (
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={recommendation.href}>Open</Link>
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => recommendation.tab && setActiveTab(recommendation.tab)}
+                            >
+                              Open
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <section className="space-y-4" aria-labelledby="period-comparison-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
