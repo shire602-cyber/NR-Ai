@@ -105,13 +105,25 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("preferredReportWorkspace");
     expect(dashboardSource).toContain("reportPersonaWorkspaces.find");
+    expect(dashboardSource).toContain("preferredWorkspaceCatalogReports");
     expect(dashboardSource).toContain("preferredWorkspaceReports");
+    expect(dashboardSource).toContain("preferredReportPackReadiness");
     expect(dashboardSource).toContain("reportCatalog");
     expect(dashboardSource).toContain('data-testid="dashboard-report-workspace"');
     expect(dashboardSource).toContain('data-testid="dashboard-open-report-workspace"');
+    expect(dashboardSource).toContain('data-testid="dashboard-report-pack-readiness"');
     expect(dashboardSource).toContain("reportWorkspaceHref(preferredReportWorkspace)");
+    expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "pack-readiness")'
+    );
+    expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "pack-automation")'
+    );
     expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
     expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
+    expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.cadence");
+    expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.delivery");
+    expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.automation");
     expect(catalogSource).toContain("REPORT_PERSONA_PREFERENCE_KEY");
     expect(catalogSource).toContain("getPreferredReportPersona");
     expect(catalogSource).toContain("setPreferredReportPersona");

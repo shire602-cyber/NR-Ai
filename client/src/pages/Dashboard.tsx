@@ -14,6 +14,7 @@ import {
   reportCatalog,
   reportHref,
   reportPersonaWorkspaces,
+  reportSectionHref,
   reportWorkspaceHref,
 } from "@/lib/reportCatalog";
 import {
@@ -404,14 +405,32 @@ function CustomerDashboard() {
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
-  const preferredWorkspaceReports = useMemo(() => {
-    return reportCatalog
-      .filter(
-        (report) =>
-          report.status !== "planned" && report.personas.includes(preferredReportWorkspace.persona)
-      )
-      .slice(0, 4);
+  const preferredWorkspaceCatalogReports = useMemo(() => {
+    return reportCatalog.filter((report) =>
+      report.personas.includes(preferredReportWorkspace.persona)
+    );
   }, [preferredReportWorkspace.persona]);
+  const preferredWorkspaceReports = useMemo(() => {
+    return preferredWorkspaceCatalogReports
+      .filter((report) => report.status !== "planned")
+      .slice(0, 4);
+  }, [preferredWorkspaceCatalogReports]);
+  const preferredReportPackReadiness = useMemo(() => {
+    const readyReports = preferredWorkspaceCatalogReports.filter(
+      (report) => report.status !== "planned"
+    ).length;
+    const plannedReports = preferredWorkspaceCatalogReports.length - readyReports;
+
+    return {
+      readyReports,
+      plannedReports,
+      totalReports: preferredWorkspaceCatalogReports.length,
+      automationLanes: preferredReportWorkspace.automations.length,
+      readinessPercent: preferredWorkspaceCatalogReports.length
+        ? Math.round((readyReports / preferredWorkspaceCatalogReports.length) * 100)
+        : 0,
+    };
+  }, [preferredReportWorkspace.automations.length, preferredWorkspaceCatalogReports]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
@@ -889,6 +908,70 @@ function CustomerDashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            <div
+              className="border-t border-border/60 p-5"
+              data-testid="dashboard-report-pack-readiness"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Report pack readiness
+                  </div>
+                  <div className="mt-2 text-2xl font-mono font-semibold tabular-nums text-foreground">
+                    {preferredReportPackReadiness.readinessPercent}%
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    {preferredReportPackReadiness.readyReports} of{" "}
+                    {preferredReportPackReadiness.totalReports} workspace reports are ready/API
+                    backed. {preferredReportPackReadiness.plannedReports} planned report
+                    {preferredReportPackReadiness.plannedReports === 1 ? "" : "s"} need review
+                    before fully automated sending.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Cadence
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-foreground">
+                      {preferredReportWorkspace.packSchedule.cadence}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Delivery
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-foreground">
+                      {preferredReportWorkspace.packSchedule.delivery}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Automations
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-foreground">
+                      {preferredReportPackReadiness.automationLanes} lanes ·{" "}
+                      {preferredReportWorkspace.packSchedule.automation}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href={reportSectionHref(preferredReportWorkspace, "pack-readiness")}>
+                  <Button variant="outline" size="sm">
+                    Review pack readiness
+                  </Button>
+                </Link>
+                <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open pack automation <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
               </div>
             </div>
           </CardContent>
