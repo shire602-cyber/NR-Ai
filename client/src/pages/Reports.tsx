@@ -100,6 +100,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Send,
   Scale,
   Wallet,
   TrendingUp,
@@ -3984,6 +3985,95 @@ export default function Reports() {
       .slice(0, 6);
   }, [reportDeliveryRunStatusFilter, visibleReportDeliverySubscriptions]);
 
+  const reportDeliveryRecoverySummary = useMemo(() => {
+    const failedRuns = visibleReportDeliverySubscriptions
+      .flatMap((subscription) =>
+        subscription.deliveryRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => ({
+            ...run,
+            subscriptionTitle: subscription.title,
+            subscriptionHref: subscription.href,
+          }))
+      )
+      .sort(
+        (first, second) =>
+          new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
+      );
+    const retryableSubscriptionCount = new Set(failedRuns.map((run) => run.subscriptionId)).size;
+    const reviewSubscriptions = visibleReportDeliverySubscriptions.filter(
+      (subscription) => subscription.status !== "Ready to send"
+    );
+    const latestFailedRun = failedRuns[0] ?? null;
+    const firstReviewSubscription = reviewSubscriptions[0] ?? null;
+
+    return {
+      failedRunCount: failedRuns.length,
+      retryableSubscriptionCount,
+      reviewSubscriptionCount: reviewSubscriptions.length,
+      nextAction: latestFailedRun
+        ? {
+            kind: "retry" as const,
+            label: "Retry latest failed delivery",
+            detail: `${latestFailedRun.subscriptionTitle} failed ${formatDeliveryRunTimestamp(latestFailedRun.createdAt)}. Retry after confirming recipients and guardrails are still valid.`,
+            runId: latestFailedRun.id,
+            badge: "Recovery",
+            badgeVariant: "destructive" as const,
+          }
+        : firstReviewSubscription
+          ? {
+              kind: "open" as const,
+              label: "Review delivery guardrails",
+              detail: `${firstReviewSubscription.title} needs review before the next automated send.`,
+              href: firstReviewSubscription.href,
+              badge: "Review",
+              badgeVariant: "warning" as const,
+            }
+          : {
+              kind: "ready" as const,
+              label: "Keep scheduled sends running",
+              detail:
+                visibleReportDeliverySubscriptions.length > 0
+                  ? `${visibleReportDeliverySubscriptions.length} delivery subscriptions are ready for this view.`
+                  : "No delivery subscriptions match this view yet.",
+              badge: "Ready",
+              badgeVariant: "success" as const,
+            },
+    };
+  }, [visibleReportDeliverySubscriptions]);
+
+  const reportDeliveryAutomationCommandTargets = useMemo(() => {
+    const nextAction = reportDeliveryRecoverySummary.nextAction;
+    const reviewSubscription =
+      visibleReportDeliverySubscriptions.find(
+        (subscription) => subscription.status !== "Ready to send"
+      ) ?? null;
+    const queueSubscription =
+      visibleReportDeliverySubscriptions.find(
+        (subscription) => subscription.enabled && subscription.status === "Ready to send"
+      ) ??
+      visibleReportDeliverySubscriptions.find((subscription) => subscription.enabled) ??
+      null;
+    const comparisonPreset =
+      visibleReportComparisonPresets
+        .slice()
+        .sort(
+          (first, second) =>
+            second.warningCount - first.warningCount || first.title.localeCompare(second.title)
+        )[0] ?? null;
+
+    return {
+      retryRunId: nextAction.kind === "retry" ? (nextAction.runId ?? null) : null,
+      reviewSubscription,
+      queueSubscription,
+      comparisonPreset,
+    };
+  }, [
+    reportDeliveryRecoverySummary.nextAction,
+    visibleReportComparisonPresets,
+    visibleReportDeliverySubscriptions,
+  ]);
+
   const reportDeliveryLauncherPreviewById = useMemo(() => {
     return reportDeliverySubscriptionSummaries.reduce<Record<string, ReportLaunchDeliveryPreview>>(
       (previews, subscription) => {
@@ -6499,6 +6589,97 @@ export default function Reports() {
 
         <div
           className="rounded-md border border-border/70 p-3"
+          data-testid="report-delivery-recovery-summary"
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                Automation recovery
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Failed delivery recovery and review queue for the current{" "}
+                {personaFilterLabel.toLowerCase()} reporting view.
+              </p>
+            </div>
+            <Badge variant={reportDeliveryRecoverySummary.nextAction.badgeVariant} dot>
+              {reportDeliveryRecoverySummary.nextAction.badge}
+            </Badge>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+            <div
+              className="rounded-md bg-secondary/40 p-2"
+              data-testid="report-delivery-recovery-failed-runs"
+            >
+              <div className="text-muted-foreground">Failed runs</div>
+              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+                {reportDeliveryRecoverySummary.failedRunCount}
+              </div>
+            </div>
+            <div
+              className="rounded-md bg-secondary/40 p-2"
+              data-testid="report-delivery-recovery-retryable-subscriptions"
+            >
+              <div className="text-muted-foreground">Retryable subscriptions</div>
+              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+                {reportDeliveryRecoverySummary.retryableSubscriptionCount}
+              </div>
+            </div>
+            <div
+              className="rounded-md bg-secondary/40 p-2"
+              data-testid="report-delivery-recovery-review-subscriptions"
+            >
+              <div className="text-muted-foreground">Needs review</div>
+              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+                {reportDeliveryRecoverySummary.reviewSubscriptionCount}
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="mt-3 flex flex-col gap-2 rounded-md bg-secondary/40 p-2 text-xs sm:flex-row sm:items-center sm:justify-between"
+            data-testid="report-delivery-recovery-next-action"
+          >
+            <div>
+              <div className="font-medium text-foreground">
+                {reportDeliveryRecoverySummary.nextAction.label}
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                {reportDeliveryRecoverySummary.nextAction.detail}
+              </div>
+            </div>
+            {reportDeliveryRecoverySummary.nextAction.kind === "retry" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!selectedCompanyId || retryReportDeliveryRun.isPending}
+                onClick={() => {
+                  const runId = reportDeliveryRecoverySummary.nextAction.runId;
+                  if (!runId) return;
+                  retryReportDeliveryRun.mutate(runId);
+                }}
+                data-testid="report-delivery-recovery-retry-latest"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Retry latest
+              </Button>
+            ) : reportDeliveryRecoverySummary.nextAction.kind === "open" ? (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={reportDeliveryRecoverySummary.nextAction.href}
+                  data-testid="report-delivery-recovery-open-review"
+                >
+                  Open review
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          className="rounded-md border border-border/70 p-3"
           data-testid="report-delivery-run-timeline"
         >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -6561,10 +6742,23 @@ export default function Reports() {
                   {run.errorMessage ? (
                     <div className="mt-1 text-destructive">{run.errorMessage}</div>
                   ) : null}
-                  <div className="mt-2">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <Button asChild size="sm" variant="outline">
                       <Link href={run.subscriptionHref}>Open subscription</Link>
                     </Button>
+                    {run.status === "failed" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!selectedCompanyId || retryReportDeliveryRun.isPending}
+                        onClick={() => retryReportDeliveryRun.mutate(run.id)}
+                        data-testid={`report-delivery-run-timeline-retry-${run.id}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Retry delivery
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))}
