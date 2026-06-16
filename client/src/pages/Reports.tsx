@@ -36,11 +36,14 @@ import {
   prepareVATSummaryForExport,
   prepareCorporateTaxEstimateForExport,
   prepareMonthEndCloseStatusForExport,
+  prepareAuditTrailForExport,
   prepareTrialBalanceForExport,
   prepareInvoiceStatusForExport,
   prepareBalanceSummaryReportsForExport,
   prepareExpenseReportsForExport,
+  preparePayrollReportsForExport,
   prepareLedgerReportsForExport,
+  prepareConsolidatedStatementsForExport,
   preparePlanningReportsForExport,
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
@@ -84,6 +87,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
+import type { Company } from "@shared/schema";
 
 interface AccountLineItem {
   accountCode?: string;
@@ -106,6 +110,66 @@ interface BalanceSheetReport {
   totalAssets: number;
   totalLiabilities: number;
   totalEquity: number;
+}
+
+interface ConsolidatedCompanyStatementSource {
+  companyId: string;
+  companyName: string;
+  companyType: string;
+  baseCurrency: string;
+  profitLoss: ProfitLossReport | null;
+  balanceSheet: BalanceSheetReport | null;
+  comparisonCurrentProfitLoss: ProfitLossReport | null;
+  comparisonPreviousProfitLoss: ProfitLossReport | null;
+  error: string | null;
+}
+
+type ConsolidatedStatementStatus = "included" | "unbalanced" | "multi_currency" | "failed";
+
+interface ConsolidatedStatementEntityRow {
+  companyId: string;
+  companyName: string;
+  companyType: string;
+  baseCurrency: string;
+  revenue: number;
+  expenses: number;
+  netProfit: number;
+  currentComparisonNetProfit: number;
+  previousNetProfit: number;
+  assets: number;
+  liabilities: number;
+  equity: number;
+  balanceDifference: number;
+  isBalanced: boolean;
+  status: ConsolidatedStatementStatus;
+  statusLabel: string;
+  reviewReason: string;
+  workflow: string;
+}
+
+interface ConsolidatedStatementsReport {
+  periodLabel: string;
+  currency: string;
+  consolidationBasis: string;
+  rows: ConsolidatedStatementEntityRow[];
+  entityCount: number;
+  loadedEntityCount: number;
+  failedEntityCount: number;
+  unbalancedEntityCount: number;
+  multiCurrencyEntityCount: number;
+  reviewCount: number;
+  singleEntityOnly: boolean;
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  currentComparisonNetProfit: number;
+  previousNetProfit: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  balanceDifference: number;
+  eliminationsApplied: number;
+  statusLabel: string;
 }
 
 interface VATSummaryReport {
@@ -263,6 +327,63 @@ interface ExpenseSummaryRow {
   autoPostedCount: number;
 }
 
+interface ExpenseClaimReportRow {
+  id: string;
+  claim_number: string;
+  title: string;
+  description: string | null;
+  total_amount: string | number;
+  currency: string | null;
+  status: string;
+  submitted_by: string;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  paid_at: string | null;
+  payment_reference: string | null;
+  created_at: string;
+}
+
+interface ExpenseClaimSummaryBucket {
+  count: number;
+  total: number;
+}
+
+interface ExpenseClaimSummaryReport {
+  all: Record<string, ExpenseClaimSummaryBucket>;
+  thisMonth: Record<string, ExpenseClaimSummaryBucket>;
+}
+
+interface ExpenseClaimStatusRow {
+  status: string;
+  count: number;
+  totalAmount: number;
+}
+
+interface PayrollRunReportRow {
+  id: string;
+  company_id: string;
+  period_month: number;
+  period_year: number;
+  run_date: string | null;
+  total_basic: string | number;
+  total_allowances: string | number;
+  total_deductions: string | number;
+  total_net: string | number;
+  employee_count: number;
+  status: string;
+  sif_file_content: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+}
+
+interface PayrollStatusReportRow {
+  status: string;
+  count: number;
+  employeeCount: number;
+  totalNet: number;
+}
+
 interface JournalAccount {
   id: string;
   code?: string | null;
@@ -342,6 +463,29 @@ interface MonthEndCloseStatusReport {
   periodStart: string;
   periodEnd: string;
   checklist: MonthEndChecklistItem[];
+}
+
+interface ActivityLogReportRow {
+  id: string;
+  userId: string | null;
+  companyId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  description: string;
+  metadata: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string | null;
+}
+
+type ActivityLogRiskLevel = "High" | "Medium" | "Low";
+
+interface AuditTrailSummaryRow {
+  key: string;
+  label: string;
+  count: number;
+  latestAt: string | null;
 }
 
 interface BudgetPlanReportRow {
@@ -470,6 +614,61 @@ interface FixedAssetSummaryReport {
   byCategory: FixedAssetCategorySummaryRow[];
 }
 
+interface FixedAssetValuationRow extends FixedAssetReportRow {
+  purchaseCost: number;
+  salvageValue: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
+type DepreciationScheduleStatus =
+  | "ready"
+  | "review"
+  | "fully_depreciated"
+  | "non_depreciable"
+  | "not_acquired";
+
+interface DepreciationScheduleRow {
+  assetId: string;
+  assetName: string;
+  assetNumber: string;
+  category: string;
+  purchaseDate: string;
+  method: string;
+  usefulLifeYears: number | null;
+  purchaseCost: number;
+  salvageValue: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+  depreciableBase: number;
+  remainingDepreciable: number;
+  monthsRemaining: number;
+  prorationFactor: number;
+  monthlyDepreciation: number;
+  annualDepreciation: number;
+  projectedAccumulatedDepreciation: number;
+  projectedNetBookValue: number;
+  status: DepreciationScheduleStatus;
+  statusLabel: string;
+  reviewReason: string;
+}
+
+interface DepreciationScheduleReport {
+  period: string;
+  rows: DepreciationScheduleRow[];
+  readyRows: DepreciationScheduleRow[];
+  reviewRows: DepreciationScheduleRow[];
+  assetCount: number;
+  depreciableAssetCount: number;
+  readyToPostCount: number;
+  reviewCount: number;
+  fullyDepreciatedCount: number;
+  nonDepreciableCount: number;
+  periodDepreciationAed: number;
+  annualDepreciationAed: number;
+  remainingDepreciableAed: number;
+}
+
 interface InventoryProductReportRow {
   id: string;
   name: string;
@@ -489,7 +688,15 @@ interface InventoryMovementReportRow {
   quantity: number;
   unitCost: string | number | null;
   reference: string | null;
+  notes?: string | null;
   createdAt: string | null;
+}
+
+interface InventoryMovementTypeRow {
+  type: string;
+  count: number;
+  quantity: number;
+  valueAed: number;
 }
 
 type PersonaFilter = "all" | ReportPersona;
@@ -590,6 +797,36 @@ function receiptInDateRange(receipt: ReceiptReportRow, dateRange: DateRange): bo
   return valueInDateRange(receipt.date, dateRange);
 }
 
+function expenseClaimInDateRange(claim: ExpenseClaimReportRow, dateRange: DateRange): boolean {
+  return valueInDateRange(claim.created_at, dateRange);
+}
+
+function inventoryMovementInDateRange(
+  movement: InventoryMovementReportRow,
+  dateRange: DateRange
+): boolean {
+  return valueInDateRange(movement.createdAt, dateRange);
+}
+
+function activityLogInDateRange(log: ActivityLogReportRow, dateRange: DateRange): boolean {
+  return valueInDateRange(log.createdAt, dateRange);
+}
+
+function payrollRunPeriodDate(run: PayrollRunReportRow): Date | null {
+  const month = Number(run.period_month);
+  const year = Number(run.period_year);
+  if (!month || !year) return null;
+  const date = new Date(year, month - 1, 1);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function payrollRunInDateRange(run: PayrollRunReportRow, dateRange: DateRange): boolean {
+  if (!dateRange.from || !dateRange.to) return true;
+  const periodDate = payrollRunPeriodDate(run);
+  if (!periodDate) return false;
+  return valueInDateRange(periodDate.toISOString(), dateRange);
+}
+
 function receiptExchangeRate(receipt: ReceiptReportRow): number {
   const rate = Number(receipt.exchangeRate ?? 1);
   return Number.isFinite(rate) && rate > 0 ? rate : 1;
@@ -605,14 +842,354 @@ function receiptVatAed(receipt: ReceiptReportRow): number {
   return (Number(receipt.vatAmount) || 0) * receiptExchangeRate(receipt);
 }
 
+function expenseClaimAmount(claim: ExpenseClaimReportRow): number {
+  const amount = Number(claim.total_amount ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function payrollAmount(value: string | number | null | undefined): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function payrollPeriodLabel(run?: PayrollRunReportRow | null): string {
+  if (!run) return "-";
+  const periodDate = payrollRunPeriodDate(run);
+  return periodDate ? format(periodDate, "MMM yyyy") : `${run.period_month}/${run.period_year}`;
+}
+
 function fixedAssetAmount(value: string | number | null | undefined): number {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function roundReportAmount(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function isNonDepreciableFixedAsset(asset: Pick<FixedAssetReportRow, "category">): boolean {
+  return asset.category.trim().toLowerCase() === "land";
+}
+
+function startOfReportMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function calendarMonthsBetween(from: Date, to: Date): number {
+  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+}
+
+function daysInReportMonth(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+function depreciationStatusLabel(status: DepreciationScheduleStatus): string {
+  if (status === "ready") return "Ready to post";
+  if (status === "fully_depreciated") return "Fully depreciated";
+  if (status === "non_depreciable") return "Non-depreciable";
+  if (status === "not_acquired") return "Not acquired";
+  return "Review";
+}
+
+function depreciationStatusVariant(status: DepreciationScheduleStatus): BadgeProps["variant"] {
+  if (status === "ready") return "success";
+  if (status === "review") return "warning";
+  if (status === "not_acquired") return "neutral";
+  return "info";
+}
+
+function calculateDepreciationScheduleRow(
+  asset: FixedAssetValuationRow,
+  periodDate: Date
+): DepreciationScheduleRow {
+  const purchaseDate = new Date(asset.purchase_date);
+  const purchaseMonth = Number.isNaN(purchaseDate.getTime())
+    ? null
+    : startOfReportMonth(purchaseDate);
+  const periodMonth = startOfReportMonth(periodDate);
+  const method = asset.depreciation_method || "straight_line";
+  const rawUsefulLifeYears = Number(asset.useful_life_years ?? 0);
+  const usefulLifeYears =
+    Number.isFinite(rawUsefulLifeYears) && rawUsefulLifeYears > 0 ? rawUsefulLifeYears : null;
+  const usefulLifeMonths = usefulLifeYears ? usefulLifeYears * 12 : 0;
+  const depreciableBase = Math.max(0, asset.purchaseCost - asset.salvageValue);
+  const remainingDepreciable = Math.max(0, depreciableBase - asset.accumulatedDepreciation);
+  const baseRow = {
+    assetId: asset.id,
+    assetName: asset.asset_name,
+    assetNumber: asset.asset_number || asset.serial_number || "",
+    category: asset.category,
+    purchaseDate: asset.purchase_date,
+    method,
+    usefulLifeYears,
+    purchaseCost: asset.purchaseCost,
+    salvageValue: asset.salvageValue,
+    accumulatedDepreciation: asset.accumulatedDepreciation,
+    netBookValue: asset.netBookValue,
+    depreciableBase,
+    remainingDepreciable,
+    monthsRemaining: usefulLifeMonths,
+    prorationFactor: 1,
+    monthlyDepreciation: 0,
+    annualDepreciation: 0,
+    projectedAccumulatedDepreciation: asset.accumulatedDepreciation,
+    projectedNetBookValue: asset.netBookValue,
+  };
+
+  if (isNonDepreciableFixedAsset(asset)) {
+    return {
+      ...baseRow,
+      status: "non_depreciable",
+      statusLabel: depreciationStatusLabel("non_depreciable"),
+      reviewReason: "Land and other non-depreciable assets are excluded.",
+    };
+  }
+
+  if (!purchaseMonth || !asset.purchaseCost || !usefulLifeYears || !usefulLifeMonths) {
+    return {
+      ...baseRow,
+      status: "review",
+      statusLabel: depreciationStatusLabel("review"),
+      reviewReason: !purchaseMonth
+        ? "Purchase date is missing or invalid."
+        : !asset.purchaseCost
+          ? "Purchase cost is missing."
+          : "Useful life is missing.",
+    };
+  }
+
+  const monthsElapsed = calendarMonthsBetween(purchaseMonth, periodMonth);
+  if (monthsElapsed < 0) {
+    return {
+      ...baseRow,
+      status: "not_acquired",
+      statusLabel: depreciationStatusLabel("not_acquired"),
+      reviewReason: "Asset was not acquired by this report period.",
+    };
+  }
+
+  if (remainingDepreciable <= 0.005 || asset.netBookValue <= asset.salvageValue + 0.005) {
+    return {
+      ...baseRow,
+      monthsRemaining: 0,
+      status: "fully_depreciated",
+      statusLabel: depreciationStatusLabel("fully_depreciated"),
+      reviewReason: "Net book value is at or below salvage value.",
+    };
+  }
+
+  const monthsRemaining = Math.max(1, usefulLifeMonths - monthsElapsed);
+  const currentNetBookValue = Math.max(0, asset.purchaseCost - asset.accumulatedDepreciation);
+  let monthlyDepreciation =
+    method === "declining_balance"
+      ? (currentNetBookValue * (2 / (usefulLifeMonths / 12))) / 12
+      : remainingDepreciable / monthsRemaining;
+  let prorationFactor = 1;
+
+  if (monthsElapsed === 0) {
+    prorationFactor =
+      (daysInReportMonth(purchaseDate) - purchaseDate.getDate() + 1) /
+      daysInReportMonth(purchaseDate);
+    monthlyDepreciation *= prorationFactor;
+  }
+
+  monthlyDepreciation = roundReportAmount(
+    Math.min(Math.max(0, monthlyDepreciation), remainingDepreciable)
+  );
+  const projectedAccumulatedDepreciation = roundReportAmount(
+    asset.accumulatedDepreciation + monthlyDepreciation
+  );
+  const projectedNetBookValue = roundReportAmount(
+    Math.max(asset.salvageValue, asset.purchaseCost - projectedAccumulatedDepreciation)
+  );
+
+  return {
+    ...baseRow,
+    monthsRemaining,
+    prorationFactor,
+    monthlyDepreciation,
+    annualDepreciation: roundReportAmount(monthlyDepreciation * 12),
+    projectedAccumulatedDepreciation,
+    projectedNetBookValue,
+    status: monthlyDepreciation > 0 ? "ready" : "review",
+    statusLabel: depreciationStatusLabel(monthlyDepreciation > 0 ? "ready" : "review"),
+    reviewReason:
+      monthlyDepreciation > 0
+        ? "Estimated depreciation for the report period."
+        : "No depreciation amount calculated for this period.",
+  };
+}
+
+function buildDepreciationScheduleReport(
+  assets: FixedAssetValuationRow[],
+  periodDate: Date
+): DepreciationScheduleReport {
+  const rows = assets
+    .map((asset) => calculateDepreciationScheduleRow(asset, periodDate))
+    .sort(
+      (a, b) =>
+        b.monthlyDepreciation - a.monthlyDepreciation || a.assetName.localeCompare(b.assetName)
+    );
+  const readyRows = rows.filter((row) => row.status === "ready");
+  const reviewRows = rows.filter((row) => row.status === "review");
+
+  return {
+    period: format(periodDate, "yyyy-MM"),
+    rows,
+    readyRows,
+    reviewRows,
+    assetCount: rows.length,
+    depreciableAssetCount: rows.filter((row) => row.status !== "non_depreciable").length,
+    readyToPostCount: readyRows.length,
+    reviewCount: reviewRows.length,
+    fullyDepreciatedCount: rows.filter((row) => row.status === "fully_depreciated").length,
+    nonDepreciableCount: rows.filter((row) => row.status === "non_depreciable").length,
+    periodDepreciationAed: roundReportAmount(
+      readyRows.reduce((sum, row) => sum + row.monthlyDepreciation, 0)
+    ),
+    annualDepreciationAed: roundReportAmount(
+      readyRows.reduce((sum, row) => sum + row.annualDepreciation, 0)
+    ),
+    remainingDepreciableAed: roundReportAmount(
+      rows.reduce((sum, row) => sum + row.remainingDepreciable, 0)
+    ),
+  };
+}
+
+function buildConsolidatedStatementsReport(
+  sources: ConsolidatedCompanyStatementSource[],
+  periodLabel: string,
+  currency = "AED"
+): ConsolidatedStatementsReport {
+  const rows = sources
+    .map((source) => {
+      const revenue = roundReportAmount(source.profitLoss?.totalRevenue ?? 0);
+      const expenses = roundReportAmount(source.profitLoss?.totalExpenses ?? 0);
+      const netProfit = roundReportAmount(source.profitLoss?.netProfit ?? 0);
+      const currentComparisonNetProfit = roundReportAmount(
+        source.comparisonCurrentProfitLoss?.netProfit ?? 0
+      );
+      const previousNetProfit = roundReportAmount(
+        source.comparisonPreviousProfitLoss?.netProfit ?? 0
+      );
+      const assets = roundReportAmount(source.balanceSheet?.totalAssets ?? 0);
+      const liabilities = roundReportAmount(source.balanceSheet?.totalLiabilities ?? 0);
+      const equity = roundReportAmount(source.balanceSheet?.totalEquity ?? 0);
+      const balanceDifference = roundReportAmount(assets - liabilities - equity);
+      const isBalanced = Math.abs(balanceDifference) < 0.01;
+      const isMultiCurrency = source.baseCurrency !== currency;
+      const reviewReasons: string[] = [];
+      let status: ConsolidatedStatementStatus = "included";
+
+      if (source.error) {
+        status = "failed";
+        reviewReasons.push(source.error);
+      } else {
+        if (!isBalanced) {
+          status = "unbalanced";
+          reviewReasons.push(`${currency} ${balanceDifference.toFixed(2)} balance difference.`);
+        }
+        if (isMultiCurrency) {
+          if (status === "included") status = "multi_currency";
+          reviewReasons.push(`${source.baseCurrency} needs FX translation review.`);
+        }
+      }
+
+      return {
+        companyId: source.companyId,
+        companyName: source.companyName,
+        companyType: source.companyType,
+        baseCurrency: source.baseCurrency,
+        revenue,
+        expenses,
+        netProfit,
+        currentComparisonNetProfit,
+        previousNetProfit,
+        assets,
+        liabilities,
+        equity,
+        balanceDifference,
+        isBalanced,
+        status,
+        statusLabel:
+          status === "failed"
+            ? "Missing data"
+            : status === "unbalanced"
+              ? "Balance review"
+              : status === "multi_currency"
+                ? "FX review"
+                : "Included",
+        reviewReason: reviewReasons.join(" "),
+        workflow: "/financial-statements",
+      };
+    })
+    .sort((a, b) => b.netProfit - a.netProfit || a.companyName.localeCompare(b.companyName));
+
+  const loadedRows = rows.filter((row) => row.status !== "failed");
+  const failedEntityCount = rows.length - loadedRows.length;
+  const unbalancedEntityCount = loadedRows.filter((row) => !row.isBalanced).length;
+  const multiCurrencyEntityCount = loadedRows.filter((row) => row.baseCurrency !== currency).length;
+  const singleEntityOnly = rows.length === 1;
+  const reviewCount =
+    failedEntityCount +
+    unbalancedEntityCount +
+    multiCurrencyEntityCount +
+    (singleEntityOnly ? 1 : 0);
+
+  const totalRevenue = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.revenue, 0));
+  const totalExpenses = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.expenses, 0));
+  const netProfit = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.netProfit, 0));
+  const currentComparisonNetProfit = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.currentComparisonNetProfit, 0)
+  );
+  const previousNetProfit = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.previousNetProfit, 0)
+  );
+  const totalAssets = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.assets, 0));
+  const totalLiabilities = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.liabilities, 0)
+  );
+  const totalEquity = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.equity, 0));
+  const balanceDifference = roundReportAmount(totalAssets - totalLiabilities - totalEquity);
+
+  return {
+    periodLabel,
+    currency,
+    consolidationBasis: "Accessible company roll-up; no eliminations applied.",
+    rows,
+    entityCount: rows.length,
+    loadedEntityCount: loadedRows.length,
+    failedEntityCount,
+    unbalancedEntityCount,
+    multiCurrencyEntityCount,
+    reviewCount,
+    singleEntityOnly,
+    totalRevenue,
+    totalExpenses,
+    netProfit,
+    currentComparisonNetProfit,
+    previousNetProfit,
+    totalAssets,
+    totalLiabilities,
+    totalEquity,
+    balanceDifference,
+    eliminationsApplied: 0,
+    statusLabel:
+      reviewCount > 0
+        ? singleEntityOnly
+          ? "Single entity roll-up"
+          : "Review before delivery"
+        : "Ready for pack",
+  };
+}
+
 function inventoryAmount(value: string | number | null | undefined): number {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function inventoryMovementValue(movement: InventoryMovementReportRow): number {
+  return Math.abs(Number(movement.quantity ?? 0) || 0) * inventoryAmount(movement.unitCost);
 }
 
 function journalEntryInDateRange(entry: JournalEntryReportRow, dateRange: DateRange): boolean {
@@ -634,6 +1211,13 @@ function formatReportDate(value?: string | null): string {
   return Number.isNaN(date.getTime()) ? "-" : format(date, "MMM dd, yyyy");
 }
 
+function consolidatedStatusVariant(status: ConsolidatedStatementStatus): BadgeProps["variant"] {
+  if (status === "included") return "success";
+  if (status === "multi_currency") return "info";
+  if (status === "unbalanced") return "warning";
+  return "danger";
+}
+
 function invoiceStatusLabel(status: string): string {
   return invoiceStatusLabels[status] ?? status;
 }
@@ -646,10 +1230,50 @@ function invoiceStatusVariant(status: string): BadgeProps["variant"] {
   return "neutral";
 }
 
+function expenseClaimStatusVariant(status: string): BadgeProps["variant"] {
+  if (status === "paid") return "success";
+  if (status === "approved") return "info";
+  if (status === "submitted") return "warning";
+  if (status === "rejected") return "danger";
+  return "neutral";
+}
+
+function payrollStatusVariant(status: string): BadgeProps["variant"] {
+  if (status === "approved" || status === "paid") return "success";
+  if (status === "calculated") return "info";
+  if (status === "draft") return "warning";
+  return "neutral";
+}
+
 function fixedAssetStatusVariant(status: string): BadgeProps["variant"] {
   if (status === "active") return "success";
   if (status === "disposed") return "neutral";
   return "warning";
+}
+
+function inventoryMovementVariant(type: string): BadgeProps["variant"] {
+  if (type === "purchase" || type === "return") return "success";
+  if (type === "sale") return "info";
+  if (type === "adjustment") return "warning";
+  return "neutral";
+}
+
+function activityLogLabel(value: string | null | undefined, fallback = "Unknown"): string {
+  if (!value) return fallback;
+  return value.replace(/[_.-]+/g, " ");
+}
+
+function activityLogRiskLevel(log: ActivityLogReportRow): ActivityLogRiskLevel {
+  const signal = `${log.action} ${log.description}`.toLowerCase();
+  if (/(delete|void|reject|failed|error|remove|archive)/.test(signal)) return "High";
+  if (/(update|approve|post|journal|close|permission|admin|invite)/.test(signal)) return "Medium";
+  return "Low";
+}
+
+function activityLogRiskVariant(risk: ActivityLogRiskLevel): BadgeProps["variant"] {
+  if (risk === "High") return "danger";
+  if (risk === "Medium") return "warning";
+  return "success";
 }
 
 function corporateTaxEstimateStatus(report?: CorporateTaxEstimateReport | null): {
@@ -784,7 +1408,7 @@ function makeComparisonMetric(
 export default function Reports() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId, companies: accessibleCompanies = [] } = useDefaultCompany();
   const [location, navigate] = useLocation();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
@@ -838,6 +1462,13 @@ export default function Reports() {
       return matchesReportPersona(report.personas, personaFilter);
     });
   }, [personaFilter]);
+
+  const connectedReportCenters = useMemo(() => {
+    return filteredReports.filter(
+      (report): report is (typeof reportCatalog)[number] & { href: string } =>
+        Boolean(report.href && !report.tab)
+    );
+  }, [filteredReports]);
 
   const reportStats = useMemo(() => {
     const live = reportCatalog.filter((report) => report.status === "live").length;
@@ -895,9 +1526,25 @@ export default function Reports() {
     comparisonCurrentRange.to,
     "MMM dd, yyyy"
   )}`;
-  const monthEndPeriodAnchor = dateRange.to ?? new Date();
+  const monthEndPeriodAnchor = useMemo(() => dateRange.to ?? new Date(), [dateRange.to]);
   const monthEndPeriod = format(monthEndPeriodAnchor, "yyyy-MM");
   const monthEndPeriodLabel = format(monthEndPeriodAnchor, "MMMM yyyy");
+  const depreciationPeriodDate = useMemo(
+    () => startOfReportMonth(monthEndPeriodAnchor),
+    [monthEndPeriodAnchor]
+  );
+  const accessibleReportCompanies = useMemo(() => {
+    const seen = new Set<string>();
+    return accessibleCompanies.filter((company): company is Company => {
+      if (!company?.id || seen.has(company.id)) return false;
+      seen.add(company.id);
+      return true;
+    });
+  }, [accessibleCompanies]);
+  const consolidatedCompanyIds = useMemo(
+    () => accessibleReportCompanies.map((company) => company.id).sort(),
+    [accessibleReportCompanies]
+  );
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
@@ -1055,6 +1702,72 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     });
 
+  const { data: consolidatedStatementSources = [], isLoading: consolidatedStatementsLoading } =
+    useQuery<ConsolidatedCompanyStatementSource[]>({
+      queryKey: [
+        "/api/companies",
+        "reports",
+        "consolidated-statements",
+        consolidatedCompanyIds,
+        dateParams,
+        comparisonCurrentParams,
+        comparisonPreviousParams,
+      ],
+      queryFn: () =>
+        Promise.all(
+          accessibleReportCompanies.map(async (company) => {
+            const base = {
+              companyId: company.id,
+              companyName: company.name || company.legalName || "Unnamed company",
+              companyType: company.companyType || "company",
+              baseCurrency: company.baseCurrency || "AED",
+            };
+
+            try {
+              const [
+                companyProfitLoss,
+                companyBalanceSheet,
+                companyComparisonCurrentProfitLoss,
+                companyComparisonPreviousProfitLoss,
+              ] = await Promise.all([
+                apiRequest("GET", `/api/companies/${company.id}/reports/pl${dateParams}`),
+                apiRequest(
+                  "GET",
+                  `/api/companies/${company.id}/reports/balance-sheet${dateParams}`
+                ),
+                apiRequest(
+                  "GET",
+                  `/api/companies/${company.id}/reports/pl${comparisonCurrentParams}`
+                ),
+                apiRequest(
+                  "GET",
+                  `/api/companies/${company.id}/reports/pl${comparisonPreviousParams}`
+                ),
+              ]);
+
+              return {
+                ...base,
+                profitLoss: companyProfitLoss,
+                balanceSheet: companyBalanceSheet,
+                comparisonCurrentProfitLoss: companyComparisonCurrentProfitLoss,
+                comparisonPreviousProfitLoss: companyComparisonPreviousProfitLoss,
+                error: null,
+              };
+            } catch (error: any) {
+              return {
+                ...base,
+                profitLoss: null,
+                balanceSheet: null,
+                comparisonCurrentProfitLoss: null,
+                comparisonPreviousProfitLoss: null,
+                error: error?.message || "Financial reports could not be loaded.",
+              };
+            }
+          })
+        ),
+      enabled: accessibleReportCompanies.length > 0,
+    });
+
   const { data: trialBalance, isLoading: trialBalanceLoading } = useQuery<TrialBalanceReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "trial-balance", trialBalanceParams],
     queryFn: () =>
@@ -1098,6 +1811,30 @@ export default function Reports() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: expenseClaims = [], isLoading: expenseClaimsLoading } = useQuery<
+    ExpenseClaimReportRow[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "expense-claims"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/expense-claims`),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: expenseClaimSummary, isLoading: expenseClaimSummaryLoading } =
+    useQuery<ExpenseClaimSummaryReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "expense-claims", "summary"],
+      queryFn: () =>
+        apiRequest("GET", `/api/companies/${selectedCompanyId}/expense-claims/summary`),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: payrollRuns = [], isLoading: payrollRunsLoading } = useQuery<PayrollRunReportRow[]>(
+    {
+      queryKey: ["/api/companies", selectedCompanyId, "payroll-runs"],
+      queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/payroll-runs`),
+      enabled: !!selectedCompanyId,
+    }
+  );
+
   const { data: journalEntries = [], isLoading: journalLoading } = useQuery<
     JournalEntryReportRow[]
   >({
@@ -1115,6 +1852,14 @@ export default function Reports() {
         ),
       enabled: !!selectedCompanyId,
     });
+
+  const { data: activityLogs = [], isLoading: activityLogsLoading } = useQuery<
+    ActivityLogReportRow[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "activity-logs"],
+    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/activity-logs?limit=200`),
+    enabled: !!selectedCompanyId,
+  });
 
   const { data: budgetPlans = [], isLoading: budgetPlansLoading } = useQuery<BudgetPlanReportRow[]>(
     {
@@ -1365,8 +2110,83 @@ export default function Reports() {
     };
   }, [inventoryMovements, inventoryProducts]);
 
+  const reportInventoryMovements = useMemo(() => {
+    return inventoryMovements.filter((movement) =>
+      inventoryMovementInDateRange(movement, dateRange)
+    );
+  }, [dateRange, inventoryMovements]);
+
+  const inventoryMovementReport = useMemo(() => {
+    const productById = new Map(inventoryProducts.map((product) => [product.id, product]));
+    const typeRows = new Map<string, InventoryMovementTypeRow>();
+    const rows = reportInventoryMovements
+      .map((movement) => {
+        const product = productById.get(movement.productId);
+        const quantity = Number(movement.quantity ?? 0) || 0;
+        const unitCost = inventoryAmount(movement.unitCost);
+        const valueAed = Math.abs(quantity) * unitCost;
+        const type = movement.type || "adjustment";
+        const typeSummary = typeRows.get(type) ?? { type, count: 0, quantity: 0, valueAed: 0 };
+        typeSummary.count += 1;
+        typeSummary.quantity += Math.abs(quantity);
+        typeSummary.valueAed += valueAed;
+        typeRows.set(type, typeSummary);
+        return {
+          ...movement,
+          type,
+          quantity,
+          unitCost,
+          valueAed,
+          productName: product?.name ?? "Unknown product",
+          sku: product?.sku ?? "",
+          unit: product?.unit ?? "",
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime || a.productName.localeCompare(b.productName);
+      });
+    const inboundTypes = new Set(["purchase", "return"]);
+    const outboundTypes = new Set(["sale"]);
+    const inboundUnits = rows
+      .filter((row) => inboundTypes.has(row.type))
+      .reduce((sum, row) => sum + Math.abs(row.quantity), 0);
+    const outboundUnits = rows
+      .filter((row) => outboundTypes.has(row.type))
+      .reduce((sum, row) => sum + Math.abs(row.quantity), 0);
+    const adjustmentUnits = rows
+      .filter((row) => row.type === "adjustment")
+      .reduce((sum, row) => sum + Math.abs(row.quantity), 0);
+    const totalMovementValueAed = rows.reduce((sum, row) => sum + row.valueAed, 0);
+    const outboundValueAed = rows
+      .filter((row) => outboundTypes.has(row.type))
+      .reduce((sum, row) => sum + row.valueAed, 0);
+
+    return {
+      rows,
+      typeRows: Array.from(typeRows.values()).sort(
+        (a, b) => b.valueAed - a.valueAed || a.type.localeCompare(b.type)
+      ),
+      movementCount: rows.length,
+      inboundUnits,
+      outboundUnits,
+      adjustmentUnits,
+      totalMovementValueAed,
+      outboundValueAed,
+      productCount: new Set(rows.map((row) => row.productId)).size,
+      reorderSignalCount:
+        inventoryValuationReport.lowStockCount + inventoryValuationReport.negativeStockCount,
+    };
+  }, [
+    inventoryProducts,
+    inventoryValuationReport.lowStockCount,
+    inventoryValuationReport.negativeStockCount,
+    reportInventoryMovements,
+  ]);
+
   const fixedAssetRegisterReport = useMemo(() => {
-    const rows = fixedAssets
+    const rows: FixedAssetValuationRow[] = fixedAssets
       .map((asset) => ({
         ...asset,
         purchaseCost: fixedAssetAmount(asset.purchase_cost),
@@ -1407,6 +2227,12 @@ export default function Reports() {
     };
   }, [fixedAssetSummary, fixedAssets]);
 
+  const depreciationScheduleReport = useMemo(
+    () =>
+      buildDepreciationScheduleReport(fixedAssetRegisterReport.activeRows, depreciationPeriodDate),
+    [depreciationPeriodDate, fixedAssetRegisterReport.activeRows]
+  );
+
   const balanceReport = useMemo(() => {
     const customers = balanceSummaries?.customers ?? [];
     const vendors = balanceSummaries?.vendors ?? [];
@@ -1427,10 +2253,42 @@ export default function Reports() {
       netBalanceAed: customerOpenAed - vendorOpenAed,
       overdueCustomerCount: customers.filter((row) => row.overdueBalanceAed > 0).length,
       overdueVendorCount: vendors.filter((row) => row.overdueBalanceAed > 0).length,
-      inventory: inventoryValuationReport,
-      fixedAssets: fixedAssetRegisterReport,
+      inventory: {
+        ...inventoryValuationReport,
+        movementCount: inventoryMovementReport.movementCount,
+        movementRows: inventoryMovementReport.rows,
+        movementTypeRows: inventoryMovementReport.typeRows,
+        productMovementCount: inventoryMovementReport.productCount,
+        movementInboundUnits: inventoryMovementReport.inboundUnits,
+        movementOutboundUnits: inventoryMovementReport.outboundUnits,
+        movementAdjustmentUnits: inventoryMovementReport.adjustmentUnits,
+        totalMovementValueAed: inventoryMovementReport.totalMovementValueAed,
+        outboundMovementValueAed: inventoryMovementReport.outboundValueAed,
+      },
+      fixedAssets: {
+        ...fixedAssetRegisterReport,
+        depreciation: depreciationScheduleReport,
+      },
     };
-  }, [balanceSummaries, fixedAssetRegisterReport, inventoryValuationReport]);
+  }, [
+    balanceSummaries,
+    depreciationScheduleReport,
+    fixedAssetRegisterReport,
+    inventoryMovementReport,
+    inventoryValuationReport,
+  ]);
+
+  const consolidatedStatementsReport = useMemo(
+    () =>
+      buildConsolidatedStatementsReport(
+        consolidatedStatementSources,
+        dateRange.from && dateRange.to
+          ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+          : "All posted activity",
+        "AED"
+      ),
+    [consolidatedStatementSources, dateRange.from, dateRange.to]
+  );
 
   const reportReceipts = useMemo(() => {
     return receipts.filter((receipt) => receiptInDateRange(receipt, dateRange));
@@ -1475,6 +2333,58 @@ export default function Reports() {
     [buildExpenseSummary]
   );
 
+  const reportExpenseClaims = useMemo(() => {
+    return expenseClaims.filter((claim) => expenseClaimInDateRange(claim, dateRange));
+  }, [dateRange, expenseClaims]);
+
+  const expenseClaimReport = useMemo(() => {
+    const statusRows = new Map<string, ExpenseClaimStatusRow>();
+    for (const claim of reportExpenseClaims) {
+      const status = claim.status || "draft";
+      const summary = statusRows.get(status) ?? { status, count: 0, totalAmount: 0 };
+      summary.count += 1;
+      summary.totalAmount += expenseClaimAmount(claim);
+      statusRows.set(status, summary);
+    }
+    const claimStatusRows = Array.from(statusRows.values()).sort(
+      (a, b) => b.totalAmount - a.totalAmount || a.status.localeCompare(b.status)
+    );
+    const submittedClaims = reportExpenseClaims.filter((claim) => claim.status === "submitted");
+    const approvedClaims = reportExpenseClaims.filter((claim) => claim.status === "approved");
+    const paidClaims = reportExpenseClaims.filter((claim) => claim.status === "paid");
+    const totalAmount = reportExpenseClaims.reduce(
+      (sum, claim) => sum + expenseClaimAmount(claim),
+      0
+    );
+    const submittedAmount = submittedClaims.reduce(
+      (sum, claim) => sum + expenseClaimAmount(claim),
+      0
+    );
+    const approvedAmount = approvedClaims.reduce(
+      (sum, claim) => sum + expenseClaimAmount(claim),
+      0
+    );
+    const thisMonthTotal = Object.values(expenseClaimSummary?.thisMonth ?? {}).reduce(
+      (sum, bucket) => sum + Number(bucket.total ?? 0),
+      0
+    );
+
+    return {
+      claims: reportExpenseClaims,
+      statusRows: claimStatusRows,
+      claimCount: reportExpenseClaims.length,
+      totalAmount,
+      submittedCount: submittedClaims.length,
+      submittedAmount,
+      approvedUnpaidCount: approvedClaims.length,
+      approvedUnpaidAmount: approvedAmount,
+      paidCount: paidClaims.length,
+      thisMonthTotal,
+      reviewCount: submittedClaims.length + approvedClaims.length,
+      summary: expenseClaimSummary ?? { all: {}, thisMonth: {} },
+    };
+  }, [expenseClaimSummary, reportExpenseClaims]);
+
   const expenseReport = useMemo(() => {
     const subtotalAed = reportReceipts.reduce(
       (sum, receipt) => sum + receiptSubtotalAed(receipt),
@@ -1493,10 +2403,79 @@ export default function Reports() {
       byVendor: expenseByVendor,
       byCategory: expenseByCategory,
       receipts: reportReceipts,
+      claims: expenseClaimReport,
     };
-  }, [expenseByCategory, expenseByVendor, reportReceipts]);
+  }, [expenseByCategory, expenseByVendor, expenseClaimReport, reportReceipts]);
 
-  const expensesLoading = receiptsLoading;
+  const expensesLoading = receiptsLoading || expenseClaimsLoading || expenseClaimSummaryLoading;
+
+  const reportPayrollRuns = useMemo(() => {
+    return payrollRuns.filter((run) => payrollRunInDateRange(run, dateRange));
+  }, [dateRange, payrollRuns]);
+
+  const payrollReport = useMemo(() => {
+    const statusRows = new Map<string, PayrollStatusReportRow>();
+    for (const run of reportPayrollRuns) {
+      const status = run.status || "draft";
+      const summary = statusRows.get(status) ?? {
+        status,
+        count: 0,
+        employeeCount: 0,
+        totalNet: 0,
+      };
+      summary.count += 1;
+      summary.employeeCount += Number(run.employee_count ?? 0);
+      summary.totalNet += payrollAmount(run.total_net);
+      statusRows.set(status, summary);
+    }
+
+    const calculatedRuns = reportPayrollRuns.filter((run) => run.status === "calculated");
+    const approvedRuns = reportPayrollRuns.filter((run) => run.status === "approved");
+    const draftRuns = reportPayrollRuns.filter((run) => run.status === "draft");
+    const sifEligibleRuns = reportPayrollRuns.filter(
+      (run) => run.status === "calculated" || run.status === "approved"
+    );
+    const sifGeneratedRuns = reportPayrollRuns.filter((run) => Boolean(run.sif_file_content));
+    const wpsMissingRuns = sifEligibleRuns.filter((run) => !run.sif_file_content);
+    const latestRun = [...reportPayrollRuns].sort(
+      (a, b) =>
+        b.period_year - a.period_year ||
+        b.period_month - a.period_month ||
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0];
+
+    return {
+      runs: reportPayrollRuns,
+      statusRows: Array.from(statusRows.values()).sort(
+        (a, b) => b.totalNet - a.totalNet || a.status.localeCompare(b.status)
+      ),
+      runCount: reportPayrollRuns.length,
+      employeeCount: reportPayrollRuns.reduce(
+        (sum, run) => sum + Number(run.employee_count ?? 0),
+        0
+      ),
+      totalBasic: reportPayrollRuns.reduce((sum, run) => sum + payrollAmount(run.total_basic), 0),
+      totalAllowances: reportPayrollRuns.reduce(
+        (sum, run) => sum + payrollAmount(run.total_allowances),
+        0
+      ),
+      totalDeductions: reportPayrollRuns.reduce(
+        (sum, run) => sum + payrollAmount(run.total_deductions),
+        0
+      ),
+      totalNet: reportPayrollRuns.reduce((sum, run) => sum + payrollAmount(run.total_net), 0),
+      approvedCount: approvedRuns.length,
+      calculatedCount: calculatedRuns.length,
+      draftCount: draftRuns.length,
+      approvalQueueCount: calculatedRuns.length,
+      sifGeneratedCount: sifGeneratedRuns.length,
+      wpsReadyCount: approvedRuns.filter((run) => Boolean(run.sif_file_content)).length,
+      wpsMissingCount: wpsMissingRuns.length,
+      latestRun,
+    };
+  }, [reportPayrollRuns]);
+
+  const payrollLoading = payrollRunsLoading;
 
   const comparisonRows = useMemo<ComparisonMetricRow[]>(() => {
     const currentInvoices = invoices.filter(
@@ -1515,6 +2494,26 @@ export default function Reports() {
     const previousReceipts = receipts.filter((receipt) =>
       receiptInDateRange(receipt, comparisonPreviousRange)
     );
+    const currentPayrollRuns = payrollRuns.filter((run) =>
+      payrollRunInDateRange(run, comparisonCurrentRange)
+    );
+    const previousPayrollRuns = payrollRuns.filter((run) =>
+      payrollRunInDateRange(run, comparisonPreviousRange)
+    );
+    const currentInventoryMovements = inventoryMovements.filter((movement) =>
+      inventoryMovementInDateRange(movement, comparisonCurrentRange)
+    );
+    const previousInventoryMovements = inventoryMovements.filter((movement) =>
+      inventoryMovementInDateRange(movement, comparisonPreviousRange)
+    );
+    const currentDepreciationEstimate = buildDepreciationScheduleReport(
+      fixedAssetRegisterReport.activeRows,
+      comparisonCurrentRange.to
+    ).periodDepreciationAed;
+    const previousDepreciationEstimate = buildDepreciationScheduleReport(
+      fixedAssetRegisterReport.activeRows,
+      comparisonPreviousRange.to
+    ).periodDepreciationAed;
     const currentInvoiceValue = currentInvoices.reduce(
       (sum, invoice) => sum + amountInAed(invoice),
       0
@@ -1529,6 +2528,22 @@ export default function Reports() {
     );
     const previousExpenseValue = previousReceipts.reduce(
       (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
+      0
+    );
+    const currentPayrollValue = currentPayrollRuns.reduce(
+      (sum, run) => sum + payrollAmount(run.total_net),
+      0
+    );
+    const previousPayrollValue = previousPayrollRuns.reduce(
+      (sum, run) => sum + payrollAmount(run.total_net),
+      0
+    );
+    const currentInventoryMovementValue = currentInventoryMovements.reduce(
+      (sum, movement) => sum + inventoryMovementValue(movement),
+      0
+    );
+    const previousInventoryMovementValue = previousInventoryMovements.reduce(
+      (sum, movement) => sum + inventoryMovementValue(movement),
       0
     );
     const ledgerActivityForRange = (range: ComparisonRange) =>
@@ -1604,6 +2619,50 @@ export default function Reports() {
         tab: "vat",
       }),
       makeComparisonMetric({
+        id: "payroll-cost",
+        label: "Payroll cost",
+        current: currentPayrollValue,
+        previous: previousPayrollValue,
+        currency: "AED",
+        signal: "Payroll movement",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "inventory-movement",
+        label: "Inventory movement",
+        current: currentInventoryMovementValue,
+        previous: previousInventoryMovementValue,
+        currency: "AED",
+        signal: "Stock movement",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "depreciation-estimate",
+        label: "Depreciation estimate",
+        current: currentDepreciationEstimate,
+        previous: previousDepreciationEstimate,
+        currency: "AED",
+        signal: "Depreciation schedule",
+        favorable: "neutral",
+        personas: ["accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "consolidated-net-profit",
+        label: "Consolidated net profit",
+        current: consolidatedStatementsReport.currentComparisonNetProfit,
+        previous: consolidatedStatementsReport.previousNetProfit,
+        currency: "AED",
+        signal: "Multi-entity roll-up",
+        favorable: "increase",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
         id: "ledger-activity",
         label: "Ledger activity",
         current: currentLedgerActivity,
@@ -1624,8 +2683,13 @@ export default function Reports() {
     comparisonPreviousProfitLoss?.totalRevenue,
     comparisonPreviousRange,
     comparisonPreviousVat?.netVATPayable,
+    consolidatedStatementsReport.currentComparisonNetProfit,
+    consolidatedStatementsReport.previousNetProfit,
+    fixedAssetRegisterReport.activeRows,
     invoices,
+    inventoryMovements,
     journalEntries,
+    payrollRuns,
     receipts,
   ]);
 
@@ -1638,6 +2702,7 @@ export default function Reports() {
     comparisonPreviousPlLoading ||
     comparisonCurrentVatLoading ||
     comparisonPreviousVatLoading ||
+    consolidatedStatementsLoading ||
     invoicesLoading ||
     journalLoading ||
     receiptsLoading;
@@ -1747,6 +2812,88 @@ export default function Reports() {
 
   const ledgerLoading = journalLoading;
 
+  const reportActivityLogs = useMemo(() => {
+    return activityLogs.filter((log) => activityLogInDateRange(log, dateRange));
+  }, [activityLogs, dateRange]);
+
+  const auditTrailReport = useMemo(() => {
+    const actionRows = new Map<string, AuditTrailSummaryRow>();
+    const entityRows = new Map<string, AuditTrailSummaryRow>();
+    const rows = reportActivityLogs
+      .map((log) => ({
+        ...log,
+        actionLabel: activityLogLabel(log.action),
+        entityLabel: activityLogLabel(log.entityType),
+        riskLevel: activityLogRiskLevel(log),
+      }))
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+    for (const row of rows) {
+      const actionKey = row.action || "unknown";
+      const actionSummary = actionRows.get(actionKey) ?? {
+        key: actionKey,
+        label: row.actionLabel,
+        count: 0,
+        latestAt: null,
+      };
+      actionSummary.count += 1;
+      if (
+        row.createdAt &&
+        (!actionSummary.latestAt || new Date(row.createdAt) > new Date(actionSummary.latestAt))
+      ) {
+        actionSummary.latestAt = row.createdAt;
+      }
+      actionRows.set(actionKey, actionSummary);
+
+      const entityKey = row.entityType || "unknown";
+      const entitySummary = entityRows.get(entityKey) ?? {
+        key: entityKey,
+        label: row.entityLabel,
+        count: 0,
+        latestAt: null,
+      };
+      entitySummary.count += 1;
+      if (
+        row.createdAt &&
+        (!entitySummary.latestAt || new Date(row.createdAt) > new Date(entitySummary.latestAt))
+      ) {
+        entitySummary.latestAt = row.createdAt;
+      }
+      entityRows.set(entityKey, entitySummary);
+    }
+
+    const postingActionCount = rows.filter((row) =>
+      /(approve|post|journal|close|reconcile)/.test(row.action.toLowerCase())
+    ).length;
+
+    return {
+      rows,
+      actionRows: Array.from(actionRows.values()).sort(
+        (a, b) => b.count - a.count || a.label.localeCompare(b.label)
+      ),
+      entityRows: Array.from(entityRows.values()).sort(
+        (a, b) => b.count - a.count || a.label.localeCompare(b.label)
+      ),
+      logCount: rows.length,
+      highRiskCount: rows.filter((row) => row.riskLevel === "High").length,
+      mediumRiskCount: rows.filter((row) => row.riskLevel === "Medium").length,
+      postingActionCount,
+      userCount: new Set(rows.map((row) => row.userId).filter(Boolean)).size,
+      latestLog: rows[0] ?? null,
+    };
+  }, [reportActivityLogs]);
+
+  const auditTrailPeriodLabel =
+    dateRange.from && dateRange.to
+      ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+      : "Latest 200 activity events";
+
+  const auditTrailLoading = activityLogsLoading;
+
   const monthEndChecklist = useMemo(
     () => monthEndCloseStatus?.checklist ?? [],
     [monthEndCloseStatus?.checklist]
@@ -1842,6 +2989,9 @@ export default function Reports() {
     trialBalanceLoading ||
     ledgerLoading ||
     monthEndCloseLoading ||
+    auditTrailLoading ||
+    consolidatedStatementsLoading ||
+    payrollLoading ||
     planningLoading;
 
   const automationQueue = useMemo<AutomationQueueItem[]>(() => {
@@ -1896,6 +3046,23 @@ export default function Reports() {
         href: "/inventory",
       },
       {
+        id: "inventory-movement-review",
+        title: "Inventory movement",
+        signal:
+          inventoryMovementReport.movementCount > 0 ? "Stock movement posted" : "No stock movement",
+        detail:
+          inventoryMovementReport.reorderSignalCount > 0
+            ? `${inventoryMovementReport.reorderSignalCount} products need reorder or negative-stock review after recent movement.`
+            : `${inventoryMovementReport.movementCount} movements across ${inventoryMovementReport.productCount} products in this period.`,
+        count: inventoryMovementReport.reorderSignalCount,
+        amount: inventoryMovementReport.outboundValueAed,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: FileSpreadsheet,
+        actionLabel: "Open movements",
+        href: "/inventory",
+      },
+      {
         id: "fixed-asset-review",
         title: "Fixed asset register",
         signal:
@@ -1913,6 +3080,25 @@ export default function Reports() {
         href: "/fixed-assets",
       },
       {
+        id: "depreciation-posting",
+        title: "Depreciation schedule",
+        signal:
+          depreciationScheduleReport.reviewCount > 0
+            ? "Depreciation setup review"
+            : "Depreciation ready",
+        detail:
+          depreciationScheduleReport.reviewCount > 0
+            ? `${depreciationScheduleReport.reviewCount} assets need useful-life, date, or cost review before posting.`
+            : `${depreciationScheduleReport.readyToPostCount} assets have ${monthEndPeriodLabel} depreciation suggestions.`,
+        count: depreciationScheduleReport.readyToPostCount + depreciationScheduleReport.reviewCount,
+        amount: depreciationScheduleReport.periodDepreciationAed,
+        currency: "AED",
+        personas: ["accountant"],
+        icon: FileSpreadsheet,
+        actionLabel: "Open fixed assets",
+        href: "/fixed-assets",
+      },
+      {
         id: "receipt-posting",
         title: "Receipt posting",
         signal: "Receipts waiting",
@@ -1922,6 +3108,45 @@ export default function Reports() {
         icon: FileSpreadsheet,
         actionLabel: "Open expenses",
         tab: "expenses",
+      },
+      {
+        id: "expense-claims-review",
+        title: "Expense claims",
+        signal: expenseClaimReport.reviewCount > 0 ? "Claim queue open" : "Expense claims clear",
+        detail:
+          expenseClaimReport.submittedCount > 0
+            ? `${expenseClaimReport.submittedCount} submitted claims need approval.`
+            : expenseClaimReport.approvedUnpaidCount > 0
+              ? `${expenseClaimReport.approvedUnpaidCount} approved claims are awaiting reimbursement.`
+              : "No claims are pending approval or reimbursement.",
+        count: expenseClaimReport.reviewCount,
+        amount: expenseClaimReport.submittedAmount + expenseClaimReport.approvedUnpaidAmount,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: ClipboardCheck,
+        actionLabel: "Open claims",
+        href: "/expense-claims",
+      },
+      {
+        id: "payroll-wps-review",
+        title: "Payroll and WPS",
+        signal:
+          payrollReport.approvalQueueCount > 0 || payrollReport.wpsMissingCount > 0
+            ? "Payroll action needed"
+            : "Payroll ready",
+        detail:
+          payrollReport.approvalQueueCount > 0
+            ? `${payrollReport.approvalQueueCount} calculated payroll runs need approval.`
+            : payrollReport.wpsMissingCount > 0
+              ? `${payrollReport.wpsMissingCount} payroll runs need SIF generation.`
+              : `${payrollReport.runCount} payroll runs are summarized for owner and accountant review.`,
+        count: payrollReport.approvalQueueCount + payrollReport.wpsMissingCount,
+        amount: payrollReport.totalNet,
+        currency: "AED",
+        personas: ["owner", "accountant"],
+        icon: DollarSign,
+        actionLabel: "Open payroll",
+        href: "/payroll",
       },
       {
         id: "vat-readiness",
@@ -1990,6 +3215,39 @@ export default function Reports() {
         tab: "close",
       },
       {
+        id: "audit-trail-review",
+        title: "Audit trail",
+        signal: auditTrailReport.highRiskCount > 0 ? "High-risk activity" : "Activity log reviewed",
+        detail:
+          auditTrailReport.highRiskCount > 0
+            ? `${auditTrailReport.highRiskCount} delete, void, reject, or error events need reviewer attention.`
+            : `${auditTrailReport.logCount} activity events summarized for reviewer evidence.`,
+        count: auditTrailReport.highRiskCount,
+        personas: ["accountant"],
+        icon: FileText,
+        actionLabel: "Open history",
+        href: "/history",
+      },
+      {
+        id: "consolidated-statements-review",
+        title: "Consolidated statements",
+        signal:
+          consolidatedStatementsReport.reviewCount > 0
+            ? "Consolidation review"
+            : "Multi-entity roll-up ready",
+        detail:
+          consolidatedStatementsReport.reviewCount > 0
+            ? `${consolidatedStatementsReport.reviewCount} entity, balance, or FX checks need review before pack delivery.`
+            : `${consolidatedStatementsReport.loadedEntityCount} entities rolled up with no eliminations applied.`,
+        count: consolidatedStatementsReport.reviewCount,
+        amount: Math.abs(consolidatedStatementsReport.netProfit),
+        currency: "AED",
+        personas: ["accountant"],
+        icon: FileSpreadsheet,
+        actionLabel: "Open consolidation",
+        tab: "close",
+      },
+      {
         id: "planning-risk",
         title: "Planning guardrails",
         signal: "Budget and cash alerts",
@@ -2008,7 +3266,18 @@ export default function Reports() {
     balanceReport.overdueCustomerCount,
     balanceReport.overdueVendorCount,
     balanceReport.vendorOverdueAed,
+    consolidatedStatementsReport.loadedEntityCount,
+    consolidatedStatementsReport.netProfit,
+    consolidatedStatementsReport.reviewCount,
     corporateTaxEstimate?.taxPayable,
+    depreciationScheduleReport.periodDepreciationAed,
+    depreciationScheduleReport.readyToPostCount,
+    depreciationScheduleReport.reviewCount,
+    expenseClaimReport.approvedUnpaidAmount,
+    expenseClaimReport.approvedUnpaidCount,
+    expenseClaimReport.reviewCount,
+    expenseClaimReport.submittedAmount,
+    expenseClaimReport.submittedCount,
     expenseReport.unpostedReceipts,
     fixedAssetRegisterReport.capitalizationReviewCount,
     fixedAssetRegisterReport.reviewCount,
@@ -2017,9 +3286,19 @@ export default function Reports() {
     inventoryValuationReport.activeProductCount,
     inventoryValuationReport.reviewCount,
     inventoryValuationReport.totalStockValueAed,
+    inventoryMovementReport.movementCount,
+    inventoryMovementReport.outboundValueAed,
+    inventoryMovementReport.productCount,
+    inventoryMovementReport.reorderSignalCount,
     ledgerReport.reviewEntries,
     monthEndPeriodLabel,
     monthEndReviewChecks,
+    auditTrailReport.highRiskCount,
+    auditTrailReport.logCount,
+    payrollReport.approvalQueueCount,
+    payrollReport.runCount,
+    payrollReport.totalNet,
+    payrollReport.wpsMissingCount,
     planningReport.cashWarning,
     planningReport.overBudgetLines,
     planningReport.variance,
@@ -2361,6 +3640,134 @@ export default function Reports() {
     );
   }, [personaFilter, reportAutomationHealthTrends]);
 
+  const reportAutomationRules = useMemo(() => {
+    return workspaceSummaries.flatMap((workspace) => {
+      const workspaceSignals = automationQueue.filter((item) =>
+        matchesReportPersona(item.personas, workspace.persona)
+      );
+
+      return workspace.automations.map((playbook) => {
+        const linkedReports = playbook.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const liveReportCount = linkedReports.filter((report) => report.status === "live").length;
+        const targetWorkflow = reportAutomationPlaybookHref(playbook, workspace.persona);
+        const matchingSignals = workspaceSignals.filter((signal) => {
+          if (playbook.href && signal.href === playbook.href) return true;
+          if (playbook.tab && signal.tab === playbook.tab) return true;
+          return linkedReports.some((report) => report.tab && report.tab === signal.tab);
+        });
+        const openSignals = matchingSignals.filter((signal) => signal.count > 0);
+        const openWorkItemCount = matchingSignals.reduce((sum, signal) => sum + signal.count, 0);
+        const amountAtRisk = matchingSignals.reduce((sum, signal) => sum + (signal.amount ?? 0), 0);
+        const comparisonMetricCount = comparisonRows.filter(
+          (row) =>
+            matchesReportPersona(row.personas, workspace.persona) &&
+            linkedReports.some((report) => report.tab === row.tab)
+        ).length;
+        const status =
+          openWorkItemCount > 0
+            ? "Review before auto-send"
+            : liveReportCount === linkedReports.length
+              ? "Ready to auto-send"
+              : "Setup needed";
+
+        return {
+          id: `${workspace.persona}-${playbook.id}`,
+          workspace,
+          playbook,
+          linkedReports,
+          liveReportCount,
+          reportCount: linkedReports.length,
+          matchingSignals,
+          openSignals,
+          openWorkItemCount,
+          amountAtRisk,
+          comparisonMetricCount,
+          targetWorkflow,
+          status,
+          statusVariant:
+            status === "Ready to auto-send"
+              ? ("success" as const)
+              : status === "Review before auto-send"
+                ? ("warning" as const)
+                : ("neutral" as const),
+        };
+      });
+    });
+  }, [automationQueue, comparisonRows, workspaceSummaries]);
+
+  const visibleReportAutomationRules = useMemo(() => {
+    return reportAutomationRules.filter((rule) =>
+      matchesReportPersona([rule.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationRules]);
+
+  const reportAutomationRuleReviewCount = visibleReportAutomationRules.filter(
+    (rule) => rule.openWorkItemCount > 0 || rule.status === "Setup needed"
+  ).length;
+
+  const reportAutomationCommandCenter = useMemo(() => {
+    const readyRuleCount = visibleReportAutomationRules.filter(
+      (rule) => rule.status === "Ready to auto-send"
+    ).length;
+    const reviewRuleCount = visibleReportAutomationRules.filter(
+      (rule) => rule.openWorkItemCount > 0
+    ).length;
+    const setupRuleCount = visibleReportAutomationRules.filter(
+      (rule) => rule.status === "Setup needed"
+    ).length;
+    const openWorkItemCount = visibleReportAutomationRules.reduce(
+      (sum, rule) => sum + rule.openWorkItemCount,
+      0
+    );
+    const amountAtRisk = visibleReportAutomationRules.reduce(
+      (sum, rule) => sum + rule.amountAtRisk,
+      0
+    );
+    const comparisonMetricCount = visibleReportAutomationRules.reduce(
+      (sum, rule) => sum + rule.comparisonMetricCount,
+      0
+    );
+    const reportBundleCount = new Set(
+      visibleReportAutomationRules.flatMap((rule) => rule.linkedReports.map((report) => report.id))
+    ).size;
+    const autoSendCoveragePercent =
+      visibleReportAutomationRules.length > 0
+        ? Math.round((readyRuleCount / visibleReportAutomationRules.length) * 100)
+        : 0;
+    const readyPackCount = visibleReportPackReadiness.filter(
+      (item) => item.reviewCount === 0
+    ).length;
+    const reviewPackCount = visibleReportPackReadiness.filter(
+      (item) => item.reviewCount > 0
+    ).length;
+    const topReviewRules = visibleReportAutomationRules
+      .filter((rule) => rule.openWorkItemCount > 0 || rule.status === "Setup needed")
+      .sort(
+        (a, b) =>
+          b.openWorkItemCount - a.openWorkItemCount ||
+          b.amountAtRisk - a.amountAtRisk ||
+          a.playbook.title.localeCompare(b.playbook.title)
+      )
+      .slice(0, 4);
+
+    return {
+      ruleCount: visibleReportAutomationRules.length,
+      readyRuleCount,
+      reviewRuleCount,
+      setupRuleCount,
+      openWorkItemCount,
+      amountAtRisk,
+      comparisonMetricCount,
+      reportBundleCount,
+      autoSendCoveragePercent,
+      readyPackCount,
+      reviewPackCount,
+      topReviewRules,
+    };
+  }, [visibleReportAutomationRules, visibleReportPackReadiness]);
+
   const reportPackReadinessNeedingReview = visibleReportPackReadiness.filter(
     (item) => item.reviewCount > 0
   ).length;
@@ -2400,12 +3807,23 @@ export default function Reports() {
       prepareInvoiceStatusForExport(invoiceStatusReport)
     );
     addSheets(
-      ["customer-balances", "vendor-balances", "inventory-valuation", "fixed-asset-register"],
+      [
+        "customer-balances",
+        "vendor-balances",
+        "inventory-valuation",
+        "inventory-movement",
+        "fixed-asset-register",
+        "depreciation-schedule",
+      ],
       prepareBalanceSummaryReportsForExport(balanceReport)
     );
     addSheets(
-      ["expenses-vendor", "expenses-category"],
+      ["expenses-vendor", "expenses-category", "expense-claims"],
       prepareExpenseReportsForExport(expenseReport)
+    );
+    addSheets(
+      ["payroll-summary", "wps-sif-summary"],
+      preparePayrollReportsForExport(payrollReport)
     );
     addSheets(
       ["general-ledger", "account-transactions"],
@@ -2414,6 +3832,11 @@ export default function Reports() {
     addSheets(
       ["month-end-close-status"],
       prepareMonthEndCloseStatusForExport(monthEndCloseExportReport)
+    );
+    addSheets(["audit-trail"], prepareAuditTrailForExport(auditTrailReport));
+    addSheets(
+      ["consolidated-statements"],
+      prepareConsolidatedStatementsForExport(consolidatedStatementsReport)
     );
     addSheets(
       ["budget-actual", "cash-flow-forecast"],
@@ -2432,6 +3855,9 @@ export default function Reports() {
     const packRecommendations =
       personaReportRecommendations.find((item) => item.workspace.persona === workspace.persona)
         ?.recommendations ?? [];
+    const packAutomationRules = reportAutomationRules.filter(
+      (rule) => rule.workspace.persona === workspace.persona
+    );
     const packReadiness =
       reportPackDeliveryReadiness.find((item) => item.workspace.persona === workspace.persona) ??
       null;
@@ -2444,6 +3870,34 @@ export default function Reports() {
       : null;
     const packRoadmap =
       reportRoadmap.find((item) => item.workspace.persona === workspace.persona) ?? null;
+    const packReadyAutomationRules = packAutomationRules.filter(
+      (rule) => rule.status === "Ready to auto-send"
+    ).length;
+    const packReviewAutomationRules = packAutomationRules.filter(
+      (rule) => rule.openWorkItemCount > 0
+    ).length;
+    const packSetupAutomationRules = packAutomationRules.filter(
+      (rule) => rule.status === "Setup needed"
+    ).length;
+    const packRuleOpenWorkItemCount = packAutomationRules.reduce(
+      (sum, rule) => sum + rule.openWorkItemCount,
+      0
+    );
+    const packRuleAmountAtRisk = packAutomationRules.reduce(
+      (sum, rule) => sum + rule.amountAtRisk,
+      0
+    );
+    const packRuleComparisonMetricCount = packAutomationRules.reduce(
+      (sum, rule) => sum + rule.comparisonMetricCount,
+      0
+    );
+    const packRuleReportBundleCount = new Set(
+      packAutomationRules.flatMap((rule) => rule.linkedReports.map((report) => report.id))
+    ).size;
+    const packAutoSendCoveragePercent =
+      packAutomationRules.length > 0
+        ? Math.round((packReadyAutomationRules / packAutomationRules.length) * 100)
+        : 0;
 
     const packIndex: ExportData = {
       sheetName: "Pack Index",
@@ -2494,6 +3948,10 @@ export default function Reports() {
         { metric: "Workbook sheets", value: workbookSheets.length },
         { metric: "Comparison metrics", value: packComparisonRows.length },
         { metric: "Recommended actions", value: packRecommendations.length },
+        { metric: "Auto-send coverage", value: `${packAutoSendCoveragePercent}%` },
+        { metric: "Ready auto-send rules", value: packReadyAutomationRules },
+        { metric: "Rules needing review", value: packReviewAutomationRules },
+        { metric: "Setup-needed rules", value: packSetupAutomationRules },
         { metric: "Delivery checks", value: packReadiness?.checks.length ?? 0 },
         { metric: "Checks needing review", value: packReadiness?.reviewCount ?? 0 },
         {
@@ -2586,6 +4044,35 @@ export default function Reports() {
           automationRule: report.roadmapPrerequisites?.automationRule ?? "",
           workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
         })),
+    };
+
+    const automationCommandCenter: ExportData = {
+      sheetName: "Automation Command Center",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 80 },
+      ],
+      rows: [
+        { metric: "Workspace", value: workspace.title },
+        { metric: "Persona", value: workspace.persona },
+        { metric: "Total automation rules", value: packAutomationRules.length },
+        { metric: "Ready auto-send rules", value: packReadyAutomationRules },
+        { metric: "Rules needing review", value: packReviewAutomationRules },
+        { metric: "Setup-needed rules", value: packSetupAutomationRules },
+        { metric: "Auto-send coverage", value: `${packAutoSendCoveragePercent}%` },
+        { metric: "Open rule work items", value: packRuleOpenWorkItemCount },
+        { metric: "Rule amount at risk", value: `AED ${packRuleAmountAtRisk.toFixed(2)}` },
+        { metric: "Comparison metrics linked", value: packRuleComparisonMetricCount },
+        { metric: "Report bundle coverage", value: packRuleReportBundleCount },
+        {
+          metric: "Pack delivery status",
+          value: packReadiness?.status ?? "Not available",
+        },
+        {
+          metric: "Pack checks needing review",
+          value: packReadiness?.reviewCount ?? 0,
+        },
+      ],
     };
 
     const automationHealth: ExportData = {
@@ -2708,19 +4195,28 @@ export default function Reports() {
       columns: [
         { header: "Playbook", key: "playbook", width: 34 },
         { header: "Trigger", key: "trigger", width: 42 },
+        { header: "Cadence", key: "cadence", width: 38 },
+        { header: "Recipients", key: "recipients", width: 42 },
         { header: "Reports", key: "reports", width: 60 },
+        { header: "Rule Status", key: "status", width: 24 },
+        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
+        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
+        { header: "Comparison Metrics", key: "comparisonMetricCount", width: 20 },
         { header: "Action", key: "action", width: 24 },
         { header: "Workflow", key: "workflow", width: 40 },
       ],
-      rows: workspace.automations.map((playbook) => ({
-        playbook: playbook.title,
-        trigger: playbook.trigger,
-        reports: playbook.reportIds
-          .map((reportId) => reportCatalog.find((report) => report.id === reportId)?.name)
-          .filter(Boolean)
-          .join(", "),
-        action: playbook.cta,
-        workflow: reportAutomationPlaybookHref(playbook, workspace.persona),
+      rows: packAutomationRules.map((rule) => ({
+        playbook: rule.playbook.title,
+        trigger: rule.playbook.trigger,
+        cadence: workspace.packSchedule.cadence,
+        recipients: workspace.packSchedule.recipients,
+        reports: rule.linkedReports.map((report) => report.name).join(", "),
+        status: rule.status,
+        openWorkItemCount: rule.openWorkItemCount,
+        amountAtRisk: `AED ${rule.amountAtRisk.toFixed(2)}`,
+        comparisonMetricCount: rule.comparisonMetricCount,
+        action: rule.playbook.cta,
+        workflow: rule.targetWorkflow,
       })),
     };
 
@@ -2770,6 +4266,7 @@ export default function Reports() {
       packSummary,
       recommendedActions,
       reportRoadmapSheet,
+      automationCommandCenter,
       automationHealth,
       automationHealthTrend,
       deliveryChecklist,
@@ -2884,17 +4381,27 @@ export default function Reports() {
         `expense_reports${dateRangeStr}`
       );
       toast({ title: "Export successful", description: "Expense reports exported to Excel" });
+    } else if (activeTab === "payroll") {
+      exportToExcel(
+        preparePayrollReportsForExport(payrollReport),
+        `payroll_reports${dateRangeStr}`
+      );
+      toast({ title: "Export successful", description: "Payroll reports exported to Excel" });
     } else if (activeTab === "ledger") {
       exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
       toast({ title: "Export successful", description: "General Ledger exported to Excel" });
-    } else if (activeTab === "close" && monthEndCloseStatus) {
+    } else if (activeTab === "close") {
       exportToExcel(
-        prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
-        `month_end_close_status_${monthEndPeriod}`
+        [
+          ...prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
+          ...prepareAuditTrailForExport(auditTrailReport),
+          ...prepareConsolidatedStatementsForExport(consolidatedStatementsReport),
+        ],
+        `close_reports_${monthEndPeriod}${dateRangeStr}`
       );
       toast({
         title: "Export successful",
-        description: "Month-End Close Status exported to Excel",
+        description: "Close reports exported to Excel",
       });
     } else if (activeTab === "planning") {
       exportToExcel(
@@ -2963,16 +4470,26 @@ export default function Reports() {
         `Expense Reports${dateRangeStr}`,
         selectedCompanyId
       );
+    } else if (activeTab === "payroll") {
+      result = await exportToGoogleSheets(
+        preparePayrollReportsForExport(payrollReport),
+        `Payroll Reports${dateRangeStr}`,
+        selectedCompanyId
+      );
     } else if (activeTab === "ledger") {
       result = await exportToGoogleSheets(
         prepareLedgerReportsForExport(ledgerReport),
         `General Ledger${dateRangeStr}`,
         selectedCompanyId
       );
-    } else if (activeTab === "close" && monthEndCloseStatus) {
+    } else if (activeTab === "close") {
       result = await exportToGoogleSheets(
-        prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
-        `Month-End Close Status (${monthEndPeriodLabel})`,
+        [
+          ...prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
+          ...prepareAuditTrailForExport(auditTrailReport),
+          ...prepareConsolidatedStatementsForExport(consolidatedStatementsReport),
+        ],
+        `Close Reports (${monthEndPeriodLabel})`,
         selectedCompanyId
       );
     } else if (activeTab === "planning") {
@@ -3565,6 +5082,329 @@ export default function Reports() {
                       </Button>
                       <Badge variant="outline">{item.playbookCount} playbooks</Badge>
                     </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="automation-command-center-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="automation-command-center-title" className="text-xl font-semibold">
+              Automation command center
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Auto-send readiness across report rules, blocker queues, and pack delivery.{" "}
+              {personaScopeDescription}
+            </p>
+          </div>
+          <Badge
+            variant={
+              reportAutomationCommandCenter.reviewRuleCount +
+                reportAutomationCommandCenter.setupRuleCount >
+              0
+                ? "warning"
+                : "success"
+            }
+            dot
+          >
+            {reportAutomationCommandCenter.autoSendCoveragePercent}% auto-send coverage
+          </Badge>
+        </div>
+
+        {automationLoading || comparisonLoading ? (
+          <Skeleton className="h-64 w-full" />
+        ) : (
+          <Card data-testid="automation-command-center">
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold">Auto-send readiness</CardTitle>
+                  <CardDescription>
+                    Rule coverage and open work before scheduled report packs are sent.
+                  </CardDescription>
+                </div>
+                <Badge
+                  variant={
+                    reportAutomationCommandCenter.reviewRuleCount +
+                      reportAutomationCommandCenter.setupRuleCount >
+                    0
+                      ? "warning"
+                      : "success"
+                  }
+                  dot
+                >
+                  {reportAutomationCommandCenter.readyRuleCount}/
+                  {reportAutomationCommandCenter.ruleCount} rules ready
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-5">
+                {[
+                  {
+                    label: "Automation rules",
+                    value: reportAutomationCommandCenter.ruleCount,
+                  },
+                  {
+                    label: "Ready auto-send",
+                    value: reportAutomationCommandCenter.readyRuleCount,
+                  },
+                  {
+                    label: "Need review",
+                    value: reportAutomationCommandCenter.reviewRuleCount,
+                  },
+                  {
+                    label: "Setup needed",
+                    value: reportAutomationCommandCenter.setupRuleCount,
+                  },
+                  {
+                    label: "Open work",
+                    value: reportAutomationCommandCenter.openWorkItemCount,
+                  },
+                  {
+                    label: "Amount at risk",
+                    value: formatCurrency(
+                      reportAutomationCommandCenter.amountAtRisk,
+                      "AED",
+                      locale
+                    ),
+                    className: "text-sm",
+                  },
+                  {
+                    label: "Comparisons linked",
+                    value: reportAutomationCommandCenter.comparisonMetricCount,
+                  },
+                  {
+                    label: "Report bundle",
+                    value: reportAutomationCommandCenter.reportBundleCount,
+                  },
+                  {
+                    label: "Packs ready",
+                    value: reportAutomationCommandCenter.readyPackCount,
+                  },
+                  {
+                    label: "Packs in review",
+                    value: reportAutomationCommandCenter.reviewPackCount,
+                  },
+                ].map((metric) => (
+                  <div key={metric.label} className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">{metric.label}</div>
+                    <div
+                      className={`truncate font-mono text-lg font-semibold ${
+                        metric.className ?? ""
+                      }`}
+                    >
+                      {metric.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                    Top blockers
+                  </div>
+                  {reportAutomationCommandCenter.topReviewRules.length ? (
+                    reportAutomationCommandCenter.topReviewRules.map((rule) => (
+                      <div
+                        key={rule.id}
+                        data-testid={`automation-command-center-blocker-${rule.id}`}
+                        className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium">{rule.playbook.title}</div>
+                            <Badge variant={rule.statusVariant} dot>
+                              {rule.status}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {rule.workspace.title} - {rule.openWorkItemCount} open work items -{" "}
+                            {formatCurrency(rule.amountAtRisk, "AED", locale)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {rule.liveReportCount}/{rule.reportCount} reports live with{" "}
+                            {rule.comparisonMetricCount} linked comparisons.
+                          </div>
+                        </div>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={rule.targetWorkflow}>{rule.playbook.cta}</Link>
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                      All visible rules are ready for auto-send when pack delivery runs.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                    Pack delivery readiness
+                  </div>
+                  {visibleReportPackReadiness.map((item) => (
+                    <div
+                      key={item.workspace.persona}
+                      data-testid={`automation-command-center-pack-${item.workspace.persona}`}
+                      className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium">{item.workspace.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.reviewCount} checks need review - health{" "}
+                          {item.automationHealth.score}/100
+                        </div>
+                      </div>
+                      <Badge variant={item.reviewCount > 0 ? "warning" : "success"} dot>
+                        {item.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-automation-rules-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-automation-rules-title" className="text-xl font-semibold">
+              Report automation rules
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Role-specific pack rules that connect triggers, reports, recipients, and next
+              workflows. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant={reportAutomationRuleReviewCount > 0 ? "warning" : "success"} dot>
+            {reportAutomationRuleReviewCount} need review
+          </Badge>
+        </div>
+
+        {automationLoading || comparisonLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            {visibleReportAutomationRules.map((rule) => {
+              const workspace = rule.workspace;
+              const WorkspaceIcon = workspace.icon;
+
+              return (
+                <Card key={rule.id} data-testid={`automation-rule-${rule.id}`}>
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {rule.playbook.title}
+                          </CardTitle>
+                          <CardDescription>{workspace.title}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={rule.statusVariant} dot>
+                        {rule.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Reports</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {rule.liveReportCount}/{rule.reportCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Comparisons</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {rule.comparisonMetricCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Open work</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {rule.openWorkItemCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Amount</div>
+                        <div className="truncate font-mono text-sm font-semibold">
+                          {formatCurrency(rule.amountAtRisk, "AED", locale)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Trigger:</span>{" "}
+                        {rule.playbook.trigger}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        {workspace.packSchedule.cadence}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Recipients:</span>{" "}
+                        {workspace.packSchedule.recipients}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Report bundle
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {rule.linkedReports.slice(0, 5).map((report) => (
+                          <Badge key={report.id} variant="outline">
+                            {report.name}
+                          </Badge>
+                        ))}
+                        {rule.linkedReports.length > 5 ? (
+                          <Badge variant="outline">+{rule.linkedReports.length - 5}</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Rule signals
+                      </div>
+                      {rule.matchingSignals.length ? (
+                        rule.matchingSignals.slice(0, 3).map((signal) => (
+                          <div
+                            key={signal.id}
+                            className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-medium">{signal.title}</div>
+                              <div className="text-xs text-muted-foreground">{signal.signal}</div>
+                            </div>
+                            <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
+                              {signal.count > 0 ? signal.count : "Clear"}
+                            </Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                          No live exceptions currently map to this rule.
+                        </div>
+                      )}
+                    </div>
+
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={rule.targetWorkflow}>{rule.playbook.cta}</Link>
+                    </Button>
                   </CardContent>
                 </Card>
               );
@@ -4341,6 +6181,62 @@ export default function Reports() {
             </div>
           </CardContent>
         </Card>
+
+        {connectedReportCenters.length ? (
+          <section className="space-y-3" aria-labelledby="connected-report-centers-title">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 id="connected-report-centers-title" className="text-lg font-semibold">
+                  Connected report centers
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Live report families served by adjacent workspaces, kept discoverable from this
+                  report center.
+                </p>
+              </div>
+              <Badge variant="outline">{connectedReportCenters.length} connected</Badge>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {connectedReportCenters.map((report) => (
+                <Card key={report.id}>
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{report.name}</CardTitle>
+                        <CardDescription>{report.category}</CardDescription>
+                      </div>
+                      <Badge variant={reportStatusMeta[report.status].variant} dot>
+                        {reportStatusMeta[report.status].label}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Comparison:</span>{" "}
+                        {report.comparison}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        {report.automation}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {report.personas.map((persona) => (
+                        <Badge key={persona} variant="outline" className="capitalize">
+                          {persona}
+                        </Badge>
+                      ))}
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={report.href}>Open report center</Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
 
       <Card>
@@ -4357,7 +6253,7 @@ export default function Reports() {
         onValueChange={(value) => setActiveTab(value as ReportTab)}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-11">
+        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
           <TabsTrigger value="pl" data-testid="tab-profit-loss">
             {t.profitLoss}
           </TabsTrigger>
@@ -4378,6 +6274,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="expenses" data-testid="tab-expense-reports">
             Expenses
+          </TabsTrigger>
+          <TabsTrigger value="payroll" data-testid="tab-payroll-reports">
+            Payroll
           </TabsTrigger>
           <TabsTrigger value="trial" data-testid="tab-trial-balance">
             {t.trialBalance}
@@ -4802,125 +6701,6 @@ export default function Reports() {
               </CardContent>
             </Card>
           </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Inventory valuation</CardTitle>
-                  <CardDescription>
-                    Stock quantity, cost value, reorder risk, and costing exceptions.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/inventory">Open inventory</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {balancesLoading ? (
-                <Skeleton className="h-80" />
-              ) : inventoryValuationReport.rows.length ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Active products</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.activeProductCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Stock value</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(inventoryValuationReport.totalStockValueAed, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Low stock</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.lowStockCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Costing review</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.missingCostCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[940px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead>Unit</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Stock</TableHead>
-                          <TableHead className="text-right">Unit cost</TableHead>
-                          <TableHead className="text-right">Value</TableHead>
-                          <TableHead className="text-right">Movements</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {inventoryValuationReport.rows.slice(0, 12).map((product) => (
-                          <TableRow key={product.id}>
-                            <TableCell>
-                              <div className="font-medium">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {product.sku || "No SKU"}
-                              </div>
-                            </TableCell>
-                            <TableCell>{product.unit}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  product.isNegativeStock || product.isMissingCost
-                                    ? "warning"
-                                    : product.isLowStock
-                                      ? "info"
-                                      : product.isActive
-                                        ? "success"
-                                        : "neutral"
-                                }
-                                dot
-                              >
-                                {product.isNegativeStock
-                                  ? "Negative stock"
-                                  : product.isMissingCost
-                                    ? "Missing cost"
-                                    : product.isLowStock
-                                      ? "Low stock"
-                                      : product.isActive
-                                        ? "Valued"
-                                        : "Inactive"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {product.currentStock.toLocaleString(locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(product.unitCost, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(product.stockValueAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {product.movementCount}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No inventory products found yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
@@ -5569,6 +7349,377 @@ export default function Reports() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
+                  <CardTitle>Inventory valuation</CardTitle>
+                  <CardDescription>
+                    Stock quantity, cost value, reorder risk, and costing exceptions.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/inventory">Open inventory</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <Skeleton className="h-80" />
+              ) : inventoryValuationReport.rows.length ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Active products</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.activeProductCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Stock value</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(inventoryValuationReport.totalStockValueAed, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Low stock</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.lowStockCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Costing review</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryValuationReport.missingCostCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[940px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Unit</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Stock</TableHead>
+                          <TableHead className="text-right">Unit cost</TableHead>
+                          <TableHead className="text-right">Value</TableHead>
+                          <TableHead className="text-right">Movements</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {inventoryValuationReport.rows.slice(0, 12).map((product) => (
+                          <TableRow key={product.id}>
+                            <TableCell>
+                              <div className="font-medium">{product.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {product.sku || "No SKU"}
+                              </div>
+                            </TableCell>
+                            <TableCell>{product.unit}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  product.isNegativeStock || product.isMissingCost
+                                    ? "warning"
+                                    : product.isLowStock
+                                      ? "info"
+                                      : product.isActive
+                                        ? "success"
+                                        : "neutral"
+                                }
+                                dot
+                              >
+                                {product.isNegativeStock
+                                  ? "Negative stock"
+                                  : product.isMissingCost
+                                    ? "Missing cost"
+                                    : product.isLowStock
+                                      ? "Low stock"
+                                      : product.isActive
+                                        ? "Valued"
+                                        : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {product.currentStock.toLocaleString(locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(product.unitCost, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(product.stockValueAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {product.movementCount}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No inventory products found yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Inventory movement</CardTitle>
+                  <CardDescription>
+                    Stock receipts, sales, returns, and adjustments for the selected period.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/inventory">Open movements</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <Skeleton className="h-80" />
+              ) : inventoryMovementReport.movementCount ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Movements</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryMovementReport.movementCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Inbound units</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Outbound units</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Movement value</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(
+                          inventoryMovementReport.totalMovementValueAed,
+                          "AED",
+                          locale
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
+                    <div className="rounded-md border p-4">
+                      <div className="mb-3">
+                        <div className="font-medium">Movement type mix</div>
+                        <div className="text-xs text-muted-foreground">
+                          Quantity and value by movement type.
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {inventoryMovementReport.typeRows.map((row) => (
+                          <div
+                            key={row.type}
+                            className="flex items-center justify-between gap-4 text-sm"
+                          >
+                            <div>
+                              <Badge variant={inventoryMovementVariant(row.type)} dot>
+                                {row.type}
+                              </Badge>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {row.count} movements / {row.quantity.toLocaleString(locale)} units
+                              </div>
+                            </div>
+                            <div className="text-right font-mono">
+                              {formatCurrency(row.valueAed, "AED", locale)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[920px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead className="text-right">Quantity</TableHead>
+                            <TableHead className="text-right">Unit cost</TableHead>
+                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead>Reference</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {inventoryMovementReport.rows.slice(0, 12).map((movement) => (
+                            <TableRow key={movement.id}>
+                              <TableCell className="whitespace-nowrap text-muted-foreground">
+                                {formatReportDate(movement.createdAt)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{movement.productName}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {movement.sku || movement.unit || "No SKU"}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={inventoryMovementVariant(movement.type)} dot>
+                                  {movement.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {movement.type === "sale" ? "-" : "+"}
+                                {Math.abs(movement.quantity).toLocaleString(locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {movement.unitCost
+                                  ? formatCurrency(movement.unitCost, "AED", locale)
+                                  : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(movement.valueAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {movement.reference || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No inventory movements found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Depreciation schedule</CardTitle>
+                  <CardDescription>
+                    Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")} from
+                    the fixed asset register.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/fixed-assets">Open fixed assets</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {balancesLoading ? (
+                <Skeleton className="h-80" />
+              ) : depreciationScheduleReport.rows.length ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Period depreciation</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(
+                          depreciationScheduleReport.periodDepreciationAed,
+                          "AED",
+                          locale
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Annual run-rate</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(
+                          depreciationScheduleReport.annualDepreciationAed,
+                          "AED",
+                          locale
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Ready to post</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {depreciationScheduleReport.readyToPostCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Setup review</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {depreciationScheduleReport.reviewCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[980px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Asset</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead className="text-right">Remaining</TableHead>
+                          <TableHead className="text-right">Monthly depreciation</TableHead>
+                          <TableHead className="text-right">Projected NBV</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {depreciationScheduleReport.rows.slice(0, 12).map((row) => (
+                          <TableRow key={row.assetId}>
+                            <TableCell>
+                              <div className="font-medium">{row.assetName}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {row.assetNumber || row.category}
+                              </div>
+                            </TableCell>
+                            <TableCell className="capitalize">
+                              {row.method.replace(/_/g, " ")}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.remainingDepreciable, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.monthlyDepreciation, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.projectedNetBookValue, "AED", locale)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={depreciationStatusVariant(row.status)} dot>
+                                {row.statusLabel}
+                              </Badge>
+                              {row.status !== "ready" && (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.reviewReason}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No active fixed assets available for depreciation.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
                   <CardTitle>Fixed asset register</CardTitle>
                   <CardDescription>
                     Asset cost, accumulated depreciation, net book value, and capitalization review.
@@ -5918,6 +8069,135 @@ export default function Reports() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
+                  <CardTitle>Expense claims</CardTitle>
+                  <CardDescription>
+                    Claim status, approval routing, and reimbursement queue.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/expense-claims">Open claims</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {expensesLoading ? (
+                <Skeleton className="h-80" />
+              ) : expenseClaimReport.claimCount ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Claims</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {expenseClaimReport.claimCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Claim value</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Needs approval</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {expenseClaimReport.submittedCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-4">
+                      <div className="text-xs text-muted-foreground">Approved unpaid</div>
+                      <div className="font-mono text-2xl font-semibold">
+                        {expenseClaimReport.approvedUnpaidCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+                    <div className="rounded-md border p-4">
+                      <div className="mb-3">
+                        <div className="font-medium">Claim status mix</div>
+                        <div className="text-xs text-muted-foreground">
+                          Current date-range claims by workflow status.
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {expenseClaimReport.statusRows.map((row) => (
+                          <div
+                            key={row.status}
+                            className="flex items-center justify-between gap-4 text-sm"
+                          >
+                            <div>
+                              <Badge variant={expenseClaimStatusVariant(row.status)} dot>
+                                {row.status}
+                              </Badge>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {row.count} claims
+                              </div>
+                            </div>
+                            <div className="text-right font-mono">
+                              {formatCurrency(row.totalAmount, "AED", locale)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[880px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Claim</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created</TableHead>
+                            <TableHead>Submitted</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expenseClaimReport.claims.slice(0, 12).map((claim) => (
+                            <TableRow key={claim.id}>
+                              <TableCell>
+                                <div className="font-medium">{claim.title}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {claim.claim_number}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={expenseClaimStatusVariant(claim.status)} dot>
+                                  {claim.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(claim.created_at)}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(claim.submitted_at)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(
+                                  expenseClaimAmount(claim),
+                                  claim.currency || "AED",
+                                  locale
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No expense claims found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
                   <CardTitle>Posting automation</CardTitle>
                   <CardDescription>
                     Receipts ready for review, posting, and autopilot follow-up.
@@ -5929,7 +8209,7 @@ export default function Reports() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">Captured receipts</div>
                   <div className="font-mono text-2xl font-semibold">
@@ -5946,6 +8226,12 @@ export default function Reports() {
                   <div className="text-xs text-muted-foreground">Needs posting</div>
                   <div className="font-mono text-2xl font-semibold">
                     {expenseReport.unpostedReceipts}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Claims review</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {expenseClaimReport.reviewCount}
                   </div>
                 </div>
               </div>
@@ -6028,6 +8314,229 @@ export default function Reports() {
                   No receipts found for this period.
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payroll" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {payrollLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {formatCurrency(payrollReport.totalNet, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Payroll runs</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {payrollLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">{payrollReport.runCount}</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Needs approval</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {payrollLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {payrollReport.approvalQueueCount}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">Needs SIF</CardTitle>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {payrollLoading ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <div className="font-mono text-2xl font-bold">
+                    {payrollReport.wpsMissingCount}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Payroll Summary</CardTitle>
+                  <CardDescription>
+                    Pay-period totals, approval state, and WPS/SIF readiness.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/payroll">Open payroll</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {payrollLoading ? (
+                <Skeleton className="h-80" />
+              ) : payrollReport.runCount ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+                    <div className="rounded-md border p-4">
+                      <div className="mb-3">
+                        <div className="font-medium">Payroll status mix</div>
+                        <div className="text-xs text-muted-foreground">
+                          Current date-range payroll by workflow status.
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {payrollReport.statusRows.map((row) => (
+                          <div
+                            key={row.status}
+                            className="flex items-center justify-between gap-4 text-sm"
+                          >
+                            <div>
+                              <Badge variant={payrollStatusVariant(row.status)} dot>
+                                {row.status}
+                              </Badge>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {row.count} runs / {row.employeeCount} employees
+                              </div>
+                            </div>
+                            <div className="text-right font-mono">
+                              {formatCurrency(row.totalNet, "AED", locale)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[920px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Period</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Employees</TableHead>
+                            <TableHead className="text-right">Basic</TableHead>
+                            <TableHead className="text-right">Allowances</TableHead>
+                            <TableHead className="text-right">Deductions</TableHead>
+                            <TableHead className="text-right">Net</TableHead>
+                            <TableHead>SIF</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {payrollReport.runs.slice(0, 12).map((run) => (
+                            <TableRow key={run.id}>
+                              <TableCell className="font-medium">
+                                {payrollPeriodLabel(run)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={payrollStatusVariant(run.status)} dot>
+                                  {run.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {run.employee_count}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(payrollAmount(run.total_basic), "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(payrollAmount(run.total_allowances), "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(payrollAmount(run.total_deductions), "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(payrollAmount(run.total_net), "AED", locale)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={run.sif_file_content ? "success" : "warning"} dot>
+                                  {run.sif_file_content ? "Generated" : "Needed"}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  No payroll runs found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>WPS / SIF readiness</CardTitle>
+              <CardDescription>
+                Generated SIF files and approved payroll runs ready for UAE WPS processing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">SIF generated</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {payrollReport.sifGeneratedCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">WPS ready</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {payrollReport.wpsReadyCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Approved runs</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {payrollReport.approvedCount}
+                  </div>
+                </div>
+                <div className="rounded-md border p-4">
+                  <div className="text-xs text-muted-foreground">Latest period</div>
+                  <div className="font-mono text-2xl font-semibold">
+                    {payrollPeriodLabel(payrollReport.latestRun)}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatReportDate(payrollReport.latestRun?.approved_at)}
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -6595,6 +9104,280 @@ export default function Reports() {
                 <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                   No month-end close checks found for this period.
                 </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Audit Trail</CardTitle>
+                  <CardDescription>{auditTrailPeriodLabel}</CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/history">Open history</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {auditTrailLoading ? (
+                <Skeleton className="h-80" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Events</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {auditTrailReport.logCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">High risk</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {auditTrailReport.highRiskCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Posting actions</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {auditTrailReport.postingActionCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Users</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {auditTrailReport.userCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium">Activity by action</div>
+                      {auditTrailReport.actionRows.slice(0, 6).length ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Action</TableHead>
+                              <TableHead className="text-right">Events</TableHead>
+                              <TableHead>Latest</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {auditTrailReport.actionRows.slice(0, 6).map((row) => (
+                              <TableRow key={row.key}>
+                                <TableCell className="capitalize">{row.label}</TableCell>
+                                <TableCell className="text-right font-mono">{row.count}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {formatReportDate(row.latestAt)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                          No activity actions found for this period.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium">Activity by record type</div>
+                      {auditTrailReport.entityRows.slice(0, 6).length ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Record type</TableHead>
+                              <TableHead className="text-right">Events</TableHead>
+                              <TableHead>Latest</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {auditTrailReport.entityRows.slice(0, 6).map((row) => (
+                              <TableRow key={row.key}>
+                                <TableCell className="capitalize">{row.label}</TableCell>
+                                <TableCell className="text-right font-mono">{row.count}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {formatReportDate(row.latestAt)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                          No audited record types found for this period.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {auditTrailReport.rows.length ? (
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[920px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Action</TableHead>
+                            <TableHead>Record</TableHead>
+                            <TableHead>Risk</TableHead>
+                            <TableHead>Description</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {auditTrailReport.rows.slice(0, 20).map((row) => (
+                            <TableRow key={row.id}>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(row.createdAt)}
+                              </TableCell>
+                              <TableCell className="capitalize">{row.actionLabel}</TableCell>
+                              <TableCell>
+                                <div className="capitalize">{row.entityLabel}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {row.entityId || "-"}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={activityLogRiskVariant(row.riskLevel)} dot>
+                                  {row.riskLevel}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[360px] truncate">
+                                {row.description}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No activity logs found for this period.
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Consolidated statements</CardTitle>
+                  <CardDescription>
+                    {consolidatedStatementsReport.periodLabel}. Multi-entity roll-up; no
+                    eliminations applied.
+                  </CardDescription>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/financial-statements">Open statements</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {consolidatedStatementsLoading ? (
+                <Skeleton className="h-80" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Entities</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {consolidatedStatementsReport.loadedEntityCount}/
+                        {consolidatedStatementsReport.entityCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Revenue</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {formatCurrency(consolidatedStatementsReport.totalRevenue, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Net profit</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Assets</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {formatCurrency(consolidatedStatementsReport.totalAssets, "AED", locale)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Review items</div>
+                      <div className="font-mono text-xl font-semibold">
+                        {consolidatedStatementsReport.reviewCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={consolidatedStatementsReport.reviewCount > 0 ? "warning" : "success"}
+                      dot
+                    >
+                      {consolidatedStatementsReport.statusLabel}
+                    </Badge>
+                    <Badge variant="outline">
+                      {consolidatedStatementsReport.consolidationBasis}
+                    </Badge>
+                  </div>
+
+                  {consolidatedStatementsReport.rows.length ? (
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[980px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead className="text-right">Revenue</TableHead>
+                            <TableHead className="text-right">Net profit</TableHead>
+                            <TableHead className="text-right">Assets</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Review</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {consolidatedStatementsReport.rows.map((row) => (
+                            <TableRow key={row.companyId}>
+                              <TableCell>
+                                <div className="font-medium">{row.companyName}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {row.baseCurrency}
+                                </div>
+                              </TableCell>
+                              <TableCell className="capitalize">{row.companyType}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.revenue, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.netProfit, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.assets, "AED", locale)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={consolidatedStatusVariant(row.status)} dot>
+                                  {row.statusLabel}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[360px] text-sm text-muted-foreground">
+                                {row.reviewReason || "Ready for accountant pack."}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No accessible companies found for consolidation.
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

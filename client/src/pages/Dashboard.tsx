@@ -18,11 +18,12 @@ import {
   reportSectionHref,
   reportsHref,
   reportWorkspaceHref,
+  setPreferredReportPersona,
+  type ReportPersona,
 } from "@/lib/reportCatalog";
 import {
   TrendingUp,
   TrendingDown,
-  AlertCircle,
   FileText,
   Plus,
   Receipt,
@@ -33,7 +34,6 @@ import {
   CheckCircle2,
   BarChart3,
   ArrowUpRight,
-  Wallet,
   Coins,
 } from "lucide-react";
 import {
@@ -46,8 +46,6 @@ import {
   Tooltip,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
 } from "recharts";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
@@ -431,13 +429,32 @@ function SectionHeader({
 function CustomerDashboard() {
   const { t, locale } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
-  const preferredReportPersona = useMemo(() => getPreferredReportPersona() ?? "owner", []);
+  const [preferredReportPersona, setDashboardReportPersona] = useState<ReportPersona>(
+    () => getPreferredReportPersona() ?? "owner"
+  );
   const preferredReportWorkspace = useMemo(() => {
     return (
       reportPersonaWorkspaces.find((workspace) => workspace.persona === preferredReportPersona) ??
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
+  const dashboardReportWorkspaces = useMemo(() => {
+    return reportPersonaWorkspaces.map((workspace) => {
+      const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
+      const readyReports = reports.filter((report) => report.status !== "planned").length;
+      return {
+        ...workspace,
+        readyReports,
+        totalReports: reports.length,
+        readinessPercent: reports.length ? Math.round((readyReports / reports.length) * 100) : 0,
+        isSelected: workspace.persona === preferredReportPersona,
+      };
+    });
+  }, [preferredReportPersona]);
+  const selectDashboardReportPersona = (persona: ReportPersona) => {
+    setPreferredReportPersona(persona);
+    setDashboardReportPersona(persona);
+  };
   const preferredWorkspaceCatalogReports = useMemo(() => {
     return reportCatalog.filter((report) =>
       report.personas.includes(preferredReportWorkspace.persona)
@@ -944,6 +961,54 @@ function CustomerDashboard() {
           <CardContent className="p-0">
             <div
               className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-role-switcher"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Reporting mode
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    Switch the daily report workspace for owner, freelancer, or accountant
+                    workflows.
+                  </p>
+                </div>
+                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-3xl">
+                  {dashboardReportWorkspaces.map((workspace) => (
+                    <button
+                      key={workspace.persona}
+                      type="button"
+                      onClick={() => selectDashboardReportPersona(workspace.persona)}
+                      className={`rounded-md border p-3 text-left transition-colors ${
+                        workspace.isSelected
+                          ? "border-accent bg-accent/5"
+                          : "border-border/70 hover:border-accent hover:bg-accent/5"
+                      }`}
+                      data-testid={`dashboard-report-mode-${workspace.persona}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            {workspace.navLabel}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {workspace.readyReports}/{workspace.totalReports} reports ready
+                          </div>
+                        </div>
+                        <Badge variant={workspace.isSelected ? "info" : "outline"}>
+                          {workspace.readinessPercent}%
+                        </Badge>
+                      </div>
+                      <div className="mt-2 text-[11px] text-muted-foreground">
+                        {workspace.automations.length} automation lanes
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div
+              className="border-b border-border/60 p-5"
               data-testid="dashboard-report-automation-health"
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -997,11 +1062,25 @@ function CustomerDashboard() {
               </div>
 
               <div className="mt-4">
-                <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
-                  <Button variant="outline" size="sm">
-                    Review automation health <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={reportSectionHref(preferredReportWorkspace, "automation-command-center")}
+                  >
+                    <Button variant="outline" size="sm">
+                      Open automation center <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open automation rules <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
 
@@ -1168,6 +1247,11 @@ function CustomerDashboard() {
                 <Link href={reportSectionHref(preferredReportWorkspace, "pack-readiness")}>
                   <Button variant="outline" size="sm">
                     Review pack readiness
+                  </Button>
+                </Link>
+                <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open automation rules <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
                 <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>

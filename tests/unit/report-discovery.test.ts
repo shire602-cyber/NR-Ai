@@ -33,8 +33,11 @@ describe("report discoverability", () => {
   const reportsSource = read("client/src/pages/Reports.tsx");
   const exportSource = read("client/src/lib/export.ts");
   const reportsRouteSource = read("server/routes/reports.routes.ts");
+  const expenseClaimsRouteSource = read("server/routes/expense-claims.routes.ts");
   const fixedAssetsRouteSource = read("server/routes/fixed-assets.routes.ts");
   const inventoryRouteSource = read("server/routes/inventory.routes.ts");
+  const payrollRouteSource = read("server/routes/payroll.routes.ts");
+  const portalRouteSource = read("server/routes/portal.routes.ts");
 
   const expectedLiveReports = [
     "Profit & Loss",
@@ -53,19 +56,26 @@ describe("report discoverability", () => {
     "Customer Balance Summary",
     "Vendor Balance Summary",
     "Inventory Valuation",
+    "Inventory Movement",
     "Fixed Asset Register",
+    "Depreciation Schedule",
+    "Payroll Summary",
+    "WPS / SIF Summary",
     "Invoice Status",
     "Month-End Close Status",
+    "Audit Trail",
+    "Consolidated Statements",
     "Budget vs Actual",
     "Cash Flow Forecast",
     "Revenue by Customer",
     "Sales by Product/Service",
     "Expenses by Vendor",
     "Expenses by Category",
+    "Expense Claims",
   ];
 
-  it("keeps the Reports catalog at 25 live high-level reports", () => {
-    expect(liveReportCatalog).toHaveLength(25);
+  it("keeps the Reports catalog at 32 live high-level reports", () => {
+    expect(liveReportCatalog).toHaveLength(32);
 
     for (const label of expectedLiveReports) {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
@@ -100,6 +110,7 @@ describe("report discoverability", () => {
       "/reports?tab=sales",
       "/reports?tab=balances",
       "/reports?tab=expenses",
+      "/reports?tab=payroll",
       "/reports?tab=ledger",
       "/reports?tab=close",
       "/reports?tab=planning",
@@ -118,8 +129,14 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-workspace-${workspace.persona}`");
     expect(commandSource).toContain("href: reportWorkspaceHref(workspace)");
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
+    expect(dashboardSource).toContain("setPreferredReportPersona(persona)");
+    expect(dashboardSource).toContain("selectDashboardReportPersona");
     expect(dashboardSource).toContain("preferredReportWorkspace");
+    expect(dashboardSource).toContain("dashboardReportWorkspaces");
     expect(dashboardSource).toContain("reportPersonaWorkspaces.find");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-role-switcher"');
+    expect(dashboardSource).toContain("dashboard-report-mode-${workspace.persona}");
+    expect(dashboardSource).toContain("Reporting mode");
     expect(dashboardSource).toContain("preferredWorkspaceCatalogReports");
     expect(dashboardSource).toContain("preferredWorkspaceReports");
     expect(dashboardSource).toContain("preferredReportPackReadiness");
@@ -164,8 +181,16 @@ describe("report discoverability", () => {
       'reportSectionHref(preferredReportWorkspace, "pack-readiness")'
     );
     expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "automation-command-center")'
+    );
+    expect(dashboardSource).toContain(
+      'reportSectionHref(preferredReportWorkspace, "automation-rules")'
+    );
+    expect(dashboardSource).toContain(
       'reportSectionHref(preferredReportWorkspace, "pack-automation")'
     );
+    expect(dashboardSource).toContain("Open automation center");
+    expect(dashboardSource).toContain("Open automation rules");
     expect(dashboardSource).toContain("reportHref(report) ?? reportWorkspaceHref");
     expect(dashboardSource).toContain("reportAutomationPlaybookHref(");
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.cadence");
@@ -225,12 +250,18 @@ describe("report discoverability", () => {
   it("exposes persona pack workflows through global search", () => {
     expect(commandSource).toContain('reportSectionHref(workspace, "recommendations")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-readiness")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "automation-rules")');
+    expect(commandSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(commandSource).toContain('reportSectionHref(workspace, "pack-automation")');
     expect(commandSource).toContain("id: `report-recommendations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-readiness-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-automation-rules-${workspace.persona}`");
+    expect(commandSource).toContain("id: `report-automation-command-center-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
     expect(commandSource).toContain("Recommended reports - ${workspace.title}");
     expect(commandSource).toContain("Report pack readiness - ${workspace.title}");
+    expect(commandSource).toContain("Report automation rules - ${workspace.title}");
+    expect(commandSource).toContain("Automation command center - ${workspace.title}");
     expect(commandSource).toContain("Report pack automation - ${workspace.title}");
 
     for (const workspace of reportPersonaWorkspaces) {
@@ -240,6 +271,12 @@ describe("report discoverability", () => {
       expect(reportSectionHref(workspace, "pack-readiness")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-readiness-title`
       );
+      expect(reportSectionHref(workspace, "automation-rules")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-automation-rules-title`
+      );
+      expect(reportSectionHref(workspace, "automation-command-center")).toBe(
+        `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#automation-command-center-title`
+      );
       expect(reportSectionHref(workspace, "pack-automation")).toBe(
         `/reports?tab=${workspace.primaryTab}&persona=${workspace.persona}#report-pack-automation-title`
       );
@@ -248,6 +285,12 @@ describe("report discoverability", () => {
 
   it("keeps persona automation playbooks tied to real reports and workflows", () => {
     expect(reportsSource).toContain("Automation playbooks");
+    expect(reportsSource).toContain("Report automation rules");
+    expect(reportsSource).toContain("reportAutomationRules");
+    expect(reportsSource).toContain("visibleReportAutomationRules");
+    expect(reportsSource).toContain("automation-rule-${rule.id}");
+    expect(reportsSource).toContain("Review before auto-send");
+    expect(reportsSource).toContain("Ready to auto-send");
     expect(reportsSource).toContain("workspace.automations.length");
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
     expect(commandSource).toContain("reportPersonaWorkspaces.flatMap");
@@ -288,11 +331,16 @@ describe("report discoverability", () => {
     const accountantTaxPlaybook = reportPersonaWorkspaces
       .find((workspace) => workspace.persona === "accountant")
       ?.automations.find((playbook) => playbook.id === "accountant-tax-workpapers");
+    const ownerSpendPlaybook = reportPersonaWorkspaces
+      .find((workspace) => workspace.persona === "owner")
+      ?.automations.find((playbook) => playbook.id === "owner-spend-guardrails");
 
     expect(ownerTaxPlaybook?.reportIds).toContain("corporate-tax-estimate");
     expect(ownerTaxPlaybook?.tab).toBe("tax");
     expect(accountantTaxPlaybook?.reportIds).toContain("corporate-tax-estimate");
+    expect(accountantTaxPlaybook?.reportIds).toContain("expense-claims");
     expect(accountantTaxPlaybook?.tab).toBe("tax");
+    expect(ownerSpendPlaybook?.reportIds).toContain("expense-claims");
     const accountantClosePlaybook = reportPersonaWorkspaces
       .find((workspace) => workspace.persona === "accountant")
       ?.automations.find((playbook) => playbook.id === "accountant-close-review");
@@ -306,9 +354,15 @@ describe("report discoverability", () => {
 
     expect(accountantClosePlaybook?.reportIds).toContain("month-end-close-status");
     expect(accountantClosePlaybook?.reportIds).toContain("inventory-valuation");
+    expect(accountantClosePlaybook?.reportIds).toContain("inventory-movement");
     expect(accountantClosePlaybook?.reportIds).toContain("fixed-asset-register");
+    expect(accountantClosePlaybook?.reportIds).toContain("payroll-summary");
+    expect(accountantClosePlaybook?.reportIds).toContain("wps-sif-summary");
     expect(accountantClosePlaybook?.tab).toBe("close");
     expect(ownerCollectionsPlaybook?.reportIds).toContain("sales-product-service");
+    expect(ownerSpendPlaybook?.reportIds).toContain("inventory-movement");
+    expect(ownerSpendPlaybook?.reportIds).toContain("payroll-summary");
+    expect(ownerSpendPlaybook?.reportIds).toContain("wps-sif-summary");
     expect(accountantAdvisoryPlaybook?.reportIds).toContain("sales-product-service");
   });
 
@@ -320,6 +374,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Pack Summary");
     expect(reportsSource).toContain("Recommended Actions");
     expect(reportsSource).toContain("Report Roadmap");
+    expect(reportsSource).toContain("Automation Command Center");
     expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Automation Health Trend");
     expect(reportsSource).toContain("Delivery Checklist");
@@ -333,6 +388,14 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("packComparisonRows");
     expect(reportsSource).toContain("packRecommendations");
     expect(reportsSource).toContain("Recommended actions");
+    expect(reportsSource).toContain("Auto-send coverage");
+    expect(reportsSource).toContain("Ready auto-send rules");
+    expect(reportsSource).toContain("Rules needing review");
+    expect(reportsSource).toContain("Setup-needed rules");
+    expect(reportsSource).toContain("packReadyAutomationRules");
+    expect(reportsSource).toContain("packAutoSendCoveragePercent");
+    expect(reportsSource).toContain("packRuleReportBundleCount");
+    expect(reportsSource).toContain("Report bundle coverage");
     expect(reportsSource).toContain("reportPackDeliveryReadiness");
     expect(reportsSource).toContain("reportRoadmap");
     expect(reportsSource).toContain("visibleReportRoadmap");
@@ -380,6 +443,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Automation health review signals");
     expect(reportsSource).toContain("Automation health trend");
     expect(reportsSource).toContain("Health trend");
+    expect(reportsSource).toContain("Rule Status");
+    expect(reportsSource).toContain("Open Work Items");
+    expect(reportsSource).toContain("Comparison Metrics");
+    expect(reportsSource).toContain("packAutomationRules");
     expect(reportsSource).toContain("reportPackReviewCount");
     expect(reportsSource).toContain("pack-readiness-${workspace.persona}");
     expect(reportsSource).toContain("Delivery checks");
@@ -422,6 +489,54 @@ describe("report discoverability", () => {
         reportsSource.indexOf('<TabsContent value="balances"')
       )
     ).toContain("Sales by product/service");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="tax"'),
+        reportsSource.indexOf('<TabsContent value="sales"')
+      )
+    ).not.toContain("Audit Trail");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="tax"'),
+        reportsSource.indexOf('<TabsContent value="sales"')
+      )
+    ).not.toContain("Expense claims");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="tax"'),
+        reportsSource.indexOf('<TabsContent value="sales"')
+      )
+    ).not.toContain("Inventory valuation");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="balances"'),
+        reportsSource.indexOf('<TabsContent value="expenses"')
+      )
+    ).toContain("Inventory valuation");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="balances"'),
+        reportsSource.indexOf('<TabsContent value="expenses"')
+      )
+    ).toContain("Inventory movement");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="balances"'),
+        reportsSource.indexOf('<TabsContent value="expenses"')
+      )
+    ).toContain("Depreciation schedule");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="expenses"'),
+        reportsSource.indexOf('<TabsContent value="payroll"')
+      )
+    ).toContain("Expense claims");
+    expect(
+      reportsSource.slice(
+        reportsSource.indexOf('<TabsContent value="close"'),
+        reportsSource.indexOf('<TabsContent value="planning"')
+      )
+    ).toContain("Audit Trail");
     expect(exportSource).toContain("Sales by Product Service");
     expect(reportsSource).toContain("sales-product-service");
     expect(reportsRouteSource).toContain("/api/companies/:id/reports/sales-product-service");
@@ -430,14 +545,31 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Month-End Close Status");
     expect(reportsSource).toContain("/month-end/checklist");
     expect(reportsSource).toContain('data-testid="tab-month-end-close-status"');
+    expect(reportsSource).toContain("connectedReportCenters");
+    expect(reportsSource).toContain("Connected report centers");
+    expect(reportsSource).toContain("Open report center");
+    expect(catalogSource).toContain("/advanced-reports?tab=cashflow");
+    expect(catalogSource).toContain("/advanced-reports?tab=aging");
+    expect(catalogSource).toContain("/advanced-reports?tab=comparison");
     expect(exportSource).toContain("prepareMonthEndCloseStatusForExport");
     expect(exportSource).toContain("Month-End Checklist");
+    expect(reportsSource).toContain("auditTrailReport");
+    expect(reportsSource).toContain("Audit Trail");
+    expect(reportsSource).toContain("/activity-logs?limit=200");
+    expect(reportsSource).toContain("prepareAuditTrailForExport");
+    expect(exportSource).toContain("Audit Trail Summary");
+    expect(exportSource).toContain("Audit Trail Detail");
+    expect(portalRouteSource).toContain("/api/companies/:companyId/activity-logs");
     expect(reportsSource).toContain("fixedAssetRegisterReport");
     expect(reportsSource).toContain("inventoryValuationReport");
     expect(reportsSource).toContain("Inventory valuation");
+    expect(reportsSource).toContain("inventoryMovementReport");
+    expect(reportsSource).toContain("Inventory movement");
     expect(reportsSource).toContain("/inventory-movements");
     expect(exportSource).toContain("Inventory Valuation");
     expect(exportSource).toContain("Inventory Summary");
+    expect(exportSource).toContain("Inventory Movement Summary");
+    expect(exportSource).toContain("Inventory Movement Detail");
     expect(inventoryRouteSource).toContain("/api/companies/:companyId/products");
     expect(inventoryRouteSource).toContain("/api/companies/:companyId/inventory-movements");
     expect(reportsSource).toContain("Fixed asset register");
@@ -445,8 +577,38 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("/fixed-assets/summary");
     expect(exportSource).toContain("Fixed Asset Register");
     expect(exportSource).toContain("Fixed Assets by Category");
+    expect(reportsSource).toContain("depreciationScheduleReport");
+    expect(reportsSource).toContain("Depreciation schedule");
+    expect(reportsSource).toContain("buildDepreciationScheduleReport");
+    expect(exportSource).toContain("Depreciation Schedule Summary");
+    expect(exportSource).toContain("Depreciation Schedule");
     expect(fixedAssetsRouteSource).toContain("/api/companies/:companyId/fixed-assets");
     expect(fixedAssetsRouteSource).toContain("/api/companies/:companyId/fixed-assets/summary");
+    expect(reportsSource).toContain("expenseClaimReport");
+    expect(reportsSource).toContain("Expense claims");
+    expect(reportsSource).toContain("/expense-claims/summary");
+    expect(reportsSource).toContain("expense-claims");
+    expect(exportSource).toContain("Expense Claims Summary");
+    expect(exportSource).toContain("Expense Claims Detail");
+    expect(expenseClaimsRouteSource).toContain("/api/companies/:companyId/expense-claims");
+    expect(expenseClaimsRouteSource).toContain("/api/companies/:companyId/expense-claims/summary");
+    expect(reportsSource).toContain("payrollReport");
+    expect(reportsSource).toContain("Payroll Summary");
+    expect(reportsSource).toContain("WPS / SIF readiness");
+    expect(reportsSource).toContain("preparePayrollReportsForExport");
+    expect(exportSource).toContain("Payroll Summary");
+    expect(exportSource).toContain("WPS SIF Summary");
+    expect(payrollRouteSource).toContain("/api/companies/:companyId/payroll-runs");
+    expect(payrollRouteSource).toContain("/api/payroll-runs/:id/generate-sif");
+    expect(reportsSource).toContain("consolidatedStatementsReport");
+    expect(reportsSource).toContain("Consolidated statements");
+    expect(reportsSource).toContain("buildConsolidatedStatementsReport");
+    expect(reportsSource).toContain("accessibleReportCompanies");
+    expect(reportsSource).toContain("no eliminations applied");
+    expect(exportSource).toContain("prepareConsolidatedStatementsForExport");
+    expect(exportSource).toContain("Consolidated Summary");
+    expect(exportSource).toContain("Consolidated Entities");
+    expect(exportSource).toContain("Consolidation Review");
 
     for (const workspace of reportPersonaWorkspaces) {
       expect(
@@ -461,7 +623,7 @@ describe("report discoverability", () => {
     }
 
     const plannedReports = reportCatalog.filter((report) => report.status === "planned");
-    expect(plannedReports.length).toBeGreaterThan(0);
+    expect(plannedReports).toHaveLength(0);
 
     for (const report of plannedReports) {
       expect(report.roadmapPrerequisites?.dataSource).toBeTruthy();
@@ -543,6 +705,7 @@ describe("report discoverability", () => {
       "sales",
       "balances",
       "expenses",
+      "payroll",
       "ledger",
       "close",
       "planning",
@@ -553,6 +716,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain(': "pl"');
     expect(reportsSource).toContain('data-testid="tab-corporate-tax"');
     expect(reportsSource).toContain('data-testid="tab-month-end-close-status"');
+    expect(reportsSource).toContain('data-testid="tab-payroll-reports"');
     expect(reportsSource).toContain('data-testid="text-corporate-tax-payable"');
 
     for (const tab of reportTabs) {
@@ -570,6 +734,9 @@ describe("report discoverability", () => {
       "net-profit",
       "invoice-value",
       "expense-spend",
+      "payroll-cost",
+      "inventory-movement",
+      "consolidated-net-profit",
       "vat-due",
       "ledger-activity",
     ]) {
@@ -581,6 +748,9 @@ describe("report discoverability", () => {
       "Profitability",
       "Sales activity",
       "Cost pressure",
+      "Payroll movement",
+      "Stock movement",
+      "Multi-entity roll-up",
       "Tax cash flow",
       "Close activity",
     ]) {
@@ -625,11 +795,25 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Automation queues");
     expect(reportsSource).toContain("Live report signals routed to the next workflow.");
     expect(reportsSource).toContain("Automation coverage");
+    expect(reportsSource).toContain("Automation command center");
+    expect(reportsSource).toContain("Auto-send readiness across report rules");
+    expect(reportsSource).toContain("Auto-send readiness");
+    expect(reportsSource).toContain("reportAutomationCommandCenter");
+    expect(reportsSource).toContain("automation-command-center");
+    expect(reportsSource).toContain("automation-command-center-title");
+    expect(reportsSource).toContain("Top blockers");
+    expect(reportsSource).toContain("Pack delivery readiness");
+    expect(reportsSource).toContain("Ready auto-send");
+    expect(reportsSource).toContain("Packs in review");
     expect(reportsSource).toContain("automationCoverageSummary");
     expect(reportsSource).toContain("visibleAutomationCoverage");
     expect(reportsSource).toContain("Role coverage across live reports");
     expect(reportsSource).toContain("Signal coverage");
     expect(reportsSource).toContain("Pack automation");
+    expect(reportsSource).toContain("Report automation rules");
+    expect(reportsSource).toContain("Role-specific pack rules");
+    expect(reportsSource).toContain("reportAutomationRuleReviewCount");
+    expect(reportsSource).toContain("Rule signals");
     expect(reportsSource).toContain("automation-coverage-${workspace.persona}");
     expect(reportsSource).toContain("workflowReportCount");
     expect(reportsSource).toContain("comparisonTypeCount");
@@ -640,13 +824,19 @@ describe("report discoverability", () => {
       "collections",
       "bill-pay",
       "inventory-risk",
+      "inventory-movement-review",
       "receipt-posting",
+      "expense-claims-review",
+      "payroll-wps-review",
       "vat-readiness",
       "sales-mix",
       "corporate-tax",
       "fixed-asset-review",
+      "depreciation-posting",
       "close-review",
       "month-end-close",
+      "audit-trail-review",
+      "consolidated-statements-review",
       "planning-risk",
     ]) {
       expect(reportsSource).toContain(`id: "${queueId}"`);
@@ -657,8 +847,12 @@ describe("report discoverability", () => {
       'href: "/bill-pay?tab=summary"',
       'href: "/inventory"',
       'href: "/fixed-assets"',
+      'href: "/expense-claims"',
+      'href: "/payroll"',
+      'href: "/history"',
       'href: "/vat-filing"',
       'tab: "expenses"',
+      'tab: "payroll"',
       'tab: "tax"',
       'tab: "close"',
       'tab: "planning"',
@@ -683,6 +877,10 @@ describe("report discoverability", () => {
       'id: "net-profit"',
       'id: "invoice-value"',
       'id: "expense-spend"',
+      'id: "payroll-cost"',
+      'id: "inventory-movement"',
+      'id: "depreciation-estimate"',
+      'id: "consolidated-net-profit"',
       'id: "vat-due"',
       'id: "ledger-activity"',
     ]) {

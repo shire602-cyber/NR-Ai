@@ -164,6 +164,22 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         keywords: `${workspace.commandKeywords} readiness delivery checklist pack send review`,
       },
       {
+        id: `report-automation-rules-${workspace.persona}`,
+        label: `Report automation rules - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "automation-rules"),
+        keywords: `${workspace.commandKeywords} automation rules triggers cadence recipients reports auto send`,
+      },
+      {
+        id: `report-automation-command-center-${workspace.persona}`,
+        label: `Automation command center - ${workspace.title}`,
+        group: "Reports",
+        icon: reportWorkspaceIcons[workspace.icon],
+        href: reportSectionHref(workspace, "automation-command-center"),
+        keywords: `${workspace.commandKeywords} automation command center auto send coverage blockers pack readiness`,
+      },
+      {
         id: `report-pack-automation-${workspace.persona}`,
         label: `Report pack automation - ${workspace.title}`,
         group: "Reports",
