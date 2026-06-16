@@ -15,6 +15,10 @@ import {
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
+import {
+  buildReportCatalogDiscovery,
+  isReportCatalogPersona,
+} from "../services/report-catalog.service";
 
 // Cash/bank account predicate — see dashboard.routes.ts for rationale.
 function isCashOrBankAccount(a: {
@@ -33,6 +37,25 @@ function isCashOrBankAccount(a: {
  * Register advanced report routes (cash flow, aging, period comparison).
  */
 export function registerReportRoutes(app: Express) {
+  app.get(
+    "/api/reports/catalog",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const persona = req.query.persona;
+      if (persona !== undefined && !isReportCatalogPersona(persona)) {
+        return res
+          .status(400)
+          .json({ message: "persona must be owner, freelancer, or accountant" });
+      }
+
+      res.json(
+        buildReportCatalogDiscovery({
+          persona: isReportCatalogPersona(persona) ? persona : null,
+        })
+      );
+    })
+  );
+
   // =====================================
   // ADVANCED REPORTS
   // =====================================

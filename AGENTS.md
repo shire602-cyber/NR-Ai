@@ -116,6 +116,8 @@ Scope: this file applies to the whole repository.
   metadata, decision shortcut paths, automation starter paths, report trigger-rule paths, delivery
   subscription paths/settings controls, delivery previews/run history, comparison presets, report
   coverage maps, report pack templates/exports, or report deep-link behavior changes.
+- Use `npx vitest run tests/unit/report-catalog-routes.test.ts` after the authenticated report
+  catalog discovery API or persona catalog filtering changes.
 - Use `npx vitest run tests/unit/report-export-helpers.test.ts` after report workbook sheets,
   persona pack workbook sheets, or export-helper mapping changes.
 - Use `npx vitest run tests/unit/report-delivery-routes.test.ts` after report delivery

@@ -45,6 +45,7 @@ describe("report discoverability", () => {
   const reportsSource = read("client/src/pages/Reports.tsx");
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
+  const reportCatalogServiceSource = read("server/services/report-catalog.service.ts");
   const reportDeliveryServiceSource = read("server/services/report-delivery.service.ts");
   const reportDeliverySchedulerSource = read(
     "server/services/report-delivery-scheduler.service.ts"
@@ -1167,6 +1168,28 @@ describe("report discoverability", () => {
         expect(report.roadmapPriority?.impactByPersona[persona]).toMatch(/^(high|medium|low)$/);
       }
     }
+  });
+
+  it("serves the report catalog through an authenticated discovery endpoint", () => {
+    expect(routesSource).toContain("registerReportRoutes");
+    expect(reportsRouteSource).toContain('"/api/reports/catalog"');
+    expect(reportsRouteSource).toContain("buildReportCatalogDiscovery");
+    expect(reportsRouteSource).toContain("isReportCatalogPersona");
+    expect(reportsRouteSource).toContain("persona must be owner, freelancer, or accountant");
+    expect(reportCatalogServiceSource).toContain("buildReportCatalogDiscovery");
+    expect(reportCatalogServiceSource).toContain("reportCatalog.filter");
+    expect(reportCatalogServiceSource).toContain("liveReportCount");
+    expect(reportCatalogServiceSource).toContain("reportHref(report)");
+    expect(reportCatalogServiceSource).toContain("reportWorkspaceHref(workspace)");
+    expect(reportCatalogServiceSource).toContain(
+      'reportSectionHref(workspace, "automation-operations")'
+    );
+    expect(reportCatalogServiceSource).toContain("reportDecisionShortcutHref(shortcut)");
+    expect(reportCatalogServiceSource).toContain("reportAutomationStarterHref(starter)");
+    expect(reportCatalogServiceSource).toContain("reportAutomationTriggerRuleHref(rule)");
+    expect(reportCatalogServiceSource).toContain("reportDeliverySubscriptionHref(subscription)");
+    expect(reportCatalogServiceSource).toContain("reportPackTemplateHref(template)");
+    expect(reportCatalogServiceSource).toContain("reportComparisonPresetHref(preset)");
   });
 
   it("serves report delivery subscriptions through an authenticated queue endpoint", () => {
