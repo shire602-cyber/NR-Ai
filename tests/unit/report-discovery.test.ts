@@ -245,6 +245,17 @@ describe("report discoverability", () => {
   it("surfaces report-driven automation queues for next actions", () => {
     expect(reportsSource).toContain("Automation queues");
     expect(reportsSource).toContain("Live report signals routed to the next workflow.");
+    expect(reportsSource).toContain("Automation coverage");
+    expect(reportsSource).toContain("automationCoverageSummary");
+    expect(reportsSource).toContain("visibleAutomationCoverage");
+    expect(reportsSource).toContain("Role coverage across live reports");
+    expect(reportsSource).toContain("Signal coverage");
+    expect(reportsSource).toContain("Pack automation");
+    expect(reportsSource).toContain("automation-coverage-${workspace.persona}");
+    expect(reportsSource).toContain("workflowReportCount");
+    expect(reportsSource).toContain("comparisonTypeCount");
+    expect(reportsSource).toContain("automatedSignalCount");
+    expect(reportsSource).toContain("openWorkItemCount");
 
     for (const queueId of [
       "collections",

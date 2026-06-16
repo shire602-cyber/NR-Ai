@@ -1471,6 +1471,41 @@ export default function Reports() {
     (item) => item.openSignalCount > 0
   ).length;
 
+  const automationCoverageSummary = useMemo(() => {
+    return workspaceSummaries.map((workspace) => {
+      const liveReports = workspace.reports.filter((report) => report.status === "live");
+      const automatedSignals = Array.from(new Set(liveReports.map((report) => report.automation)));
+      const comparisonTypes = new Set(liveReports.map((report) => report.comparison));
+      const workflowReportCount = liveReports.filter((report) => reportHref(report)).length;
+      const queueSignals = automationQueue.filter((item) =>
+        matchesReportPersona(item.personas, workspace.persona)
+      );
+      const openSignals = queueSignals.filter((item) => item.count > 0);
+      const openWorkItemCount = queueSignals.reduce((sum, item) => sum + item.count, 0);
+      const amountAtRisk = queueSignals.reduce((sum, item) => sum + (item.amount ?? 0), 0);
+
+      return {
+        workspace,
+        liveReportCount: liveReports.length,
+        comparisonTypeCount: comparisonTypes.size,
+        automatedSignalCount: automatedSignals.length,
+        workflowReportCount,
+        playbookCount: workspace.automations.length,
+        openSignalCount: openSignals.length,
+        openWorkItemCount,
+        amountAtRisk,
+        topSignals: automatedSignals.slice(0, 4),
+        status: openSignals.length > 0 ? "Needs review" : "Ready",
+      };
+    });
+  }, [automationQueue, workspaceSummaries]);
+
+  const visibleAutomationCoverage = useMemo(() => {
+    return automationCoverageSummary.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [automationCoverageSummary, personaFilter]);
+
   const exportDateRangeSuffix =
     dateRange.from && dateRange.to
       ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -2051,6 +2086,136 @@ export default function Reports() {
                         {item.actionLabel}
                       </Button>
                     )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="automation-coverage-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="automation-coverage-title" className="text-xl font-semibold">
+              Automation coverage
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Role coverage across live reports, comparison lenses, workflow links, and pack
+              cadence. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleAutomationCoverage.length} role views
+          </Badge>
+        </div>
+
+        {automationLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            {visibleAutomationCoverage.map((item) => {
+              const workspace = item.workspace;
+              const WorkspaceIcon = workspace.icon;
+
+              return (
+                <Card
+                  key={workspace.persona}
+                  data-testid={`automation-coverage-${workspace.persona}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {workspace.title}
+                          </CardTitle>
+                          <CardDescription>{workspace.focus}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={item.openSignalCount > 0 ? "warning" : "success"} dot>
+                        {item.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Live reports</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {item.liveReportCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Automations</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {item.automatedSignalCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Comparisons</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {item.comparisonTypeCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Workflows</div>
+                        <div className="font-mono text-lg font-semibold">
+                          {item.workflowReportCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-medium uppercase text-muted-foreground">
+                          Open work
+                        </span>
+                        <span className="font-mono">
+                          {item.openWorkItemCount} items -{" "}
+                          {formatCurrency(item.amountAtRisk, "AED", locale)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Signal coverage
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {item.topSignals.map((signal) => (
+                          <Badge key={signal} variant="outline">
+                            {signal}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Pack cadence:</span>{" "}
+                        {workspace.packSchedule.cadence}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-foreground">Pack automation:</span>{" "}
+                        {workspace.packSchedule.automation}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(reportWorkspaceHref(workspace))}
+                      >
+                        Open workspace
+                      </Button>
+                      <Badge variant="outline">{item.playbookCount} playbooks</Badge>
+                    </div>
                   </CardContent>
                 </Card>
               );
