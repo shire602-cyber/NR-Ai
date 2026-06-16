@@ -37,6 +37,7 @@ describe("customer launch E2E surface", () => {
   it("refuses remote mutation unless explicitly approved and supports public-only mode", () => {
     expect(scriptSource).toContain("CUSTOMER_E2E_PUBLIC_ONLY");
     expect(scriptSource).toContain("CUSTOMER_E2E_ALLOW_REMOTE_MUTATION");
+    expect(scriptSource).toContain("CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP");
     expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL");
     expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_PASS");
     expect(scriptSource).toContain("function assertFullModeMayMutate()");
@@ -54,6 +55,7 @@ describe("customer launch E2E surface", () => {
     expect(scriptSource).toContain("async function writeRunArtifact(runState)");
     expect(scriptSource).toContain("async function cleanupCreatedCustomer(runState)");
     expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_DELETE_USER");
+    expect(scriptSource).toContain("without cleanup credentials");
     expect(scriptSource).toContain("/api/admin/clients/${runState.companyId}");
     expect(scriptSource).toContain("/api/admin/users/${runState.userId}");
     expect(scriptSource).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL/PASS not set");
@@ -86,6 +88,32 @@ describe("customer launch E2E surface", () => {
       "Refusing to run full customer E2E against a non-local BASE_URL"
     );
     expect(result.stderr).toContain("registers a customer and creates accounting records");
+  });
+
+  it("requires cleanup credentials for approved remote full-mode runs", () => {
+    const result = spawnSync(
+      process.execPath,
+      [join(repoRoot, "tests/e2e/customer-launch-crawl.mjs")],
+      {
+        env: {
+          ...process.env,
+          BASE_URL: "https://example.com",
+          CUSTOMER_E2E_PUBLIC_ONLY: "false",
+          CUSTOMER_E2E_ALLOW_REMOTE_MUTATION: "true",
+          CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP: "false",
+          CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL: "",
+          CUSTOMER_E2E_CLEANUP_ADMIN_PASS: "",
+        },
+        encoding: "utf8",
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "Refusing to run full customer E2E against a non-local BASE_URL without cleanup credentials"
+    );
+    expect(result.stderr).toContain("CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL");
+    expect(result.stderr).toContain("CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP=true");
   });
 
   it("crawls only public and SaaS customer routes as allowed routes", () => {

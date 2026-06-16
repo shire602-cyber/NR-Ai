@@ -12,6 +12,8 @@
  *   BASE_URL (default http://127.0.0.1:5000)
  *   CUSTOMER_E2E_PUBLIC_ONLY=true to run the read-only public launch crawl
  *   CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true to allow full mode against a non-local URL
+ *   CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP=true to permit a remote full run without cleanup
+ *     credentials only when the target is already disposable
  *   CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL / CUSTOMER_E2E_CLEANUP_ADMIN_PASS to soft-delete the
  *     created test company through existing admin APIs after full-mode checks
  *   CUSTOMER_E2E_CLEANUP_DELETE_USER=true to also delete the generated test user
@@ -27,6 +29,8 @@ import { chromium, request } from "playwright-core";
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
 const ALLOW_REMOTE_MUTATION = process.env.CUSTOMER_E2E_ALLOW_REMOTE_MUTATION === "true";
+const ALLOW_REMOTE_WITHOUT_CLEANUP =
+  process.env.CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP === "true";
 const CLEANUP_ADMIN_EMAIL = process.env.CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL;
 const CLEANUP_ADMIN_PASS = process.env.CUSTOMER_E2E_CLEANUP_ADMIN_PASS;
 const CLEANUP_DELETE_USER = process.env.CUSTOMER_E2E_CLEANUP_DELETE_USER === "true";
@@ -122,13 +126,24 @@ function isLocalBaseUrl() {
 }
 
 function assertFullModeMayMutate() {
-  if (PUBLIC_ONLY || isLocalBaseUrl() || ALLOW_REMOTE_MUTATION) return;
+  if (PUBLIC_ONLY || isLocalBaseUrl()) return;
+  if (!ALLOW_REMOTE_MUTATION) {
+    throw new Error(
+      [
+        "Refusing to run full customer E2E against a non-local BASE_URL.",
+        "This script registers a customer and creates accounting records.",
+        "Use CUSTOMER_E2E_PUBLIC_ONLY=true for a read-only public launch crawl,",
+        "or run against staging/local. Set CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true only for an approved disposable target.",
+      ].join(" ")
+    );
+  }
+  if (cleanupConfigured() || ALLOW_REMOTE_WITHOUT_CLEANUP) return;
   throw new Error(
     [
-      "Refusing to run full customer E2E against a non-local BASE_URL.",
+      "Refusing to run full customer E2E against a non-local BASE_URL without cleanup credentials.",
       "This script registers a customer and creates accounting records.",
-      "Use CUSTOMER_E2E_PUBLIC_ONLY=true for a read-only public launch crawl,",
-      "or run against staging/local. Set CUSTOMER_E2E_ALLOW_REMOTE_MUTATION=true only for an approved disposable target.",
+      "Set CUSTOMER_E2E_CLEANUP_ADMIN_EMAIL and CUSTOMER_E2E_CLEANUP_ADMIN_PASS so the generated company/user can be removed,",
+      "or set CUSTOMER_E2E_ALLOW_REMOTE_WITHOUT_CLEANUP=true only for an already-disposable target.",
     ].join(" ")
   );
 }
