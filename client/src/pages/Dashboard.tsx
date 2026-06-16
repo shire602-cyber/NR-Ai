@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,6 +7,7 @@ import { Badge, StatusBadge, type BadgeProps } from "@/components/ui/badge";
 import { ReportLaunchPicker } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
@@ -14,11 +15,13 @@ import {
   reportCatalogDiscoveryQueryKey,
   type ReportCatalogDiscovery,
 } from "@/lib/reportCatalogApi";
+import { apiRequest } from "@/lib/queryClient";
 import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   calculateReportAutomationHealth,
   getPreferredReportPersona,
+  parseReportDeliveryAutomationCommand,
   reportAutomationPlaybookHref,
   reportAutomationStarterHref,
   reportAutomationStarters,
@@ -35,6 +38,7 @@ import {
   reportsHref,
   reportWorkspaceHref,
   setPreferredReportPersona,
+  type ReportDeliveryAutomationCommand,
   type ReportPersona,
 } from "@/lib/reportCatalog";
 import {
@@ -361,6 +365,33 @@ interface DashboardComparisonRow {
   href: string;
 }
 
+interface DashboardReportAutomationPreference {
+  persona: ReportPersona;
+  preferredDeliveryAutomationCommand: ReportDeliveryAutomationCommand | null;
+}
+
+interface DashboardAutomationAction {
+  title: string;
+  detail: string;
+  href: string;
+  cta: string;
+  badge: string;
+  badgeVariant: BadgeProps["variant"];
+  command?: ReportDeliveryAutomationCommand;
+  actionType?: "link" | "queue" | "retry";
+  subscriptionId?: string;
+  runId?: string;
+}
+
+interface DashboardReportDeliveryRun {
+  id: string;
+  subscriptionId: string;
+  status: string;
+  scheduledFor: string;
+  createdAt: string;
+  errorMessage: string | null;
+}
+
 function dashboardPercentChange(current: number, previous: number): number | null {
   if (Math.abs(previous) < 0.005) return Math.abs(current) < 0.005 ? 0 : null;
   return ((current - previous) / Math.abs(previous)) * 100;
@@ -444,6 +475,7 @@ function SectionHeader({
 
 function CustomerDashboard() {
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [preferredReportPersona, setDashboardReportPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
@@ -457,6 +489,16 @@ function CustomerDashboard() {
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(preferredReportWorkspace.persona),
     queryFn: () => fetchReportCatalogDiscovery(preferredReportWorkspace.persona),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const reportAutomationPreferencesQuery = useQuery<{
+    preferences: DashboardReportAutomationPreference[];
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "preferences"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/preferences`),
+    enabled: Boolean(selectedCompanyId),
     staleTime: 5 * 60_000,
     retry: 1,
   });
@@ -620,6 +662,16 @@ function CustomerDashboard() {
         };
       });
   }, [preferredReportWorkspace.persona]);
+  const dashboardPinnedDeliveryAutomationCommand = useMemo(() => {
+    const preference = reportAutomationPreferencesQuery.data?.preferences.find(
+      (item) => item.persona === preferredReportWorkspace.persona
+    );
+
+    return preference
+      ? (parseReportDeliveryAutomationCommand(preference.preferredDeliveryAutomationCommand) ??
+          undefined)
+      : undefined;
+  }, [preferredReportWorkspace.persona, reportAutomationPreferencesQuery.data?.preferences]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
@@ -651,6 +703,69 @@ function CustomerDashboard() {
     queryKey: ["/api/companies", selectedCompanyId, "compliance/overview"],
     enabled: !!selectedCompanyId,
     retry: 1,
+  });
+
+  const dashboardReportDeliveryRunsQuery = useQuery<{
+    runs: DashboardReportDeliveryRun[];
+  }>({
+    queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "runs", "dashboard"],
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/runs?limit=30`),
+    enabled: Boolean(selectedCompanyId),
+    retry: 1,
+  });
+
+  const queueDashboardReportDeliverySubscription = useMutation({
+    mutationFn: (subscriptionId: string) => {
+      if (!selectedCompanyId) throw new Error("Select a company before queuing delivery.");
+      return apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`
+      );
+    },
+    onSuccess: (result: any) => {
+      dashboardReportDeliveryRunsQuery.refetch();
+      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const nextRunLabel = result?.subscription?.nextRunLabel;
+      toast({
+        title: "Report pack queued",
+        description: nextRunLabel
+          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
+          : `${subscriptionTitle} queued from Dashboard.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not queue report pack",
+        description: error?.message || "Failed to queue the report pack",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const retryDashboardReportDeliveryRun = useMutation({
+    mutationFn: (runId: string) => {
+      if (!selectedCompanyId) throw new Error("Select a company before retrying delivery.");
+      return apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/runs/${runId}/retry`
+      );
+    },
+    onSuccess: (result: any) => {
+      dashboardReportDeliveryRunsQuery.refetch();
+      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      toast({
+        title: "Report delivery retry queued",
+        description: `${subscriptionTitle} was requeued from Dashboard.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not retry report delivery",
+        description: error?.message || "Failed to retry the report delivery",
+        variant: "destructive",
+      });
+    },
   });
 
   // Derive deltas + sparklines from monthlyTrends, gracefully handling empty data
@@ -742,14 +857,94 @@ function CustomerDashboard() {
     });
   }, [dashboardComparisonRows, preferredReportPackReadiness]);
 
-  const preferredAutomationNextAction = useMemo<{
-    title: string;
-    detail: string;
-    href: string;
-    cta: string;
-    badge: string;
-    badgeVariant: BadgeProps["variant"];
-  }>(() => {
+  const dashboardLatestFailedDeliveryRun = useMemo(() => {
+    const subscriptionIds = new Set(
+      preferredReportDeliverySubscriptions.map((subscription) => subscription.id)
+    );
+    return (dashboardReportDeliveryRunsQuery.data?.runs ?? []).find(
+      (run) => run.status === "failed" && subscriptionIds.has(run.subscriptionId)
+    );
+  }, [dashboardReportDeliveryRunsQuery.data?.runs, preferredReportDeliverySubscriptions]);
+
+  const dashboardPinnedAutomationAction = useMemo<DashboardAutomationAction | null>(() => {
+    if (!dashboardPinnedDeliveryAutomationCommand) return null;
+
+    const warningComparison = dashboardComparisonRows.find(
+      (row) => dashboardComparisonBadgeVariant(row) === "warning"
+    );
+    const primaryDeliverySubscription = preferredReportDeliverySubscriptions[0];
+
+    if (dashboardPinnedDeliveryAutomationCommand === "retry") {
+      return {
+        title: "Recover report delivery",
+        detail: dashboardLatestFailedDeliveryRun
+          ? `Retry the latest failed ${preferredReportWorkspace.navLabel.toLowerCase()} report delivery from Dashboard.`
+          : `Pinned recovery command for ${preferredReportWorkspace.navLabel.toLowerCase()} opens failed deliveries and guardrails before the next pack goes out.`,
+        href: reportSectionHref(preferredReportWorkspace, "delivery-subscriptions"),
+        cta: dashboardLatestFailedDeliveryRun ? "Retry delivery" : "Open recovery",
+        badge: "Pinned recovery",
+        badgeVariant: "warning",
+        command: dashboardPinnedDeliveryAutomationCommand,
+        actionType: dashboardLatestFailedDeliveryRun ? "retry" : "link",
+        runId: dashboardLatestFailedDeliveryRun?.id,
+      };
+    }
+
+    if (dashboardPinnedDeliveryAutomationCommand === "review") {
+      return {
+        title: "Review delivery guardrails",
+        detail: primaryDeliverySubscription
+          ? `${primaryDeliverySubscription.title} is the pinned review path for recipients, cadence, and approval guardrails.`
+          : `Open delivery guardrails for ${preferredReportWorkspace.navLabel.toLowerCase()}.`,
+        href:
+          primaryDeliverySubscription?.href ??
+          reportSectionHref(preferredReportWorkspace, "delivery-subscriptions"),
+        cta: "Review guardrails",
+        badge: "Pinned review",
+        badgeVariant: "info",
+        command: dashboardPinnedDeliveryAutomationCommand,
+      };
+    }
+
+    if (dashboardPinnedDeliveryAutomationCommand === "queue") {
+      return {
+        title: "Queue next report pack",
+        detail: primaryDeliverySubscription
+          ? `${primaryDeliverySubscription.title} is pinned as the next automated report pack for this workspace.`
+          : `Open pack automation for ${preferredReportWorkspace.navLabel.toLowerCase()}.`,
+        href: reportSectionHref(preferredReportWorkspace, "pack-automation"),
+        cta: "Queue pack",
+        badge: "Pinned queue",
+        badgeVariant: "success",
+        command: dashboardPinnedDeliveryAutomationCommand,
+        actionType: primaryDeliverySubscription ? "queue" : "link",
+        subscriptionId: primaryDeliverySubscription?.id,
+      };
+    }
+
+    return {
+      title: "Open comparison pack",
+      detail: warningComparison
+        ? `${warningComparison.label} movement is pinned for current-vs-prior review.`
+        : `Open comparison recommendations for ${preferredReportWorkspace.navLabel.toLowerCase()}.`,
+      href:
+        warningComparison?.href ?? reportSectionHref(preferredReportWorkspace, "recommendations"),
+      cta: "Open comparison",
+      badge: "Pinned comparison",
+      badgeVariant: warningComparison ? "warning" : "info",
+      command: dashboardPinnedDeliveryAutomationCommand,
+    };
+  }, [
+    dashboardComparisonRows,
+    dashboardLatestFailedDeliveryRun,
+    dashboardPinnedDeliveryAutomationCommand,
+    preferredReportDeliverySubscriptions,
+    preferredReportWorkspace,
+  ]);
+
+  const preferredAutomationNextAction = useMemo<DashboardAutomationAction>(() => {
+    if (dashboardPinnedAutomationAction) return dashboardPinnedAutomationAction;
+
     const warningComparison = dashboardComparisonRows.find(
       (row) => dashboardComparisonBadgeVariant(row) === "warning"
     );
@@ -804,6 +999,7 @@ function CustomerDashboard() {
     };
   }, [
     dashboardComparisonRows,
+    dashboardPinnedAutomationAction,
     preferredReportPackReadiness.plannedReports,
     preferredReportWorkspace,
     reportAutomationHealth.reviewSignals,
@@ -1329,6 +1525,14 @@ function CustomerDashboard() {
                       <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
                         {preferredAutomationNextAction.badge}
                       </Badge>
+                      {preferredAutomationNextAction.command ? (
+                        <Badge
+                          variant="outline"
+                          data-testid={`dashboard-next-automation-command-${preferredAutomationNextAction.command}`}
+                        >
+                          Pinned command
+                        </Badge>
+                      ) : null}
                     </div>
                     <div className="mt-2 text-sm font-semibold text-foreground">
                       {preferredAutomationNextAction.title}
@@ -1337,12 +1541,60 @@ function CustomerDashboard() {
                       {preferredAutomationNextAction.detail}
                     </p>
                   </div>
-                  <Link href={preferredAutomationNextAction.href}>
-                    <Button variant="outline" size="sm" className="shrink-0">
-                      {preferredAutomationNextAction.cta}
+                  {preferredAutomationNextAction.actionType === "queue" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={
+                        !selectedCompanyId ||
+                        queueDashboardReportDeliverySubscription.isPending ||
+                        !preferredAutomationNextAction.subscriptionId
+                      }
+                      onClick={() => {
+                        const subscriptionId = preferredAutomationNextAction.subscriptionId;
+                        if (!subscriptionId) return;
+                        queueDashboardReportDeliverySubscription.mutate(subscriptionId);
+                      }}
+                      data-testid="dashboard-next-automation-queue"
+                    >
+                      {queueDashboardReportDeliverySubscription.isPending
+                        ? "Queueing"
+                        : preferredAutomationNextAction.cta}
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
-                  </Link>
+                  ) : preferredAutomationNextAction.actionType === "retry" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={
+                        !selectedCompanyId ||
+                        retryDashboardReportDeliveryRun.isPending ||
+                        !preferredAutomationNextAction.runId
+                      }
+                      onClick={() => {
+                        const runId = preferredAutomationNextAction.runId;
+                        if (!runId) return;
+                        retryDashboardReportDeliveryRun.mutate(runId);
+                      }}
+                      data-testid="dashboard-next-automation-retry"
+                    >
+                      {retryDashboardReportDeliveryRun.isPending
+                        ? "Retrying"
+                        : preferredAutomationNextAction.cta}
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  ) : (
+                    <Link href={preferredAutomationNextAction.href}>
+                      <Button variant="outline" size="sm" className="shrink-0">
+                        {preferredAutomationNextAction.cta}
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>
@@ -2055,6 +2307,7 @@ function CustomerDashboard() {
         <ReportLaunchPicker
           persona={preferredReportWorkspace.persona}
           companyId={selectedCompanyId}
+          preferredDeliveryAutomationCommand={dashboardPinnedDeliveryAutomationCommand}
         />
       </section>
 

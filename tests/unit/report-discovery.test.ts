@@ -233,8 +233,45 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("preferredReportDeliverySubscriptions");
     expect(dashboardSource).toContain("reportDeliverySubscriptions");
     expect(dashboardSource).toContain("reportDeliverySubscriptionHref(subscription)");
+    expect(dashboardSource).toContain("DashboardReportAutomationPreference");
+    expect(dashboardSource).toContain("DashboardAutomationAction");
+    expect(dashboardSource).toContain("DashboardReportDeliveryRun");
+    expect(dashboardSource).toContain("actionType?:");
+    expect(dashboardSource).toContain("subscriptionId?:");
+    expect(dashboardSource).toContain("runId?:");
+    expect(dashboardSource).toContain("reportAutomationPreferencesQuery");
+    expect(dashboardSource).toContain(
+      "/api/companies/${selectedCompanyId}/report-delivery/preferences"
+    );
+    expect(dashboardSource).toContain("queueDashboardReportDeliverySubscription");
+    expect(dashboardSource).toContain("/report-delivery/subscriptions/${subscriptionId}/queue");
+    expect(dashboardSource).toContain("dashboardReportDeliveryRunsQuery");
+    expect(dashboardSource).toContain("/report-delivery/runs?limit=30");
+    expect(dashboardSource).toContain("retryDashboardReportDeliveryRun");
+    expect(dashboardSource).toContain("/report-delivery/runs/${runId}/retry");
+    expect(dashboardSource).toContain("dashboardPinnedDeliveryAutomationCommand");
+    expect(dashboardSource).toContain("dashboardLatestFailedDeliveryRun");
+    expect(dashboardSource).toContain("dashboardPinnedAutomationAction");
+    expect(dashboardSource).toContain(
+      "if (dashboardPinnedAutomationAction) return dashboardPinnedAutomationAction"
+    );
+    expect(dashboardSource).toContain("parseReportDeliveryAutomationCommand");
+    expect(dashboardSource).toContain("Pinned recovery");
+    expect(dashboardSource).toContain("Pinned review");
+    expect(dashboardSource).toContain("Pinned queue");
+    expect(dashboardSource).toContain("Pinned comparison");
+    expect(dashboardSource).toContain(
+      'actionType: dashboardLatestFailedDeliveryRun ? "retry" : "link"'
+    );
+    expect(dashboardSource).toContain('actionType: primaryDeliverySubscription ? "queue" : "link"');
+    expect(dashboardSource).toContain('data-testid="dashboard-next-automation-queue"');
+    expect(dashboardSource).toContain('data-testid="dashboard-next-automation-retry"');
+    expect(dashboardSource).toContain("dashboard-next-automation-command-${");
     expect(dashboardSource).toContain('data-testid="dashboard-report-delivery-subscriptions"');
     expect(dashboardSource).toContain("dashboard-report-delivery-subscription-${subscription.id}");
+    expect(dashboardSource).toContain(
+      "preferredDeliveryAutomationCommand={dashboardPinnedDeliveryAutomationCommand}"
+    );
     expect(dashboardSource).toContain("preferredAutomationNextAction");
     expect(dashboardSource).toContain('data-testid="dashboard-next-automation-action"');
     expect(dashboardSource).toContain("Next automation action");
