@@ -439,10 +439,16 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("preferredReportWorkspace.packSchedule.automation");
     expect(dashboardSource).toContain("preferredReportWorkspace.automationOutcome");
     expect(catalogSource).toContain("REPORT_PERSONA_PREFERENCE_KEY");
+    expect(catalogSource).toContain("REPORT_WORKFLOW_SEARCH_PREFERENCE_KEY");
     expect(catalogSource).toContain("REPORT_DELIVERY_AUTOMATION_COMMAND_KEY");
     expect(catalogSource).toContain("getPreferredReportPersona");
     expect(catalogSource).toContain("setPreferredReportPersona");
     expect(catalogSource).toContain("clearPreferredReportPersona");
+    expect(catalogSource).toContain("reportWorkflowSearchPreferenceKey");
+    expect(catalogSource).toContain("getPreferredReportWorkflowSearch");
+    expect(catalogSource).toContain("setPreferredReportWorkflowSearch");
+    expect(catalogSource).toContain("clearPreferredReportWorkflowSearch");
+    expect(catalogSource).toContain(".slice(0, 120)");
     expect(catalogSource).toContain("parseReportDeliveryAutomationCommand");
     expect(catalogSource).toContain("getPreferredReportDeliveryAutomationCommand");
     expect(catalogSource).toContain("setPreferredReportDeliveryAutomationCommand");
@@ -594,6 +600,11 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("setPreferredReportPersonaState");
     expect(reportsSource).toContain("clearPreferredReportPersona()");
     expect(reportsSource).toContain("setPreferredReportPersona(persona)");
+    expect(reportsSource).toContain("getPreferredReportWorkflowSearch(personaFilter)");
+    expect(reportsSource).toContain("setPreferredReportWorkflowSearch(value, personaFilter)");
+    expect(reportsSource).toContain("clearPreferredReportWorkflowSearch(personaFilter)");
+    expect(reportsSource).toContain("updateReportWorkflowSearch");
+    expect(reportsSource).toContain("clearReportWorkflowSearch");
     expect(reportsSource).toContain("personaFilterFromSearch(");
     expect(reportsSource).toContain("locationSearch || window.location.search");
     expect(reportsSource).toContain("preferredReportPersona");
@@ -1059,6 +1070,40 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Automation Command Center");
     expect(reportsSource).toContain("Operations Control");
     expect(reportsSource).toContain("Report automation operations");
+    expect(reportsSource).toContain("fetchReportCatalogDiscovery");
+    expect(reportsSource).toContain(
+      "reportCatalogDiscoveryQueryKey(reportCatalogDiscoveryPersona)"
+    );
+    expect(reportsSource).toContain("type ReportCatalogDiscovery");
+    expect(reportsSource).toContain("reportCatalogDiscoveryQuery");
+    expect(reportsSource).toContain("syncedReportCatalogSummary");
+    expect(reportsSource).toContain("syncedReportPersonaSummaries");
+    expect(reportsSource).toContain("reportWorkflowSearch");
+    expect(reportsSource).toContain("normalizedReportWorkflowSearch");
+    expect(reportsSource).toContain("matchesReportWorkflowSearch");
+    expect(reportsSource).toContain("allReportWorkflowFinderResults");
+    expect(reportsSource).toContain("reportWorkflowFinderResults");
+    expect(reportsSource).toContain('data-testid="report-workflow-finder"');
+    expect(reportsSource).toContain('data-testid="input-report-workflow-search"');
+    expect(reportsSource).toContain('data-testid="report-workflow-finder-count"');
+    expect(reportsSource).toContain("data-testid={`report-workflow-finder-result-${result.id}`}");
+    expect(reportsSource).toContain('data-testid="report-workflow-finder-empty"');
+    expect(reportsSource).toContain("Search reports, packs, comparisons, automations");
+    expect(reportsSource).toContain("visibleReportPackTemplates.map((template) => ({");
+    expect(reportsSource).toContain("visibleReportComparisonPresets.map((preset) => ({");
+    expect(reportsSource).toContain("visibleReportAutomationStarters.map((starter) => ({");
+    expect(reportsSource).toContain("visibleReportDeliverySubscriptions.map((subscription) => ({");
+    expect(reportsSource).toContain("visibleReportAutomationTriggerRules.map((rule) => ({");
+    expect(reportsSource).toContain("visibleReportDecisionShortcuts.map((shortcut) => ({");
+    expect(reportsSource).toContain('data-testid="reports-catalog-discovery-summary"');
+    expect(reportsSource).toContain('data-testid="reports-catalog-discovery-status"');
+    expect(reportsSource).toContain("reports-catalog-persona-summary-${workspace.persona}");
+    expect(reportsSource).toContain("visibleWorkspaceSummaries");
+    expect(reportsSource).toContain("catalogReportCount");
+    expect(reportsSource).toContain("packTemplateCount");
+    expect(reportsSource).toContain("comparisonPresetCount");
+    expect(reportsSource).toContain("automationStarterCount");
+    expect(reportsSource).toContain("report-workspace-catalog-metadata-${workspace.persona}");
     expect(reportsSource).toContain("Automation Health");
     expect(reportsSource).toContain("Automation Health Trend");
     expect(reportsSource).toContain("Delivery Checklist");
@@ -1880,9 +1925,9 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("visibleAutomationQueue");
     expect(reportsSource).toContain("button-role-focus-${filter.id}");
     expect(reportsSource).toContain("setReportPersonaFilter(filter.id)");
-    expect(reportsSource).toContain(
-      "comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter))"
-    );
+    expect(reportsSource).toContain("comparisonRows.filter(");
+    expect(reportsSource).toContain("matchesReportPersona(row.personas, personaFilter) &&");
+    expect(reportsSource).toContain("matchesReportWorkflowSearch([");
     expect(reportsSource).toContain(
       "automationQueue.filter((item) => matchesReportPersona(item.personas, personaFilter))"
     );

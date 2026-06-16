@@ -1660,6 +1660,7 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
 export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
+export const REPORT_WORKFLOW_SEARCH_PREFERENCE_KEY = "nr_ai.report_workflow_search";
 export const REPORT_DELIVERY_AUTOMATION_COMMAND_KEY = "nr_ai.report_delivery_automation_command";
 export const REPORT_AUTOMATION_HEALTH_HISTORY_KEY = "nr_ai.report_automation_health_history";
 
@@ -1690,6 +1691,45 @@ export function clearPreferredReportPersona(): void {
 
   try {
     window.localStorage.removeItem(REPORT_PERSONA_PREFERENCE_KEY);
+  } catch {}
+}
+
+function reportWorkflowSearchPreferenceKey(persona: ReportPersona | "all"): string {
+  return `${REPORT_WORKFLOW_SEARCH_PREFERENCE_KEY}.${persona}`;
+}
+
+export function getPreferredReportWorkflowSearch(persona: ReportPersona | "all" = "all"): string {
+  if (typeof window === "undefined") return "";
+
+  try {
+    return window.localStorage.getItem(reportWorkflowSearchPreferenceKey(persona)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setPreferredReportWorkflowSearch(
+  search: string,
+  persona: ReportPersona | "all" = "all"
+): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const trimmed = search.trim().slice(0, 120);
+    const key = reportWorkflowSearchPreferenceKey(persona);
+    if (trimmed) {
+      window.localStorage.setItem(key, trimmed);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+export function clearPreferredReportWorkflowSearch(persona: ReportPersona | "all" = "all"): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(reportWorkflowSearchPreferenceKey(persona));
   } catch {}
 }
 

@@ -55,6 +55,11 @@ import {
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
 import {
+  fetchReportCatalogDiscovery,
+  reportCatalogDiscoveryQueryKey,
+  type ReportCatalogDiscovery,
+} from "@/lib/reportCatalogApi";
+import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   reportAutomationStarterHref,
@@ -62,8 +67,10 @@ import {
   buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   clearPreferredReportPersona,
+  clearPreferredReportWorkflowSearch,
   getPreferredReportDeliveryAutomationCommand,
   getPreferredReportPersona,
+  getPreferredReportWorkflowSearch,
   getReportAutomationHealthHistory,
   parseReportDeliveryAutomationCommand,
   recordReportAutomationHealthSnapshots,
@@ -86,6 +93,7 @@ import {
   reportWorkspaceHref,
   setPreferredReportPersona,
   setPreferredReportDeliveryAutomationCommand,
+  setPreferredReportWorkflowSearch,
   type ReportCatalogItem,
   type ReportAutomationTriggerSeverity,
   type ReportDeliveryAutomationCommand,
@@ -115,6 +123,7 @@ import {
   Pin,
   RotateCcw,
   Save,
+  Search,
   X,
   Users,
 } from "lucide-react";
@@ -821,6 +830,17 @@ interface InventoryMovementTypeRow {
 }
 
 type PersonaFilter = "all" | ReportPersona;
+
+interface ReportWorkflowFinderResult {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  meta: string;
+  href: string;
+  persona: ReportPersona | null;
+  badgeVariant: BadgeProps["variant"];
+}
 
 interface AutomationQueueItem {
   id: string;
@@ -1723,6 +1743,19 @@ export default function Reports() {
       preferredReportPersona
     );
   }, [locationSearch, preferredReportPersona]);
+  const [reportWorkflowSearch, setReportWorkflowSearch] = useState(() =>
+    getPreferredReportWorkflowSearch(personaFilter)
+  );
+  const reportCatalogDiscoveryPersona: ReportPersona | null =
+    personaFilter === "all" ? null : personaFilter;
+  const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
+    queryKey: reportCatalogDiscoveryQueryKey(reportCatalogDiscoveryPersona),
+    queryFn: () => fetchReportCatalogDiscovery(reportCatalogDiscoveryPersona),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const syncedReportCatalogSummary = reportCatalogDiscoveryQuery.data?.summary;
+  const syncedReportPersonaSummaries = reportCatalogDiscoveryQuery.data?.personaSummaries;
 
   const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
     navigate(reportsHref({ tab, persona }));
@@ -1739,12 +1772,40 @@ export default function Reports() {
     navigate(reportsHref({ tab: activeTab, persona }));
   };
 
+  useEffect(() => {
+    setReportWorkflowSearch(getPreferredReportWorkflowSearch(personaFilter));
+  }, [personaFilter]);
+
   const personaFilterLabel =
     personaFilters.find((filter) => filter.id === personaFilter)?.label ?? "All";
   const personaScopeDescription =
     personaFilter === "all"
       ? "Showing all role signals."
       : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
+  const normalizedReportWorkflowSearch = reportWorkflowSearch.trim().toLowerCase();
+  const matchesReportWorkflowSearch = useCallback(
+    (values: Array<string | number | null | undefined>) => {
+      if (!normalizedReportWorkflowSearch) return true;
+      return values
+        .filter((value): value is string | number => value !== null && value !== undefined)
+        .map((value) => String(value))
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedReportWorkflowSearch);
+    },
+    [normalizedReportWorkflowSearch]
+  );
+  const updateReportWorkflowSearch = useCallback(
+    (value: string) => {
+      setReportWorkflowSearch(value);
+      setPreferredReportWorkflowSearch(value, personaFilter);
+    },
+    [personaFilter]
+  );
+  const clearReportWorkflowSearch = useCallback(() => {
+    setReportWorkflowSearch("");
+    clearPreferredReportWorkflowSearch(personaFilter);
+  }, [personaFilter]);
   const reportDeliveryLauncherPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const pinnedReportDeliveryAutomationCommand =
@@ -1798,9 +1859,21 @@ export default function Reports() {
 
   const filteredReports = useMemo(() => {
     return reportCatalog.filter((report) => {
-      return matchesReportPersona(report.personas, personaFilter);
+      return (
+        matchesReportPersona(report.personas, personaFilter) &&
+        matchesReportWorkflowSearch([
+          report.name,
+          report.category,
+          report.status,
+          report.comparison,
+          report.automation,
+          report.decisionQuestion,
+          report.commandKeywords,
+          report.personas.join(" "),
+        ])
+      );
     });
-  }, [personaFilter]);
+  }, [matchesReportWorkflowSearch, personaFilter]);
 
   const connectedReportCenters = useMemo(() => {
     return filteredReports.filter(
@@ -1814,31 +1887,95 @@ export default function Reports() {
   }, [filteredReports]);
 
   const reportStats = useMemo(() => {
+    if (syncedReportCatalogSummary) {
+      const ready =
+        syncedReportCatalogSummary.liveReportCount + syncedReportCatalogSummary.apiReportCount;
+      return {
+        live: syncedReportCatalogSummary.liveReportCount,
+        ready,
+        planned: syncedReportCatalogSummary.plannedReportCount,
+        total: syncedReportCatalogSummary.reportCount,
+        packTemplates: syncedReportCatalogSummary.packTemplateCount,
+        comparisonPresets: syncedReportCatalogSummary.comparisonPresetCount,
+        deliverySubscriptions: syncedReportCatalogSummary.deliverySubscriptionCount,
+        automationStarters: syncedReportCatalogSummary.automationStarterCount,
+        automationPlaybooks: syncedReportCatalogSummary.automationPlaybookCount,
+      };
+    }
+
     const live = reportCatalog.filter((report) => report.status === "live").length;
     const ready = reportCatalog.filter((report) => report.status !== "planned").length;
     const planned = reportCatalog.length - ready;
-    return { live, ready, planned, total: reportCatalog.length };
-  }, []);
+    return {
+      live,
+      ready,
+      planned,
+      total: reportCatalog.length,
+      packTemplates: reportPackTemplates.length,
+      comparisonPresets: reportComparisonPresets.length,
+      deliverySubscriptions: reportDeliverySubscriptions.length,
+      automationStarters: reportAutomationStarters.length,
+      automationPlaybooks: reportPersonaWorkspaces.reduce(
+        (sum, workspace) => sum + workspace.automations.length,
+        0
+      ),
+    };
+  }, [syncedReportCatalogSummary]);
 
   const workspaceSummaries = useMemo(() => {
     return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
-      const readyReports = reports.filter((report) => report.status !== "planned").length;
+      const localReadyReports = reports.filter((report) => report.status !== "planned").length;
+      const syncedSummary = syncedReportPersonaSummaries?.find(
+        (summary) => summary.persona === workspace.persona
+      );
+      const catalogReportCount = syncedSummary?.reportCount ?? reports.length;
+      const readyReports = syncedSummary?.liveReportCount ?? localReadyReports;
       const plannedReports = reports.filter((report) => report.status === "planned");
-      const automationCount = workspace.automations.length;
+      const automationCount =
+        syncedSummary?.automationPlaybookCount ?? workspace.automations.length;
       const topReadyReport = reports.find((report) => report.tab) ?? reports[0];
       return {
         ...workspace,
         icon: reportWorkspaceIcons[workspace.icon],
         reports,
+        catalogReportCount,
         readyReports,
         plannedReports,
         automationCount,
+        decisionShortcutCount:
+          syncedSummary?.decisionShortcutCount ??
+          reportDecisionShortcuts.filter((shortcut) => shortcut.persona === workspace.persona)
+            .length,
+        automationStarterCount:
+          syncedSummary?.automationStarterCount ??
+          reportAutomationStarters.filter((starter) => starter.persona === workspace.persona)
+            .length,
+        triggerRuleCount:
+          syncedSummary?.triggerRuleCount ??
+          reportAutomationTriggerRules.filter((rule) => rule.persona === workspace.persona).length,
+        deliverySubscriptionCount:
+          syncedSummary?.deliverySubscriptionCount ??
+          reportDeliverySubscriptions.filter(
+            (subscription) => subscription.persona === workspace.persona
+          ).length,
+        packTemplateCount:
+          syncedSummary?.packTemplateCount ??
+          reportPackTemplates.filter((template) => template.persona === workspace.persona).length,
+        comparisonPresetCount:
+          syncedSummary?.comparisonPresetCount ??
+          reportComparisonPresets.filter((preset) => preset.persona === workspace.persona).length,
         topReadyReport,
-        readiness: reports.length ? Math.round((readyReports / reports.length) * 100) : 0,
+        readiness: catalogReportCount ? Math.round((readyReports / catalogReportCount) * 100) : 0,
       };
     });
-  }, []);
+  }, [syncedReportPersonaSummaries]);
+
+  const visibleWorkspaceSummaries = useMemo(() => {
+    return workspaceSummaries.filter((workspace) =>
+      matchesReportPersona([workspace.persona], personaFilter)
+    );
+  }, [personaFilter, workspaceSummaries]);
 
   const reportPackTemplateSummaries = useMemo(() => {
     return reportPackTemplates.flatMap((template) => {
@@ -1866,10 +2003,22 @@ export default function Reports() {
   }, [workspaceSummaries]);
 
   const visibleReportPackTemplates = useMemo(() => {
-    return reportPackTemplateSummaries.filter((template) =>
-      matchesReportPersona([template.persona], personaFilter)
+    return reportPackTemplateSummaries.filter(
+      (template) =>
+        matchesReportPersona([template.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          template.title,
+          template.audience,
+          template.outcome,
+          template.cadence,
+          template.delivery,
+          template.comparisonFocus,
+          template.automationTrigger,
+          template.commandKeywords,
+          template.reports.map((report) => report.name).join(" "),
+        ])
     );
-  }, [personaFilter, reportPackTemplateSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportPackTemplateSummaries]);
 
   const reportDecisionShortcutSummaries = useMemo(() => {
     return reportDecisionShortcuts.flatMap((shortcut) => {
@@ -1909,10 +2058,20 @@ export default function Reports() {
   }, [workspaceSummaries]);
 
   const visibleReportDecisionShortcuts = useMemo(() => {
-    return reportDecisionShortcutSummaries.filter((shortcut) =>
-      matchesReportPersona([shortcut.persona], personaFilter)
+    return reportDecisionShortcutSummaries.filter(
+      (shortcut) =>
+        matchesReportPersona([shortcut.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          shortcut.question,
+          shortcut.answer,
+          shortcut.commandKeywords,
+          shortcut.primaryReport.name,
+          shortcut.reports.map((report) => report.name).join(" "),
+          shortcut.comparisonPreset?.title,
+          shortcut.automationStarter?.title,
+        ])
     );
-  }, [personaFilter, reportDecisionShortcutSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportDecisionShortcutSummaries]);
 
   const dateParams =
     dateRange.from && dateRange.to
@@ -3111,8 +3270,18 @@ export default function Reports() {
   ]);
 
   const visibleComparisonRows = useMemo(() => {
-    return comparisonRows.filter((row) => matchesReportPersona(row.personas, personaFilter));
-  }, [comparisonRows, personaFilter]);
+    return comparisonRows.filter(
+      (row) =>
+        matchesReportPersona(row.personas, personaFilter) &&
+        matchesReportWorkflowSearch([
+          row.label,
+          row.signal,
+          row.currency,
+          row.personas.join(" "),
+          row.tab,
+        ])
+    );
+  }, [comparisonRows, matchesReportWorkflowSearch, personaFilter]);
 
   const reportComparisonPresetSummaries = useMemo(() => {
     return reportComparisonPresets.flatMap((preset) => {
@@ -3143,10 +3312,20 @@ export default function Reports() {
   }, [comparisonRows, workspaceSummaries]);
 
   const visibleReportComparisonPresets = useMemo(() => {
-    return reportComparisonPresetSummaries.filter((preset) =>
-      matchesReportPersona([preset.persona], personaFilter)
+    return reportComparisonPresetSummaries.filter(
+      (preset) =>
+        matchesReportPersona([preset.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          preset.title,
+          preset.question,
+          preset.baseline,
+          preset.automationTrigger,
+          preset.commandKeywords,
+          preset.reports.map((report) => report.name).join(" "),
+          preset.metrics.map((metric) => metric.label).join(" "),
+        ])
     );
-  }, [personaFilter, reportComparisonPresetSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportComparisonPresetSummaries]);
 
   const comparisonLoading =
     comparisonCurrentPlLoading ||
@@ -3802,10 +3981,22 @@ export default function Reports() {
   }, [automationQueue, workspaceSummaries]);
 
   const visibleReportAutomationStarters = useMemo(() => {
-    return reportAutomationStarterSummaries.filter((starter) =>
-      matchesReportPersona([starter.persona], personaFilter)
+    return reportAutomationStarterSummaries.filter(
+      (starter) =>
+        matchesReportPersona([starter.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          starter.title,
+          starter.audience,
+          starter.outcome,
+          starter.setupTime,
+          starter.trigger,
+          starter.primaryAction,
+          starter.commandKeywords,
+          starter.reports.map((report) => report.name).join(" "),
+          starter.playbooks.map((playbook) => playbook.title).join(" "),
+        ])
     );
-  }, [personaFilter, reportAutomationStarterSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportAutomationStarterSummaries]);
 
   const reportAutomationTriggerRuleSummaries = useMemo(() => {
     return reportAutomationTriggerRules.flatMap((rule) => {
@@ -3856,10 +4047,22 @@ export default function Reports() {
   }, [reportAutomationStarterSummaries, reportDecisionShortcutSummaries, workspaceSummaries]);
 
   const visibleReportAutomationTriggerRules = useMemo(() => {
-    return reportAutomationTriggerRuleSummaries.filter((rule) =>
-      matchesReportPersona([rule.persona], personaFilter)
+    return reportAutomationTriggerRuleSummaries.filter(
+      (rule) =>
+        matchesReportPersona([rule.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          rule.title,
+          rule.condition,
+          rule.threshold,
+          rule.cadence,
+          rule.actionLabel,
+          rule.commandKeywords,
+          rule.reports.map((report) => report.name).join(" "),
+          rule.decisionShortcut?.question,
+          rule.automationStarter?.title,
+        ])
     );
-  }, [personaFilter, reportAutomationTriggerRuleSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportAutomationTriggerRuleSummaries]);
 
   const reportDeliveryPlansQuery = useQuery<{
     subscriptions: ReportDeliveryPlanResponse[];
@@ -4049,10 +4252,143 @@ export default function Reports() {
   ]);
 
   const visibleReportDeliverySubscriptions = useMemo(() => {
-    return reportDeliverySubscriptionSummaries.filter((subscription) =>
-      matchesReportPersona([subscription.persona], personaFilter)
+    return reportDeliverySubscriptionSummaries.filter(
+      (subscription) =>
+        matchesReportPersona([subscription.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          subscription.title,
+          subscription.audience,
+          subscription.cadence,
+          subscription.channel,
+          subscription.format,
+          subscription.recipients,
+          subscription.deliveryGuardrail,
+          subscription.commandKeywords,
+          subscription.reports.map((report) => report.name).join(" "),
+          subscription.packTemplate?.title,
+          subscription.automationStarter?.title,
+          subscription.decisionShortcut?.question,
+        ])
     );
-  }, [personaFilter, reportDeliverySubscriptionSummaries]);
+  }, [matchesReportWorkflowSearch, personaFilter, reportDeliverySubscriptionSummaries]);
+
+  const allReportWorkflowFinderResults = useMemo<ReportWorkflowFinderResult[]>(() => {
+    const reportResults = filteredReports.map((report) => {
+      const reportPersona =
+        personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
+      const status = reportStatusMeta[report.status];
+      return {
+        id: `report-${report.id}`,
+        type: "Report",
+        title: report.name,
+        description: report.decisionQuestion,
+        meta: `${report.category} · ${report.comparison}`,
+        href:
+          report.href ??
+          (report.tab
+            ? reportsHref({ tab: report.tab, persona: reportPersona })
+            : reportsHref({ persona: reportPersona })),
+        persona: reportPersona,
+        badgeVariant: status.variant,
+      };
+    });
+
+    const packTemplateResults = visibleReportPackTemplates.map((template) => ({
+      id: `pack-template-${template.id}`,
+      type: "Pack",
+      title: template.title,
+      description: template.outcome,
+      meta: `${template.cadence} · ${template.delivery}`,
+      href: template.href,
+      persona: template.persona,
+      badgeVariant: "outline" as const,
+    }));
+
+    const comparisonResults = visibleReportComparisonPresets.map((preset) => ({
+      id: `comparison-preset-${preset.id}`,
+      type: "Comparison",
+      title: preset.title,
+      description: preset.question,
+      meta: `${preset.baseline} · ${preset.metrics.length} metrics`,
+      href: preset.href,
+      persona: preset.persona,
+      badgeVariant: preset.warningCount > 0 ? ("warning" as const) : ("success" as const),
+    }));
+
+    const automationStarterResults = visibleReportAutomationStarters.map((starter) => ({
+      id: `automation-starter-${starter.id}`,
+      type: "Automation",
+      title: starter.title,
+      description: starter.outcome,
+      meta: `${starter.setupTime} · ${starter.primaryAction}`,
+      href: starter.href,
+      persona: starter.persona,
+      badgeVariant: starter.openWorkItemCount > 0 ? ("warning" as const) : ("success" as const),
+    }));
+
+    const deliveryResults = visibleReportDeliverySubscriptions.map((subscription) => ({
+      id: `delivery-subscription-${subscription.id}`,
+      type: "Delivery",
+      title: subscription.title,
+      description: subscription.deliveryGuardrail,
+      meta: `${subscription.cadence} · ${subscription.channel}`,
+      href: subscription.href,
+      persona: subscription.persona,
+      badgeVariant: subscription.statusVariant,
+    }));
+
+    const triggerRuleResults = visibleReportAutomationTriggerRules.map((rule) => ({
+      id: `trigger-rule-${rule.id}`,
+      type: "Trigger",
+      title: rule.title,
+      description: rule.condition,
+      meta: `${rule.cadence} · ${rule.actionLabel}`,
+      href: rule.href,
+      persona: rule.persona,
+      badgeVariant: triggerSeverityMeta[rule.severity].variant,
+    }));
+
+    const decisionShortcutResults = visibleReportDecisionShortcuts.map((shortcut) => ({
+      id: `decision-shortcut-${shortcut.id}`,
+      type: "Question",
+      title: shortcut.question,
+      description: shortcut.answer,
+      meta: shortcut.primaryReport.name,
+      href: shortcut.href,
+      persona: shortcut.persona,
+      badgeVariant: "info" as const,
+    }));
+
+    return [
+      ...reportResults,
+      ...packTemplateResults,
+      ...comparisonResults,
+      ...automationStarterResults,
+      ...deliveryResults,
+      ...triggerRuleResults,
+      ...decisionShortcutResults,
+    ];
+  }, [
+    filteredReports,
+    personaFilter,
+    visibleReportAutomationStarters,
+    visibleReportAutomationTriggerRules,
+    visibleReportComparisonPresets,
+    visibleReportDecisionShortcuts,
+    visibleReportDeliverySubscriptions,
+    visibleReportPackTemplates,
+  ]);
+
+  const reportWorkflowFinderResults = useMemo(() => {
+    if (normalizedReportWorkflowSearch) return allReportWorkflowFinderResults.slice(0, 12);
+
+    const preferredTypes = ["Report", "Pack", "Comparison", "Automation", "Delivery", "Question"];
+    return preferredTypes
+      .flatMap((type) =>
+        allReportWorkflowFinderResults.filter((result) => result.type === type).slice(0, 2)
+      )
+      .slice(0, 12);
+  }, [allReportWorkflowFinderResults, normalizedReportWorkflowSearch]);
 
   const reportDeliveryRunStatusCounts = useMemo(() => {
     const counts: Record<ReportDeliveryRunStatusFilter, number> = {
@@ -6106,6 +6442,214 @@ export default function Reports() {
               {filter.label}
             </Button>
           ))}
+        </div>
+      </section>
+
+      <section
+        className="space-y-4"
+        aria-labelledby="report-workflow-finder-title"
+        data-testid="report-workflow-finder"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 id="report-workflow-finder-title" className="text-xl font-semibold">
+              Workflow finder
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Reports, packs, comparisons, delivery routes, and automations for{" "}
+              {personaFilterLabel.toLowerCase()}.
+            </p>
+          </div>
+          <Badge variant="info" dot data-testid="report-workflow-finder-count">
+            {allReportWorkflowFinderResults.length} matches
+          </Badge>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={reportWorkflowSearch}
+              onChange={(event) => updateReportWorkflowSearch(event.target.value)}
+              placeholder="Search reports, packs, comparisons, automations"
+              className="pl-9"
+              data-testid="input-report-workflow-search"
+            />
+          </div>
+          {reportWorkflowSearch ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={clearReportWorkflowSearch}
+              data-testid="button-clear-report-workflow-search"
+            >
+              <X className="h-4 w-4" />
+              Clear
+            </Button>
+          ) : null}
+        </div>
+
+        {reportWorkflowFinderResults.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {reportWorkflowFinderResults.map((result) => (
+              <Link key={result.id} href={result.href}>
+                <div
+                  className="rounded-md border border-border/70 p-4 transition-colors hover:bg-accent/5"
+                  data-testid={`report-workflow-finder-result-${result.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={result.badgeVariant}>{result.type}</Badge>
+                        {result.persona ? (
+                          <Badge variant="outline" className="capitalize">
+                            {result.persona}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 truncate text-sm font-semibold text-foreground">
+                        {result.title}
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {result.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 truncate text-xs text-muted-foreground">{result.meta}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
+            data-testid="report-workflow-finder-empty"
+          >
+            No report workflows match the current role and search.
+          </div>
+        )}
+      </section>
+
+      <section
+        className="space-y-4"
+        aria-labelledby="report-catalog-readiness-title"
+        data-testid="reports-catalog-discovery-summary"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-catalog-readiness-title" className="text-xl font-semibold">
+              Catalog readiness
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              API-synced report library coverage for high-level reports, comparison packs, delivery
+              subscriptions, and automation starters. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge
+            variant={
+              reportCatalogDiscoveryQuery.isLoading
+                ? "neutral"
+                : reportCatalogDiscoveryQuery.isError
+                  ? "warning"
+                  : "success"
+            }
+            dot
+            data-testid="reports-catalog-discovery-status"
+          >
+            {reportCatalogDiscoveryQuery.isLoading
+              ? "Syncing catalog"
+              : reportCatalogDiscoveryQuery.isError
+                ? "Local catalog fallback"
+                : "Catalog synced"}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Reports ready</div>
+            <div className="mt-1 font-mono text-2xl font-semibold">
+              {reportStats.ready}/{reportStats.total}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {reportStats.live} live · {reportStats.planned} planned
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Pack templates</div>
+            <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.packTemplates}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {reportStats.deliverySubscriptions} delivery subscriptions
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Comparison presets</div>
+            <div className="mt-1 font-mono text-2xl font-semibold">
+              {reportStats.comparisonPresets}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">Current-vs-prior review paths</div>
+          </div>
+          <div className="rounded-md border p-3">
+            <div className="text-xs text-muted-foreground">Automation starters</div>
+            <div className="mt-1 font-mono text-2xl font-semibold">
+              {reportStats.automationStarters}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {reportStats.automationPlaybooks} playbooks
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {visibleWorkspaceSummaries.map((workspace) => {
+            const WorkspaceIcon = workspace.icon;
+            return (
+              <Link key={workspace.persona} href={reportWorkspaceHref(workspace)}>
+                <div
+                  className="rounded-md border border-border/70 p-4 transition-colors hover:bg-accent/5"
+                  data-testid={`reports-catalog-persona-summary-${workspace.persona}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-foreground">
+                          {workspace.title}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {workspace.focus}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge variant={workspace.readyReports > 0 ? "success" : "neutral"} dot>
+                      {workspace.readyReports}/{workspace.catalogReportCount}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-md bg-secondary/40 p-2">
+                      <div className="text-muted-foreground">Packs</div>
+                      <div className="mt-1 font-mono font-semibold">
+                        {workspace.packTemplateCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-secondary/40 p-2">
+                      <div className="text-muted-foreground">Comps</div>
+                      <div className="mt-1 font-mono font-semibold">
+                        {workspace.comparisonPresetCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-secondary/40 p-2">
+                      <div className="text-muted-foreground">Starters</div>
+                      <div className="mt-1 font-mono font-semibold">
+                        {workspace.automationStarterCount}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
@@ -8930,11 +9474,11 @@ export default function Reports() {
               accountants.
             </p>
           </div>
-          <Badge variant="outline">{workspaceSummaries.length} roles</Badge>
+          <Badge variant="outline">{visibleWorkspaceSummaries.length} roles</Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-          {workspaceSummaries.map((workspace) => {
+          {visibleWorkspaceSummaries.map((workspace) => {
             const WorkspaceIcon = workspace.icon;
             return (
               <Card key={workspace.persona}>
@@ -8959,7 +9503,7 @@ export default function Reports() {
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">Reports</div>
                       <div className="font-mono text-lg font-semibold">
-                        {workspace.reports.length}
+                        {workspace.catalogReportCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
@@ -8972,6 +9516,30 @@ export default function Reports() {
                       <div className="text-xs text-muted-foreground">Automations</div>
                       <div className="font-mono text-lg font-semibold">
                         {workspace.automationCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="grid grid-cols-3 gap-2 text-xs"
+                    data-testid={`report-workspace-catalog-metadata-${workspace.persona}`}
+                  >
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Packs</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {workspace.packTemplateCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Comparisons</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {workspace.comparisonPresetCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Starters</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {workspace.automationStarterCount}
                       </div>
                     </div>
                   </div>
