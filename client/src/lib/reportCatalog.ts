@@ -17,6 +17,8 @@ export type ReportPersona = (typeof reportPersonas)[number];
 export type ReportSection = "recommendations" | "pack-readiness" | "pack-automation";
 export type ReportStatus = "live" | "api" | "planned";
 export type ReportAutomationHealthVariant = "success" | "warning" | "danger";
+export type ReportAutomationHealthTrendDirection = "up" | "down" | "flat" | "new";
+export type ReportAutomationHealthTrendVariant = "success" | "warning" | "neutral" | "info";
 export type ReportCommandIcon =
   | "barChart"
   | "book"
@@ -91,6 +93,23 @@ export interface ReportAutomationHealth {
   comparisonScore: number;
   comparisonWarnings: number;
   reviewSignals: number;
+}
+
+export interface ReportAutomationHealthSnapshot extends ReportAutomationHealth {
+  persona: ReportPersona;
+  capturedAt: string;
+  capturedDate: string;
+}
+
+export interface ReportAutomationHealthTrend {
+  direction: ReportAutomationHealthTrendDirection;
+  variant: ReportAutomationHealthTrendVariant;
+  label: string;
+  detail: string;
+  currentScore: number;
+  previousScore: number | null;
+  delta: number;
+  previousCapturedAt: string | null;
 }
 
 export const reportPersonaWorkspaces: ReportPersonaWorkspace[] = [
@@ -612,6 +631,7 @@ export const reportCatalog: ReportCatalogItem[] = [
 export const liveReportCatalog = reportCatalog.filter((report) => report.status === "live");
 
 export const REPORT_PERSONA_PREFERENCE_KEY = "nr_ai.report_persona";
+export const REPORT_AUTOMATION_HEALTH_HISTORY_KEY = "nr_ai.report_automation_health_history";
 
 export function parseReportPersona(value: string | null | undefined): ReportPersona | null {
   return reportPersonas.includes(value as ReportPersona) ? (value as ReportPersona) : null;
@@ -730,5 +750,166 @@ export function calculateReportAutomationHealth(
     comparisonWarnings,
     reviewSignals:
       input.reviewSignalCount ?? comparisonWarnings + Math.max(0, input.plannedReportCount ?? 0),
+  };
+}
+
+function isReportAutomationHealthVariant(value: unknown): value is ReportAutomationHealthVariant {
+  return value === "success" || value === "warning" || value === "danger";
+}
+
+function normalizeHealthCapturedAt(value?: string): string {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+export function parseReportAutomationHealthHistory(
+  value: string | null | undefined
+): ReportAutomationHealthSnapshot[] {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item): ReportAutomationHealthSnapshot | null => {
+        const persona = parseReportPersona(item?.persona);
+        const score = Number(item?.score);
+        const readinessScore = Number(item?.readinessScore);
+        const automationLaneScore = Number(item?.automationLaneScore);
+        const comparisonScore = Number(item?.comparisonScore);
+        const comparisonWarnings = Number(item?.comparisonWarnings);
+        const reviewSignals = Number(item?.reviewSignals);
+        const capturedAt = normalizeHealthCapturedAt(item?.capturedAt);
+        const variant = isReportAutomationHealthVariant(item?.variant) ? item.variant : null;
+
+        if (
+          !persona ||
+          !variant ||
+          !Number.isFinite(score) ||
+          !Number.isFinite(readinessScore) ||
+          !Number.isFinite(automationLaneScore) ||
+          !Number.isFinite(comparisonScore) ||
+          !Number.isFinite(comparisonWarnings) ||
+          !Number.isFinite(reviewSignals)
+        ) {
+          return null;
+        }
+
+        return {
+          persona,
+          score: clampReportScore(score),
+          label: String(item?.label || "Recorded"),
+          variant,
+          readinessScore: clampReportScore(readinessScore),
+          automationLaneScore: clampReportScore(automationLaneScore),
+          comparisonScore: clampReportScore(comparisonScore),
+          comparisonWarnings: Math.max(0, Math.round(comparisonWarnings)),
+          reviewSignals: Math.max(0, Math.round(reviewSignals)),
+          capturedAt,
+          capturedDate: capturedAt.slice(0, 10),
+        };
+      })
+      .filter((item): item is ReportAutomationHealthSnapshot => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+export function getReportAutomationHealthHistory(): ReportAutomationHealthSnapshot[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    return parseReportAutomationHealthHistory(
+      window.localStorage.getItem(REPORT_AUTOMATION_HEALTH_HISTORY_KEY)
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function recordReportAutomationHealthSnapshots(
+  snapshots: Array<{
+    persona: ReportPersona;
+    health: ReportAutomationHealth;
+    capturedAt?: string;
+  }>
+): ReportAutomationHealthSnapshot[] {
+  const existing = getReportAutomationHealthHistory();
+  const next = [...existing];
+
+  for (const snapshot of snapshots) {
+    const capturedAt = normalizeHealthCapturedAt(snapshot.capturedAt);
+    const capturedDate = capturedAt.slice(0, 10);
+    const normalized: ReportAutomationHealthSnapshot = {
+      ...snapshot.health,
+      persona: snapshot.persona,
+      capturedAt,
+      capturedDate,
+    };
+    const sameDayIndex = next.findIndex(
+      (item) => item.persona === snapshot.persona && item.capturedDate === capturedDate
+    );
+
+    if (sameDayIndex >= 0) {
+      next[sameDayIndex] = normalized;
+    } else {
+      next.push(normalized);
+    }
+  }
+
+  const trimmed = reportPersonas.flatMap((persona) =>
+    next
+      .filter((item) => item.persona === persona)
+      .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt))
+      .slice(-14)
+  );
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(REPORT_AUTOMATION_HEALTH_HISTORY_KEY, JSON.stringify(trimmed));
+    } catch {}
+  }
+
+  return trimmed;
+}
+
+export function buildReportAutomationHealthTrend(
+  history: ReportAutomationHealthSnapshot[],
+  persona: ReportPersona,
+  current: ReportAutomationHealth,
+  capturedAt = new Date().toISOString()
+): ReportAutomationHealthTrend {
+  const capturedDate = normalizeHealthCapturedAt(capturedAt).slice(0, 10);
+  const previous = history
+    .filter((item) => item.persona === persona && item.capturedDate < capturedDate)
+    .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))[0];
+
+  if (!previous) {
+    return {
+      direction: "new",
+      variant: "info",
+      label: "Baseline captured",
+      detail: "First saved automation-health snapshot for this workspace.",
+      currentScore: current.score,
+      previousScore: null,
+      delta: 0,
+      previousCapturedAt: null,
+    };
+  }
+
+  const delta = current.score - previous.score;
+  const direction: ReportAutomationHealthTrendDirection =
+    Math.abs(delta) < 1 ? "flat" : delta > 0 ? "up" : "down";
+
+  return {
+    direction,
+    variant: direction === "up" ? "success" : direction === "down" ? "warning" : "neutral",
+    label: direction === "up" ? "Improved" : direction === "down" ? "Needs attention" : "Stable",
+    detail: `${delta >= 0 ? "+" : ""}${delta} points since ${previous.capturedDate}.`,
+    currentScore: current.score,
+    previousScore: previous.score,
+    delta,
+    previousCapturedAt: previous.capturedAt,
   };
 }

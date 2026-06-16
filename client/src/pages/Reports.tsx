@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Link, useLocation } from "wouter";
@@ -43,9 +43,12 @@ import {
 } from "@/lib/export";
 import { apiRequest } from "@/lib/queryClient";
 import {
+  buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   clearPreferredReportPersona,
   getPreferredReportPersona,
+  getReportAutomationHealthHistory,
+  recordReportAutomationHealthSnapshots,
   reportCatalog,
   reportAutomationPlaybookHref,
   reportPersonas,
@@ -609,6 +612,9 @@ export default function Reports() {
   const [location, navigate] = useLocation();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [reportAutomationHealthHistory, setReportAutomationHealthHistory] = useState(() =>
+    getReportAutomationHealthHistory()
+  );
 
   const locationSearch = useMemo(() => {
     return location.includes("?") ? location.slice(location.indexOf("?")) : "";
@@ -668,6 +674,7 @@ export default function Reports() {
     return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
       const readyReports = reports.filter((report) => report.status !== "planned").length;
+      const plannedReports = reports.filter((report) => report.status === "planned");
       const automationCount = workspace.automations.length;
       const topReadyReport = reports.find((report) => report.tab) ?? reports[0];
       return {
@@ -675,6 +682,7 @@ export default function Reports() {
         icon: reportWorkspaceIcons[workspace.icon],
         reports,
         readyReports,
+        plannedReports,
         automationCount,
         topReadyReport,
         readiness: reports.length ? Math.round((readyReports / reports.length) * 100) : 0,
@@ -1688,11 +1696,45 @@ export default function Reports() {
     });
   }, [comparisonRows, personaReportRecommendations, reportPackAutomationQueue]);
 
+  useEffect(() => {
+    if (!reportPackDeliveryReadiness.length) return;
+
+    const timer = window.setTimeout(() => {
+      setReportAutomationHealthHistory(
+        recordReportAutomationHealthSnapshots(
+          reportPackDeliveryReadiness.map((item) => ({
+            persona: item.workspace.persona,
+            health: item.automationHealth,
+          }))
+        )
+      );
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [reportPackDeliveryReadiness]);
+
+  const reportAutomationHealthTrends = useMemo(() => {
+    return reportPackDeliveryReadiness.map((item) => ({
+      workspace: item.workspace,
+      trend: buildReportAutomationHealthTrend(
+        reportAutomationHealthHistory,
+        item.workspace.persona,
+        item.automationHealth
+      ),
+    }));
+  }, [reportAutomationHealthHistory, reportPackDeliveryReadiness]);
+
   const visibleReportPackReadiness = useMemo(() => {
     return reportPackDeliveryReadiness.filter((item) =>
       matchesReportPersona([item.workspace.persona], personaFilter)
     );
   }, [personaFilter, reportPackDeliveryReadiness]);
+
+  const visibleReportAutomationHealthTrends = useMemo(() => {
+    return reportAutomationHealthTrends.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationHealthTrends]);
 
   const reportPackReadinessNeedingReview = visibleReportPackReadiness.filter(
     (item) => item.reviewCount > 0
@@ -1760,6 +1802,13 @@ export default function Reports() {
     const packReadiness =
       reportPackDeliveryReadiness.find((item) => item.workspace.persona === workspace.persona) ??
       null;
+    const packHealthTrend = packReadiness
+      ? buildReportAutomationHealthTrend(
+          reportAutomationHealthHistory,
+          workspace.persona,
+          packReadiness.automationHealth
+        )
+      : null;
 
     const packIndex: ExportData = {
       sheetName: "Pack Index",
@@ -1812,6 +1861,12 @@ export default function Reports() {
         {
           metric: "Automation health review signals",
           value: packReadiness?.automationHealth.reviewSignals ?? 0,
+        },
+        {
+          metric: "Automation health trend",
+          value: packHealthTrend
+            ? `${packHealthTrend.label} (${packHealthTrend.detail})`
+            : "Not available",
         },
         { metric: "Open automation signals", value: openPackSignals.length },
         { metric: "Open work items", value: openPackWorkItemCount },
@@ -1879,6 +1934,31 @@ export default function Reports() {
             {
               metric: "Review signals",
               value: packReadiness.automationHealth.reviewSignals,
+            },
+          ]
+        : [],
+    };
+
+    const automationHealthTrend: ExportData = {
+      sheetName: "Automation Health Trend",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 52 },
+      ],
+      rows: packHealthTrend
+        ? [
+            { metric: "Workspace", value: workspace.title },
+            { metric: "Trend", value: packHealthTrend.label },
+            { metric: "Current score", value: packHealthTrend.currentScore },
+            {
+              metric: "Previous score",
+              value: packHealthTrend.previousScore ?? "Baseline",
+            },
+            { metric: "Delta", value: packHealthTrend.delta },
+            { metric: "Detail", value: packHealthTrend.detail },
+            {
+              metric: "Previous captured at",
+              value: packHealthTrend.previousCapturedAt ?? "",
             },
           ]
         : [],
@@ -2003,6 +2083,7 @@ export default function Reports() {
       packSummary,
       recommendedActions,
       automationHealth,
+      automationHealthTrend,
       deliveryChecklist,
       comparisonSnapshot,
       packCadence,
@@ -2372,6 +2453,9 @@ export default function Reports() {
           {visibleReportPackReadiness.map((item) => {
             const workspace = item.workspace;
             const WorkspaceIcon = workspace.icon;
+            const healthTrend = visibleReportAutomationHealthTrends.find(
+              (entry) => entry.workspace.persona === workspace.persona
+            )?.trend;
 
             return (
               <Card key={workspace.persona} data-testid={`pack-readiness-${workspace.persona}`}>
@@ -2430,6 +2514,20 @@ export default function Reports() {
                         </div>
                       </div>
                     </div>
+                    {healthTrend ? (
+                      <div
+                        className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 p-2"
+                        data-testid={`automation-health-trend-${item.workspace.persona}`}
+                      >
+                        <div>
+                          <div className="text-xs font-medium">Health trend</div>
+                          <div className="text-xs text-muted-foreground">{healthTrend.detail}</div>
+                        </div>
+                        <Badge variant={healthTrend.variant} dot>
+                          {healthTrend.label}
+                        </Badge>
+                      </div>
+                    ) : null}
                   </div>
 
                   {item.checks.map((check) => (

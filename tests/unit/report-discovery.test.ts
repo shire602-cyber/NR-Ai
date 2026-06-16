@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildReportAutomationHealthTrend,
   calculateReportAutomationHealth,
   liveReportCatalog,
+  parseReportAutomationHealthHistory,
+  REPORT_AUTOMATION_HEALTH_HISTORY_KEY,
   parseReportPersona,
   reportAutomationPlaybookHref,
   reportCatalog,
@@ -277,6 +280,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Pack Summary");
     expect(reportsSource).toContain("Recommended Actions");
     expect(reportsSource).toContain("Automation Health");
+    expect(reportsSource).toContain("Automation Health Trend");
     expect(reportsSource).toContain("Delivery Checklist");
     expect(reportsSource).toContain("Report pack readiness");
     expect(reportsSource).toContain("Comparison Snapshot");
@@ -292,9 +296,21 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("visibleReportPackReadiness");
     expect(reportsSource).toContain("reportPackReadinessNeedingReview");
     expect(reportsSource).toContain("calculateReportAutomationHealth");
+    expect(catalogSource).toContain("REPORT_AUTOMATION_HEALTH_HISTORY_KEY");
+    expect(catalogSource).toContain("parseReportAutomationHealthHistory");
+    expect(catalogSource).toContain("recordReportAutomationHealthSnapshots");
+    expect(catalogSource).toContain("buildReportAutomationHealthTrend");
     expect(reportsSource).toContain("automationHealth");
+    expect(reportsSource).toContain("getReportAutomationHealthHistory");
+    expect(reportsSource).toContain("recordReportAutomationHealthSnapshots");
+    expect(reportsSource).toContain("reportAutomationHealthHistory");
+    expect(reportsSource).toContain("reportAutomationHealthTrends");
+    expect(reportsSource).toContain("visibleReportAutomationHealthTrends");
     expect(reportsSource).toContain("pack-automation-health-${workspace.persona}");
+    expect(reportsSource).toContain("automation-health-trend-${item.workspace.persona}");
     expect(reportsSource).toContain("Automation health review signals");
+    expect(reportsSource).toContain("Automation health trend");
+    expect(reportsSource).toContain("Health trend");
     expect(reportsSource).toContain("reportPackReviewCount");
     expect(reportsSource).toContain("pack-readiness-${workspace.persona}");
     expect(reportsSource).toContain("Delivery checks");
@@ -330,6 +346,8 @@ describe("report discoverability", () => {
   });
 
   it("calculates shared report automation health for packs and dashboards", () => {
+    expect(REPORT_AUTOMATION_HEALTH_HISTORY_KEY).toBe("nr_ai.report_automation_health_history");
+
     const ready = calculateReportAutomationHealth({
       readinessPercent: 100,
       automationLaneCount: 3,
@@ -352,6 +370,35 @@ describe("report discoverability", () => {
     expect(needsReview.score).toBeLessThan(65);
     expect(needsReview.variant).toBe("danger");
     expect(needsReview.reviewSignals).toBe(5);
+
+    const parsedHistory = parseReportAutomationHealthHistory(
+      JSON.stringify([
+        {
+          persona: "owner",
+          score: 72,
+          label: "Review signals",
+          variant: "warning",
+          readinessScore: 80,
+          automationLaneScore: 100,
+          comparisonScore: 50,
+          comparisonWarnings: 2,
+          reviewSignals: 4,
+          capturedAt: "2026-06-15T08:00:00.000Z",
+        },
+        { persona: "invalid", score: 10 },
+      ])
+    );
+    const trend = buildReportAutomationHealthTrend(
+      parsedHistory,
+      "owner",
+      ready,
+      "2026-06-16T08:00:00.000Z"
+    );
+
+    expect(parsedHistory).toHaveLength(1);
+    expect(trend.direction).toBe("up");
+    expect(trend.variant).toBe("success");
+    expect(trend.delta).toBe(28);
   });
 
   it("keeps report tab deep links bounded to known Reports tabs", () => {
