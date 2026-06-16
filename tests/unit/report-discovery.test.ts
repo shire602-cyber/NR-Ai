@@ -1094,13 +1094,20 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("syncedReportCatalogSummary");
     expect(reportsSource).toContain("syncedReportPersonaSummaries");
     expect(reportsSource).toContain("reportWorkflowSearch");
+    expect(reportsSource).toContain("reportWorkflowGapFilter");
     expect(reportsSource).toContain("normalizedReportWorkflowSearch");
     expect(reportsSource).toContain("matchesReportWorkflowSearch");
+    expect(reportsSource).toContain("ReportWorkflowFinderGapFilter");
+    expect(reportsSource).toContain("ReportWorkflowGapFilterState");
+    expect(reportsSource).toContain("reportWorkflowGapFilterLabels");
+    expect(reportsSource).toContain("matchesReportWorkflowGapFilter");
     expect(reportsSource).toContain("ReportWorkflowCoverageCue");
     expect(reportsSource).toContain("ReportWorkflowCoverageContext");
     expect(reportsSource).toContain("buildReportWorkflowCoverageCues");
     expect(reportsSource).toContain("reportIdsOverlap");
     expect(reportsSource).toContain("allReportWorkflowFinderResults");
+    expect(reportsSource).toContain("filteredReportWorkflowFinderResults");
+    expect(reportsSource).toContain("activeReportWorkflowGapFilterLabel");
     expect(reportsSource).toContain("reportWorkflowFinderResults");
     expect(reportsSource).toContain("coverageCues: buildReportWorkflowCoverageCues");
     expect(reportsSource).toContain('id: "pack"');
@@ -1113,6 +1120,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('label: deliverySubscription ? "Delivery" : "No delivery"');
     expect(reportsSource).toContain('data-testid="report-workflow-finder"');
     expect(reportsSource).toContain('id="report-workflow-finder"');
+    expect(reportsSource).toContain('data-testid="report-workflow-active-gap-filter"');
+    expect(reportsSource).toContain('data-testid="button-clear-report-workflow-gap-filter"');
     expect(reportsSource).toContain('data-testid="input-report-workflow-search"');
     expect(reportsSource).toContain('data-testid="report-workflow-finder-count"');
     expect(reportsSource).toContain("data-testid={`report-workflow-finder-result-${result.id}`}");
@@ -1179,9 +1188,17 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportGapCount");
     expect(reportsSource).toContain("automationRuleGapCount");
     expect(reportsSource).toContain("deliveryGapCount");
+    expect(reportsSource).toContain("applyReportWorkflowGapFilter");
+    expect(reportsSource).toContain("clearReportWorkflowGapFilter");
     expect(reportsSource).toContain('data-testid="report-workflow-readiness"');
     expect(reportsSource).toContain("report-workflow-readiness-${item.workspace.persona}");
     expect(reportsSource).toContain("report-workflow-readiness-gap-${item.workspace.persona}");
+    expect(reportsSource).toContain("report-workflow-readiness-filters-${item.workspace.persona}");
+    expect(reportsSource).toContain("report-workflow-filter-report-gaps-${item.workspace.persona}");
+    expect(reportsSource).toContain("report-workflow-filter-rule-gaps-${item.workspace.persona}");
+    expect(reportsSource).toContain(
+      "report-workflow-filter-delivery-gaps-${item.workspace.persona}"
+    );
     expect(reportsSource).toContain("report-workflow-readiness-action-${item.workspace.persona}");
     expect(reportsSource).toContain("Automation readiness");
     expect(reportsSource).toContain("Role-specific coverage gaps before report packs");

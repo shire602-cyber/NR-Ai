@@ -831,6 +831,7 @@ interface InventoryMovementTypeRow {
 }
 
 type PersonaFilter = "all" | ReportPersona;
+type ReportWorkflowFinderGapFilter = "all" | "report-gaps" | "rule-gaps" | "delivery-gaps";
 type ReportWorkflowCoverageCueId = "pack" | "schedule" | "alert" | "delivery";
 
 interface ReportWorkflowCoverageCue {
@@ -859,6 +860,58 @@ interface ReportWorkflowFinderResult {
   persona: ReportPersona | null;
   badgeVariant: BadgeProps["variant"];
   coverageCues: ReportWorkflowCoverageCue[];
+}
+
+interface ReportWorkflowGapFilterState {
+  type: ReportWorkflowFinderGapFilter;
+  persona: ReportPersona | null;
+}
+
+const reportWorkflowGapFilterLabels: Record<
+  Exclude<ReportWorkflowFinderGapFilter, "all">,
+  string
+> = {
+  "report-gaps": "Report gaps",
+  "rule-gaps": "Rule gaps",
+  "delivery-gaps": "Delivery gaps",
+};
+
+function reportWorkflowCue(
+  result: ReportWorkflowFinderResult,
+  cueId: ReportWorkflowCoverageCueId
+): ReportWorkflowCoverageCue | undefined {
+  return result.coverageCues.find((cue) => cue.id === cueId);
+}
+
+function matchesReportWorkflowGapFilter(
+  result: ReportWorkflowFinderResult,
+  filterType: ReportWorkflowFinderGapFilter
+): boolean {
+  if (filterType === "all") return true;
+
+  if (filterType === "report-gaps") {
+    return (
+      result.type === "Report" &&
+      (result.badgeVariant !== "success" ||
+        result.coverageCues.some((cue) => cue.label.startsWith("No ")))
+    );
+  }
+
+  if (filterType === "rule-gaps") {
+    const alertCue = reportWorkflowCue(result, "alert");
+    return (
+      alertCue?.label === "No alert" ||
+      (result.type === "Automation" && result.badgeVariant === "warning")
+    );
+  }
+
+  const scheduleCue = reportWorkflowCue(result, "schedule");
+  const deliveryCue = reportWorkflowCue(result, "delivery");
+  return (
+    scheduleCue?.label === "No schedule" ||
+    deliveryCue?.label === "No delivery" ||
+    (deliveryCue?.id === "delivery" && deliveryCue.variant !== "success")
+  );
 }
 
 interface AutomationQueueItem {
@@ -1765,6 +1818,11 @@ export default function Reports() {
   const [reportWorkflowSearch, setReportWorkflowSearch] = useState(() =>
     getPreferredReportWorkflowSearch(personaFilter)
   );
+  const [reportWorkflowGapFilter, setReportWorkflowGapFilter] =
+    useState<ReportWorkflowGapFilterState>({
+      type: "all",
+      persona: null,
+    });
   const reportCatalogDiscoveryPersona: ReportPersona | null =
     personaFilter === "all" ? null : personaFilter;
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
@@ -1793,6 +1851,16 @@ export default function Reports() {
 
   useEffect(() => {
     setReportWorkflowSearch(getPreferredReportWorkflowSearch(personaFilter));
+  }, [personaFilter]);
+
+  useEffect(() => {
+    setReportWorkflowGapFilter((current) => {
+      if (current.type === "all" || personaFilter === "all" || current.persona === personaFilter) {
+        return current;
+      }
+
+      return { type: "all", persona: null };
+    });
   }, [personaFilter]);
 
   const personaFilterLabel =
@@ -1825,6 +1893,22 @@ export default function Reports() {
     setReportWorkflowSearch("");
     clearPreferredReportWorkflowSearch(personaFilter);
   }, [personaFilter]);
+  const applyReportWorkflowGapFilter = useCallback(
+    (type: Exclude<ReportWorkflowFinderGapFilter, "all">, persona: ReportPersona) => {
+      setReportWorkflowSearch("");
+      setReportWorkflowGapFilter((current) => {
+        if (current.type === type && current.persona === persona) {
+          return { type: "all", persona: null };
+        }
+
+        return { type, persona };
+      });
+    },
+    []
+  );
+  const clearReportWorkflowGapFilter = useCallback(() => {
+    setReportWorkflowGapFilter({ type: "all", persona: null });
+  }, []);
   const reportDeliveryLauncherPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const pinnedReportDeliveryAutomationCommand =
@@ -4506,16 +4590,43 @@ export default function Reports() {
     visibleReportPackTemplates,
   ]);
 
+  const filteredReportWorkflowFinderResults = useMemo(() => {
+    if (reportWorkflowGapFilter.type === "all") return allReportWorkflowFinderResults;
+
+    return allReportWorkflowFinderResults.filter((result) => {
+      return (
+        result.persona === reportWorkflowGapFilter.persona &&
+        matchesReportWorkflowGapFilter(result, reportWorkflowGapFilter.type)
+      );
+    });
+  }, [allReportWorkflowFinderResults, reportWorkflowGapFilter]);
+
+  const activeReportWorkflowGapFilterLabel = useMemo(() => {
+    if (reportWorkflowGapFilter.type === "all" || !reportWorkflowGapFilter.persona) return "";
+    const workspace = reportPersonaWorkspaces.find(
+      (item) => item.persona === reportWorkflowGapFilter.persona
+    );
+    return `${reportWorkflowGapFilterLabels[reportWorkflowGapFilter.type]} · ${
+      workspace?.navLabel ?? reportWorkflowGapFilter.persona
+    }`;
+  }, [reportWorkflowGapFilter]);
+
   const reportWorkflowFinderResults = useMemo(() => {
-    if (normalizedReportWorkflowSearch) return allReportWorkflowFinderResults.slice(0, 12);
+    if (normalizedReportWorkflowSearch || reportWorkflowGapFilter.type !== "all") {
+      return filteredReportWorkflowFinderResults.slice(0, 12);
+    }
 
     const preferredTypes = ["Report", "Pack", "Comparison", "Automation", "Delivery", "Question"];
     return preferredTypes
       .flatMap((type) =>
-        allReportWorkflowFinderResults.filter((result) => result.type === type).slice(0, 2)
+        filteredReportWorkflowFinderResults.filter((result) => result.type === type).slice(0, 2)
       )
       .slice(0, 12);
-  }, [allReportWorkflowFinderResults, normalizedReportWorkflowSearch]);
+  }, [
+    filteredReportWorkflowFinderResults,
+    normalizedReportWorkflowSearch,
+    reportWorkflowGapFilter.type,
+  ]);
 
   const reportDeliveryRunStatusCounts = useMemo(() => {
     const counts: Record<ReportDeliveryRunStatusFilter, number> = {
@@ -6647,6 +6758,64 @@ export default function Reports() {
                 {item.deliveryGapCount} delivery gaps
               </div>
 
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                data-testid={`report-workflow-readiness-filters-${item.workspace.persona}`}
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    reportWorkflowGapFilter.type === "report-gaps" &&
+                    reportWorkflowGapFilter.persona === item.workspace.persona
+                      ? "default"
+                      : "outline"
+                  }
+                  className="h-7 px-2"
+                  disabled={item.reportGapCount === 0}
+                  onClick={() =>
+                    applyReportWorkflowGapFilter("report-gaps", item.workspace.persona)
+                  }
+                  data-testid={`report-workflow-filter-report-gaps-${item.workspace.persona}`}
+                >
+                  Report gaps
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    reportWorkflowGapFilter.type === "rule-gaps" &&
+                    reportWorkflowGapFilter.persona === item.workspace.persona
+                      ? "default"
+                      : "outline"
+                  }
+                  className="h-7 px-2"
+                  disabled={item.automationRuleGapCount === 0}
+                  onClick={() => applyReportWorkflowGapFilter("rule-gaps", item.workspace.persona)}
+                  data-testid={`report-workflow-filter-rule-gaps-${item.workspace.persona}`}
+                >
+                  Rule gaps
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    reportWorkflowGapFilter.type === "delivery-gaps" &&
+                    reportWorkflowGapFilter.persona === item.workspace.persona
+                      ? "default"
+                      : "outline"
+                  }
+                  className="h-7 px-2"
+                  disabled={item.deliveryGapCount === 0}
+                  onClick={() =>
+                    applyReportWorkflowGapFilter("delivery-gaps", item.workspace.persona)
+                  }
+                  data-testid={`report-workflow-filter-delivery-gaps-${item.workspace.persona}`}
+                >
+                  Delivery gaps
+                </Button>
+              </div>
+
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <Badge variant={item.nextAction.badgeVariant}>{item.nextAction.badge}</Badge>
                 <Button asChild size="sm" variant="outline" className="h-7 px-2">
@@ -6681,9 +6850,28 @@ export default function Reports() {
             </p>
           </div>
           <Badge variant="info" dot data-testid="report-workflow-finder-count">
-            {allReportWorkflowFinderResults.length} matches
+            {filteredReportWorkflowFinderResults.length} matches
           </Badge>
         </div>
+
+        {activeReportWorkflowGapFilterLabel ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" data-testid="report-workflow-active-gap-filter">
+              {activeReportWorkflowGapFilterLabel}
+            </Badge>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={clearReportWorkflowGapFilter}
+              data-testid="button-clear-report-workflow-gap-filter"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear filter
+            </Button>
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative flex-1">
