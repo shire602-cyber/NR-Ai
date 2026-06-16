@@ -145,6 +145,16 @@ describe("report discoverability", () => {
       "href: report.href ?? reportHref({ href: undefined, tab: report.tab })"
     );
     expect(commandSource).toContain("report.decisionQuestion");
+    expect(commandSource).toContain("useDefaultCompany");
+    expect(commandSource).toContain("useQueryClient");
+    expect(commandSource).toContain("queueReportDeliveryFromPalette");
+    expect(commandSource).toContain("id: `report-queue-delivery-${subscription.id}`");
+    expect(commandSource).toContain("/report-delivery/subscriptions/${subscriptionId}/queue");
+    expect(commandSource).toContain(
+      'queryKey: ["/api/companies", selectedCompanyId, "report-delivery"]'
+    );
+    expect(commandSource).toContain("queue now send schedule automated report pack from anywhere");
+    expect(commandSource).toContain("Could not queue report pack");
 
     for (const report of liveReportCatalog) {
       expect(reportHref(report)).toBeTruthy();

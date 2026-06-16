@@ -117,11 +117,12 @@ Scope: this file applies to the whole repository.
 - Use `npx vitest run tests/unit/mobile-launch-ux.test.ts` after mobile layout changes on invoices,
   receipts, banking, VAT, or other launch-critical SaaS screens.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after report tabs, report command
-  palette shortcuts, persona workspaces, report operations navigation, report decision-question
-  metadata, decision shortcut paths, automation starter paths, report trigger-rule paths, delivery
-  subscription paths/settings controls, delivery previews/run-history timeline filters, delivery
-  recovery summaries, persona command strips/pinned command preferences, comparison presets, report
-  coverage maps, report pack templates/exports, or report deep-link behavior changes.
+  palette shortcuts/direct delivery queue actions, persona workspaces, report operations navigation,
+  report decision-question metadata, decision shortcut paths, automation starter paths, report
+  trigger-rule paths, delivery subscription paths/settings controls, delivery previews/run-history
+  timeline filters, delivery recovery summaries, persona command strips/pinned command preferences,
+  comparison presets, report coverage maps, report pack templates/exports, or report deep-link
+  behavior changes.
 - Use `npx vitest run tests/unit/report-catalog-routes.test.ts` after the authenticated report
   catalog discovery API, typed client, contract guard, or persona catalog filtering changes.
 - Use `npx vitest run tests/unit/report-discovery.test.ts` after shared report launcher/picker

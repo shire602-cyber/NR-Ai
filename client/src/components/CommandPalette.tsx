@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   CommandDialog,
@@ -30,7 +30,10 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useToast } from "@/hooks/use-toast";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
+import { apiRequest } from "@/lib/queryClient";
 import {
   fetchReportCatalogDiscovery,
   reportCatalogDiscoveryQueryKey,
@@ -65,7 +68,7 @@ interface PaletteItem {
   group: "Navigate" | "Reports" | "Create" | "Settings";
   icon: React.ComponentType<{ className?: string }>;
   href?: string;
-  action?: () => void;
+  action?: () => void | Promise<void>;
   shortcut?: string;
   keywords?: string;
 }
@@ -100,6 +103,12 @@ function syncedHref(item: unknown): string | undefined {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { toast } = useToast();
+  const [queueingDeliverySubscriptionId, setQueueingDeliverySubscriptionId] = useState<
+    string | null
+  >(null);
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
     queryKey: reportCatalogDiscoveryQueryKey(null),
     queryFn: () => fetchReportCatalogDiscovery(),
@@ -122,6 +131,46 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const commandLiveReports = (syncedReportCatalog?.reports ?? liveReportCatalog).filter(
     (report) => report.status === "live"
   );
+
+  const queueReportDeliveryFromPalette = async (subscriptionId: string, fallbackTitle: string) => {
+    if (!selectedCompanyId) {
+      toast({
+        title: "Select a company first",
+        description: "Choose a company before queuing an automated report pack.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setQueueingDeliverySubscriptionId(subscriptionId);
+    try {
+      const result = await apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`
+      );
+      const subscriptionTitle = result?.subscription?.title ?? fallbackTitle;
+      const nextRunLabel = result?.subscription?.nextRunLabel;
+
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "report-delivery"],
+      });
+
+      toast({
+        title: "Report pack queued",
+        description: nextRunLabel
+          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
+          : `${subscriptionTitle} queued from the command palette.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not queue report pack",
+        description: error?.message || "Failed to queue the report pack.",
+        variant: "destructive",
+      });
+    } finally {
+      setQueueingDeliverySubscriptionId(null);
+    }
+  };
 
   const items: PaletteItem[] = [
     {
@@ -264,6 +313,28 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           subscription.recipients,
           subscription.deliveryGuardrail,
           "delivery subscription scheduled send report pack recipients",
+        ].join(" "),
+      };
+    }),
+    ...commandDeliverySubscriptions.map((subscription): PaletteItem => {
+      const workspace = commandReportWorkspaces.find(
+        (item) => item.persona === subscription.persona
+      );
+      const isQueueing = queueingDeliverySubscriptionId === subscription.id;
+      return {
+        id: `report-queue-delivery-${subscription.id}`,
+        label: `${isQueueing ? "Queueing" : "Queue"} ${subscription.title}`,
+        group: "Reports",
+        icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
+        action: () => queueReportDeliveryFromPalette(subscription.id, subscription.title),
+        keywords: [
+          subscription.commandKeywords,
+          subscription.audience,
+          subscription.cadence,
+          subscription.channel,
+          subscription.recipients,
+          subscription.deliveryGuardrail,
+          "queue now send schedule automated report pack from anywhere command palette",
         ].join(" "),
       };
     }),
@@ -487,7 +558,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const handleSelect = (item: PaletteItem) => {
     onOpenChange(false);
     if (item.href) navigate(item.href);
-    item.action?.();
+    void item.action?.();
   };
 
   return (
