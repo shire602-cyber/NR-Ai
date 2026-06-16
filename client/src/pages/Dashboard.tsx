@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Badge, StatusBadge, type BadgeProps } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -15,6 +15,7 @@ import {
   reportHref,
   reportPersonaWorkspaces,
   reportSectionHref,
+  reportsHref,
   reportWorkspaceHref,
 } from "@/lib/reportCatalog";
 import {
@@ -330,6 +331,46 @@ function FixItRow({ issue }: { issue: string }) {
   );
 }
 
+// ─── Dashboard comparison snapshot ──────────────────────────────────────────
+
+type DashboardComparisonId = "revenue" | "expenses" | "profit";
+
+interface DashboardComparisonRow {
+  id: DashboardComparisonId;
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+  percentChange: number | null;
+  favorable: "increase" | "decrease";
+  href: string;
+}
+
+function dashboardPercentChange(current: number, previous: number): number | null {
+  if (Math.abs(previous) < 0.005) return Math.abs(current) < 0.005 ? 0 : null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function formatDashboardComparisonPercent(value: number | null): string {
+  if (value === null) return "New";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function dashboardComparisonBadgeVariant(row: DashboardComparisonRow): BadgeProps["variant"] {
+  if (row.percentChange === null || Math.abs(row.delta) < 0.005) return "neutral";
+  const improved = row.favorable === "increase" ? row.delta > 0 : row.delta < 0;
+  return improved ? "success" : "warning";
+}
+
+function dashboardAutomationHealthLabel(score: number): {
+  label: string;
+  variant: BadgeProps["variant"];
+} {
+  if (score >= 85) return { label: "Ready to automate", variant: "success" };
+  if (score >= 65) return { label: "Review signals", variant: "warning" };
+  return { label: "Needs setup", variant: "danger" };
+}
+
 // ─── Quick action ────────────────────────────────────────────────────────────
 
 function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
@@ -485,6 +526,91 @@ function CustomerDashboard() {
       profit: { series: profitSeries, delta: pctChange(profitSeries) },
     };
   }, [monthlyTrends]);
+
+  const dashboardComparisonRows = useMemo(() => {
+    const trends = monthlyTrends ?? [];
+    const current = trends[trends.length - 1] ?? {};
+    const previous = trends[trends.length - 2] ?? {};
+    const currentRevenue = Number(current?.revenue ?? 0);
+    const previousRevenue = Number(previous?.revenue ?? 0);
+    const currentExpenses = Number(current?.expenses ?? 0);
+    const previousExpenses = Number(previous?.expenses ?? 0);
+
+    const rows: Record<DashboardComparisonId, DashboardComparisonRow> = {
+      revenue: {
+        id: "revenue",
+        label: "Revenue",
+        current: currentRevenue,
+        previous: previousRevenue,
+        delta: currentRevenue - previousRevenue,
+        percentChange: dashboardPercentChange(currentRevenue, previousRevenue),
+        favorable: "increase",
+        href: reportsHref({ tab: "sales", persona: preferredReportWorkspace.persona }),
+      },
+      expenses: {
+        id: "expenses",
+        label: "Expenses",
+        current: currentExpenses,
+        previous: previousExpenses,
+        delta: currentExpenses - previousExpenses,
+        percentChange: dashboardPercentChange(currentExpenses, previousExpenses),
+        favorable: "decrease",
+        href: reportsHref({ tab: "expenses", persona: preferredReportWorkspace.persona }),
+      },
+      profit: {
+        id: "profit",
+        label: "Profit",
+        current: currentRevenue - currentExpenses,
+        previous: previousRevenue - previousExpenses,
+        delta: currentRevenue - currentExpenses - (previousRevenue - previousExpenses),
+        percentChange: dashboardPercentChange(
+          currentRevenue - currentExpenses,
+          previousRevenue - previousExpenses
+        ),
+        favorable: "increase",
+        href: reportsHref({ tab: "pl", persona: preferredReportWorkspace.persona }),
+      },
+    };
+
+    const comparisonOrder = {
+      owner: ["revenue", "profit", "expenses"],
+      freelancer: ["revenue", "expenses", "profit"],
+      accountant: ["profit", "revenue", "expenses"],
+    } as const;
+
+    return comparisonOrder[preferredReportWorkspace.persona].map((id) => rows[id]);
+  }, [monthlyTrends, preferredReportWorkspace.persona]);
+
+  const reportAutomationHealth = useMemo(() => {
+    const comparisonWarnings = dashboardComparisonRows.filter(
+      (row) => dashboardComparisonBadgeVariant(row) === "warning"
+    ).length;
+    const comparisonScore = dashboardComparisonRows.length
+      ? Math.round(
+          ((dashboardComparisonRows.length - comparisonWarnings) / dashboardComparisonRows.length) *
+            100
+        )
+      : 100;
+    const automationLaneScore = Math.min(
+      100,
+      Math.round((preferredReportPackReadiness.automationLanes / 3) * 100)
+    );
+    const score = Math.round(
+      preferredReportPackReadiness.readinessPercent * 0.6 +
+        automationLaneScore * 0.2 +
+        comparisonScore * 0.2
+    );
+    const status = dashboardAutomationHealthLabel(score);
+
+    return {
+      ...status,
+      score,
+      automationLaneScore,
+      comparisonScore,
+      comparisonWarnings,
+      reviewSignals: comparisonWarnings + preferredReportPackReadiness.plannedReports,
+    };
+  }, [dashboardComparisonRows, preferredReportPackReadiness]);
 
   const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
   const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
@@ -842,6 +968,69 @@ function CustomerDashboard() {
         />
         <Card className="border-card-border overflow-hidden">
           <CardContent className="p-0">
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-automation-health"
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Automation health
+                    </div>
+                    <Badge variant={reportAutomationHealth.variant} dot>
+                      {reportAutomationHealth.label}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
+                      {reportAutomationHealth.score}
+                    </span>
+                    <span className="text-xs text-muted-foreground">/ 100</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Blends pack readiness, automation lanes, and current-vs-prior movement for the
+                    selected workspace.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 md:min-w-[420px]">
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Pack
+                    </div>
+                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                      {preferredReportPackReadiness.readinessPercent}%
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Lanes
+                    </div>
+                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                      {preferredReportPackReadiness.automationLanes}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border/70 p-3">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Review
+                    </div>
+                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                      {reportAutomationHealth.reviewSignals}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                  <Button variant="outline" size="sm">
+                    Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border/60">
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -875,6 +1064,46 @@ function CustomerDashboard() {
                       </div>
                     </Link>
                   ))}
+                </div>
+
+                <div
+                  className="mt-5 rounded-md border border-border/70 p-4"
+                  data-testid="dashboard-comparison-snapshot"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Comparison snapshot
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Current vs prior month for this workspace.
+                      </div>
+                    </div>
+                    <Badge variant="outline">Current vs prior</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {dashboardComparisonRows.map((row) => (
+                      <Link key={row.id} href={row.href}>
+                        <div className="rounded-md bg-muted/30 p-3 transition-colors hover:bg-accent/5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium text-foreground">{row.label}</div>
+                            <Badge variant={dashboardComparisonBadgeVariant(row)}>
+                              {formatDashboardComparisonPercent(row.percentChange)}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
+                            {formatCurrency(row.current, "AED", locale)}
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                            <span>Prior {formatCurrency(row.previous, "AED", locale)}</span>
+                            <span className="inline-flex items-center gap-1 text-accent">
+                              Open <ArrowUpRight className="w-3 h-3" />
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               </div>
 

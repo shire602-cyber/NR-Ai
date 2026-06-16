@@ -108,6 +108,32 @@ describe("report discoverability", () => {
     expect(dashboardSource).toContain("preferredWorkspaceCatalogReports");
     expect(dashboardSource).toContain("preferredWorkspaceReports");
     expect(dashboardSource).toContain("preferredReportPackReadiness");
+    expect(dashboardSource).toContain("dashboardComparisonRows");
+    expect(dashboardSource).toContain("dashboardPercentChange");
+    expect(dashboardSource).toContain("formatDashboardComparisonPercent");
+    expect(dashboardSource).toContain("dashboardComparisonBadgeVariant");
+    expect(dashboardSource).toContain("dashboardAutomationHealthLabel");
+    expect(dashboardSource).toContain("reportAutomationHealth");
+    expect(dashboardSource).toContain('data-testid="dashboard-report-automation-health"');
+    expect(dashboardSource).toContain("Automation health");
+    expect(dashboardSource).toContain("Review automation health");
+    expect(dashboardSource).toContain("comparisonWarnings");
+    expect(dashboardSource).toContain("reviewSignals");
+    expect(dashboardSource).toContain("preferredReportPackReadiness.readinessPercent * 0.6");
+    expect(dashboardSource).toContain('data-testid="dashboard-comparison-snapshot"');
+    expect(dashboardSource).toContain("Current vs prior month for this workspace.");
+    expect(dashboardSource).toContain("comparisonOrder");
+    expect(dashboardSource).toContain(
+      'reportsHref({ tab: "sales", persona: preferredReportWorkspace.persona })'
+    );
+    expect(dashboardSource).toContain(
+      'reportsHref({ tab: "expenses", persona: preferredReportWorkspace.persona })'
+    );
+    expect(dashboardSource).toContain(
+      'reportsHref({ tab: "pl", persona: preferredReportWorkspace.persona })'
+    );
+    expect(dashboardSource).toContain("href={row.href}");
+    expect(dashboardSource).toContain("Open <ArrowUpRight");
     expect(dashboardSource).toContain("reportCatalog");
     expect(dashboardSource).toContain('data-testid="dashboard-report-workspace"');
     expect(dashboardSource).toContain('data-testid="dashboard-open-report-workspace"');
