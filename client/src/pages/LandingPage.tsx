@@ -46,7 +46,7 @@ const features = [
     icon: Scan,
     title: "AI Receipt OCR",
     description:
-      "Photograph receipts and let AI extract vendor, amount, date, and VAT automatically. No manual entry.",
+      "Photograph receipts and review AI-extracted vendor, amount, date, and VAT fields before posting.",
     color: "text-violet-500",
     bg: "bg-violet-500/10",
   },
@@ -62,7 +62,7 @@ const features = [
     icon: RefreshCw,
     title: "Bank Reconciliation",
     description:
-      "Smart transaction matching across UAE major banks. Reconcile months of statements in minutes.",
+      "CSV statement imports with smart matching for UAE bank layouts. Reconcile statement lines before posting.",
     color: "text-emerald-500",
     bg: "bg-emerald-500/10",
   },
@@ -94,7 +94,7 @@ const features = [
     icon: FileText,
     title: "Invoice Management",
     description:
-      "Create VAT-ready tax invoices, send by email, and track payment status automatically.",
+      "Create VAT-ready tax invoices, send by email, and track payment status from the invoice list.",
     color: "text-cyan-500",
     bg: "bg-cyan-500/10",
   },
@@ -118,16 +118,16 @@ const steps = [
   },
   {
     number: "02",
-    title: "Connect Your Bank",
+    title: "Import Your Statement",
     description:
-      "Securely link your Emirates NBD, ADCB, FAB, or any UAE bank account via encrypted feeds.",
+      "Use the sample CSV or upload UAE bank statement exports, then review match suggestions before posting.",
     icon: Shield,
   },
   {
     number: "03",
-    title: "Let AI Do the Rest",
+    title: "Review Suggested Work",
     description:
-      "Transactions are categorized, VAT extracted, invoices matched, and reports generated automatically.",
+      "Review suggested categories, VAT extraction, invoice matches, and generated reports before relying on them.",
     icon: Zap,
   },
 ];
@@ -162,7 +162,7 @@ const plans = [
       "Unlimited transactions",
       "Unlimited invoices",
       "Unlimited Receipt OCR",
-      "FTA VAT 201 filing",
+      "VAT 201 workpaper export",
       "Bank reconciliation",
       "Multi-currency (AED + 150+)",
       "Arabic + English UI",
@@ -830,7 +830,7 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-sm mb-3">Compliance</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>FTA VAT 201 Returns</li>
+                <li>VAT 201 Workpaper Exports</li>
                 <li>Corporate Tax (CT)</li>
                 <li>E-Invoicing (Phase 1 & 2)</li>
                 <li>WPS Payroll (SIF)</li>

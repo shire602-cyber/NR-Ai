@@ -180,7 +180,7 @@ function HeroProductMock() {
                 </span>
               </div>
               <div className="space-y-1">
-                {["Dashboard", "Invoices", "Receipts", "VAT 201", "Bank Feeds", "Reports"].map(
+                {["Dashboard", "Invoices", "Receipts", "VAT 201", "Bank Imports", "Reports"].map(
                   (l, i) => (
                     <div
                       key={l}
@@ -437,7 +437,7 @@ function FtaTicker() {
             <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
           </span>
-          FTA · Live
+          Tax workflow
         </span>
 
         <div className="relative flex-1 overflow-hidden">
@@ -546,7 +546,7 @@ function CapabilityBento() {
 
       {/* VAT 201 */}
       <BentoCard className="md:col-span-3">
-        <BentoHeader icon={FileCheck} eyebrow="VAT 201" title="Pre-filed before you log in." />
+        <BentoHeader icon={FileCheck} eyebrow="VAT 201" title="Review-ready before month end." />
         <BentoBody>
           Output VAT, input VAT, reverse charge, designated-zone adjustments — calculated
           continuously and held audit-ready.
@@ -749,10 +749,10 @@ function BentoBody({ children }: { children: React.ReactNode }) {
 // ── 7. Comparison strip ──────────────────────────────────────────────────────
 function ComparisonTable() {
   const rows = [
-    ["FTA-native VAT 201 filing", true, false, false, false],
+    ["VAT 201 workpaper export", true, false, false, false],
     ["Arabic + English UI", true, false, false, true],
     ["e-Invoicing PINT AE (2026)", true, false, false, false],
-    ["UAE bank feeds (ENBD / ADCB / FAB)", true, false, false, false],
+    ["UAE bank CSV imports", true, false, false, false],
     ["Receipt OCR — Arabic + English", true, true, false, false],
     ["UAE corporate tax workpapers", true, false, false, false],
     ["Pricing in AED", true, false, false, true],
@@ -866,7 +866,13 @@ function Workflow() {
     op: import("framer-motion").MotionValue<number>;
     border: import("framer-motion").MotionValue<string>;
   }> = [
-    { n: "01", t: "Capture", d: "Photo, email forward, or bank feed.", op: s1Op, border: s1Border },
+    {
+      n: "01",
+      t: "Capture",
+      d: "Photo, email forward, or CSV import.",
+      op: s1Op,
+      border: s1Border,
+    },
     {
       n: "02",
       t: "Categorise",
@@ -877,7 +883,7 @@ function Workflow() {
     {
       n: "03",
       t: "Reconcile",
-      d: "Matched against bank movements continuously.",
+      d: "Matched against imported bank movements.",
       op: s3Op,
       border: s3Border,
     },
@@ -920,15 +926,15 @@ function Workflow() {
           >
             From receipt to{" "}
             <span className="italic" style={{ color: C.emerald }}>
-              filed
+              review-ready
             </span>
             .<br />
-            Untouched.
+            With controls.
           </h2>
           <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
-            Snap a receipt, forward an invoice, or sync a bank line. Muhasib categorises it, posts
-            the journal, updates your VAT position, and queues the return — all before you'd have
-            opened your spreadsheet.
+            Snap a receipt, forward an invoice, or import a bank statement. Muhasib categorises it,
+            drafts the journal, updates your VAT position, and prepares the review queue before you
+            open your spreadsheet.
           </p>
 
           <div className="mt-10 space-y-5">
@@ -1162,9 +1168,9 @@ export default function MuhasibLanding() {
                   className="mt-7 max-w-xl text-base leading-relaxed md:text-lg"
                   style={{ color: C.muted }}
                 >
-                  AI-native accounting for UAE businesses. Receipts captured, VAT calculated, banks
-                  reconciled, and tax workpapers prepared continuously, with review steps where
-                  judgment matters.
+                  AI-native accounting for UAE businesses. Receipts captured, VAT calculated,
+                  imported bank statements reconciled, and tax workpapers prepared continuously,
+                  with review steps where judgment matters.
                 </p>
               </Reveal>
 

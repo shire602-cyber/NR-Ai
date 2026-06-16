@@ -181,8 +181,8 @@ export default function Landing() {
       title: locale === "en" ? "Receipt OCR Scanner" : "ماسح الإيصالات",
       description:
         locale === "en"
-          ? "Bulk upload receipts. Our AI extracts all data automatically in Arabic or English."
-          : "ارفع إيصالات متعددة. ذكاؤنا الاصطناعي يستخرج كل البيانات تلقائياً بالعربية أو الإنجليزية.",
+          ? "Bulk upload receipts. AI-assisted extraction prepares Arabic or English fields for review."
+          : "ارفع إيصالات متعددة. يساعدك الذكاء الاصطناعي في تجهيز الحقول بالعربية أو الإنجليزية للمراجعة.",
       color: "from-emerald-500 to-green-600",
       bgColor: "bg-emerald-500/10",
     },
