@@ -29,6 +29,8 @@ import {
   reportAutomationStarterHref,
   reportAutomationStarters,
   reportCatalog,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
@@ -547,19 +549,39 @@ function CustomerDashboard() {
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  const selectedReportPersonaSummary = reportCatalogDiscoveryQuery.data?.personaSummaries[0];
   const dashboardReportWorkspaces = useMemo(() => {
     return reportPersonaWorkspaces.map((workspace) => {
       const reports = reportCatalog.filter((report) => report.personas.includes(workspace.persona));
       const readyReports = reports.filter((report) => report.status !== "planned").length;
+      const automationStarterCount = reportAutomationStarters.filter(
+        (starter) => starter.persona === workspace.persona
+      ).length;
+      const packTemplateCount = reportPackTemplates.filter(
+        (template) => template.persona === workspace.persona
+      ).length;
+      const comparisonPresetCount = reportComparisonPresets.filter(
+        (preset) => preset.persona === workspace.persona
+      ).length;
+      const syncedSummary =
+        selectedReportPersonaSummary?.persona === workspace.persona
+          ? selectedReportPersonaSummary
+          : null;
+      const totalReports = syncedSummary?.reportCount ?? reports.length;
+      const readyReportCount = syncedSummary?.liveReportCount ?? readyReports;
       return {
         ...workspace,
-        readyReports,
-        totalReports: reports.length,
-        readinessPercent: reports.length ? Math.round((readyReports / reports.length) * 100) : 0,
+        readyReports: readyReportCount,
+        totalReports,
+        syncedAutomationStarters: syncedSummary?.automationStarterCount,
+        automationStarterCount: syncedSummary?.automationStarterCount ?? automationStarterCount,
+        packTemplateCount: syncedSummary?.packTemplateCount ?? packTemplateCount,
+        comparisonPresetCount: syncedSummary?.comparisonPresetCount ?? comparisonPresetCount,
+        readinessPercent: totalReports ? Math.round((readyReportCount / totalReports) * 100) : 0,
         isSelected: workspace.persona === preferredReportPersona,
       };
     });
-  }, [preferredReportPersona]);
+  }, [preferredReportPersona, selectedReportPersonaSummary]);
   const selectDashboardReportPersona = (persona: ReportPersona) => {
     setPreferredReportPersona(persona);
     setDashboardReportPersona(persona);
@@ -586,6 +608,16 @@ function CustomerDashboard() {
       totalReports: preferredWorkspaceCatalogReports.length,
       automationLanes: preferredReportWorkspace.automations.length,
       syncedLiveReports: reportCatalogDiscoveryQuery.data?.summary.liveReportCount ?? readyReports,
+      syncedPackTemplates:
+        selectedReportPersonaSummary?.packTemplateCount ??
+        reportPackTemplates.filter(
+          (template) => template.persona === preferredReportWorkspace.persona
+        ).length,
+      syncedComparisonPresets:
+        selectedReportPersonaSummary?.comparisonPresetCount ??
+        reportComparisonPresets.filter(
+          (preset) => preset.persona === preferredReportWorkspace.persona
+        ).length,
       syncedAutomationLanes:
         reportCatalogDiscoveryQuery.data?.summary.automationPlaybookCount ??
         preferredReportWorkspace.automations.length,
@@ -595,9 +627,12 @@ function CustomerDashboard() {
     };
   }, [
     preferredReportWorkspace.automations.length,
+    preferredReportWorkspace.persona,
     preferredWorkspaceCatalogReports,
     reportCatalogDiscoveryQuery.data?.summary.automationPlaybookCount,
     reportCatalogDiscoveryQuery.data?.summary.liveReportCount,
+    selectedReportPersonaSummary?.comparisonPresetCount,
+    selectedReportPersonaSummary?.packTemplateCount,
   ]);
   const preferredReportPackTemplates = useMemo(() => {
     return reportPackTemplates
@@ -659,6 +694,21 @@ function CustomerDashboard() {
           primaryReportHref: primaryReport
             ? (reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut))
             : reportDecisionShortcutHref(shortcut),
+        };
+      });
+  }, [preferredReportWorkspace.persona]);
+  const preferredReportComparisonPresets = useMemo(() => {
+    return reportComparisonPresets
+      .filter((preset) => preset.persona === preferredReportWorkspace.persona)
+      .map((preset) => {
+        const reports = preset.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+
+        return {
+          ...preset,
+          reports,
+          href: reportComparisonPresetHref(preset),
         };
       });
   }, [preferredReportWorkspace.persona]);
@@ -1520,7 +1570,12 @@ function CustomerDashboard() {
                         </Badge>
                       </div>
                       <div className="mt-2 text-[11px] text-muted-foreground">
-                        {workspace.automations.length} automation lanes
+                        {workspace.automations.length} lanes · {workspace.automationStarterCount}{" "}
+                        starters
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {workspace.packTemplateCount} packs · {workspace.comparisonPresetCount}{" "}
+                        comparisons
                       </div>
                     </button>
                   ))}
@@ -1549,6 +1604,15 @@ function CustomerDashboard() {
                         : reportCatalogDiscoveryQuery.isError
                           ? "Local catalog"
                           : `${preferredReportPackReadiness.syncedLiveReports} synced reports`}
+                    </Badge>
+                    <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
+                      {preferredReportPackReadiness.syncedPackTemplates} packs
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      data-testid="dashboard-report-catalog-comparison-count"
+                    >
+                      {preferredReportPackReadiness.syncedComparisonPresets} comparisons
                     </Badge>
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
@@ -2016,6 +2080,62 @@ function CustomerDashboard() {
                           View shortcut <ArrowRight className="w-3.5 h-3.5" />
                         </Button>
                       </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-comparison-presets"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Comparison presets
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    Current-vs-prior review paths for {preferredReportWorkspace.navLabel}, with the
+                    report bundle and automation trigger already matched.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "recommendations")}>
+                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
+                    Open comparison center <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportComparisonPresets.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="rounded-md border border-border/70 p-4"
+                    data-testid={`dashboard-report-comparison-preset-${preset.id}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">{preset.title}</div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {preset.question}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="outline">{preset.metricIds.length} metrics</Badge>
+                          <Badge variant="outline">{preset.reports.length} reports</Badge>
+                          <Badge variant="outline">{preset.baseline}</Badge>
+                        </div>
+                      </div>
+                      <Link href={preset.href}>
+                        <Button variant="outline" size="sm" className="shrink-0">
+                          Open comparison
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                    <div className="mt-3 rounded-md bg-muted/30 p-2 text-xs leading-relaxed text-muted-foreground">
+                      <span className="font-semibold text-foreground">Automation:</span>{" "}
+                      {preset.automationTrigger}
                     </div>
                   </div>
                 ))}

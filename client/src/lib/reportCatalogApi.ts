@@ -30,11 +30,32 @@ export interface ReportCatalogDiscoverySummary {
   automationPlaybookCount: number;
 }
 
+export interface ReportPersonaCatalogSummary {
+  persona: ReportPersona;
+  title: string;
+  navLabel: string;
+  focus: string;
+  automationOutcome: string;
+  href: string;
+  operationsHref: string;
+  automationCommandCenterHref: string;
+  reportCount: number;
+  liveReportCount: number;
+  decisionShortcutCount: number;
+  automationStarterCount: number;
+  triggerRuleCount: number;
+  deliverySubscriptionCount: number;
+  packTemplateCount: number;
+  comparisonPresetCount: number;
+  automationPlaybookCount: number;
+}
+
 export interface ReportCatalogDiscovery {
   filters: {
     persona: ReportPersona | null;
   };
   summary: ReportCatalogDiscoverySummary;
+  personaSummaries: ReportPersonaCatalogSummary[];
   personas: ReportPersona[];
   tabs: ReportTab[];
   reports: Array<Omit<ReportCatalogItem, "href"> & { href: string | null }>;
@@ -43,9 +64,14 @@ export interface ReportCatalogDiscovery {
       href: string;
       operationsHref: string;
       decisionShortcutsHref: string;
+      recommendationsHref: string;
       automationStartersHref: string;
+      triggerRulesHref: string;
       deliverySubscriptionsHref: string;
       packReadinessHref: string;
+      automationRulesHref: string;
+      automationCommandCenterHref: string;
+      packAutomationHref: string;
       automations: Array<ReportAutomationPlaybook & { href: string }>;
     }
   >;

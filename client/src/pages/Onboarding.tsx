@@ -25,6 +25,8 @@ import {
   reportAutomationTriggerRules,
   reportAutomationStarterHref,
   reportAutomationStarters,
+  reportComparisonPresetHref,
+  reportComparisonPresets,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
@@ -1208,6 +1210,9 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const selectedDecisionShortcuts = reportDecisionShortcuts.filter(
     (shortcut) => shortcut.persona === selectedWorkspace.persona
   );
+  const selectedComparisonPresets = reportComparisonPresets.filter(
+    (preset) => preset.persona === selectedWorkspace.persona
+  );
   const selectedTriggerRules = reportAutomationTriggerRules.filter(
     (rule) => rule.persona === selectedWorkspace.persona
   );
@@ -1313,6 +1318,39 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
                 {shortcut.reportIds.length} linked reports
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-comparison-presets"
+        >
+          {selectedComparisonPresets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportComparisonPresetHref(preset));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-comparison-preset-${preset.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{preset.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {preset.question}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {preset.baseline} · {preset.metricIds.length} metrics
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                {preset.automationTrigger}
               </p>
             </button>
           ))}

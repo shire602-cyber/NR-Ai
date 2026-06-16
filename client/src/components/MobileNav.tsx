@@ -28,6 +28,12 @@ interface NavItem {
   isMore?: boolean;
 }
 
+interface MoreLink {
+  label: string;
+  href: string;
+  description?: string;
+}
+
 const navItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Invoices", icon: FileText, href: "/invoices" },
@@ -36,42 +42,51 @@ const navItems: NavItem[] = [
   { label: "More", icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
-const moreLinks = [
+const moreLinks: MoreLink[] = [
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.navLabel,
     href: reportWorkspaceHref(workspace),
+    description: workspace.focus,
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: `Report operations - ${workspace.title}`,
     href: reportSectionHref(workspace, "automation-operations"),
+    description: workspace.automationOutcome,
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.automationNavLabel,
     href: reportSectionHref(workspace, "automation-command-center"),
+    description: workspace.packSchedule.automation,
   })),
   ...reportDecisionShortcuts.map((shortcut) => ({
     label: shortcut.question,
     href: reportDecisionShortcutHref(shortcut),
+    description: shortcut.answer,
   })),
   ...reportAutomationTriggerRules.map((rule) => ({
     label: rule.title,
     href: reportAutomationTriggerRuleHref(rule),
+    description: `${rule.condition} - ${rule.actionLabel}`,
   })),
   ...reportDeliverySubscriptions.map((subscription) => ({
     label: subscription.title,
     href: reportDeliverySubscriptionHref(subscription),
+    description: `${subscription.cadence} - ${subscription.channel}`,
   })),
   ...reportAutomationStarters.map((starter) => ({
     label: starter.title,
     href: reportAutomationStarterHref(starter),
+    description: `${starter.audience} - ${starter.outcome}`,
   })),
   ...reportPackTemplates.map((template) => ({
     label: template.title,
     href: reportPackTemplateHref(template),
+    description: `${template.cadence} - ${template.delivery}`,
   })),
   ...reportComparisonPresets.map((preset) => ({
     label: preset.title,
     href: reportComparisonPresetHref(preset),
+    description: `${preset.baseline} - ${preset.automationTrigger}`,
   })),
   { label: "Accounts", href: "/chart-of-accounts" },
   { label: "Journal", href: "/journal" },
@@ -152,8 +167,12 @@ export function MobileNav() {
                 className={`mobile-nav-more-item ${
                   location === link.href ? "mobile-nav-more-item--active" : ""
                 }`}
+                aria-label={link.description ? `${link.label}: ${link.description}` : link.label}
               >
-                {link.label}
+                <span className="mobile-nav-more-label">{link.label}</span>
+                {link.description ? (
+                  <span className="mobile-nav-more-description">{link.description}</span>
+                ) : null}
               </button>
             ))}
           </nav>

@@ -114,9 +114,30 @@ describe("report catalog discovery route", () => {
     expect(discovery.summary.triggerRuleCount).toBe(9);
     expect(discovery.summary.decisionShortcutCount).toBe(9);
     expect(discovery.personas).toEqual(reportPersonas);
+    expect(discovery.personaSummaries).toHaveLength(3);
+    expect(discovery.personaSummaries[0]).toMatchObject({
+      persona: "owner",
+      automationPlaybookCount: 3,
+    });
+    expect(discovery.personaSummaries[0].reportCount).toBeGreaterThan(20);
+    expect(discovery.personaSummaries[0].liveReportCount).toBeGreaterThan(20);
+    expect(discovery.personaSummaries[0].comparisonPresetCount).toBeGreaterThan(0);
+    expect(discovery.personaSummaries[0].operationsHref).toContain(
+      "#report-automation-operations-title"
+    );
+    expect(discovery.personaSummaries[0].automationCommandCenterHref).toContain(
+      "#automation-command-center-title"
+    );
     expect(discovery.reports.every((report) => report.href)).toBe(true);
     expect(discovery.workspaces).toHaveLength(3);
     expect(discovery.workspaces[0].operationsHref).toContain("#report-automation-operations-title");
+    expect(discovery.workspaces[0].recommendationsHref).toContain("#recommended-reports-title");
+    expect(discovery.workspaces[0].triggerRulesHref).toContain("#trigger-rules-title");
+    expect(discovery.workspaces[0].automationRulesHref).toContain("#report-automation-rules-title");
+    expect(discovery.workspaces[0].automationCommandCenterHref).toContain(
+      "#automation-command-center-title"
+    );
+    expect(discovery.workspaces[0].packAutomationHref).toContain("#report-pack-automation-title");
     expect(discovery.deliverySubscriptions[0].href).toContain("#report-delivery-subscription-");
   });
 
@@ -131,6 +152,19 @@ describe("report catalog discovery route", () => {
     expect(res.body.personas).toEqual(reportPersonas);
     expect(res.body.summary.reportCount).toBe(res.body.reports.length);
     expect(res.body.summary.liveReportCount).toBeGreaterThan(0);
+    expect(res.body.personaSummaries).toHaveLength(1);
+    expect(res.body.personaSummaries[0]).toMatchObject({
+      persona: "freelancer",
+      reportCount: res.body.summary.reportCount,
+      liveReportCount: res.body.summary.liveReportCount,
+      automationPlaybookCount: 3,
+    });
+    expect(res.body.personaSummaries[0].decisionShortcutCount).toBeGreaterThan(0);
+    expect(res.body.personaSummaries[0].packTemplateCount).toBeGreaterThan(0);
+    expect(res.body.personaSummaries[0].comparisonPresetCount).toBeGreaterThan(0);
+    expect(res.body.personaSummaries[0].automationCommandCenterHref).toContain(
+      "persona=freelancer#automation-command-center-title"
+    );
     expect(res.body.workspaces).toHaveLength(1);
     expect(res.body.workspaces[0]).toMatchObject({
       persona: "freelancer",
@@ -138,6 +172,21 @@ describe("report catalog discovery route", () => {
     });
     expect(res.body.workspaces[0].operationsHref).toContain(
       "persona=freelancer#report-automation-operations-title"
+    );
+    expect(res.body.workspaces[0].recommendationsHref).toContain(
+      "persona=freelancer#recommended-reports-title"
+    );
+    expect(res.body.workspaces[0].triggerRulesHref).toContain(
+      "persona=freelancer#trigger-rules-title"
+    );
+    expect(res.body.workspaces[0].automationRulesHref).toContain(
+      "persona=freelancer#report-automation-rules-title"
+    );
+    expect(res.body.workspaces[0].automationCommandCenterHref).toContain(
+      "persona=freelancer#automation-command-center-title"
+    );
+    expect(res.body.workspaces[0].packAutomationHref).toContain(
+      "persona=freelancer#report-pack-automation-title"
     );
     expect(res.body.reports.every((report: any) => report.personas.includes("freelancer"))).toBe(
       true

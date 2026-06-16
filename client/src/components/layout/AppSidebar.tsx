@@ -85,6 +85,7 @@ interface SubItem {
   titleKey: string;
   url: string;
   title?: string;
+  description?: string;
   testId?: string;
 }
 
@@ -161,51 +162,60 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: reportWorkspaceTitleKeys[workspace.persona],
         url: reportWorkspaceHref(workspace),
+        description: workspace.focus,
       })),
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: `reportOperations-${workspace.persona}`,
         title: `Report operations - ${workspace.title}`,
         url: reportSectionHref(workspace, "automation-operations"),
+        description: workspace.automationOutcome,
         testId: `report-automation-operations-${workspace.persona}`,
       })),
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: reportAutomationCenterTitleKeys[workspace.persona],
         url: reportSectionHref(workspace, "automation-command-center"),
+        description: workspace.packSchedule.automation,
       })),
       ...reportDecisionShortcuts.map((shortcut) => ({
         titleKey: shortcut.question,
         title: shortcut.question,
         url: reportDecisionShortcutHref(shortcut),
+        description: shortcut.answer,
         testId: `report-decision-shortcut-${shortcut.id}`,
       })),
       ...reportAutomationTriggerRules.map((rule) => ({
         titleKey: rule.title,
         title: rule.title,
         url: reportAutomationTriggerRuleHref(rule),
+        description: `${rule.condition} - ${rule.actionLabel}`,
         testId: `report-trigger-rule-${rule.id}`,
       })),
       ...reportDeliverySubscriptions.map((subscription) => ({
         titleKey: subscription.title,
         title: subscription.title,
         url: reportDeliverySubscriptionHref(subscription),
+        description: `${subscription.cadence} - ${subscription.channel}`,
         testId: `report-delivery-subscription-${subscription.id}`,
       })),
       ...reportAutomationStarters.map((starter) => ({
         titleKey: starter.title,
         title: starter.title,
         url: reportAutomationStarterHref(starter),
+        description: `${starter.audience} - ${starter.outcome}`,
         testId: `report-automation-starter-${starter.id}`,
       })),
       ...reportPackTemplates.map((template) => ({
         titleKey: template.title,
         title: template.title,
         url: reportPackTemplateHref(template),
+        description: `${template.cadence} - ${template.delivery}`,
         testId: `report-pack-template-${template.id}`,
       })),
       ...reportComparisonPresets.map((preset) => ({
         titleKey: preset.title,
         title: preset.title,
         url: reportComparisonPresetHref(preset),
+        description: `${preset.baseline} - ${preset.automationTrigger}`,
         testId: `report-comparison-preset-${preset.id}`,
       })),
       { titleKey: "financialStatements", url: "/financial-statements" },
@@ -429,10 +439,18 @@ export function AppSidebar() {
                       <SidebarMenuSubButton
                         asChild
                         isActive={isActive}
+                        className={item.description ? "h-auto min-h-10 py-1.5" : undefined}
                         data-testid={`link-${item.testId ?? item.titleKey}`}
                       >
                         <button type="button" onClick={() => setLocation(item.url)}>
-                          {label}
+                          <span className="min-w-0">
+                            <span className="block truncate">{label}</span>
+                            {item.description ? (
+                              <span className="block truncate text-[10.5px] font-normal leading-tight text-sidebar-foreground/45">
+                                {item.description}
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>

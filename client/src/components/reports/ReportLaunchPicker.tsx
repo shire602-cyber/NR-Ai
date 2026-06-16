@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, FileSpreadsheet, Pin, RotateCcw, Search, Send, Sparkles } from "lucide-react";
@@ -22,6 +22,8 @@ import {
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
+  reportPackTemplateHref,
+  reportPackTemplates,
   getPreferredReportDeliveryAutomationCommand,
   parseReportDeliveryAutomationCommand,
   reportHref,
@@ -35,6 +37,7 @@ import {
   type ReportDeliveryAutomationCommand,
   type ReportDecisionShortcut,
   type ReportDeliverySubscription,
+  type ReportPackTemplate,
   type ReportPersona,
   type ReportPersonaWorkspace,
 } from "@/lib/reportCatalog";
@@ -76,6 +79,7 @@ interface ReportLaunchPickerProps {
 
 type LaunchReport = Omit<ReportCatalogItem, "href"> & { href?: string | null };
 type LaunchComparisonPreset = ReportComparisonPreset & { href?: string | null };
+type LaunchPackTemplate = ReportPackTemplate & { href?: string | null };
 
 interface ReportDeliveryAutomationPreference {
   persona: ReportPersona;
@@ -96,6 +100,10 @@ function shortcutHref(shortcut: ReportDecisionShortcut & { href?: string | null 
 
 function deliveryHref(subscription: ReportDeliverySubscription & { href?: string | null }): string {
   return subscription.href ?? reportDeliverySubscriptionHref(subscription);
+}
+
+function packTemplateHref(template: LaunchPackTemplate): string {
+  return template.href ?? reportPackTemplateHref(template);
 }
 
 function workspaceHref(workspace: ReportPersonaWorkspace & { href?: string | null }): string {
@@ -169,25 +177,33 @@ export function ReportLaunchPicker({
     syncedCatalog?.workspaces[0] ??
     reportPersonaWorkspaces.find((item) => item.persona === selectedPersona) ??
     reportPersonaWorkspaces[0];
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchesLauncherQuery = useCallback(
+    (values: Array<string | null | undefined>) => {
+      if (!normalizedQuery) return true;
+      return values.join(" ").toLowerCase().includes(normalizedQuery);
+    },
+    [normalizedQuery]
+  );
   const reports = useMemo(() => {
     const source =
       syncedCatalog?.reports ??
       reportCatalog
         .filter((report) => report.personas.includes(selectedPersona))
         .map((report) => ({ ...report, href: reportHref(report) ?? null }));
-    const normalizedQuery = query.trim().toLowerCase();
 
     return source
       .filter((report) => report.status === "live")
       .filter((report) => {
-        if (!normalizedQuery) return true;
-        return [report.name, report.category, report.decisionQuestion, report.commandKeywords]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery);
+        return matchesLauncherQuery([
+          report.name,
+          report.category,
+          report.decisionQuestion,
+          report.commandKeywords,
+        ]);
       })
       .slice(0, 5);
-  }, [query, selectedPersona, syncedCatalog?.reports]);
+  }, [matchesLauncherQuery, selectedPersona, syncedCatalog?.reports]);
   const shortcuts =
     syncedCatalog?.decisionShortcuts ??
     reportDecisionShortcuts.filter((shortcut) => shortcut.persona === selectedPersona);
@@ -200,6 +216,59 @@ export function ReportLaunchPicker({
   const comparisonPresets: LaunchComparisonPreset[] =
     syncedCatalog?.comparisonPresets ??
     reportComparisonPresets.filter((preset) => preset.persona === selectedPersona);
+  const packTemplates: LaunchPackTemplate[] =
+    syncedCatalog?.packTemplates ??
+    reportPackTemplates.filter((template) => template.persona === selectedPersona);
+  const visibleShortcuts = shortcuts.filter((shortcut) =>
+    matchesLauncherQuery([
+      shortcut.question,
+      shortcut.answer,
+      shortcut.commandKeywords,
+      shortcut.reportIds.join(" "),
+    ])
+  );
+  const visibleStarters = starters.filter((starter) =>
+    matchesLauncherQuery([
+      starter.title,
+      starter.audience,
+      starter.outcome,
+      starter.trigger,
+      starter.primaryAction,
+      starter.commandKeywords,
+    ])
+  );
+  const visibleDeliverySubscriptions = deliverySubscriptions.filter((subscription) =>
+    matchesLauncherQuery([
+      subscription.title,
+      subscription.audience,
+      subscription.cadence,
+      subscription.channel,
+      subscription.recipients,
+      subscription.deliveryGuardrail,
+      subscription.commandKeywords,
+    ])
+  );
+  const visibleComparisonPresets = comparisonPresets.filter((preset) =>
+    matchesLauncherQuery([
+      preset.title,
+      preset.question,
+      preset.baseline,
+      preset.automationTrigger,
+      preset.commandKeywords,
+    ])
+  );
+  const visiblePackTemplates = packTemplates.filter((template) =>
+    matchesLauncherQuery([
+      template.title,
+      template.audience,
+      template.outcome,
+      template.cadence,
+      template.delivery,
+      template.comparisonFocus,
+      template.automationTrigger,
+      template.commandKeywords,
+    ])
+  );
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
   const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
@@ -420,7 +489,7 @@ export function ReportLaunchPicker({
                       <FileSpreadsheet className="h-3.5 w-3.5" /> Delivery subscriptions
                     </div>
                     <div className="mt-3 space-y-2">
-                      {deliverySubscriptions.slice(0, 2).map((subscription) => {
+                      {visibleDeliverySubscriptions.slice(0, 2).map((subscription) => {
                         const deliveryPreview = deliverySubscriptionPreviewById[subscription.id];
                         const subscriptionChannel =
                           deliveryPreview?.channel ?? subscription.channel;
@@ -554,9 +623,9 @@ export function ReportLaunchPicker({
                           </div>
                         );
                       })}
-                      {deliverySubscriptions.length === 0 ? (
+                      {visibleDeliverySubscriptions.length === 0 ? (
                         <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                          No delivery subscriptions match this role yet.
+                          No delivery subscriptions match this role or search yet.
                         </div>
                       ) : null}
                     </div>
@@ -568,7 +637,7 @@ export function ReportLaunchPicker({
                     <FileSpreadsheet className="h-3.5 w-3.5" /> Decision shortcuts
                   </div>
                   <div className="mt-3 space-y-2">
-                    {shortcuts.slice(0, 2).map((shortcut) => (
+                    {visibleShortcuts.slice(0, 2).map((shortcut) => (
                       <Link key={shortcut.id} href={shortcutHref(shortcut)}>
                         <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
                           <div className="font-medium text-foreground">{shortcut.question}</div>
@@ -584,7 +653,7 @@ export function ReportLaunchPicker({
                     <FileSpreadsheet className="h-3.5 w-3.5" /> Comparison packs
                   </div>
                   <div className="mt-3 space-y-2">
-                    {comparisonPresets.slice(0, 2).map((preset) => (
+                    {visibleComparisonPresets.slice(0, 2).map((preset) => (
                       <Link key={preset.id} href={reportComparisonPresetHref(preset)}>
                         <div
                           className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
@@ -603,10 +672,32 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> Pack templates
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {visiblePackTemplates.slice(0, 2).map((template) => (
+                      <Link key={template.id} href={packTemplateHref(template)}>
+                        <div
+                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          data-testid={`report-launch-pack-template-${template.id}`}
+                        >
+                          <div className="font-medium text-foreground">{template.title}</div>
+                          <div className="mt-1 text-muted-foreground">{template.outcome}</div>
+                          <div className="mt-1 text-muted-foreground">
+                            {template.cadence} · {template.delivery}
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/70 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                     <Sparkles className="h-3.5 w-3.5" /> Automation starters
                   </div>
                   <div className="mt-3 space-y-2">
-                    {starters.slice(0, 2).map((starter) => (
+                    {visibleStarters.slice(0, 2).map((starter) => (
                       <Link key={starter.id} href={starterHref(starter)}>
                         <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
                           <div className="font-medium text-foreground">{starter.title}</div>

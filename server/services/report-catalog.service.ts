@@ -54,6 +54,49 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
   const comparisonPresets = reportComparisonPresets.filter(
     (preset) => !persona || preset.persona === persona
   );
+  const personaSummaries = workspaces.map((workspace) => {
+    const personaReports = reportCatalog.filter((report) =>
+      report.personas.includes(workspace.persona)
+    );
+    const personaDecisionShortcuts = reportDecisionShortcuts.filter(
+      (shortcut) => shortcut.persona === workspace.persona
+    );
+    const personaAutomationStarters = reportAutomationStarters.filter(
+      (starter) => starter.persona === workspace.persona
+    );
+    const personaTriggerRules = reportAutomationTriggerRules.filter(
+      (rule) => rule.persona === workspace.persona
+    );
+    const personaDeliverySubscriptions = reportDeliverySubscriptions.filter(
+      (subscription) => subscription.persona === workspace.persona
+    );
+    const personaPackTemplates = reportPackTemplates.filter(
+      (template) => template.persona === workspace.persona
+    );
+    const personaComparisonPresets = reportComparisonPresets.filter(
+      (preset) => preset.persona === workspace.persona
+    );
+
+    return {
+      persona: workspace.persona,
+      title: workspace.title,
+      navLabel: workspace.navLabel,
+      focus: workspace.focus,
+      automationOutcome: workspace.automationOutcome,
+      href: reportWorkspaceHref(workspace),
+      operationsHref: reportSectionHref(workspace, "automation-operations"),
+      automationCommandCenterHref: reportSectionHref(workspace, "automation-command-center"),
+      reportCount: personaReports.length,
+      liveReportCount: personaReports.filter((report) => report.status === "live").length,
+      decisionShortcutCount: personaDecisionShortcuts.length,
+      automationStarterCount: personaAutomationStarters.length,
+      triggerRuleCount: personaTriggerRules.length,
+      deliverySubscriptionCount: personaDeliverySubscriptions.length,
+      packTemplateCount: personaPackTemplates.length,
+      comparisonPresetCount: personaComparisonPresets.length,
+      automationPlaybookCount: workspace.automations.length,
+    };
+  });
 
   return {
     filters: { persona },
@@ -76,6 +119,7 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
         0
       ),
     },
+    personaSummaries,
     personas: reportPersonas,
     tabs: reportTabs,
     reports: reports.map((report) => ({
@@ -87,9 +131,14 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
       href: reportWorkspaceHref(workspace),
       operationsHref: reportSectionHref(workspace, "automation-operations"),
       decisionShortcutsHref: reportSectionHref(workspace, "decision-shortcuts"),
+      recommendationsHref: reportSectionHref(workspace, "recommendations"),
       automationStartersHref: reportSectionHref(workspace, "automation-starters"),
+      triggerRulesHref: reportSectionHref(workspace, "trigger-rules"),
       deliverySubscriptionsHref: reportSectionHref(workspace, "delivery-subscriptions"),
       packReadinessHref: reportSectionHref(workspace, "pack-readiness"),
+      automationRulesHref: reportSectionHref(workspace, "automation-rules"),
+      automationCommandCenterHref: reportSectionHref(workspace, "automation-command-center"),
+      packAutomationHref: reportSectionHref(workspace, "pack-automation"),
       automations: workspace.automations.map((playbook) => ({
         ...playbook,
         href: reportAutomationPlaybookHref(playbook, workspace.persona),

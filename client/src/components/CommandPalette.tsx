@@ -65,6 +65,7 @@ import {
 interface PaletteItem {
   id: string;
   label: string;
+  description?: string;
   group: "Navigate" | "Reports" | "Create" | "Settings";
   icon: React.ComponentType<{ className?: string }>;
   href?: string;
@@ -280,6 +281,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportWorkspaceIcons[workspace.icon],
         href: syncedHref(workspace) ?? reportWorkspaceHref(workspace),
+        description: workspace.focus,
         keywords: workspace.commandKeywords,
       })
     ),
@@ -291,6 +293,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           group: "Reports",
           icon: reportWorkspaceIcons[workspace.icon],
           href: playbook.href ?? reportAutomationPlaybookHref(playbook, workspace.persona),
+          description: `${playbook.trigger} · ${playbook.cta}`,
           keywords: [
             workspace.commandKeywords,
             playbook.trigger,
@@ -309,6 +312,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         href: syncedHref(starter) ?? reportAutomationStarterHref(starter),
+        description: `${starter.audience} · ${starter.outcome}`,
         keywords: [
           starter.commandKeywords,
           starter.audience,
@@ -327,6 +331,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
         href: syncedHref(shortcut) ?? reportDecisionShortcutHref(shortcut),
+        description: shortcut.answer,
         keywords: [
           shortcut.commandKeywords,
           shortcut.answer,
@@ -345,6 +350,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         href: syncedHref(rule) ?? reportAutomationTriggerRuleHref(rule),
+        description: `${rule.condition} · ${rule.actionLabel}`,
         keywords: [
           rule.commandKeywords,
           rule.condition,
@@ -365,6 +371,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(subscription) ?? reportDeliverySubscriptionHref(subscription),
+        description: `${subscription.cadence} · ${subscription.channel} · ${subscription.recipients}`,
         keywords: [
           subscription.commandKeywords,
           subscription.audience,
@@ -387,6 +394,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         action: () => queueReportDeliveryFromPalette(subscription.id, subscription.title),
+        description: `Send ${subscription.channel} pack to ${subscription.recipients}`,
         keywords: [
           subscription.commandKeywords,
           subscription.audience,
@@ -413,6 +421,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : Sparkles,
         action: () => retryReportDeliveryFromPalette(run.id, fallbackTitle),
+        description: run.errorMessage ?? "Recover failed automated report delivery",
         keywords: [
           subscription?.commandKeywords,
           subscription?.audience,
@@ -433,6 +442,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : FileSpreadsheet,
         href: syncedHref(template) ?? reportPackTemplateHref(template),
+        description: `${template.audience} · ${template.cadence} · ${template.delivery}`,
         keywords: [
           template.commandKeywords,
           template.audience,
@@ -451,6 +461,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: workspace ? reportWorkspaceIcons[workspace.icon] : BarChart3,
         href: syncedHref(preset) ?? reportComparisonPresetHref(preset),
+        description: `${preset.question} · ${preset.baseline}`,
         keywords: [
           preset.commandKeywords,
           preset.question,
@@ -549,6 +560,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         group: "Reports",
         icon: reportCommandIcons[report.commandIcon],
         href: report.href ?? reportHref({ href: undefined, tab: report.tab }),
+        description: `${report.category} · ${report.comparison} · ${report.automation}`,
         keywords: `${report.commandKeywords} ${report.decisionQuestion}`,
       })
     ),
@@ -662,12 +674,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 return (
                   <CommandItem
                     key={item.id}
-                    value={`${item.label} ${item.keywords ?? ""}`}
+                    value={`${item.label} ${item.description ?? ""} ${item.keywords ?? ""}`}
                     onSelect={() => handleSelect(item)}
                     data-testid={`command-item-${item.id}`}
                   >
                     <Icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <span>{item.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{item.label}</span>
+                      {item.description ? (
+                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                          {item.description}
+                        </span>
+                      ) : null}
+                    </span>
                     {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                   </CommandItem>
                 );
