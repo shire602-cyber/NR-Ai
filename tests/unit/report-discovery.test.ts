@@ -110,6 +110,13 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Automation playbooks");
     expect(reportsSource).toContain("workspace.automations.length");
     expect(reportsSource).toContain("reportAutomationPlaybookHref(playbook, workspace.persona)");
+    expect(commandSource).toContain("reportPersonaWorkspaces.flatMap");
+    expect(commandSource).toContain("id: `report-automation-${playbook.id}`");
+    expect(commandSource).toContain("label: `${playbook.title} - ${workspace.title}`");
+    expect(commandSource).toContain(
+      "href: reportAutomationPlaybookHref(playbook, workspace.persona)"
+    );
+    expect(commandSource).toContain("automation playbook report pack");
 
     const allReportIds = new Set(reportCatalog.map((report) => report.id));
     const liveReportIds = new Set(liveReportCatalog.map((report) => report.id));
@@ -122,6 +129,7 @@ describe("report discoverability", () => {
         expect(playbook.reportIds.length).toBeGreaterThanOrEqual(3);
         expect(reportAutomationPlaybookHref(playbook, workspace.persona)).toBeTruthy();
         expect(playbook.href || playbook.tab).toBeTruthy();
+        expect(commandSource).toContain("playbook.reportIds.join");
 
         for (const reportId of playbook.reportIds) {
           expect(allReportIds.has(reportId)).toBe(true);

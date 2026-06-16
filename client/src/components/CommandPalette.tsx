@@ -32,6 +32,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
 import {
   liveReportCatalog,
+  reportAutomationPlaybookHref,
   reportHref,
   reportPersonaWorkspaces,
   reportWorkspaceHref,
@@ -125,6 +126,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         href: reportWorkspaceHref(workspace),
         keywords: workspace.commandKeywords,
       })
+    ),
+    ...reportPersonaWorkspaces.flatMap((workspace) =>
+      workspace.automations.map(
+        (playbook): PaletteItem => ({
+          id: `report-automation-${playbook.id}`,
+          label: `${playbook.title} - ${workspace.title}`,
+          group: "Reports",
+          icon: reportWorkspaceIcons[workspace.icon],
+          href: reportAutomationPlaybookHref(playbook, workspace.persona),
+          keywords: [
+            workspace.commandKeywords,
+            playbook.trigger,
+            playbook.cta,
+            playbook.reportIds.join(" "),
+            "automation playbook report pack",
+          ].join(" "),
+        })
+      )
     ),
     ...liveReportCatalog.map(
       (report): PaletteItem => ({
