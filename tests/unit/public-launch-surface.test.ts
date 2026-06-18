@@ -153,6 +153,10 @@ describe("Public SaaS launch surface", () => {
       /We do not\s+claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete\./
     );
     expect(trustSource).toContain("External certifications are roadmap items, not current claims.");
+    expect(trustSource).toContain("Launch verification evidence");
+    expect(trustSource).toContain("Backup and restore proof");
+    expect(trustSource).toContain("Incident process");
+    expect(trustSource).toContain("Privacy and DPA posture");
     expect(helpSource).toContain("Support and SLA posture");
     expect(pricingSource).toContain("Enterprise support terms");
   });

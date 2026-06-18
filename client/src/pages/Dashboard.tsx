@@ -60,6 +60,7 @@ import {
   setPreferredReportWorkflowGapFilter,
   type ReportDeliveryAutomationCommand,
   type ReportPersona,
+  type ReportPersonaWorkspace,
   type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import {
@@ -405,6 +406,22 @@ interface DashboardAutomationAction {
   runId?: string;
 }
 
+interface DashboardRoleWorkdayAction {
+  id: string;
+  icon: typeof Plus;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+}
+
+interface DashboardRoleWorkdayPath {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actions: DashboardRoleWorkdayAction[];
+}
+
 interface DashboardReportDeliveryRun {
   id: string;
   subscriptionId: string;
@@ -489,6 +506,138 @@ function dashboardReportWorkflowSearchScore(
     if (haystack.includes(term)) score += 10;
   }
   return score;
+}
+
+function getDashboardRoleWorkdayPath(workspace: ReportPersonaWorkspace): DashboardRoleWorkdayPath {
+  const quickAccessHref = reportSectionHref(workspace, "quick-access");
+  const automationHref = reportSectionHref(workspace, "automation-starters");
+  const deliveryHref = reportSectionHref(workspace, "delivery-subscriptions");
+  const workflowHref = reportSectionHref(workspace, "workflow-finder");
+
+  if (workspace.persona === "freelancer") {
+    return {
+      eyebrow: "Freelancer path",
+      title: "Start with billing, receipts, tax, then automation.",
+      description: "A smaller daily path for freelancers before opening the full report library.",
+      actions: [
+        {
+          id: "freelancer-invoice",
+          icon: Plus,
+          title: "Send or chase invoices",
+          description: "Create client invoices and keep open balances visible.",
+          href: "/invoices",
+          cta: "Invoice",
+        },
+        {
+          id: "freelancer-receipts",
+          icon: Receipt,
+          title: "Log client expenses",
+          description: "Capture receipts before they become month-end cleanup.",
+          href: "/receipts",
+          cta: "Receipt",
+        },
+        {
+          id: "freelancer-tax-cash",
+          icon: BarChart3,
+          title: "Review tax and cash",
+          description: "Open the freelancer reports for tax exposure and cash pressure.",
+          href: quickAccessHref,
+          cta: "Reports",
+        },
+        {
+          id: "freelancer-admin-automation",
+          icon: Sparkles,
+          title: "Start admin automation",
+          description: "Turn receipt, collection, and delivery routines into repeatable steps.",
+          href: automationHref,
+          cta: "Automate",
+        },
+      ],
+    };
+  }
+
+  if (workspace.persona === "accountant") {
+    return {
+      eyebrow: "Accountant path",
+      title: "Start with exceptions, close, comparisons, then packs.",
+      description:
+        "A review-first path for accountants before moving into the full client reporting workspace.",
+      actions: [
+        {
+          id: "accountant-workflow-finder",
+          icon: CheckCircle2,
+          title: "Find report gaps",
+          description: "Open the workflow finder for missing reports, rules, or deliveries.",
+          href: workflowHref,
+          cta: "Review",
+        },
+        {
+          id: "accountant-close-reports",
+          icon: BookOpen,
+          title: "Open close reports",
+          description: "Review trial balance, ledgers, audit log, and close readiness.",
+          href: reportsHref({ tab: "close", persona: workspace.persona }),
+          cta: "Close",
+        },
+        {
+          id: "accountant-comparisons",
+          icon: BarChart3,
+          title: "Run comparisons",
+          description: "Check current-vs-prior movement before client review.",
+          href: reportSectionHref(workspace, "recommendations"),
+          cta: "Compare",
+        },
+        {
+          id: "accountant-pack-delivery",
+          icon: Clock,
+          title: "Schedule client pack",
+          description: "Queue recurring packs with delivery guardrails.",
+          href: deliveryHref,
+          cta: "Delivery",
+        },
+      ],
+    };
+  }
+
+  return {
+    eyebrow: "Owner / solo path",
+    title: "Start with sales, spend, cash, then the weekly pack.",
+    description: "A lighter path for solo entrepreneurs before opening the full report workspace.",
+    actions: [
+      {
+        id: "owner-solo-invoice",
+        icon: Plus,
+        title: "Record today's sale",
+        description: "Create the invoice first so revenue and tax reports stay current.",
+        href: "/invoices",
+        cta: "Invoice",
+      },
+      {
+        id: "owner-solo-receipts",
+        icon: Receipt,
+        title: "Capture spend",
+        description: "Upload receipts before they become bookkeeping backlog.",
+        href: "/receipts",
+        cta: "Receipt",
+      },
+      {
+        id: "owner-solo-cash",
+        icon: BarChart3,
+        title: "Check cash pressure",
+        description: "Open owner reports for receivables, runway, VAT, and profit.",
+        href: quickAccessHref,
+        cta: "Reports",
+      },
+      {
+        id: "owner-solo-pack",
+        icon: Clock,
+        title: "Queue the weekly pack",
+        description: "Send the owner pack after bank, invoice, and receipt updates.",
+        href: deliveryHref,
+        cta: "Delivery",
+      },
+    ],
+  };
 }
 
 // ─── Quick action ────────────────────────────────────────────────────────────
@@ -651,6 +800,10 @@ function CustomerDashboard() {
     clearPreferredReportWorkflowGapFilter(preferredReportWorkspace.persona);
     setReportWorkflowPreferenceRevision((revision) => revision + 1);
   };
+  const dashboardRoleWorkdayPath = useMemo(
+    () => getDashboardRoleWorkdayPath(preferredReportWorkspace),
+    [preferredReportWorkspace]
+  );
   const preferredWorkspaceCatalogReports = useMemo(() => {
     return reportCatalog.filter((report) =>
       report.personas.includes(preferredReportWorkspace.persona)
@@ -2190,6 +2343,56 @@ function CustomerDashboard() {
                     </div>
                   </Link>
                 ))}
+              </div>
+            </div>
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-role-workday-path"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    {dashboardRoleWorkdayPath.eyebrow}
+                  </div>
+                  <h3 className="mt-2 text-base font-semibold text-foreground">
+                    {dashboardRoleWorkdayPath.title}
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    {dashboardRoleWorkdayPath.description}
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "workflow-finder")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open workflow finder <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {dashboardRoleWorkdayPath.actions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <Link key={action.id} href={action.href}>
+                      <div
+                        className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                        data-testid={`dashboard-report-role-workday-action-${action.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <Badge variant="outline">{action.cta}</Badge>
+                        </div>
+                        <div className="mt-3 text-sm font-semibold text-foreground">
+                          {action.title}
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {action.description}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
             <div className="border-b border-border/60 p-5" data-testid="dashboard-report-suites">

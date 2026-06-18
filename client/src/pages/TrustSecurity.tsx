@@ -44,6 +44,39 @@ const roadmap = [
   "Expand data-processing and residency documentation for enterprise customers.",
 ];
 
+const launchEvidence = [
+  {
+    title: "Release gates",
+    text: "Type-check, unit tests, API contract checks, dependency audit, and production build run before release promotion.",
+  },
+  {
+    title: "Production smoke",
+    text: "Read-only smoke checks cover liveness, readiness, deployed version, and OAuth-provider response on the production URL.",
+  },
+  {
+    title: "Protected-route crawl",
+    text: "Authenticated firm-route smoke is supported with dedicated smoke credentials and recorded as internal release evidence.",
+  },
+];
+
+const trustPosture = [
+  {
+    icon: Database,
+    title: "Backup and restore proof",
+    text: "The application backup flow creates checksum-verified snapshots, restore previews, transactional restores, and a pre-restore safety backup. Operational backup cadence is confirmed for each production environment.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Incident process",
+    text: "The response checklist covers containment, audit-log review, key/API-token rotation, recovery from backup when integrity is in question, and UAE PDPL notification review.",
+  },
+  {
+    icon: UserCheck,
+    title: "Privacy and DPA posture",
+    text: "The Privacy Policy is public. Enterprise DPA and security-questionnaire review is handled during onboarding while a standard downloadable DPA pack is prepared.",
+  },
+];
+
 export default function TrustSecurity() {
   return (
     <div className="min-h-screen bg-background">
@@ -96,7 +129,7 @@ export default function TrustSecurity() {
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
-                    <span>High/critical production dependency audit gate is clean.</span>
+                    <span>High/critical production dependency audit gate is part of release.</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
@@ -111,6 +144,31 @@ export default function TrustSecurity() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+        </section>
+
+        <section className="container mx-auto max-w-6xl px-4 py-14">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold">Launch verification evidence</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Release evidence is kept practical: automated gates, production health checks, and
+                authenticated route crawls for protected firm workflows when smoke credentials are
+                available.
+              </p>
+            </div>
+            <Badge variant="outline">Internal release gate</Badge>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {launchEvidence.map((item) => (
+              <div key={item.title} className="rounded-lg border p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <FileCheck className="h-4 w-4 text-primary" />
+                  {item.title}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.text}</p>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -132,6 +190,36 @@ export default function TrustSecurity() {
                 </Card>
               );
             })}
+          </div>
+        </section>
+
+        <section className="border-y bg-muted/30">
+          <div className="container mx-auto max-w-6xl px-4 py-14">
+            <div>
+              <h2 className="text-2xl font-semibold">Operational trust posture</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+                The public posture separates working product controls from environment-specific
+                operating procedures and future certifications.
+              </p>
+            </div>
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              {trustPosture.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Card key={item.title}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-3 text-lg">
+                        <Icon className="h-5 w-5 text-primary" />
+                        {item.title}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm leading-6 text-muted-foreground">
+                      {item.text}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         </section>
 
@@ -184,6 +272,9 @@ export default function TrustSecurity() {
             </Link>
             <Link href="/migration-guides">
               <Button variant="outline">Migration Guides</Button>
+            </Link>
+            <Link href="/privacy">
+              <Button variant="outline">Privacy Policy</Button>
             </Link>
           </div>
         </section>

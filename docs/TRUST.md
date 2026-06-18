@@ -1,7 +1,23 @@
 # Muhasib.ai — Security & Trust Overview
 
-_Last updated: 2026-06-11. Answers map to system behavior verifiable in code
+_Last updated: 2026-06-18. Answers map to system behavior verifiable in code
 and tests; file references point at the enforcing implementation._
+
+## Launch verification evidence
+
+- 2026-06-18: production read-only smoke passed on deployed commit
+  `0aaedd7` with liveness, readiness, version, and OAuth-provider surface
+  checks:
+
+  ```sh
+  SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=0aaedd7 npm run smoke:prod -- https://nr-ai-production.up.railway.app
+  ```
+
+- Protected-route smoke is supported by `npm run smoke:prod` and requires
+  `SMOKE_BASE_URL`, `SMOKE_EMAIL`, and `SMOKE_PASSWORD`. Do not mark the
+  authenticated route crawl complete for a target environment until dedicated
+  smoke credentials are provided and the script passes against that
+  environment.
 
 ## Authentication & access control
 
