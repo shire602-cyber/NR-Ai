@@ -5,12 +5,12 @@ and tests; file references point at the enforcing implementation._
 
 ## Launch verification evidence
 
-- 2026-06-18: production read-only smoke passed on deployed commit
-  `4015ab4` with liveness, readiness, version, and OAuth-provider surface
-  checks:
+- 2026-06-18: production read-only smoke passed after deploying the audited
+  launch-hardening branch, with liveness, readiness, version, and
+  OAuth-provider surface checks:
 
   ```sh
-  SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=4015ab4 npm run smoke:prod -- https://nr-ai-production.up.railway.app
+  SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod -- https://nr-ai-production.up.railway.app
   ```
 
 - Protected-route smoke is supported by `npm run smoke:prod` and requires
