@@ -18,6 +18,16 @@ and tests; file references point at the enforcing implementation._
   authenticated route crawl complete for a target environment until dedicated
   smoke credentials are provided and the script passes against that
   environment.
+- Authenticated browser route crawl is supported with the same smoke
+  credentials:
+
+  ```sh
+  SMOKE_BASE_URL=<url> SMOKE_EMAIL=<email> SMOKE_PASSWORD=<password> SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod:routes
+  ```
+
+  It logs in as the existing smoke user and crawls protected pages read-only;
+  scope with `AUTH_CRAWL_PROFILE` or `AUTH_CRAWL_ROUTES` when the smoke user is
+  customer- or firm-specific.
 
 ## Authentication & access control
 

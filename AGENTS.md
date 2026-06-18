@@ -439,6 +439,11 @@ Scope: this file applies to the whole repository.
   Set `SMOKE_REQUIRE_OAUTH_CONFIG=true` when OAuth providers must be configured, and use
   `SMOKE_WORKSPACE_MUTATIONS=true` only on disposable staging targets because it writes VAT
   workpaper rows and refreshes growth-opportunity data.
+- For authenticated read-only browser route crawl of a deployed target, run
+  `SMOKE_BASE_URL=<url> SMOKE_EMAIL=<email> SMOKE_PASSWORD=<password> SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod:routes`.
+  It logs in with the existing smoke user and crawls protected routes without creating accounting
+  records. Use `AUTH_CRAWL_PROFILE=firm|customer|all` or `AUTH_CRAWL_ROUTES=/dashboard,/reports`
+  to scope the route set.
 - `npm run security:verify-prod` requires `DATABASE_URL`; Railway production uses a private
   `postgres.railway.internal` URL, so run this inside the Railway network or through Railway SSH
   after an SSH key is registered. Set `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` after rotating
