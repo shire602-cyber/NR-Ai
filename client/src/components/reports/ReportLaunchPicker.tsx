@@ -10,6 +10,7 @@ import {
   fetchReportCatalogDiscovery,
   reportCatalogDiscoveryQueryKey,
   type ReportCatalogDiscovery,
+  type ReportCatalogReportActionContext,
 } from "@/lib/reportCatalogApi";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -25,13 +26,20 @@ import {
   reportPackTemplateHref,
   reportPackTemplates,
   getPreferredReportDeliveryAutomationCommand,
+  getPreferredReportWorkflowGapFilter,
   getPreferredReportWorkflowSearch,
   parseReportDeliveryAutomationCommand,
-  reportHref,
+  readyReportCatalog,
+  reportPersonaHref,
   reportPersonas,
   reportPersonaWorkspaces,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
   reportWorkspaceHref,
+  reportWorkflowContextHref,
+  reportWorkflowGapFilterLabels,
+  reportWorkflowFinderGapHref,
   setPreferredReportWorkflowSearch,
   type ReportAutomationStarter,
   type ReportCatalogItem,
@@ -42,6 +50,8 @@ import {
   type ReportPackTemplate,
   type ReportPersona,
   type ReportPersonaWorkspace,
+  type ReportSuiteProfile,
+  type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import { cn } from "@/lib/utils";
 
@@ -55,12 +65,22 @@ export interface ReportLaunchDeliveryPreview {
   recipients?: string;
   deliveryGuardrail?: string;
   summary?: string;
+  suiteTitles?: string[];
   latestRunStatus?: string;
   latestRunStatusVariant?: BadgeProps["variant"];
   latestRunId?: string;
   latestRunLabel?: string;
   latestRunDetail?: string;
   latestRunError?: string | null;
+  handoffRows?: Array<{
+    label: string;
+    value: string;
+    detail?: string;
+    href?: string;
+    status?: "ready" | "review" | "paused";
+  }>;
+  handoffRequiresAcknowledgement?: boolean;
+  handoffAcknowledged?: boolean;
   queueDisabled?: boolean;
 }
 
@@ -84,6 +104,8 @@ type LaunchComparisonPreset = ReportComparisonPreset & { href?: string | null };
 type LaunchDecisionShortcut = ReportDecisionShortcut & { href?: string | null };
 type LaunchDeliverySubscription = ReportDeliverySubscription & { href?: string | null };
 type LaunchPackTemplate = ReportPackTemplate & { href?: string | null };
+type LaunchReportSuite = ReportSuiteProfile & { href?: string | null };
+type LaunchReportActionLink = { id: string; title: string; href: string };
 type ReportLaunchSearchValue = string | number | null | undefined;
 
 interface ReportDeliveryAutomationPreference {
@@ -91,8 +113,8 @@ interface ReportDeliveryAutomationPreference {
   preferredDeliveryAutomationCommand: ReportDeliveryAutomationCommand | null;
 }
 
-function reportItemHref(report: LaunchReport): string {
-  return report.href ?? reportHref({ href: undefined, tab: report.tab }) ?? "/reports";
+function reportItemHref(report: LaunchReport, persona: ReportPersona): string {
+  return report.href ?? reportPersonaHref(report, persona) ?? "/reports";
 }
 
 function starterHref(starter: ReportAutomationStarter & { href?: string | null }): string {
@@ -109,6 +131,36 @@ function deliveryHref(subscription: ReportDeliverySubscription & { href?: string
 
 function packTemplateHref(template: LaunchPackTemplate): string {
   return template.href ?? reportPackTemplateHref(template);
+}
+
+function suiteHref(suite: LaunchReportSuite): string {
+  return suite.href ?? reportSuiteHref(suite);
+}
+
+function starterActionLink(
+  starter: (ReportAutomationStarter & { href?: string | null }) | undefined
+): LaunchReportActionLink | undefined {
+  return starter ? { id: starter.id, title: starter.title, href: starterHref(starter) } : undefined;
+}
+
+function deliveryActionLink(
+  subscription: LaunchDeliverySubscription | undefined
+): LaunchReportActionLink | undefined {
+  return subscription
+    ? { id: subscription.id, title: subscription.title, href: deliveryHref(subscription) }
+    : undefined;
+}
+
+function comparisonActionLink(
+  preset: LaunchComparisonPreset | undefined
+): LaunchReportActionLink | undefined {
+  return preset
+    ? { id: preset.id, title: preset.title, href: reportComparisonPresetHref(preset) }
+    : undefined;
+}
+
+function suiteActionLink(suite: LaunchReportSuite | undefined): LaunchReportActionLink | undefined {
+  return suite ? { id: suite.id, title: suite.title, href: suiteHref(suite) } : undefined;
 }
 
 function workspaceHref(workspace: ReportPersonaWorkspace & { href?: string | null }): string {
@@ -164,6 +216,15 @@ function rankReportLaunchItems<T>(
     .map(({ item }) => item);
 }
 
+function linkedReportSearchValues(reportIds: string[]): ReportLaunchSearchValue[] {
+  return [
+    reportIds.join(" "),
+    reportIds
+      .map((reportId) => reportCatalog.find((report) => report.id === reportId)?.name ?? reportId)
+      .join(" "),
+  ];
+}
+
 function reportSearchValues(report: LaunchReport): ReportLaunchSearchValue[] {
   return [
     report.name,
@@ -194,6 +255,7 @@ function starterSearchValues(
     starter.trigger,
     starter.primaryAction,
     starter.commandKeywords,
+    ...linkedReportSearchValues(starter.reportIds),
   ];
 }
 
@@ -208,6 +270,7 @@ function deliverySubscriptionSearchValues(
     subscription.recipients,
     subscription.deliveryGuardrail,
     subscription.commandKeywords,
+    ...linkedReportSearchValues(subscription.reportIds),
   ];
 }
 
@@ -218,6 +281,7 @@ function comparisonPresetSearchValues(preset: LaunchComparisonPreset): ReportLau
     preset.baseline,
     preset.automationTrigger,
     preset.commandKeywords,
+    ...linkedReportSearchValues(preset.reportIds),
   ];
 }
 
@@ -231,6 +295,23 @@ function packTemplateSearchValues(template: LaunchPackTemplate): ReportLaunchSea
     template.comparisonFocus,
     template.automationTrigger,
     template.commandKeywords,
+    ...linkedReportSearchValues(template.reportIds),
+  ];
+}
+
+function suiteSearchValues(suite: LaunchReportSuite): ReportLaunchSearchValue[] {
+  return [
+    suite.title,
+    suite.outcome,
+    suite.workflow,
+    suite.primaryAction,
+    suite.reportIds.join(" "),
+    suite.triggerRuleIds.join(" "),
+    suite.deliverySubscriptionId,
+    suite.decisionShortcutId,
+    suite.savedViewIds.join(" "),
+    suite.commandKeywords,
+    ...linkedReportSearchValues(suite.reportIds),
   ];
 }
 
@@ -264,6 +345,8 @@ export function ReportLaunchPicker({
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
   const [query, setQuery] = useState(() => getPreferredReportWorkflowSearch(persona));
+  const [storedWorkflowGapFilter, setStoredWorkflowGapFilter] =
+    useState<ReportWorkflowGapFilter | null>(() => getPreferredReportWorkflowGapFilter(persona));
   const [storedDeliveryAutomationCommand, setStoredDeliveryAutomationCommand] =
     useState<ReportDeliveryAutomationCommand | null>(() =>
       getPreferredReportDeliveryAutomationCommand(persona)
@@ -275,6 +358,7 @@ export function ReportLaunchPicker({
 
   useEffect(() => {
     setQuery(getPreferredReportWorkflowSearch(selectedPersona));
+    setStoredWorkflowGapFilter(getPreferredReportWorkflowGapFilter(selectedPersona));
     setStoredDeliveryAutomationCommand(
       getPreferredReportDeliveryAutomationCommand(selectedPersona)
     );
@@ -320,13 +404,13 @@ export function ReportLaunchPicker({
   const reports = useMemo(() => {
     const source =
       syncedCatalog?.reports ??
-      reportCatalog
+      readyReportCatalog
         .filter((report) => report.personas.includes(selectedPersona))
-        .map((report) => ({ ...report, href: reportHref(report) ?? null }));
+        .map((report) => ({ ...report, href: reportPersonaHref(report, selectedPersona) ?? null }));
 
     return rankReportLaunchItems(
       source
-        .filter((report) => report.status === "live")
+        .filter((report) => report.status !== "planned")
         .filter((report) => matchesLauncherQuery(reportSearchValues(report))),
       normalizedQuery,
       reportSearchValues
@@ -347,6 +431,14 @@ export function ReportLaunchPicker({
   const packTemplates: LaunchPackTemplate[] =
     syncedCatalog?.packTemplates ??
     reportPackTemplates.filter((template) => template.persona === selectedPersona);
+  const reportSuites: LaunchReportSuite[] =
+    syncedCatalog?.reportSuites ??
+    reportSuiteProfiles.filter((suite) => suite.persona === selectedPersona);
+  const visibleSuites = rankReportLaunchItems(
+    reportSuites.filter((suite) => matchesLauncherQuery(suiteSearchValues(suite))),
+    normalizedQuery,
+    suiteSearchValues
+  );
   const visibleShortcuts = rankReportLaunchItems(
     shortcuts.filter((shortcut) => matchesLauncherQuery(shortcutSearchValues(shortcut))),
     normalizedQuery,
@@ -376,17 +468,81 @@ export function ReportLaunchPicker({
     normalizedQuery,
     packTemplateSearchValues
   );
-  const workflowFinderHref = reportSectionHref(workspace, "workflow-finder");
-  const matchingAutomationPackHref = visiblePackTemplates[0]
-    ? packTemplateHref(visiblePackTemplates[0])
-    : visibleStarters[0]
-      ? starterHref(visibleStarters[0])
-      : reportSectionHref(workspace, "automation-starters");
-  const matchingAutomationPackLabel = visiblePackTemplates[0]
-    ? "Open matching pack"
-    : visibleStarters[0]
-      ? "Open matching automation"
-      : "Open automations";
+  const reportAutomationContextById = useMemo(() => {
+    const context = new Map<
+      string,
+      {
+        syncedContext?: ReportCatalogReportActionContext;
+        starter?: LaunchReportActionLink;
+        delivery?: LaunchReportActionLink;
+        comparison?: LaunchReportActionLink;
+        suite?: LaunchReportActionLink;
+      }
+    >();
+
+    for (const report of reports) {
+      const syncedContext = syncedCatalog?.reportActionContexts.find(
+        (item) => item.reportId === report.id && item.persona === selectedPersona
+      );
+      context.set(report.id, {
+        syncedContext,
+        starter:
+          syncedContext?.automationStarters[0] ??
+          starterActionLink(starters.find((starter) => starter.reportIds.includes(report.id))),
+        delivery:
+          syncedContext?.deliverySubscriptions[0] ??
+          deliveryActionLink(
+            deliverySubscriptions.find((subscription) => subscription.reportIds.includes(report.id))
+          ),
+        comparison:
+          syncedContext?.comparisonPresets[0] ??
+          comparisonActionLink(
+            comparisonPresets.find((preset) => preset.reportIds.includes(report.id))
+          ),
+        suite:
+          syncedContext?.reportSuites[0] ??
+          suiteActionLink(reportSuites.find((suite) => suite.reportIds.includes(report.id))),
+      });
+    }
+
+    return context;
+  }, [
+    comparisonPresets,
+    deliverySubscriptions,
+    reportSuites,
+    reports,
+    selectedPersona,
+    starters,
+    syncedCatalog?.reportActionContexts,
+  ]);
+  const workflowFinderHref = storedWorkflowGapFilter
+    ? reportWorkflowFinderGapHref({
+        persona: selectedPersona,
+        gap: storedWorkflowGapFilter,
+        tab: workspace.primaryTab,
+        search: trimmedQuery,
+      })
+    : trimmedQuery
+      ? reportWorkflowContextHref({
+          persona: selectedPersona,
+          tab: workspace.primaryTab,
+          search: trimmedQuery,
+        })
+      : reportSectionHref(workspace, "workflow-finder");
+  const matchingAutomationPackHref = visibleSuites[0]
+    ? suiteHref(visibleSuites[0])
+    : visiblePackTemplates[0]
+      ? packTemplateHref(visiblePackTemplates[0])
+      : visibleStarters[0]
+        ? starterHref(visibleStarters[0])
+        : reportSectionHref(workspace, "automation-starters");
+  const matchingAutomationPackLabel = visibleSuites[0]
+    ? "Open matching suite"
+    : visiblePackTemplates[0]
+      ? "Open matching pack"
+      : visibleStarters[0]
+        ? "Open matching automation"
+        : "Open automations";
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
   const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
@@ -434,6 +590,10 @@ export function ReportLaunchPicker({
     primaryDeliveryPreview?.queueDisabled ||
     primaryDeliveryPreview?.enabled === false ||
     !primaryDeliverySubscription;
+  const primaryDeliveryRequiresHandoffAcknowledgement = Boolean(
+    primaryDeliveryPreview?.handoffRequiresAcknowledgement &&
+    !primaryDeliveryPreview?.handoffAcknowledged
+  );
   const isPinnedRetryCommandDisabled = deliveryRetryDisabled || !primaryDeliveryRetryRunId;
   const isDeliveryMode = mode === "delivery";
 
@@ -458,6 +618,11 @@ export function ReportLaunchPicker({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {storedWorkflowGapFilter ? (
+              <Badge variant="outline" data-testid="report-launch-gap-context">
+                {reportWorkflowGapFilterLabels[storedWorkflowGapFilter]}
+              </Badge>
+            ) : null}
             {trimmedQuery ? (
               <Badge variant="outline" data-testid="report-launch-search-context">
                 <span className="max-w-[12rem] truncate">Search: {trimmedQuery}</span>
@@ -512,7 +677,7 @@ export function ReportLaunchPicker({
               <Button asChild size="sm" variant="outline" className="h-8 px-2">
                 <Link href={workflowFinderHref} data-testid="report-launch-open-workflow-finder">
                   <Search className="h-3.5 w-3.5" />
-                  Open finder
+                  {storedWorkflowGapFilter ? "Open gap" : "Open finder"}
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline" className="h-8 px-2">
@@ -539,9 +704,11 @@ export function ReportLaunchPicker({
                   </Link>
                 </div>
                 <div className="divide-y divide-border/50">
-                  {reports.map((report) => (
-                    <Link key={report.id} href={reportItemHref(report)}>
+                  {reports.map((report) => {
+                    const reportAutomationContext = reportAutomationContextById.get(report.id);
+                    return (
                       <div
+                        key={report.id}
                         className="flex cursor-pointer items-start justify-between gap-3 px-3 py-3 transition-colors hover:bg-accent/5"
                         data-testid={`report-launch-report-${report.id}`}
                       >
@@ -550,13 +717,74 @@ export function ReportLaunchPicker({
                           <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                             {report.decisionQuestion}
                           </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <Badge variant="outline">{report.category}</Badge>
+                            {reportAutomationContext?.starter ? (
+                              <Badge variant="info">Autopilot</Badge>
+                            ) : null}
+                            {reportAutomationContext?.delivery ? (
+                              <Badge variant="success">Scheduled</Badge>
+                            ) : null}
+                            {reportAutomationContext?.comparison ? (
+                              <Badge variant="neutral">Comparison</Badge>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                              <Link
+                                href={
+                                  reportAutomationContext?.syncedContext?.reportHref ??
+                                  reportItemHref(report, selectedPersona)
+                                }
+                              >
+                                Open report <ArrowRight className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                            {reportAutomationContext?.starter ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={reportAutomationContext.starter.href}
+                                  data-testid={`report-launch-report-automation-${report.id}`}
+                                >
+                                  Autopilot
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {reportAutomationContext?.delivery ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={reportAutomationContext.delivery.href}
+                                  data-testid={`report-launch-report-delivery-${report.id}`}
+                                >
+                                  Delivery
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {reportAutomationContext?.comparison ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={reportAutomationContext.comparison.href}
+                                  data-testid={`report-launch-report-comparison-${report.id}`}
+                                >
+                                  Compare
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {reportAutomationContext?.suite ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={reportAutomationContext.suite.href}
+                                  data-testid={`report-launch-report-suite-${report.id}`}
+                                >
+                                  Suite
+                                </Link>
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-                        <Badge variant="outline" className="shrink-0">
-                          {report.category}
-                        </Badge>
                       </div>
-                    </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -598,7 +826,9 @@ export function ReportLaunchPicker({
                           <Send className="h-3.5 w-3.5" />
                           {queueingDeliverySubscriptionId === primaryDeliverySubscription.id
                             ? "Queueing"
-                            : "Queue pinned pack"}
+                            : primaryDeliveryRequiresHandoffAcknowledgement
+                              ? "Acknowledge handoff"
+                              : "Queue pinned pack"}
                         </Button>
                       ) : pinnedDeliveryAutomationCommand === "retry" &&
                         onRetryDeliveryRun &&
@@ -654,6 +884,10 @@ export function ReportLaunchPicker({
                           deliveryPreview?.latestRunStatus === "failed"
                             ? (deliveryPreview.latestRunId ?? null)
                             : null;
+                        const requiresHandoffAcknowledgement = Boolean(
+                          deliveryPreview?.handoffRequiresAcknowledgement &&
+                          !deliveryPreview?.handoffAcknowledged
+                        );
 
                         return (
                           <div
@@ -692,6 +926,12 @@ export function ReportLaunchPicker({
                                 <span className="font-medium text-foreground">Channel:</span>{" "}
                                 {subscriptionChannel} · {subscriptionFormat}
                               </div>
+                              {deliveryPreview?.suiteTitles?.length ? (
+                                <div>
+                                  <span className="font-medium text-foreground">Suite:</span>{" "}
+                                  {deliveryPreview.suiteTitles.join(", ")}
+                                </div>
+                              ) : null}
                               <div>
                                 <span className="font-medium text-foreground">To:</span>{" "}
                                 {subscriptionRecipients}
@@ -701,6 +941,25 @@ export function ReportLaunchPicker({
                                 {subscriptionGuardrail}
                               </div>
                             </div>
+                            {deliveryPreview?.handoffRows?.length ? (
+                              <div
+                                className="mt-2 space-y-1 rounded-md border border-border/70 bg-background/60 p-2 text-muted-foreground"
+                                data-testid={`report-launch-delivery-handoff-${subscription.id}`}
+                              >
+                                <div className="font-medium text-foreground">
+                                  Accountant handoff
+                                </div>
+                                {deliveryPreview.handoffRows.slice(0, 3).map((row) => (
+                                  <div key={row.label}>
+                                    <span className="font-medium text-foreground">
+                                      {row.label}:
+                                    </span>{" "}
+                                    {row.value}
+                                    {row.detail ? ` - ${row.detail}` : ""}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
                             {deliveryPreview?.latestRunStatus ? (
                               <div
                                 className="mt-2 rounded-md border border-border/70 bg-background/60 p-2 text-muted-foreground"
@@ -764,7 +1023,9 @@ export function ReportLaunchPicker({
                                   <Send className="h-3.5 w-3.5" />
                                   {queueingDeliverySubscriptionId === subscription.id
                                     ? "Queueing"
-                                    : "Queue"}
+                                    : requiresHandoffAcknowledgement
+                                      ? "Acknowledge"
+                                      : "Queue"}
                                 </Button>
                               ) : null}
                             </div>
@@ -779,6 +1040,78 @@ export function ReportLaunchPicker({
                     </div>
                   </div>
                 ) : null}
+
+                <div className="rounded-md border border-border/70 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> Report suites
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {visibleSuites.slice(0, 2).map((suite) => {
+                      const deliveryPreview =
+                        deliverySubscriptionPreviewById[suite.deliverySubscriptionId];
+                      const isQueueDisabled =
+                        deliveryQueueDisabled ||
+                        deliveryPreview?.queueDisabled ||
+                        deliveryPreview?.enabled === false;
+                      const requiresHandoffAcknowledgement = Boolean(
+                        deliveryPreview?.handoffRequiresAcknowledgement &&
+                        !deliveryPreview?.handoffAcknowledged
+                      );
+
+                      return (
+                        <div
+                          key={suite.id}
+                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          data-testid={`report-launch-suite-${suite.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium text-foreground">{suite.title}</div>
+                            <Badge variant="outline" className="shrink-0">
+                              {suite.reportIds.length} reports
+                            </Badge>
+                          </div>
+                          <div className="mt-1 text-muted-foreground">{suite.workflow}</div>
+                          <div className="mt-1 text-muted-foreground">{suite.outcome}</div>
+                          <div className="mt-1 text-muted-foreground">
+                            {suite.triggerRuleIds.length} trigger rules · scheduled delivery linked
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                              <Link href={suiteHref(suite)}>
+                                Open <ArrowRight className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                            {onQueueDeliverySubscription ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                disabled={isQueueDisabled}
+                                onClick={() =>
+                                  onQueueDeliverySubscription(suite.deliverySubscriptionId)
+                                }
+                                data-testid={`report-launch-queue-suite-delivery-${suite.id}`}
+                              >
+                                <Send className="h-3.5 w-3.5" />
+                                {queueingDeliverySubscriptionId === suite.deliverySubscriptionId
+                                  ? "Queueing"
+                                  : requiresHandoffAcknowledgement
+                                    ? "Acknowledge"
+                                    : "Queue delivery"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {visibleSuites.length === 0 ? (
+                      <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
+                        No report suites match this role or search yet.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">

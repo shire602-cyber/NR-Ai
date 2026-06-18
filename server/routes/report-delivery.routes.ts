@@ -5,6 +5,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { createAndEmitNotification } from "../services/socket.service";
 import {
+  buildReportDeliveryHandoffReview,
   buildReportDeliveryNotificationInput,
   buildReportDeliveryRunInput,
   getReportDeliveryPlan,
@@ -47,6 +48,10 @@ const reportDeliverySchedulerHealthQuerySchema = z.object({
 
 const reportDeliveryAutomationPreferenceSchema = z.object({
   preferredDeliveryAutomationCommand: z.enum(["retry", "review", "queue", "comparison"]).nullable(),
+});
+
+const reportDeliveryQueueSchema = z.object({
+  acknowledgeHandoffGaps: z.boolean().optional(),
 });
 
 function errorMessage(error: unknown): string {
@@ -206,6 +211,7 @@ export function registerReportDeliveryRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
+      const body = reportDeliveryQueueSchema.parse(req.body ?? {});
       const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
       const delivery = buildReportDeliveryNotificationInput({
         userId,
@@ -220,6 +226,22 @@ export function registerReportDeliveryRoutes(app: Express) {
 
       if (!delivery.plan.enabled) {
         return res.status(409).json({ message: "Report delivery subscription is paused" });
+      }
+
+      const latestRuns = await storage.getReportDeliveryRuns(companyId, {
+        subscriptionId,
+        limit: 1,
+      });
+      const handoffReview = buildReportDeliveryHandoffReview({
+        plan: delivery.plan,
+        latestRun: latestRuns[0] ?? null,
+      });
+
+      if (handoffReview && !body.acknowledgeHandoffGaps) {
+        return res.status(409).json({
+          message: handoffReview.message,
+          handoffReview,
+        });
       }
 
       let notification;

@@ -71,9 +71,9 @@ interface CostCenter {
 }
 
 interface CostCenterReport {
-  income: number;
-  expenses: number;
-  net: number;
+  totalIncome: number;
+  totalExpenses: number;
+  netIncome: number;
 }
 
 // ─── Schemas ─────────────────────────────────────────────
@@ -421,7 +421,7 @@ export default function CostCenters() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-green-700 font-mono">
-                      {formatCurrency(report.income, "AED", locale)}
+                      {formatCurrency(report.totalIncome ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
@@ -432,32 +432,32 @@ export default function CostCenters() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-red-700 font-mono">
-                      {formatCurrency(report.expenses, "AED", locale)}
+                      {formatCurrency(report.totalExpenses ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
                 <Card
                   className={
-                    report.net >= 0
+                    (report.netIncome ?? 0) >= 0
                       ? "bg-blue-50 border-blue-200"
                       : "bg-orange-50 border-orange-200"
                   }
                 >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle
-                      className={`text-sm font-medium ${report.net >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                      className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-blue-700" : "text-orange-700"}`}
                     >
                       Net
                     </CardTitle>
                     <DollarSign
-                      className={`h-4 w-4 ${report.net >= 0 ? "text-blue-600" : "text-orange-600"}`}
+                      className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-blue-600" : "text-orange-600"}`}
                     />
                   </CardHeader>
                   <CardContent>
                     <div
-                      className={`text-2xl font-bold font-mono ${report.net >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                      className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-blue-700" : "text-orange-700"}`}
                     >
-                      {formatCurrency(report.net, "AED", locale)}
+                      {formatCurrency(report.netIncome ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>

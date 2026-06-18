@@ -6,3 +6,5 @@ migrations/meta/
 *.min.css
 package-lock.json
 .env*
+.claude/
+.claire/

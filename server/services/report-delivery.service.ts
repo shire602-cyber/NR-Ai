@@ -7,10 +7,14 @@ import {
   reportDeliverySubscriptions,
   reportPackTemplates,
   reportPersonas,
+  reportSuiteHref,
+  reportSuiteProfiles,
   type ReportDeliverySubscription,
   type ReportPersona,
+  type ReportWorkflowGapFilter,
 } from "../../client/src/lib/reportCatalog";
 import type {
+  CompanyReportDeliveryRun,
   CompanyReportDeliverySubscription,
   InsertCompanyReportDeliveryRun,
   InsertNotification,
@@ -48,6 +52,7 @@ export interface ReportDeliveryPlan {
   reportCount: number;
   readyReportCount: number;
   triggerRuleCount: number;
+  suiteCount: number;
   packTemplate: {
     id: string;
     title: string;
@@ -70,6 +75,12 @@ export interface ReportDeliveryPlan {
     title: string;
     severity: string;
   }>;
+  reportSuites: Array<{
+    id: string;
+    title: string;
+    workflow: string;
+    href: string;
+  }>;
   preview: ReportDeliveryPreview;
 }
 
@@ -83,6 +94,14 @@ export interface ReportDeliveryPreview {
   }>;
   reportNames: string[];
   triggerRuleTitles: string[];
+  suiteTitles: string[];
+}
+
+export interface ReportDeliveryHandoffReview {
+  gap: ReportWorkflowGapFilter;
+  message: string;
+  detail: string;
+  latestRunId?: string | null;
 }
 
 export function isReportDeliveryPersona(value: unknown): value is ReportPersona {
@@ -166,6 +185,9 @@ export function buildReportDeliveryPlan(
   const decisionShortcut = reportDecisionShortcuts.find(
     (shortcut) => shortcut.id === subscription.decisionShortcutId
   );
+  const reportSuites = reportSuiteProfiles.filter(
+    (suite) => suite.deliverySubscriptionId === subscription.id
+  );
   const nextRunAt = estimateReportDeliveryNextRun({ cadence }, now);
   const blockedReportCount = reports.length - readyReportCount;
   const readinessLabel = !enabled
@@ -181,6 +203,14 @@ export function buildReportDeliveryPlan(
         label: "Reports",
         status: blockedReportCount > 0 ? "review" : "ready",
         detail: `${readyReportCount}/${reports.length} reports ready for this pack.`,
+      },
+      {
+        label: "Report suites",
+        status: reportSuites.length > 0 ? "ready" : "review",
+        detail:
+          reportSuites.length > 0
+            ? reportSuites.map((suite) => suite.title).join(", ")
+            : "No role-based report suite is attached to this delivery.",
       },
       {
         label: "Guardrail",
@@ -203,6 +233,7 @@ export function buildReportDeliveryPlan(
     ],
     reportNames: reports.map((report) => report.name),
     triggerRuleTitles: triggerRules.map((rule) => rule.title),
+    suiteTitles: reportSuites.map((suite) => suite.title),
   };
 
   return {
@@ -225,6 +256,7 @@ export function buildReportDeliveryPlan(
     reportCount: reports.length,
     readyReportCount,
     triggerRuleCount: triggerRules.length,
+    suiteCount: reportSuites.length,
     packTemplate: packTemplate ? { id: packTemplate.id, title: packTemplate.title } : null,
     automationStarter: automationStarter
       ? { id: automationStarter.id, title: automationStarter.title }
@@ -241,6 +273,12 @@ export function buildReportDeliveryPlan(
       id: rule.id,
       title: rule.title,
       severity: rule.severity,
+    })),
+    reportSuites: reportSuites.map((suite) => ({
+      id: suite.id,
+      title: suite.title,
+      workflow: suite.workflow,
+      href: reportSuiteHref(suite),
     })),
     preview,
   };
@@ -300,6 +338,45 @@ export function buildReportDeliveryNotificationInput(input: {
   };
 }
 
+export function buildReportDeliveryHandoffReview(input: {
+  plan: ReportDeliveryPlan;
+  latestRun?: Pick<
+    CompanyReportDeliveryRun,
+    "id" | "status" | "readinessStatus" | "errorMessage" | "readyReportCount" | "reportCount"
+  > | null;
+}): ReportDeliveryHandoffReview | null {
+  const { plan, latestRun } = input;
+  if (latestRun?.status === "failed") {
+    return {
+      gap: "delivery-gaps",
+      message: "Report delivery has unresolved handoff gaps",
+      detail: latestRun.errorMessage ?? "Recover the latest failed delivery before queueing again.",
+      latestRunId: latestRun.id,
+    };
+  }
+
+  const reportGapCount = Math.max(0, plan.reportCount - plan.readyReportCount);
+  if (reportGapCount > 0 || plan.status === "setup") {
+    return {
+      gap: "report-gaps",
+      message: "Report delivery has unresolved handoff gaps",
+      detail: `${plan.readyReportCount}/${plan.reportCount} reports are ready for this delivery.`,
+      latestRunId: latestRun?.id ?? null,
+    };
+  }
+
+  if (latestRun && latestRun.readinessStatus !== "ready") {
+    return {
+      gap: "delivery-gaps",
+      message: "Report delivery has unresolved handoff gaps",
+      detail: `Latest delivery readiness is ${latestRun.readinessStatus}.`,
+      latestRunId: latestRun.id,
+    };
+  }
+
+  return null;
+}
+
 export function buildReportDeliveryNotificationForPlan(input: {
   userId: string;
   companyId: string;
@@ -310,13 +387,16 @@ export function buildReportDeliveryNotificationForPlan(input: {
 
   const scheduledFor = input.scheduledFor ?? new Date(plan.nextRunAt);
   const scheduledForLabel = formatNextRunLabel(scheduledFor);
+  const suiteLabel = plan.reportSuites.length
+    ? ` Suite: ${plan.reportSuites.map((suite) => suite.title).join(", ")}.`
+    : "";
 
   return {
     userId: input.userId,
     companyId: input.companyId,
     type: "system",
     title: `Report delivery queued: ${plan.title}`,
-    message: `${plan.format} scheduled for ${scheduledForLabel}. ${plan.channel}. Guardrail: ${plan.deliveryGuardrail}`,
+    message: `${plan.format} scheduled for ${scheduledForLabel}. ${plan.channel}.${suiteLabel} Guardrail: ${plan.deliveryGuardrail}`,
     priority: plan.status === "ready" ? "normal" : "high",
     relatedEntityType: "report_delivery_subscription",
     actionUrl: plan.href,
@@ -369,6 +449,7 @@ export function buildReportDeliveryRunInput(input: {
       settingsSource: plan.settingsSource,
       reports: plan.reports,
       triggerRules: plan.triggerRules,
+      reportSuites: plan.reportSuites,
       packTemplate: plan.packTemplate,
       automationStarter: plan.automationStarter,
       decisionShortcut: plan.decisionShortcut,

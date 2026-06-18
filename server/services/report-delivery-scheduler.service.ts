@@ -2,10 +2,12 @@ import { createLogger } from "../config/logger";
 import { storage } from "../storage";
 import { createAndEmitNotification } from "./socket.service";
 import {
+  buildReportDeliveryHandoffReview,
   buildReportDeliveryNotificationForPlan,
   buildReportDeliveryRunInput,
   estimateReportDeliveryNextRun,
   getReportDeliveryPlans,
+  type ReportDeliveryHandoffReview,
   type ReportDeliveryPlan,
 } from "./report-delivery.service";
 import type { CompanyReportDeliveryRun } from "../../shared/schema";
@@ -27,6 +29,7 @@ export interface ReportDeliverySchedulerResult {
   skippedPaused: number;
   skippedSetup: number;
   skippedNotDue: number;
+  skippedHandoff: number;
   skippedNoActor: number;
   errors: number;
 }
@@ -40,12 +43,17 @@ interface CompanyReportDeliverySchedulerScanResult {
   skippedPaused: number;
   skippedSetup: number;
   skippedNotDue: number;
+  skippedHandoff: number;
   skippedNoActor: number;
   errors: number;
   message: string | null;
   queuedSubscriptionIds: string[];
   dueSubscriptionIds: string[];
-  skippedSubscriptionIds: Record<ReportDeliveryScheduleSkipReason | "no_actor", string[]>;
+  skippedSubscriptionIds: Record<
+    ReportDeliveryScheduleSkipReason | "handoff" | "no_actor",
+    string[]
+  >;
+  handoffReviews: Array<ReportDeliveryHandoffReview & { subscriptionId: string }>;
 }
 
 function emptyResult(): ReportDeliverySchedulerResult {
@@ -56,6 +64,7 @@ function emptyResult(): ReportDeliverySchedulerResult {
     skippedPaused: 0,
     skippedSetup: 0,
     skippedNotDue: 0,
+    skippedHandoff: 0,
     skippedNoActor: 0,
     errors: 0,
   };
@@ -71,6 +80,7 @@ function emptyCompanyScanResult(startedAt = new Date()): CompanyReportDeliverySc
     skippedPaused: 0,
     skippedSetup: 0,
     skippedNotDue: 0,
+    skippedHandoff: 0,
     skippedNoActor: 0,
     errors: 0,
     message: null,
@@ -80,8 +90,10 @@ function emptyCompanyScanResult(startedAt = new Date()): CompanyReportDeliverySc
       paused: [],
       setup: [],
       not_due: [],
+      handoff: [],
       no_actor: [],
     },
+    handoffReviews: [],
   };
 }
 
@@ -94,6 +106,7 @@ function addCompanyScanResult(
   result.skippedPaused += companyResult.skippedPaused;
   result.skippedSetup += companyResult.skippedSetup;
   result.skippedNotDue += companyResult.skippedNotDue;
+  result.skippedHandoff += companyResult.skippedHandoff;
   result.skippedNoActor += companyResult.skippedNoActor;
   result.errors += companyResult.errors;
 }
@@ -209,6 +222,8 @@ async function recordCompanySchedulerScan(
         dueSubscriptionIds: companyResult.dueSubscriptionIds,
         queuedSubscriptionIds: companyResult.queuedSubscriptionIds,
         skippedSubscriptionIds: companyResult.skippedSubscriptionIds,
+        handoffReviews: companyResult.handoffReviews,
+        skippedHandoff: companyResult.skippedHandoff,
       },
     });
   } catch (err) {
@@ -245,6 +260,20 @@ export async function scanDueReportDeliveries(
         }
 
         companyResult.dueSubscriptionIds.push(plan.id);
+        const handoffReview = buildReportDeliveryHandoffReview({
+          plan,
+          latestRun,
+        });
+        if (handoffReview) {
+          companyResult.skippedHandoff += 1;
+          companyResult.skippedSubscriptionIds.handoff.push(plan.id);
+          companyResult.handoffReviews.push({
+            subscriptionId: plan.id,
+            ...handoffReview,
+          });
+          continue;
+        }
+
         if (actorUserId === undefined) {
           actorUserId = await storage.resolveCompanyActorUserId(company.id);
         }

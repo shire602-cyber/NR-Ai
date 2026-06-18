@@ -115,15 +115,23 @@ describe("report delivery subscriptions", () => {
       persona: "owner",
       status: "ready",
       triggerRuleCount: 2,
+      suiteCount: 1,
       href: "/reports?tab=balances&persona=owner#report-delivery-subscription-owner-weekly-executive-delivery",
     });
     expect(plans[0].readyReportCount).toBe(plans[0].reportCount);
     expect(plans[0].nextRunAt).toBe("2026-06-22T08:00:00.000Z");
     expect(plans[0].packTemplate?.title).toBe("Owner weekly command pack");
+    expect(plans[0].reportSuites[0]).toMatchObject({
+      id: "owner-cash-control-suite",
+      title: "Owner cash control suite",
+      workflow: "Cash control and collections",
+      href: "/reports?tab=balances&persona=owner#report-suite-owner-cash-control-suite",
+    });
     expect(plans[0].preview).toMatchObject({
       readinessLabel: "Ready for queue",
       reportNames: expect.arrayContaining(["Profit & Loss", "A/R Aging"]),
       triggerRuleTitles: expect.arrayContaining(["Cash runway risk"]),
+      suiteTitles: expect.arrayContaining(["Owner cash control suite"]),
     });
   });
 
@@ -179,6 +187,7 @@ describe("report delivery subscriptions", () => {
         "/reports?tab=balances&persona=owner#report-delivery-subscription-owner-weekly-executive-delivery",
     });
     expect(delivery?.notification.message).toContain("Management pack workbook");
+    expect(delivery?.notification.message).toContain("Owner cash control suite");
     expect(delivery?.notification.scheduledFor?.toISOString()).toBe("2026-06-22T08:00:00.000Z");
   });
 
@@ -211,6 +220,9 @@ describe("report delivery subscriptions", () => {
     expect(run.scheduledFor.toISOString()).toBe("2026-06-22T08:00:00.000Z");
     expect(run.snapshot).toMatchObject({
       title: "Owner weekly executive delivery",
+      reportSuites: expect.arrayContaining([
+        expect.objectContaining({ id: "owner-cash-control-suite" }),
+      ]),
       preview: expect.objectContaining({ readinessLabel: "Ready for queue" }),
     });
   });
@@ -472,6 +484,66 @@ describe("report delivery subscriptions", () => {
         queuedBy: userId,
         status: "queued",
         readinessStatus: "ready",
+      })
+    );
+  });
+
+  it("requires handoff acknowledgement before queueing after a failed delivery", async () => {
+    vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([
+      {
+        id: "failed-run-1",
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        status: "failed",
+        readinessStatus: "ready",
+        notificationId: null,
+        retriedFromRunId: null,
+        errorMessage: "Email provider down",
+        scheduledFor: new Date("2026-06-22T08:00:00.000Z"),
+        queuedBy: userId,
+        channel: "Google Sheets plus email summary",
+        format: "Management pack workbook",
+        recipients: "Owner",
+        deliveryGuardrail: "Review guardrail",
+        reportCount: 6,
+        readyReportCount: 6,
+        triggerRuleCount: 2,
+        snapshot: {},
+        createdAt: new Date("2026-06-22T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-22T09:00:00.000Z"),
+      },
+    ]);
+
+    const blocked = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/queue`
+    );
+
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.message).toBe("Report delivery has unresolved handoff gaps");
+    expect(blocked.body.handoffReview).toMatchObject({
+      gap: "delivery-gaps",
+      latestRunId: "failed-run-1",
+      detail: "Email provider down",
+    });
+    expect(createAndEmitNotification).not.toHaveBeenCalled();
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
+
+    const acknowledged = await request(
+      appWithRoutes(),
+      "POST",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/queue`,
+      { acknowledgeHandoffGaps: true }
+    );
+
+    expect(acknowledged.status).toBe(201);
+    expect(acknowledged.body.subscription.id).toBe("owner-weekly-executive-delivery");
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        status: "queued",
       })
     );
   });

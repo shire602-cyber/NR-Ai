@@ -16,6 +16,7 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .cursor
+.claire/
 *.swp
 
 # Build artifacts

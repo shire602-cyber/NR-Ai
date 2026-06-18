@@ -17,6 +17,7 @@ export default tseslint.config(
       "**/*.d.ts",
       "package-lock.json",
       ".claude/**",
+      ".claire/**",
     ],
   },
 

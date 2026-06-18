@@ -1,15 +1,105 @@
 import { describe, expect, it } from "vitest";
 import {
+  prepareAgingReportsForExport,
   prepareAuditTrailForExport,
   prepareBalanceSummaryReportsForExport,
+  prepareCashFlowStatementForExport,
   prepareConsolidatedStatementsForExport,
+  prepareCostCenterProfitabilityForExport,
   prepareExpenseReportsForExport,
+  prepareFxGainsLossesForExport,
   prepareLedgerReportsForExport,
   preparePayrollReportsForExport,
+  preparePeriodComparisonForExport,
   preparePlanningReportsForExport,
 } from "../../client/src/lib/export";
 
 describe("report export helpers", () => {
+  it("builds workbook sheets for advanced cash, aging, comparison, and FX reports", () => {
+    const cashSheets = prepareCashFlowStatementForExport([
+      {
+        period: "Q2 2026",
+        operatingInflow: 12000,
+        operatingOutflow: 7000,
+        investingInflow: 0,
+        investingOutflow: 1500,
+        financingInflow: 2000,
+        financingOutflow: 500,
+        netCashFlow: 5000,
+        endingBalance: 25000,
+      },
+    ]);
+    const agingSheets = prepareAgingReportsForExport({
+      receivables: [
+        {
+          name: "Acme LLC",
+          type: "receivable",
+          current: 1000,
+          days30: 250,
+          days60: 0,
+          days90: 0,
+          over90: 50,
+          total: 1300,
+        },
+      ],
+      payables: {
+        current: { amount: 400, count: 1 },
+        days_1_30: { amount: 200, count: 1 },
+        days_31_60: { amount: 0, count: 0 },
+        days_61_90: { amount: 0, count: 0 },
+        days_90_plus: { amount: 25, count: 1 },
+      },
+    });
+    const comparisonSheet = preparePeriodComparisonForExport([
+      {
+        label: "Revenue",
+        current: 12000,
+        previous: 10000,
+        delta: 2000,
+        percentChange: 20,
+        signal: "Growth",
+      },
+    ]);
+    const fxSheets = prepareFxGainsLossesForExport({
+      asOf: "2026-06-17T00:00:00.000Z",
+      baseCurrency: "AED",
+      receivables: [
+        {
+          entityType: "invoice",
+          entityNumber: "INV-1",
+          counterparty: "Acme LLC",
+          currency: "USD",
+          foreignAmount: 1000,
+          transactionRate: 0.27,
+          currentRate: 0.26,
+          bookValueAed: 3703.7,
+          currentValueAed: 3846.15,
+          unrealizedGainLoss: 142.45,
+        },
+      ],
+      payables: [],
+      totalUnrealizedGain: 142.45,
+      totalUnrealizedLoss: 0,
+      netUnrealizedGainLoss: 142.45,
+    });
+
+    expect(cashSheets.map((sheet) => sheet.sheetName)).toEqual([
+      "Cash Flow Statement",
+      "Cash Flow Detail",
+    ]);
+    expect(agingSheets.map((sheet) => sheet.sheetName)).toEqual(["A/R Aging", "A/P Aging"]);
+    expect(comparisonSheet.sheetName).toBe("Period Comparison");
+    expect(fxSheets.map((sheet) => sheet.sheetName)).toEqual([
+      "FX Gains and Losses",
+      "FX Exposure Detail",
+    ]);
+    expect(agingSheets[1].rows).toContainEqual({
+      bucket: "90+",
+      count: 1,
+      amount: "25.00",
+    });
+  });
+
   it("builds buyer-friendly audit trail workbook sheets", () => {
     const sheets = prepareAuditTrailForExport({
       logCount: 2,
@@ -64,6 +154,58 @@ describe("report export helpers", () => {
       entity: "invoice",
       risk: "High",
       description: "Deleted draft invoice INV-1",
+    });
+  });
+
+  it("builds a cost center P&L workbook sheet", () => {
+    const sheet = prepareCostCenterProfitabilityForExport({
+      periodStart: "2026-06-01",
+      periodEnd: "2026-06-30",
+      costCenters: [
+        {
+          costCenterId: "cc-1",
+          code: "OPS",
+          name: "Operations",
+          isActive: true,
+          totalIncome: 15000,
+          totalExpenses: 9000,
+          netIncome: 6000,
+          lineCount: 8,
+        },
+      ],
+      totals: {
+        costCenterCount: 1,
+        activeCostCenterCount: 1,
+        allocatedLineCount: 8,
+        totalIncome: 15000,
+        totalExpenses: 9000,
+        netIncome: 6000,
+      },
+    });
+
+    expect(sheet.sheetName).toBe("Cost Center P&L");
+    expect(sheet.columns.map((column) => column.header)).toEqual([
+      "Code",
+      "Cost Center",
+      "Status",
+      "Income (AED)",
+      "Expenses (AED)",
+      "Net Income (AED)",
+      "Allocated Lines",
+    ]);
+    expect(sheet.rows[0]).toMatchObject({
+      code: "OPS",
+      costCenter: "Operations",
+      status: "Active",
+      totalIncome: "15000.00",
+      totalExpenses: "9000.00",
+      netIncome: "6000.00",
+      lineCount: 8,
+    });
+    expect(sheet.rows.at(-1)).toMatchObject({
+      costCenter: "TOTAL",
+      totalIncome: "15000.00",
+      netIncome: "6000.00",
     });
   });
 

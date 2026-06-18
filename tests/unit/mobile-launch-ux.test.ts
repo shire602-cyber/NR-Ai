@@ -45,6 +45,7 @@ describe("Mobile launch UX guards", () => {
     const styles = read("client/src/styles/mobile.css");
 
     expect(source).toContain("interface MoreLink");
+    expect(source).toContain("key?: string");
     expect(source).toContain("description?: string");
     expect(source).toContain("reportPersonaWorkspaces.map");
     expect(source).toContain("workspace.navLabel");
@@ -52,6 +53,15 @@ describe("Mobile launch UX guards", () => {
     expect(source).toContain("description: workspace.focus");
     expect(source).toContain("description: workspace.automationOutcome");
     expect(source).toContain("description: workspace.packSchedule.automation");
+    expect(source).toContain("reportPersonaWorkspaces.flatMap");
+    expect(source).toContain("report.personas.includes(workspace.persona)");
+    expect(source).toContain("reportPersonaHref(report, workspace.persona)");
+    expect(source).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
+    expect(source).toContain("label: `${report.name} - ${workspace.title}`");
+    expect(source).toContain(
+      "description: `${report.category} - ${report.comparison} - ${report.automation}`"
+    );
+    expect(source).toContain("key={link.key ?? link.href}");
     expect(source).toContain("reportWorkspaceHref(workspace)");
     expect(source).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(source).toContain("reportDecisionShortcuts.map");

@@ -312,6 +312,44 @@ export function prepareProfitLossForExport(profitLoss: any): ExportData {
   };
 }
 
+export function prepareCostCenterProfitabilityForExport(report: any): ExportData {
+  const rows =
+    (Array.isArray(report?.costCenters) ? report.costCenters : []).map((row: any) => ({
+      code: row.code || "",
+      costCenter: row.name || "",
+      status: row.isActive === false ? "Inactive" : "Active",
+      totalIncome: formatExportAmount(row.totalIncome),
+      totalExpenses: formatExportAmount(row.totalExpenses),
+      netIncome: formatExportAmount(row.netIncome),
+      lineCount: row.lineCount ?? 0,
+    })) ?? [];
+  const totals = report?.totals ?? {};
+
+  rows.push({
+    code: "",
+    costCenter: "TOTAL",
+    status: `${totals.activeCostCenterCount ?? 0}/${totals.costCenterCount ?? rows.length} active`,
+    totalIncome: formatExportAmount(totals.totalIncome),
+    totalExpenses: formatExportAmount(totals.totalExpenses),
+    netIncome: formatExportAmount(totals.netIncome),
+    lineCount: totals.allocatedLineCount ?? 0,
+  });
+
+  return {
+    sheetName: "Cost Center P&L",
+    columns: [
+      { header: "Code", key: "code", width: 14 },
+      { header: "Cost Center", key: "costCenter", width: 32 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "Income (AED)", key: "totalIncome", width: 18 },
+      { header: "Expenses (AED)", key: "totalExpenses", width: 18 },
+      { header: "Net Income (AED)", key: "netIncome", width: 18 },
+      { header: "Allocated Lines", key: "lineCount", width: 16 },
+    ],
+    rows,
+  };
+}
+
 export function prepareBalanceSheetForExport(balanceSheet: any): ExportData {
   const rows: any[] = [];
 
@@ -527,6 +565,236 @@ function formatExportAmount(value: unknown): string {
 function formatExportPercent(value: unknown): string {
   const percent = Number(value ?? 0);
   return Number.isFinite(percent) ? `${percent.toFixed(2)}%` : "0.00%";
+}
+
+function exportNumber(value: unknown): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+export function prepareCashFlowStatementForExport(report: any[] = []): ExportData[] {
+  const rows = Array.isArray(report) ? report : [];
+  const totals = rows.reduce(
+    (summary, row) => ({
+      operatingInflow: summary.operatingInflow + exportNumber(row.operatingInflow),
+      operatingOutflow: summary.operatingOutflow + exportNumber(row.operatingOutflow),
+      investingInflow: summary.investingInflow + exportNumber(row.investingInflow),
+      investingOutflow: summary.investingOutflow + exportNumber(row.investingOutflow),
+      financingInflow: summary.financingInflow + exportNumber(row.financingInflow),
+      financingOutflow: summary.financingOutflow + exportNumber(row.financingOutflow),
+      netCashFlow: summary.netCashFlow + exportNumber(row.netCashFlow),
+    }),
+    {
+      operatingInflow: 0,
+      operatingOutflow: 0,
+      investingInflow: 0,
+      investingOutflow: 0,
+      financingInflow: 0,
+      financingOutflow: 0,
+      netCashFlow: 0,
+    }
+  );
+  const latest = rows.at(-1);
+
+  return [
+    {
+      sheetName: "Cash Flow Statement",
+      columns: [
+        { header: "Metric", key: "metric", width: 32 },
+        { header: "Amount (AED)", key: "amount", width: 18 },
+      ],
+      rows: [
+        { metric: "Operating inflows", amount: formatExportAmount(totals.operatingInflow) },
+        { metric: "Operating outflows", amount: formatExportAmount(totals.operatingOutflow) },
+        {
+          metric: "Net operating cash flow",
+          amount: formatExportAmount(totals.operatingInflow - totals.operatingOutflow),
+        },
+        { metric: "Investing inflows", amount: formatExportAmount(totals.investingInflow) },
+        { metric: "Investing outflows", amount: formatExportAmount(totals.investingOutflow) },
+        {
+          metric: "Net investing cash flow",
+          amount: formatExportAmount(totals.investingInflow - totals.investingOutflow),
+        },
+        { metric: "Financing inflows", amount: formatExportAmount(totals.financingInflow) },
+        { metric: "Financing outflows", amount: formatExportAmount(totals.financingOutflow) },
+        {
+          metric: "Net financing cash flow",
+          amount: formatExportAmount(totals.financingInflow - totals.financingOutflow),
+        },
+        { metric: "Net cash flow", amount: formatExportAmount(totals.netCashFlow) },
+        {
+          metric: "Latest ending balance",
+          amount: formatExportAmount(latest?.endingBalance),
+        },
+      ],
+    },
+    {
+      sheetName: "Cash Flow Detail",
+      columns: [
+        { header: "Period", key: "period", width: 16 },
+        { header: "Operating Inflow (AED)", key: "operatingInflow", width: 22 },
+        { header: "Operating Outflow (AED)", key: "operatingOutflow", width: 22 },
+        { header: "Investing Inflow (AED)", key: "investingInflow", width: 22 },
+        { header: "Investing Outflow (AED)", key: "investingOutflow", width: 22 },
+        { header: "Financing Inflow (AED)", key: "financingInflow", width: 22 },
+        { header: "Financing Outflow (AED)", key: "financingOutflow", width: 22 },
+        { header: "Net Cash Flow (AED)", key: "netCashFlow", width: 20 },
+        { header: "Ending Balance (AED)", key: "endingBalance", width: 22 },
+      ],
+      rows: rows.map((row) => ({
+        period: row.period || "",
+        operatingInflow: formatExportAmount(row.operatingInflow),
+        operatingOutflow: formatExportAmount(row.operatingOutflow),
+        investingInflow: formatExportAmount(row.investingInflow),
+        investingOutflow: formatExportAmount(row.investingOutflow),
+        financingInflow: formatExportAmount(row.financingInflow),
+        financingOutflow: formatExportAmount(row.financingOutflow),
+        netCashFlow: formatExportAmount(row.netCashFlow),
+        endingBalance: formatExportAmount(row.endingBalance),
+      })),
+    },
+  ];
+}
+
+export function prepareAgingReportsForExport(report: {
+  receivables?: any[];
+  payables?: any | null;
+}): ExportData[] {
+  const receivables = Array.isArray(report?.receivables)
+    ? report.receivables.filter((row) => row.type === "receivable")
+    : [];
+  const payables = report?.payables ?? {};
+  const payableBuckets = [
+    { bucket: "Current", value: payables.current },
+    { bucket: "1-30", value: payables.days_1_30 },
+    { bucket: "31-60", value: payables.days_31_60 },
+    { bucket: "61-90", value: payables.days_61_90 },
+    { bucket: "90+", value: payables.days_90_plus },
+  ];
+
+  return [
+    {
+      sheetName: "A/R Aging",
+      columns: [
+        { header: "Customer", key: "name", width: 32 },
+        { header: "Current (AED)", key: "current", width: 18 },
+        { header: "1-30 (AED)", key: "days30", width: 18 },
+        { header: "31-60 (AED)", key: "days60", width: 18 },
+        { header: "61-90 (AED)", key: "days90", width: 18 },
+        { header: "90+ (AED)", key: "over90", width: 18 },
+        { header: "Total (AED)", key: "total", width: 18 },
+      ],
+      rows: receivables.map((row) => ({
+        name: row.name || "",
+        current: formatExportAmount(row.current),
+        days30: formatExportAmount(row.days30),
+        days60: formatExportAmount(row.days60),
+        days90: formatExportAmount(row.days90),
+        over90: formatExportAmount(row.over90),
+        total: formatExportAmount(row.total),
+      })),
+    },
+    {
+      sheetName: "A/P Aging",
+      columns: [
+        { header: "Bucket", key: "bucket", width: 16 },
+        { header: "Bills", key: "count", width: 12 },
+        { header: "Amount (AED)", key: "amount", width: 18 },
+      ],
+      rows: payableBuckets.map((bucket) => ({
+        bucket: bucket.bucket,
+        count: bucket.value?.count ?? 0,
+        amount: formatExportAmount(bucket.value?.amount),
+      })),
+    },
+  ];
+}
+
+export function preparePeriodComparisonForExport(rows: any[] = []): ExportData {
+  return {
+    sheetName: "Period Comparison",
+    columns: [
+      { header: "Metric", key: "metric", width: 28 },
+      { header: "Current", key: "current", width: 18 },
+      { header: "Previous", key: "previous", width: 18 },
+      { header: "Change", key: "change", width: 18 },
+      { header: "Change %", key: "changePercent", width: 14 },
+      { header: "Signal", key: "signal", width: 24 },
+    ],
+    rows: rows.map((row) => ({
+      metric: row.metric ?? row.label ?? "",
+      current: formatExportAmount(row.current),
+      previous: formatExportAmount(row.previous),
+      change: formatExportAmount(row.change ?? row.delta),
+      changePercent:
+        row.changePercent !== undefined || row.percentChange !== undefined
+          ? formatExportPercent(row.changePercent ?? row.percentChange)
+          : "",
+      signal: row.signal ?? "",
+    })),
+  };
+}
+
+export function prepareFxGainsLossesForExport(report: any): ExportData[] {
+  const receivables = Array.isArray(report?.receivables) ? report.receivables : [];
+  const payables = Array.isArray(report?.payables) ? report.payables : [];
+  const items = [...receivables, ...payables];
+
+  return [
+    {
+      sheetName: "FX Gains and Losses",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Value", key: "value", width: 24 },
+      ],
+      rows: [
+        { metric: "As of", value: formatDateForExport(report?.asOf) },
+        { metric: "Base currency", value: report?.baseCurrency || "AED" },
+        { metric: "Open receivable exposures", value: receivables.length },
+        { metric: "Open payable exposures", value: payables.length },
+        {
+          metric: "Unrealized gains (AED)",
+          value: formatExportAmount(report?.totalUnrealizedGain),
+        },
+        {
+          metric: "Unrealized losses (AED)",
+          value: formatExportAmount(report?.totalUnrealizedLoss),
+        },
+        {
+          metric: "Net unrealized gain/loss (AED)",
+          value: formatExportAmount(report?.netUnrealizedGainLoss),
+        },
+      ],
+    },
+    {
+      sheetName: "FX Exposure Detail",
+      columns: [
+        { header: "Type", key: "type", width: 14 },
+        { header: "Reference", key: "reference", width: 20 },
+        { header: "Counterparty", key: "counterparty", width: 30 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Foreign Amount", key: "foreignAmount", width: 18 },
+        { header: "Transaction Rate", key: "transactionRate", width: 18 },
+        { header: "Current Rate", key: "currentRate", width: 18 },
+        { header: "Book Value (AED)", key: "bookValueAed", width: 18 },
+        { header: "Current Value (AED)", key: "currentValueAed", width: 20 },
+        { header: "Gain / Loss (AED)", key: "gainLoss", width: 18 },
+      ],
+      rows: items.map((item) => ({
+        type: item.entityType || "",
+        reference: item.entityNumber || item.entityId || "",
+        counterparty: item.counterparty || "",
+        currency: item.currency || "",
+        foreignAmount: formatExportAmount(item.foreignAmount),
+        transactionRate: formatExportAmount(item.transactionRate),
+        currentRate: formatExportAmount(item.currentRate),
+        bookValueAed: formatExportAmount(item.bookValueAed),
+        currentValueAed: formatExportAmount(item.currentValueAed),
+        gainLoss: formatExportAmount(item.unrealizedGainLoss),
+      })),
+    },
+  ];
 }
 
 export function prepareInvoiceStatusForExport(report: any): ExportData[] {

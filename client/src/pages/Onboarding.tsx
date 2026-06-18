@@ -21,10 +21,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import {
   getPreferredReportPersona,
+  reportAutomationImpactProfiles,
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
   reportAutomationStarterHref,
   reportAutomationStarters,
+  reportCatalog,
   reportComparisonPresetHref,
   reportComparisonPresets,
   reportDecisionShortcutHref,
@@ -34,7 +36,13 @@ import {
   reportPackTemplateHref,
   reportPackTemplates,
   reportPersonaWorkspaces,
+  reportPersonaHref,
+  reportQuickAccessProfiles,
+  reportSavedViewHref,
+  reportSavedViewProfiles,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
   reportWorkspaceHref,
   setPreferredReportPersona,
   type ReportPersona,
@@ -1207,6 +1215,22 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const selectedReportPackTemplates = reportPackTemplates.filter(
     (template) => template.persona === selectedWorkspace.persona
   );
+  const selectedReportSuites = reportSuiteProfiles.filter(
+    (suite) => suite.persona === selectedWorkspace.persona
+  );
+  const selectedQuickAccessProfile = reportQuickAccessProfiles.find(
+    (profile) => profile.persona === selectedWorkspace.persona
+  );
+  const selectedQuickAccessReports =
+    selectedQuickAccessProfile?.reportIds
+      .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+      .filter((report): report is (typeof reportCatalog)[number] => Boolean(report)) ?? [];
+  const selectedSavedViews = reportSavedViewProfiles.filter(
+    (view) => view.persona === selectedWorkspace.persona
+  );
+  const selectedAutomationImpactProfile = reportAutomationImpactProfiles.find(
+    (profile) => profile.persona === selectedWorkspace.persona
+  );
   const selectedDecisionShortcuts = reportDecisionShortcuts.filter(
     (shortcut) => shortcut.persona === selectedWorkspace.persona
   );
@@ -1293,6 +1317,123 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           })}
         </div>
         <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-quick-access-impact"
+        >
+          {selectedQuickAccessProfile ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportSectionHref(selectedWorkspace, "quick-access"));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-quick-access-${selectedWorkspace.persona}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{selectedQuickAccessProfile.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {selectedQuickAccessProfile.outcome}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {selectedQuickAccessProfile.reportIds.length} ready reports
+              </p>
+            </button>
+          ) : null}
+          {selectedAutomationImpactProfile ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportSectionHref(selectedWorkspace, "automation-impact"));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-automation-impact-${selectedWorkspace.persona}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{selectedAutomationImpactProfile.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {selectedAutomationImpactProfile.outcome}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {selectedAutomationImpactProfile.timeSavedLabel} ·{" "}
+                {selectedAutomationImpactProfile.manualWorkLabel}
+              </p>
+            </button>
+          ) : null}
+        </div>
+        {selectedQuickAccessReports.length > 0 ? (
+          <div
+            className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2 lg:grid-cols-3"
+            data-testid={`onboarding-report-quick-access-reports-${selectedWorkspace.persona}`}
+          >
+            {selectedQuickAccessReports.slice(0, 6).map((report) => (
+              <button
+                key={report.id}
+                type="button"
+                onClick={() => {
+                  setPreferredReportPersona(selectedWorkspace.persona);
+                  setLocation(
+                    reportPersonaHref(report, selectedWorkspace.persona) ??
+                      reportWorkspaceHref(selectedWorkspace)
+                  );
+                }}
+                className="rounded-md border border-border p-3 transition-all hover:border-primary hover:bg-primary/5"
+                data-testid={`onboarding-report-quick-access-report-${selectedWorkspace.persona}-${report.id}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{report.name}</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      {report.decisionQuestion}
+                    </p>
+                  </div>
+                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                </div>
+                <p className="mt-3 text-[11px] font-medium text-primary">{report.comparison}</p>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          data-testid="onboarding-report-suites"
+        >
+          {selectedReportSuites.map((suite) => (
+            <button
+              key={suite.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportSuiteHref(suite));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-suite-${suite.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{suite.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {suite.workflow}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {suite.reportIds.length} reports · {suite.primaryAction}
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
           className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
           data-testid="onboarding-report-decision-shortcuts"
         >
@@ -1351,6 +1492,36 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
               </p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                 {preset.automationTrigger}
+              </p>
+            </button>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          data-testid="onboarding-report-saved-views"
+        >
+          {selectedSavedViews.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              onClick={() => {
+                setPreferredReportPersona(selectedWorkspace.persona);
+                setLocation(reportSavedViewHref(view));
+              }}
+              className="rounded-md border border-border p-4 transition-all hover:border-primary hover:bg-primary/5"
+              data-testid={`onboarding-report-saved-view-${view.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{view.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {view.description}
+                  </p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-primary">
+                {view.dateRangePreset} · {view.comparisonPeriod}
               </p>
             </button>
           ))}

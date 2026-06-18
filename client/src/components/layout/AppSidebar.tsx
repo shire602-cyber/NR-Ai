@@ -61,8 +61,10 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
+  readyReportCatalog,
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
+  reportAutomationImpactProfiles,
   reportAutomationStarterHref,
   reportAutomationStarters,
   reportComparisonPresetHref,
@@ -73,8 +75,14 @@ import {
   reportDeliverySubscriptions,
   reportPackTemplateHref,
   reportPackTemplates,
+  reportPersonaHref,
   reportPersonaWorkspaces,
+  reportQuickAccessProfiles,
+  reportSavedViewHref,
+  reportSavedViewProfiles,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
   reportWorkspaceHref,
   type ReportPersona,
 } from "@/lib/reportCatalog";
@@ -82,6 +90,7 @@ import {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SubItem {
+  key?: string;
   titleKey: string;
   url: string;
   title?: string;
@@ -165,6 +174,69 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         description: workspace.focus,
       })),
       ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportRoleSetup-${workspace.persona}`,
+        title: `Role setup path - ${workspace.title}`,
+        url: reportSectionHref(workspace, "role-setup"),
+        description: `Start ${workspace.navLabel.toLowerCase()} with reports, comparisons, automations, and scheduled packs.`,
+        testId: `report-role-setup-${workspace.persona}`,
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportSuites-${workspace.persona}`,
+        title: `Report suites - ${workspace.title}`,
+        url: reportSectionHref(workspace, "report-suites"),
+        description: `Role-based report suites for ${workspace.focus.toLowerCase()}`,
+        testId: `report-suites-${workspace.persona}`,
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportQuickAccess-${workspace.persona}`,
+        title: `Quick access reports - ${workspace.title}`,
+        url: reportSectionHref(workspace, "quick-access"),
+        description:
+          reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)
+            ?.outcome ?? `Daily reports for ${workspace.navLabel.toLowerCase()}`,
+        testId: `report-quick-access-${workspace.persona}`,
+      })),
+      ...reportPersonaWorkspaces.flatMap((workspace) =>
+        readyReportCatalog
+          .filter((report) => report.personas.includes(workspace.persona))
+          .flatMap((report) => {
+            const href = reportPersonaHref(report, workspace.persona);
+            return href
+              ? [
+                  {
+                    key: `report-catalog-${workspace.persona}-${report.id}`,
+                    titleKey: report.name,
+                    title: `${report.name} - ${workspace.title}`,
+                    url: href,
+                    description: `${report.category} - ${report.comparison} - ${report.automation}`,
+                    testId: `report-catalog-${workspace.persona}-${report.id}`,
+                  },
+                ]
+              : [];
+          })
+      ),
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportSavedViews-${workspace.persona}`,
+        title: `Saved report views - ${workspace.title}`,
+        url: reportSectionHref(workspace, "saved-views"),
+        description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
+        testId: `report-saved-views-${workspace.persona}`,
+      })),
+      ...reportSavedViewProfiles.map((view) => ({
+        titleKey: view.title,
+        title: view.title,
+        url: reportSavedViewHref(view),
+        description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
+        testId: `report-saved-view-${view.id}`,
+      })),
+      ...reportSuiteProfiles.map((suite) => ({
+        titleKey: suite.title,
+        title: suite.title,
+        url: reportSuiteHref(suite),
+        description: `${suite.workflow} - ${suite.primaryAction}`,
+        testId: `report-suite-${suite.id}`,
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: `reportOperations-${workspace.persona}`,
         title: `Report operations - ${workspace.title}`,
         url: reportSectionHref(workspace, "automation-operations"),
@@ -175,6 +247,15 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         titleKey: reportAutomationCenterTitleKeys[workspace.persona],
         url: reportSectionHref(workspace, "automation-command-center"),
         description: workspace.packSchedule.automation,
+      })),
+      ...reportPersonaWorkspaces.map((workspace) => ({
+        titleKey: `reportAutomationImpact-${workspace.persona}`,
+        title: `Automation impact - ${workspace.title}`,
+        url: reportSectionHref(workspace, "automation-impact"),
+        description:
+          reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
+            ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
+        testId: `report-automation-impact-${workspace.persona}`,
       })),
       ...reportDecisionShortcuts.map((shortcut) => ({
         titleKey: shortcut.question,
@@ -435,7 +516,7 @@ export function AppSidebar() {
                   const label =
                     item.title ?? (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
                   return (
-                    <SidebarMenuSubItem key={item.url}>
+                    <SidebarMenuSubItem key={item.key ?? item.testId ?? item.url}>
                       <SidebarMenuSubButton
                         asChild
                         isActive={isActive}

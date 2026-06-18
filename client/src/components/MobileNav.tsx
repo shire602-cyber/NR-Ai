@@ -3,8 +3,10 @@ import { motion } from "framer-motion";
 import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
 import { useState, useCallback } from "react";
 import {
+  readyReportCatalog,
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
+  reportAutomationImpactProfiles,
   reportAutomationStarterHref,
   reportAutomationStarters,
   reportComparisonPresetHref,
@@ -15,8 +17,14 @@ import {
   reportDeliverySubscriptions,
   reportPackTemplateHref,
   reportPackTemplates,
+  reportPersonaHref,
   reportPersonaWorkspaces,
+  reportQuickAccessProfiles,
+  reportSavedViewHref,
+  reportSavedViewProfiles,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
   reportWorkspaceHref,
 } from "@/lib/reportCatalog";
 
@@ -29,6 +37,7 @@ interface NavItem {
 }
 
 interface MoreLink {
+  key?: string;
   label: string;
   href: string;
   description?: string;
@@ -49,6 +58,55 @@ const moreLinks: MoreLink[] = [
     description: workspace.focus,
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Role setup - ${workspace.title}`,
+    href: reportSectionHref(workspace, "role-setup"),
+    description: `Start ${workspace.navLabel.toLowerCase()} with reports and automations`,
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Report suites - ${workspace.title}`,
+    href: reportSectionHref(workspace, "report-suites"),
+    description: `Role-based report suites for ${workspace.focus.toLowerCase()}`,
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Quick access reports - ${workspace.title}`,
+    href: reportSectionHref(workspace, "quick-access"),
+    description:
+      reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)?.outcome ??
+      `Daily reports for ${workspace.navLabel.toLowerCase()}`,
+  })),
+  ...reportPersonaWorkspaces.flatMap((workspace) =>
+    readyReportCatalog
+      .filter((report) => report.personas.includes(workspace.persona))
+      .flatMap((report) => {
+        const href = reportPersonaHref(report, workspace.persona);
+        return href
+          ? [
+              {
+                key: `report-catalog-${workspace.persona}-${report.id}`,
+                label: `${report.name} - ${workspace.title}`,
+                href,
+                description: `${report.category} - ${report.comparison} - ${report.automation}`,
+              },
+            ]
+          : [];
+      })
+  ),
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Saved report views - ${workspace.title}`,
+    href: reportSectionHref(workspace, "saved-views"),
+    description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
+  })),
+  ...reportSavedViewProfiles.map((view) => ({
+    label: view.title,
+    href: reportSavedViewHref(view),
+    description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
+  })),
+  ...reportSuiteProfiles.map((suite) => ({
+    label: suite.title,
+    href: reportSuiteHref(suite),
+    description: `${suite.workflow} - ${suite.primaryAction}`,
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
     label: `Report operations - ${workspace.title}`,
     href: reportSectionHref(workspace, "automation-operations"),
     description: workspace.automationOutcome,
@@ -57,6 +115,13 @@ const moreLinks: MoreLink[] = [
     label: workspace.automationNavLabel,
     href: reportSectionHref(workspace, "automation-command-center"),
     description: workspace.packSchedule.automation,
+  })),
+  ...reportPersonaWorkspaces.map((workspace) => ({
+    label: `Automation impact - ${workspace.title}`,
+    href: reportSectionHref(workspace, "automation-impact"),
+    description:
+      reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
+        ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
   })),
   ...reportDecisionShortcuts.map((shortcut) => ({
     label: shortcut.question,
@@ -162,7 +227,7 @@ export function MobileNav() {
           <nav className="mobile-nav-more-grid">
             {moreLinks.map((link) => (
               <button
-                key={link.href}
+                key={link.key ?? link.href}
                 onClick={() => handleMoreLink(link.href)}
                 className={`mobile-nav-more-item ${
                   location === link.href ? "mobile-nav-more-item--active" : ""

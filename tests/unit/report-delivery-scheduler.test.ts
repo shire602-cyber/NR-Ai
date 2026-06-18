@@ -199,6 +199,71 @@ describe("report delivery scheduler", () => {
     );
   });
 
+  it("skips due scheduled sends that need handoff acknowledgement", async () => {
+    vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([
+      {
+        id: "failed-run-1",
+        companyId,
+        subscriptionId: "owner-weekly-executive-delivery",
+        status: "failed",
+        readinessStatus: "ready",
+        notificationId: null,
+        retriedFromRunId: null,
+        errorMessage: "Email provider down",
+        scheduledFor: new Date("2026-06-15T08:00:00.000Z"),
+        queuedBy: userId,
+        channel: "Google Sheets plus email summary",
+        format: "Management pack workbook",
+        recipients: "Owner",
+        deliveryGuardrail: "Review guardrail",
+        reportCount: 6,
+        readyReportCount: 6,
+        triggerRuleCount: 2,
+        snapshot: {},
+        createdAt: new Date("2026-06-15T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T09:00:00.000Z"),
+      },
+    ]);
+
+    const result = await scanDueReportDeliveries(new Date("2026-06-22T09:00:00.000Z"));
+
+    expect(result).toMatchObject({
+      scannedCompanies: 1,
+      queuedRuns: 2,
+      skippedHandoff: 1,
+      skippedNoActor: 0,
+      errors: 0,
+    });
+    expect(createAndEmitNotification).toHaveBeenCalledTimes(2);
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledTimes(2);
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscriptionId: "owner-weekly-executive-delivery",
+      })
+    );
+    expect(storage.createReportDeliverySchedulerScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        status: "success",
+        queuedRuns: 2,
+        snapshot: expect.objectContaining({
+          skippedHandoff: 1,
+          skippedSubscriptionIds: expect.objectContaining({
+            handoff: ["owner-weekly-executive-delivery"],
+          }),
+          handoffReviews: [
+            expect.objectContaining({
+              subscriptionId: "owner-weekly-executive-delivery",
+              gap: "delivery-gaps",
+              latestRunId: "failed-run-1",
+              detail: "Email provider down",
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
   it("records failed scheduled runs and continues scanning remaining subscriptions", async () => {
     vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Email provider down"));
 

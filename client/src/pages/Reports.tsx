@@ -39,6 +39,7 @@ import {
   exportToExcel,
   exportToGoogleSheets,
   prepareProfitLossForExport,
+  prepareCostCenterProfitabilityForExport,
   prepareBalanceSheetForExport,
   prepareVATSummaryForExport,
   prepareCorporateTaxEstimateForExport,
@@ -47,12 +48,17 @@ import {
   prepareTrialBalanceForExport,
   prepareInvoiceStatusForExport,
   prepareBalanceSummaryReportsForExport,
+  prepareCashFlowStatementForExport,
+  prepareAgingReportsForExport,
   prepareExpenseReportsForExport,
+  prepareFxGainsLossesForExport,
   preparePayrollReportsForExport,
+  preparePeriodComparisonForExport,
   prepareLedgerReportsForExport,
   prepareConsolidatedStatementsForExport,
   preparePlanningReportsForExport,
 } from "@/lib/export";
+import { prepareVat201ForExport, type Vat201ExportReturn } from "@/lib/vat201-export";
 import { apiRequest } from "@/lib/queryClient";
 import {
   fetchReportCatalogDiscovery,
@@ -64,42 +70,70 @@ import {
   reportAutomationTriggerRules,
   reportAutomationStarterHref,
   reportAutomationStarters,
+  calculateReportAutomationImpact,
   buildReportAutomationHealthTrend,
+  buildReportAutomationRunbookSteps,
   calculateReportAutomationHealth,
   clearPreferredReportPersona,
+  clearPreferredReportWorkflowGapFilter,
   clearPreferredReportWorkflowSearch,
   getPreferredReportDeliveryAutomationCommand,
   getPreferredReportPersona,
+  getPreferredReportWorkflowGapFilter,
   getPreferredReportWorkflowSearch,
+  getFavoriteReportIds,
   getReportAutomationHealthHistory,
+  normalizeReportWorkflowSearch,
   parseReportDeliveryAutomationCommand,
+  parseReportPersona,
+  parseReportWorkflowGapFilter,
   recordReportAutomationHealthSnapshots,
   reportComparisonPresetHref,
   reportComparisonPresets,
+  reportAutomationImpactProfiles,
   reportDecisionShortcutHref,
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
   reportCatalog,
   reportAutomationPlaybookHref,
+  reportManagementBriefHref,
+  reportManagementBriefProfiles,
   reportPackTemplateHref,
   reportPackTemplates,
+  reportPersonaHref,
   reportPersonas,
   reportPersonaWorkspaces,
+  reportProductDepthAreaHref,
+  reportProductDepthAreas,
+  reportProductDepthSubgoalHref,
+  reportQuickAccessProfiles,
+  reportRoleWorkflowStepHref,
+  reportSavedViewHref,
+  reportSavedViewProfiles,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
   reportTabs,
+  reportWorkflowGapFilterLabels,
+  reportWorkflowContextHref,
   reportHref,
   reportsHref,
   reportWorkspaceHref,
   setPreferredReportPersona,
   setPreferredReportDeliveryAutomationCommand,
+  setPreferredReportWorkflowGapFilter,
   setPreferredReportWorkflowSearch,
+  toggleFavoriteReportId,
   type ReportCatalogItem,
   type ReportAutomationTriggerSeverity,
   type ReportDeliveryAutomationCommand,
+  type ReportEvidenceCheckpointStatus,
   type ReportPersona,
+  type ReportProductDepthStatus,
   type ReportStatus,
   type ReportTab,
+  type ReportWorkflowGapFilter,
   type ReportWorkspaceIcon,
 } from "@/lib/reportCatalog";
 import {
@@ -115,6 +149,7 @@ import {
   FileText,
   Send,
   Scale,
+  Sparkles,
   Wallet,
   TrendingUp,
   TrendingDown,
@@ -144,6 +179,31 @@ interface ProfitLossReport {
   totalRevenue: number;
   totalExpenses: number;
   netProfit: number;
+}
+
+interface CostCenterProfitabilityRow {
+  costCenterId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  totalIncome: number;
+  totalExpenses: number;
+  netIncome: number;
+  lineCount: number;
+}
+
+interface CostCenterProfitabilityReport {
+  periodStart: string | null;
+  periodEnd: string | null;
+  costCenters: CostCenterProfitabilityRow[];
+  totals: {
+    costCenterCount: number;
+    activeCostCenterCount: number;
+    allocatedLineCount: number;
+    totalIncome: number;
+    totalExpenses: number;
+    netIncome: number;
+  };
 }
 
 interface BalanceSheetReport {
@@ -203,8 +263,16 @@ interface ReportDeliveryPlanPreview {
     status: "ready" | "review" | "paused";
     detail: string;
   }>;
+  handoffRows?: Array<{
+    label: string;
+    value: string;
+    status: "ready" | "review" | "paused";
+    detail: string;
+    href: string;
+  }>;
   reportNames: string[];
   triggerRuleTitles: string[];
+  suiteTitles: string[];
 }
 
 interface ReportDeliveryPlanResponse {
@@ -218,6 +286,13 @@ interface ReportDeliveryPlanResponse {
   deliveryGuardrail: string;
   nextRunLabel: string;
   settingsSource: "catalog" | "company";
+  suiteCount: number;
+  reportSuites: Array<{
+    id: string;
+    title: string;
+    workflow: string;
+    href: string;
+  }>;
   preview: ReportDeliveryPlanPreview;
 }
 
@@ -240,6 +315,22 @@ interface ReportDeliveryRunSummary {
 
 type ReportDeliveryRunStatusFilter = "all" | "queued" | "sent" | "failed";
 
+interface ReportDeliverySchedulerHandoffReview {
+  subscriptionId: string;
+  gap: ReportWorkflowGapFilter;
+  message?: string;
+  detail: string;
+  latestRunId?: string | null;
+}
+
+interface ReportDeliverySchedulerScanSnapshot {
+  skippedHandoff?: number;
+  handoffReviews?: ReportDeliverySchedulerHandoffReview[];
+  skippedSubscriptionIds?: Partial<
+    Record<"paused" | "setup" | "not_due" | "handoff" | "no_actor", string[]>
+  >;
+}
+
 interface ReportDeliverySchedulerScanSummary {
   id: string;
   status: "success" | "error";
@@ -253,6 +344,7 @@ interface ReportDeliverySchedulerScanSummary {
   skippedNoActor: number;
   errors: number;
   message: string | null;
+  snapshot?: ReportDeliverySchedulerScanSnapshot | null;
 }
 
 type ConsolidatedStatementStatus = "included" | "unbalanced" | "multi_currency" | "failed";
@@ -265,6 +357,10 @@ interface ConsolidatedStatementEntityRow {
   revenue: number;
   expenses: number;
   netProfit: number;
+  currentComparisonRevenue: number;
+  previousRevenue: number;
+  currentComparisonExpenses: number;
+  previousExpenses: number;
   currentComparisonNetProfit: number;
   previousNetProfit: number;
   assets: number;
@@ -293,6 +389,10 @@ interface ConsolidatedStatementsReport {
   totalRevenue: number;
   totalExpenses: number;
   netProfit: number;
+  currentComparisonRevenue: number;
+  previousRevenue: number;
+  currentComparisonExpenses: number;
+  previousExpenses: number;
   currentComparisonNetProfit: number;
   previousNetProfit: number;
   totalAssets: number;
@@ -311,6 +411,84 @@ interface VATSummaryReport {
   purchasesVAT: number;
   netVATPayable: number;
 }
+
+interface CashFlowStatementRow {
+  period: string;
+  operatingInflow: number;
+  operatingOutflow: number;
+  investingInflow: number;
+  investingOutflow: number;
+  financingInflow: number;
+  financingOutflow: number;
+  netCashFlow: number;
+  endingBalance: number;
+}
+
+interface AgingReportItem {
+  id: string;
+  name: string;
+  type: "receivable" | "payable";
+  current: number;
+  days30: number;
+  days60: number;
+  days90: number;
+  over90: number;
+  total: number;
+}
+
+interface BillAgingBucket {
+  amount: number;
+  count: number;
+}
+
+interface BillAgingReport {
+  current: BillAgingBucket;
+  days_1_30: BillAgingBucket;
+  days_31_60: BillAgingBucket;
+  days_61_90: BillAgingBucket;
+  days_90_plus: BillAgingBucket;
+}
+
+interface AdvancedPeriodComparisonRow {
+  metric: string;
+  current: number;
+  previous: number;
+  change: number;
+  changePercent: number;
+}
+
+interface FxGainsLossesItem {
+  entityType: string;
+  entityId: string;
+  entityNumber: string;
+  counterparty: string;
+  currency: string;
+  foreignAmount: number;
+  transactionRate: number;
+  currentRate: number;
+  bookValueAed: number;
+  currentValueAed: number;
+  unrealizedGainLoss: number;
+}
+
+interface FxGainsLossesReport {
+  asOf: string;
+  baseCurrency: string;
+  receivables: FxGainsLossesItem[];
+  payables: FxGainsLossesItem[];
+  totalUnrealizedGain: number;
+  totalUnrealizedLoss: number;
+  netUnrealizedGainLoss: number;
+}
+
+type VATReturnReportRow = Vat201ExportReturn & {
+  id: string;
+  submittedAt?: string | null;
+  ftaReferenceNumber?: string | null;
+  paymentStatus?: string | null;
+  paymentAmount?: number | null;
+  paymentDate?: string | null;
+};
 
 interface CorporateTaxEstimateReport {
   periodStart: string;
@@ -385,6 +563,18 @@ interface OverdueResponse {
   totalOutstanding: number;
 }
 
+interface VendorBillReportRow {
+  id: string;
+  vendor_name?: string | null;
+  bill_date: string;
+  due_date: string | null;
+  currency: string;
+  total_amount: number | string;
+  amount_paid: number | string | null;
+  exchange_rate?: number | string | null;
+  status: string;
+}
+
 interface InvoiceStatusSummaryRow {
   status: string;
   count: number;
@@ -446,6 +636,14 @@ interface ReceiptReportRow {
   category: string | null;
   posted: boolean;
   autoPosted: boolean;
+}
+
+interface BankTransactionReportRow {
+  id: string;
+  transactionDate: string;
+  amount: number | string;
+  matchStatus: string;
+  isReconciled: boolean;
 }
 
 interface ExpenseSummaryRow {
@@ -793,6 +991,7 @@ interface DepreciationScheduleReport {
   depreciableAssetCount: number;
   readyToPostCount: number;
   reviewCount: number;
+  reviewValueAed: number;
   fullyDepreciatedCount: number;
   nonDepreciableCount: number;
   periodDepreciationAed: number;
@@ -831,7 +1030,7 @@ interface InventoryMovementTypeRow {
 }
 
 type PersonaFilter = "all" | ReportPersona;
-type ReportWorkflowFinderGapFilter = "all" | "report-gaps" | "rule-gaps" | "delivery-gaps";
+type ReportWorkflowFinderGapFilter = "all" | ReportWorkflowGapFilter;
 type ReportWorkflowCoverageCueId = "pack" | "schedule" | "alert" | "delivery";
 
 interface ReportWorkflowCoverageCue {
@@ -850,6 +1049,12 @@ interface ReportWorkflowCoverageContext {
   deliverySubscriptionId?: string;
 }
 
+interface ReportWorkflowFinderAction {
+  href: string;
+  label: string;
+  testId: string;
+}
+
 interface ReportWorkflowFinderResult {
   id: string;
   type: string;
@@ -857,6 +1062,7 @@ interface ReportWorkflowFinderResult {
   description: string;
   meta: string;
   href: string;
+  actionLinks?: ReportWorkflowFinderAction[];
   persona: ReportPersona | null;
   badgeVariant: BadgeProps["variant"];
   coverageCues: ReportWorkflowCoverageCue[];
@@ -866,15 +1072,6 @@ interface ReportWorkflowGapFilterState {
   type: ReportWorkflowFinderGapFilter;
   persona: ReportPersona | null;
 }
-
-const reportWorkflowGapFilterLabels: Record<
-  Exclude<ReportWorkflowFinderGapFilter, "all">,
-  string
-> = {
-  "report-gaps": "Report gaps",
-  "rule-gaps": "Rule gaps",
-  "delivery-gaps": "Delivery gaps",
-};
 
 function reportWorkflowCue(
   result: ReportWorkflowFinderResult,
@@ -941,6 +1138,8 @@ interface ComparisonMetricRow {
   previous: number;
   delta: number;
   percentChange: number | null;
+  currentLabel?: string;
+  previousLabel?: string;
   currency: string;
   signal: string;
   favorable: "increase" | "decrease" | "neutral";
@@ -978,6 +1177,24 @@ const triggerSeverityMeta = {
   info: { label: "Monitor", variant: "info" },
 } as const satisfies Record<
   ReportAutomationTriggerSeverity,
+  { label: string; variant: BadgeProps["variant"] }
+>;
+
+const productDepthStatusMeta = {
+  working: { label: "Working", variant: "success" },
+  hardening: { label: "Hardening", variant: "warning" },
+  "data-needed": { label: "Data needed", variant: "info" },
+} as const satisfies Record<
+  ReportProductDepthStatus,
+  { label: string; variant: BadgeProps["variant"] }
+>;
+
+const productDepthEvidenceCheckpointStatusMeta = {
+  "current-proxy": { label: "Current proxy", variant: "neutral" },
+  "missing-source": { label: "Missing source", variant: "warning" },
+  guardrail: { label: "Guardrail", variant: "info" },
+} as const satisfies Record<
+  ReportEvidenceCheckpointStatus,
   { label: string; variant: BadgeProps["variant"] }
 >;
 
@@ -1023,9 +1240,38 @@ const invoiceStatusLabels: Record<string, string> = {
 
 const inactiveInvoiceStatuses = new Set(["void", "cancelled"]);
 const nonRevenueInvoiceStatuses = new Set(["draft", "void", "cancelled"]);
+const inactiveVendorBillStatuses = new Set(["paid", "void", "cancelled"]);
+const nonPayableVendorBillStatuses = new Set(["void", "cancelled"]);
 
 function amountInAed(invoice: InvoiceReportRow): number {
   return Number(invoice.baseCurrencyAmount ?? invoice.total ?? 0) || 0;
+}
+
+function vendorBillTotalAed(bill: VendorBillReportRow): number {
+  const exchangeRate = Number(bill.exchange_rate ?? 1);
+  const normalizedExchangeRate =
+    Number.isFinite(exchangeRate) && exchangeRate > 0 ? exchangeRate : 1;
+  return (Number(bill.total_amount) || 0) * normalizedExchangeRate;
+}
+
+function vendorBillOutstandingAed(bill: VendorBillReportRow): number {
+  const outstanding = Math.max(
+    0,
+    (Number(bill.total_amount) || 0) - (Number(bill.amount_paid) || 0)
+  );
+  const exchangeRate = Number(bill.exchange_rate ?? 1);
+  const normalizedExchangeRate =
+    Number.isFinite(exchangeRate) && exchangeRate > 0 ? exchangeRate : 1;
+  return outstanding * normalizedExchangeRate;
+}
+
+function vendorBillPaidAed(bill: VendorBillReportRow): number {
+  const total = Math.max(0, Number(bill.total_amount) || 0);
+  const paid = Math.min(total, Math.max(0, Number(bill.amount_paid) || 0));
+  const exchangeRate = Number(bill.exchange_rate ?? 1);
+  const normalizedExchangeRate =
+    Number.isFinite(exchangeRate) && exchangeRate > 0 ? exchangeRate : 1;
+  return paid * normalizedExchangeRate;
 }
 
 function valueInDateRange(value: string | null | undefined, dateRange: DateRange): boolean {
@@ -1046,6 +1292,10 @@ function invoiceInDateRange(invoice: InvoiceReportRow, dateRange: DateRange): bo
 
 function receiptInDateRange(receipt: ReceiptReportRow, dateRange: DateRange): boolean {
   return valueInDateRange(receipt.date, dateRange);
+}
+
+function vendorBillInDateRange(bill: VendorBillReportRow, dateRange: DateRange): boolean {
+  return valueInDateRange(bill.bill_date, dateRange);
 }
 
 function expenseClaimInDateRange(claim: ExpenseClaimReportRow, dateRange: DateRange): boolean {
@@ -1293,6 +1543,9 @@ function buildDepreciationScheduleReport(
     depreciableAssetCount: rows.filter((row) => row.status !== "non_depreciable").length,
     readyToPostCount: readyRows.length,
     reviewCount: reviewRows.length,
+    reviewValueAed: roundReportAmount(
+      reviewRows.reduce((sum, row) => sum + Math.max(0, row.remainingDepreciable), 0)
+    ),
     fullyDepreciatedCount: rows.filter((row) => row.status === "fully_depreciated").length,
     nonDepreciableCount: rows.filter((row) => row.status === "non_depreciable").length,
     periodDepreciationAed: roundReportAmount(
@@ -1317,6 +1570,18 @@ function buildConsolidatedStatementsReport(
       const revenue = roundReportAmount(source.profitLoss?.totalRevenue ?? 0);
       const expenses = roundReportAmount(source.profitLoss?.totalExpenses ?? 0);
       const netProfit = roundReportAmount(source.profitLoss?.netProfit ?? 0);
+      const currentComparisonRevenue = roundReportAmount(
+        source.comparisonCurrentProfitLoss?.totalRevenue ?? 0
+      );
+      const previousRevenue = roundReportAmount(
+        source.comparisonPreviousProfitLoss?.totalRevenue ?? 0
+      );
+      const currentComparisonExpenses = roundReportAmount(
+        source.comparisonCurrentProfitLoss?.totalExpenses ?? 0
+      );
+      const previousExpenses = roundReportAmount(
+        source.comparisonPreviousProfitLoss?.totalExpenses ?? 0
+      );
       const currentComparisonNetProfit = roundReportAmount(
         source.comparisonCurrentProfitLoss?.netProfit ?? 0
       );
@@ -1354,6 +1619,10 @@ function buildConsolidatedStatementsReport(
         revenue,
         expenses,
         netProfit,
+        currentComparisonRevenue,
+        previousRevenue,
+        currentComparisonExpenses,
+        previousExpenses,
         currentComparisonNetProfit,
         previousNetProfit,
         assets,
@@ -1390,6 +1659,18 @@ function buildConsolidatedStatementsReport(
   const totalRevenue = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.revenue, 0));
   const totalExpenses = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.expenses, 0));
   const netProfit = roundReportAmount(loadedRows.reduce((sum, row) => sum + row.netProfit, 0));
+  const currentComparisonRevenue = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.currentComparisonRevenue, 0)
+  );
+  const previousRevenue = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.previousRevenue, 0)
+  );
+  const currentComparisonExpenses = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.currentComparisonExpenses, 0)
+  );
+  const previousExpenses = roundReportAmount(
+    loadedRows.reduce((sum, row) => sum + row.previousExpenses, 0)
+  );
   const currentComparisonNetProfit = roundReportAmount(
     loadedRows.reduce((sum, row) => sum + row.currentComparisonNetProfit, 0)
   );
@@ -1418,6 +1699,10 @@ function buildConsolidatedStatementsReport(
     totalRevenue,
     totalExpenses,
     netProfit,
+    currentComparisonRevenue,
+    previousRevenue,
+    currentComparisonExpenses,
+    previousExpenses,
     currentComparisonNetProfit,
     previousNetProfit,
     totalAssets,
@@ -1573,9 +1858,33 @@ function personaFilterFromSearch(
   fallbackPersona: ReportPersona | null = null
 ): PersonaFilter {
   const persona = new URLSearchParams(search).get("persona");
+  if (persona === "all") return "all";
   return reportPersonas.includes(persona as ReportPersona)
     ? (persona as ReportPersona)
     : (fallbackPersona ?? "all");
+}
+
+function reportWorkflowSearchFromSearch(search: string): string | null {
+  const value = new URLSearchParams(search).get("workflowSearch");
+  return value === null ? null : normalizeReportWorkflowSearch(value);
+}
+
+function reportWorkflowGapFilterFromSearch(
+  search: string,
+  fallbackPersona: PersonaFilter
+): ReportWorkflowGapFilterState {
+  const params = new URLSearchParams(search);
+  const type = parseReportWorkflowGapFilter(params.get("workflowGap"));
+  const persona =
+    parseReportPersona(params.get("workflowGapPersona")) ??
+    (fallbackPersona === "all" ? null : fallbackPersona);
+
+  if (!persona) {
+    return { type: "all", persona: null };
+  }
+
+  const preferredType = type ?? getPreferredReportWorkflowGapFilter(persona);
+  return preferredType ? { type: preferredType, persona } : { type: "all", persona: null };
 }
 
 function matchesReportPersona(personas: ReportPersona[], persona: PersonaFilter): boolean {
@@ -1669,6 +1978,52 @@ function inclusiveDayCount(from: Date, to: Date): number {
   );
 }
 
+function averageDaysOverdue<T>(
+  rows: T[],
+  dueDateForRow: (row: T) => string | null,
+  range: ComparisonRange
+): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const rangeEnd = startOfLocalDay(range.to);
+  const overdueDays = rows
+    .map((row) => {
+      const dueDateValue = dueDateForRow(row);
+      if (!dueDateValue) return null;
+      const dueDate = new Date(dueDateValue);
+      if (Number.isNaN(dueDate.getTime())) return null;
+      return Math.max(
+        0,
+        Math.floor((rangeEnd.getTime() - startOfLocalDay(dueDate).getTime()) / msPerDay)
+      );
+    })
+    .filter((days): days is number => typeof days === "number");
+
+  if (overdueDays.length === 0) return 0;
+
+  return (
+    Math.round((overdueDays.reduce((sum, days) => sum + days, 0) / overdueDays.length) * 10) / 10
+  );
+}
+
+function dueWithinDaysAfterRangeEnd<T>(
+  rows: T[],
+  dueDateForRow: (row: T) => string | null,
+  range: ComparisonRange,
+  daysAfterRangeEnd = 7
+): T[] {
+  const rangeEnd = startOfLocalDay(range.to);
+  const dueSoonEnd = addDays(rangeEnd, daysAfterRangeEnd);
+
+  return rows.filter((row) => {
+    const dueDateValue = dueDateForRow(row);
+    if (!dueDateValue) return false;
+    const dueDate = new Date(dueDateValue);
+    if (Number.isNaN(dueDate.getTime())) return false;
+    const dueDay = startOfLocalDay(dueDate);
+    return dueDay > rangeEnd && dueDay <= dueSoonEnd;
+  });
+}
+
 function buildComparisonRanges(dateRange: DateRange): {
   current: ComparisonRange;
   previous: ComparisonRange;
@@ -1700,9 +2055,53 @@ function percentageChange(current: number, previous: number): number | null {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
+function normalizeMonthlyBurn(totalRevenue: number, totalExpenses: number, days: number): number {
+  const dailyBurn = Math.max(0, totalExpenses - totalRevenue) / Math.max(1, days);
+  return Math.round(dailyBurn * 30 * 100) / 100;
+}
+
+function runwayCoverageDays(cashBalance: number, monthlyBurn: number, horizonDays = 90): number {
+  if (monthlyBurn <= 0.005) return horizonDays;
+  if (cashBalance <= 0) return 0;
+  const dailyBurn = monthlyBurn / 30;
+  return Math.round(Math.min(horizonDays, cashBalance / dailyBurn) * 10) / 10;
+}
+
+function ratioPercent(numerator: number, denominator: number): number {
+  if (Math.abs(denominator) <= 0.005) return 0;
+  return Math.round((numerator / denominator) * 10000) / 100;
+}
+
+function averageAvailablePercent(values: Array<number | null | undefined>): number {
+  const available = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value)
+  );
+  if (available.length === 0) return 0;
+
+  return (
+    Math.round((available.reduce((sum, value) => sum + value, 0) / available.length) * 100) / 100
+  );
+}
+
 function formatComparisonPercent(value: number | null): string {
   if (value === null) return "New";
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function formatComparisonValue(row: ComparisonMetricRow, value: number, locale: string): string {
+  if (row.currency === "%") return `${value.toFixed(1)}%`;
+  if (row.currency === "days") return `${value.toFixed(1)} days`;
+  if (row.currency === "count") {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+  }
+  return formatCurrency(value, row.currency, locale);
+}
+
+function formatComparisonExportValue(row: ComparisonMetricRow, value: number): string {
+  if (row.currency === "%") return `${value.toFixed(1)}%`;
+  if (row.currency === "days") return `${value.toFixed(1)} days`;
+  if (row.currency === "count") return `${Math.round(value)}`;
+  return `${row.currency} ${value.toFixed(2)}`;
 }
 
 function comparisonBadgeVariant(row: ComparisonMetricRow): BadgeProps["variant"] {
@@ -1782,6 +2181,8 @@ export default function Reports() {
   >(null);
   const [reportDeliveryRunStatusFilter, setReportDeliveryRunStatusFilter] =
     useState<ReportDeliveryRunStatusFilter>("all");
+  const [acknowledgedReportDeliveryHandoffGaps, setAcknowledgedReportDeliveryHandoffGaps] =
+    useState<Record<string, true>>({});
   const [pinnedReportDeliveryAutomationCommands, setPinnedReportDeliveryAutomationCommands] =
     useState<Record<ReportPersona, ReportDeliveryAutomationCommand | null>>(() => ({
       owner: getPreferredReportDeliveryAutomationCommand("owner"),
@@ -1819,10 +2220,9 @@ export default function Reports() {
     getPreferredReportWorkflowSearch(personaFilter)
   );
   const [reportWorkflowGapFilter, setReportWorkflowGapFilter] =
-    useState<ReportWorkflowGapFilterState>({
-      type: "all",
-      persona: null,
-    });
+    useState<ReportWorkflowGapFilterState>(() =>
+      reportWorkflowGapFilterFromSearch(locationSearch || window.location.search, personaFilter)
+    );
   const reportCatalogDiscoveryPersona: ReportPersona | null =
     personaFilter === "all" ? null : personaFilter;
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
@@ -1833,6 +2233,14 @@ export default function Reports() {
   });
   const syncedReportCatalogSummary = reportCatalogDiscoveryQuery.data?.summary;
   const syncedReportPersonaSummaries = reportCatalogDiscoveryQuery.data?.personaSummaries;
+  const reportActionContextByPersonaReportId = useMemo(() => {
+    return new Map(
+      (reportCatalogDiscoveryQuery.data?.reportActionContexts ?? []).map((context) => [
+        `${context.persona}:${context.reportId}`,
+        context,
+      ])
+    );
+  }, [reportCatalogDiscoveryQuery.data?.reportActionContexts]);
 
   const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
     navigate(reportsHref({ tab, persona }));
@@ -1850,18 +2258,35 @@ export default function Reports() {
   };
 
   useEffect(() => {
+    const currentSearch = locationSearch || window.location.search;
+    const urlWorkflowSearch = reportWorkflowSearchFromSearch(currentSearch);
+    if (urlWorkflowSearch !== null) {
+      setReportWorkflowSearch(urlWorkflowSearch);
+      setPreferredReportWorkflowSearch(urlWorkflowSearch, personaFilter);
+      return;
+    }
+
     setReportWorkflowSearch(getPreferredReportWorkflowSearch(personaFilter));
-  }, [personaFilter]);
+  }, [locationSearch, personaFilter]);
 
   useEffect(() => {
+    const currentSearch = locationSearch || window.location.search;
+    const nextFilter = reportWorkflowGapFilterFromSearch(currentSearch, personaFilter);
+    const urlGapFilter = parseReportWorkflowGapFilter(
+      new URLSearchParams(currentSearch).get("workflowGap")
+    );
+    if (urlGapFilter && nextFilter.persona) {
+      setPreferredReportWorkflowGapFilter(nextFilter.persona, urlGapFilter);
+    }
+
     setReportWorkflowGapFilter((current) => {
-      if (current.type === "all" || personaFilter === "all" || current.persona === personaFilter) {
+      if (current.type === nextFilter.type && current.persona === nextFilter.persona) {
         return current;
       }
 
-      return { type: "all", persona: null };
+      return nextFilter;
     });
-  }, [personaFilter]);
+  }, [locationSearch, personaFilter]);
 
   const personaFilterLabel =
     personaFilters.find((filter) => filter.id === personaFilter)?.label ?? "All";
@@ -1896,19 +2321,41 @@ export default function Reports() {
   const applyReportWorkflowGapFilter = useCallback(
     (type: Exclude<ReportWorkflowFinderGapFilter, "all">, persona: ReportPersona) => {
       setReportWorkflowSearch("");
-      setReportWorkflowGapFilter((current) => {
-        if (current.type === type && current.persona === persona) {
-          return { type: "all", persona: null };
-        }
+      if (reportWorkflowGapFilter.type === type && reportWorkflowGapFilter.persona === persona) {
+        clearPreferredReportWorkflowGapFilter(persona);
+        setReportWorkflowGapFilter({ type: "all", persona: null });
+        return;
+      }
 
-        return { type, persona };
-      });
+      setPreferredReportWorkflowGapFilter(persona, type);
+      setReportWorkflowGapFilter({ type, persona });
     },
-    []
+    [reportWorkflowGapFilter.persona, reportWorkflowGapFilter.type]
   );
   const clearReportWorkflowGapFilter = useCallback(() => {
+    if (reportWorkflowGapFilter.persona) {
+      clearPreferredReportWorkflowGapFilter(reportWorkflowGapFilter.persona);
+    }
     setReportWorkflowGapFilter({ type: "all", persona: null });
-  }, []);
+  }, [reportWorkflowGapFilter.persona]);
+  const resetReportWorkflowContext = useCallback(() => {
+    const personasToClear = new Set<ReportPersona>();
+    if (personaFilter !== "all") personasToClear.add(personaFilter);
+    if (reportWorkflowGapFilter.persona) {
+      personasToClear.add(reportWorkflowGapFilter.persona);
+    }
+
+    personasToClear.forEach((persona) => {
+      clearPreferredReportWorkflowGapFilter(persona);
+      clearPreferredReportWorkflowSearch(persona);
+    });
+    clearPreferredReportWorkflowSearch("all");
+    clearPreferredReportPersona();
+    setPreferredReportPersonaState(null);
+    setReportWorkflowSearch("");
+    setReportWorkflowGapFilter({ type: "all", persona: null });
+    navigate(reportsHref({ tab: activeTab, persona: "all" }));
+  }, [activeTab, navigate, personaFilter, reportWorkflowGapFilter.persona]);
   const reportDeliveryLauncherPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const pinnedReportDeliveryAutomationCommand =
@@ -1959,24 +2406,63 @@ export default function Reports() {
       toast,
     ]
   );
+  const [favoriteReportIds, setFavoriteReportIdsState] = useState<string[]>(() =>
+    getFavoriteReportIds(personaFilter)
+  );
+
+  useEffect(() => {
+    setFavoriteReportIdsState(getFavoriteReportIds(personaFilter));
+  }, [personaFilter]);
+
+  const favoriteReportIdSet = useMemo(() => new Set(favoriteReportIds), [favoriteReportIds]);
+  const toggleReportFavorite = useCallback(
+    (report: ReportCatalogItem) => {
+      const nextFavoriteIds = toggleFavoriteReportId(report.id, personaFilter);
+      setFavoriteReportIdsState(nextFavoriteIds);
+      const isPinned = nextFavoriteIds.includes(report.id);
+
+      toast({
+        title: isPinned ? "Report pinned" : "Report unpinned",
+        description: `${report.name} ${
+          isPinned
+            ? "will appear first in this report library."
+            : "was removed from pinned reports."
+        }`,
+      });
+    },
+    [personaFilter, toast]
+  );
 
   const filteredReports = useMemo(() => {
-    return reportCatalog.filter((report) => {
-      return (
-        matchesReportPersona(report.personas, personaFilter) &&
-        matchesReportWorkflowSearch([
-          report.name,
-          report.category,
-          report.status,
-          report.comparison,
-          report.automation,
-          report.decisionQuestion,
-          report.commandKeywords,
-          report.personas.join(" "),
-        ])
-      );
-    });
-  }, [matchesReportWorkflowSearch, personaFilter]);
+    return reportCatalog
+      .filter((report) => {
+        return (
+          matchesReportPersona(report.personas, personaFilter) &&
+          matchesReportWorkflowSearch([
+            report.name,
+            report.category,
+            report.status,
+            report.comparison,
+            report.automation,
+            report.decisionQuestion,
+            report.commandKeywords,
+            report.personas.join(" "),
+          ])
+        );
+      })
+      .sort((a, b) => {
+        const aFavorite = favoriteReportIdSet.has(a.id) ? 0 : 1;
+        const bFavorite = favoriteReportIdSet.has(b.id) ? 0 : 1;
+        return aFavorite - bFavorite || a.name.localeCompare(b.name);
+      });
+  }, [favoriteReportIdSet, matchesReportWorkflowSearch, personaFilter]);
+
+  const favoriteReports = useMemo(() => {
+    return reportCatalog.filter(
+      (report) =>
+        favoriteReportIdSet.has(report.id) && matchesReportPersona(report.personas, personaFilter)
+    );
+  }, [favoriteReportIdSet, personaFilter]);
 
   const connectedReportCenters = useMemo(() => {
     return filteredReports.filter(
@@ -1991,17 +2477,21 @@ export default function Reports() {
 
   const reportStats = useMemo(() => {
     if (syncedReportCatalogSummary) {
-      const ready =
-        syncedReportCatalogSummary.liveReportCount + syncedReportCatalogSummary.apiReportCount;
       return {
         live: syncedReportCatalogSummary.liveReportCount,
-        ready,
+        ready: syncedReportCatalogSummary.readyReportCount,
         planned: syncedReportCatalogSummary.plannedReportCount,
         total: syncedReportCatalogSummary.reportCount,
         packTemplates: syncedReportCatalogSummary.packTemplateCount,
         comparisonPresets: syncedReportCatalogSummary.comparisonPresetCount,
+        reportSuites: syncedReportCatalogSummary.reportSuiteCount,
         deliverySubscriptions: syncedReportCatalogSummary.deliverySubscriptionCount,
         automationStarters: syncedReportCatalogSummary.automationStarterCount,
+        quickAccessProfiles: syncedReportCatalogSummary.quickAccessProfileCount,
+        savedViews: syncedReportCatalogSummary.savedViewCount,
+        managementBriefs: syncedReportCatalogSummary.managementBriefCount,
+        automationImpactProfiles: syncedReportCatalogSummary.automationImpactProfileCount,
+        workflowSteps: syncedReportCatalogSummary.workflowStepCount,
         automationPlaybooks: syncedReportCatalogSummary.automationPlaybookCount,
       };
     }
@@ -2016,8 +2506,17 @@ export default function Reports() {
       total: reportCatalog.length,
       packTemplates: reportPackTemplates.length,
       comparisonPresets: reportComparisonPresets.length,
+      reportSuites: reportSuiteProfiles.length,
       deliverySubscriptions: reportDeliverySubscriptions.length,
       automationStarters: reportAutomationStarters.length,
+      quickAccessProfiles: reportQuickAccessProfiles.length,
+      savedViews: reportSavedViewProfiles.length,
+      managementBriefs: reportManagementBriefProfiles.length,
+      automationImpactProfiles: reportAutomationImpactProfiles.length,
+      workflowSteps: reportPersonaWorkspaces.reduce(
+        (sum, workspace) => sum + workspace.workflowSteps.length,
+        0
+      ),
       automationPlaybooks: reportPersonaWorkspaces.reduce(
         (sum, workspace) => sum + workspace.automations.length,
         0
@@ -2033,15 +2532,90 @@ export default function Reports() {
         (summary) => summary.persona === workspace.persona
       );
       const catalogReportCount = syncedSummary?.reportCount ?? reports.length;
-      const readyReports = syncedSummary?.liveReportCount ?? localReadyReports;
+      const readyReports = syncedSummary?.readyReportCount ?? localReadyReports;
       const plannedReports = reports.filter((report) => report.status === "planned");
       const automationCount =
         syncedSummary?.automationPlaybookCount ?? workspace.automations.length;
       const topReadyReport = reports.find((report) => report.tab) ?? reports[0];
+      const setupChecklist = workspace.setupChecklist.map((step) => {
+        const linkedReports = step.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+
+        return {
+          ...step,
+          reports: linkedReports,
+          href: reportSectionHref(workspace, step.section),
+        };
+      });
+      const workflowSteps = workspace.workflowSteps.map((step) => {
+        const linkedReports = step.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const comparisonPreset = reportComparisonPresets.find(
+          (preset) => preset.id === step.comparisonPresetId
+        );
+        const automationStarter = reportAutomationStarters.find(
+          (starter) => starter.id === step.automationStarterId
+        );
+        const deliverySubscription = reportDeliverySubscriptions.find(
+          (subscription) => subscription.id === step.deliverySubscriptionId
+        );
+        const decisionShortcut = reportDecisionShortcuts.find(
+          (shortcut) => shortcut.id === step.decisionShortcutId
+        );
+        const savedView = reportSavedViewProfiles.find((view) => view.id === step.savedViewId);
+        const reportSuite = reportSuiteProfiles.find((suite) => suite.id === step.reportSuiteId);
+
+        return {
+          ...step,
+          reports: linkedReports,
+          href: reportRoleWorkflowStepHref(workspace, step),
+          sectionHref: reportSectionHref(workspace, step.section),
+          comparisonPreset,
+          comparisonHref: comparisonPreset
+            ? reportComparisonPresetHref(comparisonPreset)
+            : reportSectionHref(workspace, "recommendations"),
+          automationStarter,
+          automationHref: automationStarter
+            ? reportAutomationStarterHref(automationStarter)
+            : reportSectionHref(workspace, "automation-starters"),
+          deliverySubscription,
+          deliveryHref: deliverySubscription
+            ? reportDeliverySubscriptionHref(deliverySubscription)
+            : reportSectionHref(workspace, "delivery-subscriptions"),
+          decisionShortcut,
+          decisionHref: decisionShortcut
+            ? reportDecisionShortcutHref(decisionShortcut)
+            : reportSectionHref(workspace, "decision-shortcuts"),
+          savedView,
+          savedViewHref: savedView
+            ? reportSavedViewHref(savedView)
+            : reportSectionHref(workspace, "saved-views"),
+          defaultViewLabel: savedView?.title ?? "Role saved view",
+          defaultViewHref: savedView
+            ? reportSavedViewHref(savedView)
+            : reportSectionHref(workspace, "saved-views"),
+          handoffRecipients: deliverySubscription?.recipients ?? workspace.packSchedule.recipients,
+          handoffGuardrail:
+            deliverySubscription?.deliveryGuardrail ?? workspace.packSchedule.automation,
+          reportSuite,
+          reportSuiteHref: reportSuite
+            ? reportSuiteHref(reportSuite)
+            : reportSectionHref(workspace, "report-suites"),
+        };
+      });
       return {
         ...workspace,
         icon: reportWorkspaceIcons[workspace.icon],
         reports,
+        roleSetupHref: reportSectionHref(workspace, "role-setup"),
+        roleWorkflowHref: reportSectionHref(workspace, "role-workflows"),
+        managementBriefsHref: reportSectionHref(workspace, "management-briefs"),
+        setupChecklist,
+        setupStepCount: syncedSummary?.setupStepCount ?? setupChecklist.length,
+        workflowSteps,
+        workflowStepCount: syncedSummary?.workflowStepCount ?? workflowSteps.length,
         catalogReportCount,
         readyReports,
         plannedReports,
@@ -2068,6 +2642,24 @@ export default function Reports() {
         comparisonPresetCount:
           syncedSummary?.comparisonPresetCount ??
           reportComparisonPresets.filter((preset) => preset.persona === workspace.persona).length,
+        reportSuiteCount:
+          syncedSummary?.reportSuiteCount ??
+          reportSuiteProfiles.filter((suite) => suite.persona === workspace.persona).length,
+        managementBriefCount:
+          syncedSummary?.managementBriefCount ??
+          reportManagementBriefProfiles.filter((brief) => brief.persona === workspace.persona)
+            .length,
+        quickAccessProfileCount:
+          syncedSummary?.quickAccessProfileCount ??
+          reportQuickAccessProfiles.filter((profile) => profile.persona === workspace.persona)
+            .length,
+        savedViewCount:
+          syncedSummary?.savedViewCount ??
+          reportSavedViewProfiles.filter((view) => view.persona === workspace.persona).length,
+        automationImpactProfileCount:
+          syncedSummary?.automationImpactProfileCount ??
+          reportAutomationImpactProfiles.filter((profile) => profile.persona === workspace.persona)
+            .length,
         topReadyReport,
         readiness: catalogReportCount ? Math.round((readyReports / catalogReportCount) * 100) : 0,
       };
@@ -2079,6 +2671,322 @@ export default function Reports() {
       matchesReportPersona([workspace.persona], personaFilter)
     );
   }, [personaFilter, workspaceSummaries]);
+
+  const reportQuickAccessSummaries = useMemo(() => {
+    return reportQuickAccessProfiles.flatMap((profile) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === profile.persona);
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === profile.comparisonPresetId
+      );
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === profile.automationStarterId
+      );
+      const deliverySubscription = reportDeliverySubscriptions.find(
+        (subscription) => subscription.id === profile.deliverySubscriptionId
+      );
+      if (!workspace || !comparisonPreset || !automationStarter || !deliverySubscription) {
+        return [];
+      }
+
+      const reports = profile.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const reportEntries = reports.map((report) => {
+        const context = reportActionContextByPersonaReportId.get(`${profile.persona}:${report.id}`);
+        return {
+          report,
+          context,
+          href:
+            context?.reportHref ??
+            reportPersonaHref(report, profile.persona) ??
+            reportWorkspaceHref(workspace),
+          workflowHref:
+            context?.workflowHref ??
+            reportWorkflowContextHref({
+              persona: profile.persona,
+              tab: report.tab ?? workspace.primaryTab,
+              search: report.name,
+            }),
+          comparisonHref: context?.comparisonPresets[0]?.href,
+          deliveryHref: context?.deliverySubscriptions[0]?.href,
+        };
+      });
+      const readyCount = reports.filter((report) => report.status !== "planned").length;
+
+      return [
+        {
+          ...profile,
+          workspace,
+          reports,
+          primaryReports: reportEntries.slice(0, 6),
+          additionalReports: reportEntries.slice(6),
+          readyCount,
+          href: reportSectionHref(workspace, "quick-access"),
+          comparisonPreset,
+          comparisonHref: reportComparisonPresetHref(comparisonPreset),
+          automationStarter,
+          automationHref: reportAutomationStarterHref(automationStarter),
+          deliverySubscription,
+          deliveryHref: reportDeliverySubscriptionHref(deliverySubscription),
+        },
+      ];
+    });
+  }, [reportActionContextByPersonaReportId, workspaceSummaries]);
+
+  const visibleReportQuickAccessSummaries = useMemo(() => {
+    return reportQuickAccessSummaries.filter(
+      (profile) =>
+        matchesReportPersona([profile.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          profile.title,
+          profile.outcome,
+          profile.commandKeywords,
+          profile.reports.map((report) => report.name).join(" "),
+          profile.comparisonPreset.title,
+          profile.automationStarter.title,
+          profile.deliverySubscription.title,
+        ])
+    );
+  }, [matchesReportWorkflowSearch, personaFilter, reportQuickAccessSummaries]);
+
+  const reportSavedViewSummaries = useMemo(() => {
+    return reportSavedViewProfiles.flatMap((view) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === view.persona);
+      const report = reportCatalog.find((item) => item.id === view.reportId);
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === view.comparisonPresetId
+      );
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === view.automationStarterId
+      );
+      if (!workspace || !report || !comparisonPreset || !automationStarter) return [];
+      const context = reportActionContextByPersonaReportId.get(`${view.persona}:${report.id}`);
+
+      return [
+        {
+          ...view,
+          workspace,
+          report,
+          comparisonPreset,
+          automationStarter,
+          href: reportSavedViewHref(view),
+          reportHref:
+            context?.reportHref ??
+            reportPersonaHref(report, view.persona) ??
+            reportWorkspaceHref(workspace),
+          workflowHref:
+            context?.workflowHref ??
+            reportWorkflowContextHref({
+              persona: view.persona,
+              tab: report.tab ?? workspace.primaryTab,
+              search: view.title,
+            }),
+          comparisonHref: reportComparisonPresetHref(comparisonPreset),
+          automationHref: reportAutomationStarterHref(automationStarter),
+        },
+      ];
+    });
+  }, [reportActionContextByPersonaReportId, workspaceSummaries]);
+
+  const visibleReportSavedViewSummaries = useMemo(() => {
+    return reportSavedViewSummaries.filter(
+      (view) =>
+        matchesReportPersona([view.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          view.title,
+          view.description,
+          view.dateRangePreset,
+          view.comparisonPeriod,
+          view.basis,
+          view.currency,
+          view.dimension,
+          view.exportFormat,
+          view.automationTrigger,
+          view.commandKeywords,
+          view.report.name,
+          view.comparisonPreset.title,
+          view.automationStarter.title,
+        ])
+    );
+  }, [matchesReportWorkflowSearch, personaFilter, reportSavedViewSummaries]);
+
+  const reportSuiteSummaries = useMemo(() => {
+    return reportSuiteProfiles.flatMap((suite) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === suite.persona);
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === suite.comparisonPresetId
+      );
+      const packTemplate = reportPackTemplates.find(
+        (template) => template.id === suite.packTemplateId
+      );
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === suite.automationStarterId
+      );
+      const deliverySubscription = reportDeliverySubscriptions.find(
+        (subscription) => subscription.id === suite.deliverySubscriptionId
+      );
+      const triggerRules = suite.triggerRuleIds
+        .map((ruleId) => reportAutomationTriggerRules.find((rule) => rule.id === ruleId))
+        .filter((rule): rule is (typeof reportAutomationTriggerRules)[number] => Boolean(rule));
+      const decisionShortcut = reportDecisionShortcuts.find(
+        (shortcut) => shortcut.id === suite.decisionShortcutId
+      );
+      if (
+        !workspace ||
+        !comparisonPreset ||
+        !packTemplate ||
+        !automationStarter ||
+        !deliverySubscription ||
+        !decisionShortcut
+      ) {
+        return [];
+      }
+
+      const reports = suite.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const savedViews = suite.savedViewIds
+        .map((viewId) => reportSavedViewSummaries.find((view) => view.id === viewId))
+        .filter((view): view is (typeof reportSavedViewSummaries)[number] => Boolean(view));
+
+      return [
+        {
+          ...suite,
+          workspace,
+          reports,
+          readyCount: reports.filter((report) => report.status !== "planned").length,
+          comparisonPreset,
+          comparisonHref: reportComparisonPresetHref(comparisonPreset),
+          packTemplate,
+          packHref: reportPackTemplateHref(packTemplate),
+          automationStarter,
+          automationHref: reportAutomationStarterHref(automationStarter),
+          deliverySubscription,
+          deliveryHref: reportDeliverySubscriptionHref(deliverySubscription),
+          triggerRules,
+          triggerRuleHref: triggerRules[0]
+            ? reportAutomationTriggerRuleHref(triggerRules[0])
+            : null,
+          decisionShortcut,
+          decisionHref: reportDecisionShortcutHref(decisionShortcut),
+          savedViews,
+          href: reportSuiteHref(suite),
+          categories: uniqueSorted(reports.map((report) => report.category)),
+        },
+      ];
+    });
+  }, [reportSavedViewSummaries, workspaceSummaries]);
+
+  const visibleReportSuiteSummaries = useMemo(() => {
+    return reportSuiteSummaries.filter(
+      (suite) =>
+        matchesReportPersona([suite.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          suite.title,
+          suite.outcome,
+          suite.workflow,
+          suite.primaryAction,
+          suite.commandKeywords,
+          suite.reports.map((report) => report.name).join(" "),
+          suite.comparisonPreset.title,
+          suite.packTemplate.title,
+          suite.automationStarter.title,
+          suite.deliverySubscription.title,
+          suite.triggerRules.map((rule) => rule.title).join(" "),
+          suite.decisionShortcut.question,
+          suite.savedViews.map((view) => view.title).join(" "),
+        ])
+    );
+  }, [matchesReportWorkflowSearch, personaFilter, reportSuiteSummaries]);
+
+  const reportManagementBriefSummaries = useMemo(() => {
+    return reportManagementBriefProfiles.flatMap((brief) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === brief.persona);
+      const reportSuite = reportSuiteSummaries.find((suite) => suite.id === brief.reportSuiteId);
+      const packTemplate = reportPackTemplates.find(
+        (template) => template.id === brief.packTemplateId
+      );
+      const comparisonPreset = reportComparisonPresets.find(
+        (preset) => preset.id === brief.comparisonPresetId
+      );
+      const automationStarter = reportAutomationStarters.find(
+        (starter) => starter.id === brief.automationStarterId
+      );
+      const deliverySubscription = reportDeliverySubscriptions.find(
+        (subscription) => subscription.id === brief.deliverySubscriptionId
+      );
+      const decisionShortcut = reportDecisionShortcuts.find(
+        (shortcut) => shortcut.id === brief.decisionShortcutId
+      );
+      const savedView = reportSavedViewProfiles.find((view) => view.id === brief.savedViewId);
+
+      if (
+        !workspace ||
+        !reportSuite ||
+        !packTemplate ||
+        !comparisonPreset ||
+        !automationStarter ||
+        !deliverySubscription ||
+        !decisionShortcut ||
+        !savedView
+      ) {
+        return [];
+      }
+
+      const reports = brief.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const readyCount = reports.filter((report) => report.status !== "planned").length;
+
+      return [
+        {
+          ...brief,
+          workspace,
+          reports,
+          readyCount,
+          reportSuite,
+          suiteHref: reportSuiteHref(reportSuite),
+          packTemplate,
+          packHref: reportPackTemplateHref(packTemplate),
+          comparisonPreset,
+          comparisonHref: reportComparisonPresetHref(comparisonPreset),
+          automationStarter,
+          automationHref: reportAutomationStarterHref(automationStarter),
+          deliverySubscription,
+          deliveryHref: reportDeliverySubscriptionHref(deliverySubscription),
+          decisionShortcut,
+          decisionHref: reportDecisionShortcutHref(decisionShortcut),
+          savedView,
+          savedViewHref: reportSavedViewHref(savedView),
+          href: reportManagementBriefHref(brief),
+        },
+      ];
+    });
+  }, [reportSuiteSummaries, workspaceSummaries]);
+
+  const visibleReportManagementBriefSummaries = useMemo(() => {
+    return reportManagementBriefSummaries.filter(
+      (brief) =>
+        matchesReportPersona([brief.persona], personaFilter) &&
+        matchesReportWorkflowSearch([
+          brief.title,
+          brief.audience,
+          brief.outcome,
+          brief.commandKeywords,
+          brief.reports.map((report) => report.name).join(" "),
+          brief.kpiMetricIds.join(" "),
+          brief.narrativeSections.map((section) => section.title).join(" "),
+          brief.narrativeSections.map((section) => section.prompt).join(" "),
+          brief.dimensionBreakdowns.map((dimension) => dimension.label).join(" "),
+          brief.dimensionBreakdowns.map((dimension) => dimension.dimension).join(" "),
+          brief.batchAction?.label ?? "",
+          brief.reportSuite.title,
+          brief.packTemplate.title,
+          brief.comparisonPreset.title,
+          brief.deliverySubscription.title,
+        ])
+    );
+  }, [matchesReportWorkflowSearch, personaFilter, reportManagementBriefSummaries]);
 
   const reportPackTemplateSummaries = useMemo(() => {
     return reportPackTemplates.flatMap((template) => {
@@ -2128,6 +3036,9 @@ export default function Reports() {
       const workspace = workspaceSummaries.find((item) => item.persona === shortcut.persona);
       const primaryReport = reportCatalog.find((report) => report.id === shortcut.primaryReportId);
       if (!workspace || !primaryReport) return [];
+      const context = reportActionContextByPersonaReportId.get(
+        `${shortcut.persona}:${primaryReport.id}`
+      );
 
       const reports = shortcut.reportIds
         .map((reportId) => reportCatalog.find((report) => report.id === reportId))
@@ -2148,7 +3059,17 @@ export default function Reports() {
           comparisonPreset,
           automationStarter,
           href: reportDecisionShortcutHref(shortcut),
-          primaryReportHref: reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut),
+          primaryReportHref:
+            context?.reportHref ??
+            reportPersonaHref(primaryReport, shortcut.persona) ??
+            reportDecisionShortcutHref(shortcut),
+          workflowHref:
+            context?.workflowHref ??
+            reportWorkflowContextHref({
+              persona: shortcut.persona,
+              tab: primaryReport.tab ?? workspace.primaryTab,
+              search: shortcut.question,
+            }),
           comparisonHref: comparisonPreset
             ? reportComparisonPresetHref(comparisonPreset)
             : reportDecisionShortcutHref(shortcut),
@@ -2158,7 +3079,7 @@ export default function Reports() {
         },
       ];
     });
-  }, [workspaceSummaries]);
+  }, [reportActionContextByPersonaReportId, workspaceSummaries]);
 
   const visibleReportDecisionShortcuts = useMemo(() => {
     return reportDecisionShortcutSummaries.filter(
@@ -2201,6 +3122,9 @@ export default function Reports() {
   const corporateTaxPeriodStart = format(comparisonCurrentRange.from, "yyyy-MM-dd");
   const corporateTaxPeriodEnd = format(comparisonCurrentRange.to, "yyyy-MM-dd");
   const corporateTaxParams = `?periodStart=${corporateTaxPeriodStart}&periodEnd=${corporateTaxPeriodEnd}`;
+  const corporateTaxPreviousPeriodStart = format(comparisonPreviousRange.from, "yyyy-MM-dd");
+  const corporateTaxPreviousPeriodEnd = format(comparisonPreviousRange.to, "yyyy-MM-dd");
+  const corporateTaxPreviousParams = `?periodStart=${corporateTaxPreviousPeriodStart}&periodEnd=${corporateTaxPreviousPeriodEnd}`;
   const corporateTaxPeriodLabel = `${format(comparisonCurrentRange.from, "MMM dd, yyyy")} - ${format(
     comparisonCurrentRange.to,
     "MMM dd, yyyy"
@@ -2220,15 +3144,31 @@ export default function Reports() {
       return true;
     });
   }, [accessibleCompanies]);
+  const selectedCompany = useMemo(
+    () => accessibleReportCompanies.find((company) => company.id === selectedCompanyId) ?? null,
+    [accessibleReportCompanies, selectedCompanyId]
+  );
   const consolidatedCompanyIds = useMemo(
     () => accessibleReportCompanies.map((company) => company.id).sort(),
     [accessibleReportCompanies]
   );
+  const advancedReportPeriod = "quarter";
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
     enabled: !!selectedCompanyId,
   });
+
+  const { data: costCenterProfitability, isLoading: costCenterProfitabilityLoading } =
+    useQuery<CostCenterProfitabilityReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "cost-centers", "profitability", dateParams],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/cost-centers/profitability${dateParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
 
   const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
@@ -2237,6 +3177,46 @@ export default function Reports() {
 
   const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: cashFlowStatement = [], isLoading: cashFlowStatementLoading } = useQuery<
+    CashFlowStatementRow[]
+  >({
+    queryKey: ["/api/reports", selectedCompanyId, "cash-flow", advancedReportPeriod],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: agingReport = [], isLoading: agingReportLoading } = useQuery<AgingReportItem[]>({
+    queryKey: ["/api/reports", selectedCompanyId, "aging"],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: billAgingReport, isLoading: billAgingLoading } = useQuery<BillAgingReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "bills", "aging"],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: vendorBills = [], isLoading: vendorBillsLoading } = useQuery<VendorBillReportRow[]>(
+    {
+      queryKey: ["/api/companies", selectedCompanyId, "bills"],
+      enabled: !!selectedCompanyId,
+    }
+  );
+
+  const { data: advancedPeriodComparison = [], isLoading: advancedPeriodComparisonLoading } =
+    useQuery<AdvancedPeriodComparisonRow[]>({
+      queryKey: ["/api/reports", selectedCompanyId, "comparison", advancedReportPeriod],
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: fxGainsLosses, isLoading: fxGainsLossesLoading } = useQuery<FxGainsLossesReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "reports", "fx-gains-losses"],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: vatReturns = [], isLoading: vatReturnsLoading } = useQuery<VATReturnReportRow[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "vat-returns"],
     enabled: !!selectedCompanyId,
   });
 
@@ -2262,6 +3242,27 @@ export default function Reports() {
     () => corporateTaxEstimateStatus(corporateTaxEstimate),
     [corporateTaxEstimate]
   );
+
+  const {
+    data: comparisonPreviousCorporateTaxEstimate,
+    isLoading: comparisonPreviousCorporateTaxLoading,
+  } = useQuery<CorporateTaxEstimateReport>({
+    queryKey: [
+      "/api/companies",
+      selectedCompanyId,
+      "corporate-tax",
+      "comparison",
+      "previous",
+      corporateTaxPreviousPeriodStart,
+      corporateTaxPreviousPeriodEnd,
+    ],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/corporate-tax/calculate${corporateTaxPreviousParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
 
   const corporateTaxBridgeRows = useMemo(
     () => [
@@ -2344,6 +3345,122 @@ export default function Reports() {
         ),
       enabled: !!selectedCompanyId,
     });
+
+  const { data: comparisonCurrentBalanceSheet, isLoading: comparisonCurrentBalanceSheetLoading } =
+    useQuery<BalanceSheetReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "balance-sheet",
+        comparisonCurrentParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/balance-sheet${comparisonCurrentParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const { data: comparisonPreviousBalanceSheet, isLoading: comparisonPreviousBalanceSheetLoading } =
+    useQuery<BalanceSheetReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "comparison",
+        "balance-sheet",
+        comparisonPreviousParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/balance-sheet${comparisonPreviousParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
+  const {
+    data: comparisonCurrentSalesProductService,
+    isLoading: comparisonCurrentSalesProductServiceLoading,
+  } = useQuery<SalesProductServiceReport>({
+    queryKey: [
+      "/api/companies",
+      selectedCompanyId,
+      "reports",
+      "comparison",
+      "sales-product-service",
+      comparisonCurrentParams,
+    ],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/reports/sales-product-service${comparisonCurrentParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
+  const {
+    data: comparisonPreviousSalesProductService,
+    isLoading: comparisonPreviousSalesProductServiceLoading,
+  } = useQuery<SalesProductServiceReport>({
+    queryKey: [
+      "/api/companies",
+      selectedCompanyId,
+      "reports",
+      "comparison",
+      "sales-product-service",
+      comparisonPreviousParams,
+    ],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/reports/sales-product-service${comparisonPreviousParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
+  const {
+    data: comparisonCurrentCostCenterProfitability,
+    isLoading: comparisonCurrentCostCenterLoading,
+  } = useQuery<CostCenterProfitabilityReport>({
+    queryKey: [
+      "/api/companies",
+      selectedCompanyId,
+      "cost-centers",
+      "comparison",
+      "profitability",
+      comparisonCurrentParams,
+    ],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/cost-centers/profitability${comparisonCurrentParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
+  const {
+    data: comparisonPreviousCostCenterProfitability,
+    isLoading: comparisonPreviousCostCenterLoading,
+  } = useQuery<CostCenterProfitabilityReport>({
+    queryKey: [
+      "/api/companies",
+      selectedCompanyId,
+      "cost-centers",
+      "comparison",
+      "profitability",
+      comparisonPreviousParams,
+    ],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/cost-centers/profitability${comparisonPreviousParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
 
   const { data: comparisonCurrentVat, isLoading: comparisonCurrentVatLoading } =
     useQuery<VATSummaryReport>({
@@ -2487,6 +3604,13 @@ export default function Reports() {
 
   const { data: receipts = [], isLoading: receiptsLoading } = useQuery<ReceiptReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "receipts"],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: bankTransactions = [], isLoading: bankTransactionsLoading } = useQuery<
+    BankTransactionReportRow[]
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "bank-statements", "transactions"],
     enabled: !!selectedCompanyId,
   });
 
@@ -2773,19 +3897,24 @@ export default function Reports() {
     const lowStockCount = activeRows.filter((row) => row.isLowStock).length;
     const negativeStockCount = activeRows.filter((row) => row.isNegativeStock).length;
     const missingCostCount = activeRows.filter((row) => row.isMissingCost).length;
+    const reviewRows = activeRows.filter(
+      (row) => row.isLowStock || row.isNegativeStock || row.isMissingCost
+    );
 
     return {
       rows,
       activeRows,
+      reviewRows,
       productCount: rows.length,
       activeProductCount: activeRows.length,
       totalUnits: activeRows.reduce((sum, row) => sum + row.currentStock, 0),
       totalStockValueAed: activeRows.reduce((sum, row) => sum + row.stockValueAed, 0),
+      reviewValueAed: reviewRows.reduce((sum, row) => sum + Math.abs(row.stockValueAed), 0),
       lowStockCount,
       negativeStockCount,
       missingCostCount,
       movementCount: inventoryMovements.length,
-      reviewCount: lowStockCount + negativeStockCount + missingCostCount,
+      reviewCount: reviewRows.length,
     };
   }, [inventoryMovements, inventoryProducts]);
 
@@ -2875,19 +4004,25 @@ export default function Reports() {
       }))
       .sort((a, b) => b.netBookValue - a.netBookValue || a.asset_name.localeCompare(b.asset_name));
     const activeRows = rows.filter((asset) => asset.status === "active");
-    const capitalizationReviewCount = activeRows.filter(
-      (asset) => asset.needs_capitalization_je
-    ).length;
-    const depreciationReviewCount = activeRows.filter(
+    const capitalizationReviewRows = activeRows.filter((asset) => asset.needs_capitalization_je);
+    const depreciationReviewRows = activeRows.filter(
       (asset) =>
         asset.category !== "Land" &&
         Number(asset.useful_life_years ?? 0) > 0 &&
         asset.netBookValue > asset.salvageValue + 0.005
-    ).length;
+    );
+    const reviewRows = activeRows.filter(
+      (asset) =>
+        asset.needs_capitalization_je ||
+        (asset.category !== "Land" &&
+          Number(asset.useful_life_years ?? 0) > 0 &&
+          asset.netBookValue > asset.salvageValue + 0.005)
+    );
 
     return {
       rows,
       activeRows,
+      reviewRows,
       byCategory: fixedAssetSummary?.byCategory ?? [],
       totalAssets: fixedAssetSummary?.totalAssets ?? activeRows.length,
       totalCost:
@@ -2900,9 +4035,10 @@ export default function Reports() {
         fixedAssetSummary?.totalNetBookValue ??
         activeRows.reduce((sum, asset) => sum + asset.netBookValue, 0),
       disposedAssetCount: rows.filter((asset) => asset.status !== "active").length,
-      capitalizationReviewCount,
-      depreciationReviewCount,
-      reviewCount: capitalizationReviewCount + depreciationReviewCount,
+      capitalizationReviewCount: capitalizationReviewRows.length,
+      depreciationReviewCount: depreciationReviewRows.length,
+      reviewValueAed: reviewRows.reduce((sum, asset) => sum + Math.max(0, asset.netBookValue), 0),
+      reviewCount: reviewRows.length,
     };
   }, [fixedAssetSummary, fixedAssets]);
 
@@ -3167,11 +4303,39 @@ export default function Reports() {
         !inactiveInvoiceStatuses.has(invoice.status) &&
         invoiceInDateRange(invoice, comparisonPreviousRange)
     );
+    const currentVendorBillDocuments = vendorBills.filter(
+      (bill) =>
+        !nonPayableVendorBillStatuses.has(bill.status) &&
+        vendorBillInDateRange(bill, comparisonCurrentRange)
+    );
+    const previousVendorBillDocuments = vendorBills.filter(
+      (bill) =>
+        !nonPayableVendorBillStatuses.has(bill.status) &&
+        vendorBillInDateRange(bill, comparisonPreviousRange)
+    );
+    const currentVendorBills = currentVendorBillDocuments.filter(
+      (bill) => !inactiveVendorBillStatuses.has(bill.status)
+    );
+    const previousVendorBills = previousVendorBillDocuments.filter(
+      (bill) => !inactiveVendorBillStatuses.has(bill.status)
+    );
     const currentReceipts = receipts.filter((receipt) =>
       receiptInDateRange(receipt, comparisonCurrentRange)
     );
     const previousReceipts = receipts.filter((receipt) =>
       receiptInDateRange(receipt, comparisonPreviousRange)
+    );
+    const currentBankTransactions = bankTransactions.filter((transaction) =>
+      valueInDateRange(transaction.transactionDate, comparisonCurrentRange)
+    );
+    const previousBankTransactions = bankTransactions.filter((transaction) =>
+      valueInDateRange(transaction.transactionDate, comparisonPreviousRange)
+    );
+    const currentExpenseClaims = expenseClaims.filter((claim) =>
+      expenseClaimInDateRange(claim, comparisonCurrentRange)
+    );
+    const previousExpenseClaims = expenseClaims.filter((claim) =>
+      expenseClaimInDateRange(claim, comparisonPreviousRange)
     );
     const currentPayrollRuns = payrollRuns.filter((run) =>
       payrollRunInDateRange(run, comparisonCurrentRange)
@@ -3184,6 +4348,12 @@ export default function Reports() {
     );
     const previousInventoryMovements = inventoryMovements.filter((movement) =>
       inventoryMovementInDateRange(movement, comparisonPreviousRange)
+    );
+    const currentActivityLogs = activityLogs.filter((log) =>
+      activityLogInDateRange(log, comparisonCurrentRange)
+    );
+    const previousActivityLogs = activityLogs.filter((log) =>
+      activityLogInDateRange(log, comparisonPreviousRange)
     );
     const currentDepreciationEstimate = buildDepreciationScheduleReport(
       fixedAssetRegisterReport.activeRows,
@@ -3201,6 +4371,446 @@ export default function Reports() {
       (sum, invoice) => sum + amountInAed(invoice),
       0
     );
+    const revenueInvoiceRows = (rows: InvoiceReportRow[]) =>
+      rows.filter((invoice) => !nonRevenueInvoiceStatuses.has(invoice.status));
+    const currentRevenueInvoices = revenueInvoiceRows(currentInvoices);
+    const previousRevenueInvoices = revenueInvoiceRows(previousInvoices);
+    const currentRevenueInvoiceValue = currentRevenueInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const previousRevenueInvoiceValue = previousRevenueInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const openReceivableRows = (rows: InvoiceReportRow[]) =>
+      rows.filter(
+        (invoice) => !nonRevenueInvoiceStatuses.has(invoice.status) && invoice.status !== "paid"
+      );
+    const currentOpenReceivableInvoices = openReceivableRows(currentInvoices);
+    const previousOpenReceivableInvoices = openReceivableRows(previousInvoices);
+    const currentOpenReceivableValue = currentOpenReceivableInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const previousOpenReceivableValue = previousOpenReceivableInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const currentOpenInvoiceValueShare = ratioPercent(
+      currentOpenReceivableValue,
+      currentRevenueInvoiceValue
+    );
+    const previousOpenInvoiceValueShare = ratioPercent(
+      previousOpenReceivableValue,
+      previousRevenueInvoiceValue
+    );
+    const currentAverageOpenInvoiceValue =
+      currentOpenReceivableInvoices.length > 0
+        ? Math.round((currentOpenReceivableValue / currentOpenReceivableInvoices.length) * 100) /
+          100
+        : 0;
+    const previousAverageOpenInvoiceValue =
+      previousOpenReceivableInvoices.length > 0
+        ? Math.round((previousOpenReceivableValue / previousOpenReceivableInvoices.length) * 100) /
+          100
+        : 0;
+    const currentOpenInvoiceShare = ratioPercent(
+      currentOpenReceivableInvoices.length,
+      currentRevenueInvoices.length
+    );
+    const previousOpenInvoiceShare = ratioPercent(
+      previousOpenReceivableInvoices.length,
+      previousRevenueInvoices.length
+    );
+    const currentDueSoonReceivableInvoices = dueWithinDaysAfterRangeEnd(
+      currentOpenReceivableInvoices,
+      (invoice) => invoice.dueDate,
+      comparisonCurrentRange
+    );
+    const previousDueSoonReceivableInvoices = dueWithinDaysAfterRangeEnd(
+      previousOpenReceivableInvoices,
+      (invoice) => invoice.dueDate,
+      comparisonPreviousRange
+    );
+    const currentDueSoonReceivableValue = currentDueSoonReceivableInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const previousDueSoonReceivableValue = previousDueSoonReceivableInvoices.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const currentAverageDueSoonInvoiceValue =
+      currentDueSoonReceivableInvoices.length > 0
+        ? Math.round(
+            (currentDueSoonReceivableValue / currentDueSoonReceivableInvoices.length) * 100
+          ) / 100
+        : 0;
+    const previousAverageDueSoonInvoiceValue =
+      previousDueSoonReceivableInvoices.length > 0
+        ? Math.round(
+            (previousDueSoonReceivableValue / previousDueSoonReceivableInvoices.length) * 100
+          ) / 100
+        : 0;
+    const currentDueSoonInvoiceShare = ratioPercent(
+      currentDueSoonReceivableInvoices.length,
+      currentOpenReceivableInvoices.length
+    );
+    const previousDueSoonInvoiceShare = ratioPercent(
+      previousDueSoonReceivableInvoices.length,
+      previousOpenReceivableInvoices.length
+    );
+    const isDueByRangeEnd = (invoice: InvoiceReportRow, range: ComparisonRange) => {
+      if (!invoice.dueDate) return false;
+      const dueDate = new Date(invoice.dueDate);
+      if (Number.isNaN(dueDate.getTime())) return false;
+      const rangeEnd = new Date(range.to);
+      rangeEnd.setHours(23, 59, 59, 999);
+      return dueDate <= rangeEnd;
+    };
+    const overdueReceivableRows = (rows: InvoiceReportRow[], range: ComparisonRange) =>
+      rows.filter(
+        (invoice) =>
+          !nonRevenueInvoiceStatuses.has(invoice.status) &&
+          invoice.status !== "paid" &&
+          isDueByRangeEnd(invoice, range)
+      );
+    const currentOverdueReceivables = overdueReceivableRows(
+      currentInvoices,
+      comparisonCurrentRange
+    );
+    const previousOverdueReceivables = overdueReceivableRows(
+      previousInvoices,
+      comparisonPreviousRange
+    );
+    const currentOverdueReceivableValue = currentOverdueReceivables.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const previousOverdueReceivableValue = previousOverdueReceivables.reduce(
+      (sum, invoice) => sum + amountInAed(invoice),
+      0
+    );
+    const currentOverdueInvoiceCount = currentOverdueReceivables.length;
+    const previousOverdueInvoiceCount = previousOverdueReceivables.length;
+    const currentAverageOverdueInvoiceDays = averageDaysOverdue(
+      currentOverdueReceivables,
+      (invoice) => invoice.dueDate,
+      comparisonCurrentRange
+    );
+    const previousAverageOverdueInvoiceDays = averageDaysOverdue(
+      previousOverdueReceivables,
+      (invoice) => invoice.dueDate,
+      comparisonPreviousRange
+    );
+    const currentAverageOverdueInvoiceValue =
+      currentOverdueInvoiceCount > 0
+        ? Math.round((currentOverdueReceivableValue / currentOverdueInvoiceCount) * 100) / 100
+        : 0;
+    const previousAverageOverdueInvoiceValue =
+      previousOverdueInvoiceCount > 0
+        ? Math.round((previousOverdueReceivableValue / previousOverdueInvoiceCount) * 100) / 100
+        : 0;
+    const currentOverdueReceivableShare = ratioPercent(
+      currentOverdueReceivableValue,
+      currentOpenReceivableValue
+    );
+    const previousOverdueReceivableShare = ratioPercent(
+      previousOverdueReceivableValue,
+      previousOpenReceivableValue
+    );
+    const currentOverdueInvoiceShare = ratioPercent(
+      currentOverdueInvoiceCount,
+      currentOpenReceivableInvoices.length
+    );
+    const previousOverdueInvoiceShare = ratioPercent(
+      previousOverdueInvoiceCount,
+      previousOpenReceivableInvoices.length
+    );
+    const paidInvoiceShare = (rows: InvoiceReportRow[]) => {
+      const revenueRows = revenueInvoiceRows(rows);
+      const total = revenueRows.reduce((sum, invoice) => sum + amountInAed(invoice), 0);
+      if (total <= 0.005) return 0;
+
+      const paidTotal = revenueRows
+        .filter((invoice) => invoice.status === "paid")
+        .reduce((sum, invoice) => sum + amountInAed(invoice), 0);
+      return Math.round((paidTotal / total) * 10000) / 100;
+    };
+    const currentPaidInvoiceShare = paidInvoiceShare(currentInvoices);
+    const previousPaidInvoiceShare = paidInvoiceShare(previousInvoices);
+    const averageInvoiceValue = (rows: InvoiceReportRow[]) => {
+      const revenueRows = revenueInvoiceRows(rows);
+      if (revenueRows.length === 0) return 0;
+
+      const total = revenueRows.reduce((sum, invoice) => sum + amountInAed(invoice), 0);
+      return Math.round((total / revenueRows.length) * 100) / 100;
+    };
+    const currentAverageInvoiceValue = averageInvoiceValue(currentInvoices);
+    const previousAverageInvoiceValue = averageInvoiceValue(previousInvoices);
+    const currentOpenPayableValue = currentVendorBills.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const previousOpenPayableValue = previousVendorBills.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const currentOpenCashGap = currentOpenPayableValue - currentOpenReceivableValue;
+    const previousOpenCashGap = previousOpenPayableValue - previousOpenReceivableValue;
+    const currentOpenCashCoverage = ratioPercent(
+      currentOpenReceivableValue,
+      currentOpenPayableValue
+    );
+    const previousOpenCashCoverage = ratioPercent(
+      previousOpenReceivableValue,
+      previousOpenPayableValue
+    );
+    const currentOpenWorkloadGap = currentVendorBills.length - currentOpenReceivableInvoices.length;
+    const previousOpenWorkloadGap =
+      previousVendorBills.length - previousOpenReceivableInvoices.length;
+    const currentAverageOpenBillValue =
+      currentVendorBills.length > 0
+        ? Math.round((currentOpenPayableValue / currentVendorBills.length) * 100) / 100
+        : 0;
+    const previousAverageOpenBillValue =
+      previousVendorBills.length > 0
+        ? Math.round((previousOpenPayableValue / previousVendorBills.length) * 100) / 100
+        : 0;
+    const currentOpenBillShare = ratioPercent(
+      currentVendorBills.length,
+      currentVendorBillDocuments.length
+    );
+    const previousOpenBillShare = ratioPercent(
+      previousVendorBills.length,
+      previousVendorBillDocuments.length
+    );
+    const currentDueSoonBills = dueWithinDaysAfterRangeEnd(
+      currentVendorBills,
+      (bill) => bill.due_date,
+      comparisonCurrentRange
+    );
+    const previousDueSoonBills = dueWithinDaysAfterRangeEnd(
+      previousVendorBills,
+      (bill) => bill.due_date,
+      comparisonPreviousRange
+    );
+    const currentDueSoonBillValue = currentDueSoonBills.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const previousDueSoonBillValue = previousDueSoonBills.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const currentAverageDueSoonBillValue =
+      currentDueSoonBills.length > 0
+        ? Math.round((currentDueSoonBillValue / currentDueSoonBills.length) * 100) / 100
+        : 0;
+    const previousAverageDueSoonBillValue =
+      previousDueSoonBills.length > 0
+        ? Math.round((previousDueSoonBillValue / previousDueSoonBills.length) * 100) / 100
+        : 0;
+    const currentDueSoonBillShare = ratioPercent(
+      currentDueSoonBills.length,
+      currentVendorBills.length
+    );
+    const previousDueSoonBillShare = ratioPercent(
+      previousDueSoonBills.length,
+      previousVendorBills.length
+    );
+    const currentDueSoonCashGap = currentDueSoonBillValue - currentDueSoonReceivableValue;
+    const previousDueSoonCashGap = previousDueSoonBillValue - previousDueSoonReceivableValue;
+    const currentDueSoonCashCoverage = ratioPercent(
+      currentDueSoonReceivableValue,
+      currentDueSoonBillValue
+    );
+    const previousDueSoonCashCoverage = ratioPercent(
+      previousDueSoonReceivableValue,
+      previousDueSoonBillValue
+    );
+    const currentDueSoonWorkloadGap =
+      currentDueSoonBills.length - currentDueSoonReceivableInvoices.length;
+    const previousDueSoonWorkloadGap =
+      previousDueSoonBills.length - previousDueSoonReceivableInvoices.length;
+    const isBillDueByRangeEnd = (bill: VendorBillReportRow, range: ComparisonRange) => {
+      if (!bill.due_date) return false;
+      const dueDate = new Date(bill.due_date);
+      if (Number.isNaN(dueDate.getTime())) return false;
+      const rangeEnd = new Date(range.to);
+      rangeEnd.setHours(23, 59, 59, 999);
+      return dueDate <= rangeEnd;
+    };
+    const overduePayableRows = (rows: VendorBillReportRow[], range: ComparisonRange) =>
+      rows.filter((bill) => isBillDueByRangeEnd(bill, range));
+    const currentOverduePayables = overduePayableRows(currentVendorBills, comparisonCurrentRange);
+    const previousOverduePayables = overduePayableRows(
+      previousVendorBills,
+      comparisonPreviousRange
+    );
+    const currentOverduePayableValue = currentOverduePayables.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const previousOverduePayableValue = previousOverduePayables.reduce(
+      (sum, bill) => sum + vendorBillOutstandingAed(bill),
+      0
+    );
+    const currentOverdueCashGap = currentOverduePayableValue - currentOverdueReceivableValue;
+    const previousOverdueCashGap = previousOverduePayableValue - previousOverdueReceivableValue;
+    const currentOverdueCashCoverage = ratioPercent(
+      currentOverdueReceivableValue,
+      currentOverduePayableValue
+    );
+    const previousOverdueCashCoverage = ratioPercent(
+      previousOverdueReceivableValue,
+      previousOverduePayableValue
+    );
+    const currentOverdueBillCount = currentOverduePayables.length;
+    const previousOverdueBillCount = previousOverduePayables.length;
+    const currentOverdueWorkloadGap = currentOverdueBillCount - currentOverdueInvoiceCount;
+    const previousOverdueWorkloadGap = previousOverdueBillCount - previousOverdueInvoiceCount;
+    const currentAverageOverdueBillDays = averageDaysOverdue(
+      currentOverduePayables,
+      (bill) => bill.due_date,
+      comparisonCurrentRange
+    );
+    const previousAverageOverdueBillDays = averageDaysOverdue(
+      previousOverduePayables,
+      (bill) => bill.due_date,
+      comparisonPreviousRange
+    );
+    const currentAverageOverdueBillValue =
+      currentOverdueBillCount > 0
+        ? Math.round((currentOverduePayableValue / currentOverdueBillCount) * 100) / 100
+        : 0;
+    const previousAverageOverdueBillValue =
+      previousOverdueBillCount > 0
+        ? Math.round((previousOverduePayableValue / previousOverdueBillCount) * 100) / 100
+        : 0;
+    const currentOverdueBillShare = ratioPercent(
+      currentOverdueBillCount,
+      currentVendorBills.length
+    );
+    const previousOverdueBillShare = ratioPercent(
+      previousOverdueBillCount,
+      previousVendorBills.length
+    );
+    const currentOverduePayableShare = ratioPercent(
+      currentOverduePayableValue,
+      currentOpenPayableValue
+    );
+    const previousOverduePayableShare = ratioPercent(
+      previousOverduePayableValue,
+      previousOpenPayableValue
+    );
+    const currentWorkingCapitalProxy = currentOpenReceivableValue - currentOpenPayableValue;
+    const previousWorkingCapitalProxy = previousOpenReceivableValue - previousOpenPayableValue;
+    const currentVendorBillValue = currentVendorBillDocuments.reduce(
+      (sum, bill) => sum + vendorBillTotalAed(bill),
+      0
+    );
+    const previousVendorBillValue = previousVendorBillDocuments.reduce(
+      (sum, bill) => sum + vendorBillTotalAed(bill),
+      0
+    );
+    const currentAverageVendorBillValue =
+      currentVendorBillDocuments.length > 0
+        ? Math.round((currentVendorBillValue / currentVendorBillDocuments.length) * 100) / 100
+        : 0;
+    const previousAverageVendorBillValue =
+      previousVendorBillDocuments.length > 0
+        ? Math.round((previousVendorBillValue / previousVendorBillDocuments.length) * 100) / 100
+        : 0;
+    const currentPaidVendorBillValue = currentVendorBillDocuments.reduce(
+      (sum, bill) => sum + vendorBillPaidAed(bill),
+      0
+    );
+    const previousPaidVendorBillValue = previousVendorBillDocuments.reduce(
+      (sum, bill) => sum + vendorBillPaidAed(bill),
+      0
+    );
+    const currentPaidVendorBillShare = ratioPercent(
+      currentPaidVendorBillValue,
+      currentVendorBillValue
+    );
+    const previousPaidVendorBillShare = ratioPercent(
+      previousPaidVendorBillValue,
+      previousVendorBillValue
+    );
+    const currentOpenBillValueShare = ratioPercent(currentOpenPayableValue, currentVendorBillValue);
+    const previousOpenBillValueShare = ratioPercent(
+      previousOpenPayableValue,
+      previousVendorBillValue
+    );
+    const topVendorShare = (rows: VendorBillReportRow[]) => {
+      const total = rows.reduce((sum, bill) => sum + vendorBillTotalAed(bill), 0);
+      if (total <= 0.005) return 0;
+
+      const byVendor = new Map<string, number>();
+      for (const bill of rows) {
+        const vendorName = bill.vendor_name || "Unknown Vendor";
+        byVendor.set(vendorName, (byVendor.get(vendorName) ?? 0) + vendorBillTotalAed(bill));
+      }
+
+      const topVendorSpend = Math.max(0, ...Array.from(byVendor.values()));
+      return Math.round((topVendorSpend / total) * 10000) / 100;
+    };
+    const currentTopVendorShare = topVendorShare(currentVendorBillDocuments);
+    const previousTopVendorShare = topVendorShare(previousVendorBillDocuments);
+    const currentComparisonDays = inclusiveDayCount(
+      comparisonCurrentRange.from,
+      comparisonCurrentRange.to
+    );
+    const previousComparisonDays = inclusiveDayCount(
+      comparisonPreviousRange.from,
+      comparisonPreviousRange.to
+    );
+    const currentCollectionDays =
+      currentInvoiceValue > 0.005
+        ? Math.round(
+            (currentOpenReceivableValue / currentInvoiceValue) * currentComparisonDays * 10
+          ) / 10
+        : 0;
+    const previousCollectionDays =
+      previousInvoiceValue > 0.005
+        ? Math.round(
+            (previousOpenReceivableValue / previousInvoiceValue) * previousComparisonDays * 10
+          ) / 10
+        : 0;
+    const currentPayableDays =
+      currentVendorBillValue > 0.005
+        ? Math.round(
+            (currentOpenPayableValue / currentVendorBillValue) * currentComparisonDays * 10
+          ) / 10
+        : 0;
+    const previousPayableDays =
+      previousVendorBillValue > 0.005
+        ? Math.round(
+            (previousOpenPayableValue / previousVendorBillValue) * previousComparisonDays * 10
+          ) / 10
+        : 0;
+    const currentCashConversionGap =
+      Math.round((currentCollectionDays - currentPayableDays) * 10) / 10;
+    const previousCashConversionGap =
+      Math.round((previousCollectionDays - previousPayableDays) * 10) / 10;
+    const topCustomerShare = (rows: InvoiceReportRow[]) => {
+      const revenueRows = rows.filter((invoice) => !nonRevenueInvoiceStatuses.has(invoice.status));
+      const total = revenueRows.reduce((sum, invoice) => sum + amountInAed(invoice), 0);
+      if (total <= 0.005) return 0;
+
+      const byCustomer = new Map<string, number>();
+      for (const invoice of revenueRows) {
+        const customerName = invoice.customerName || "Unknown Customer";
+        byCustomer.set(customerName, (byCustomer.get(customerName) ?? 0) + amountInAed(invoice));
+      }
+
+      const topCustomerRevenue = Math.max(0, ...Array.from(byCustomer.values()));
+      return Math.round((topCustomerRevenue / total) * 10000) / 100;
+    };
+    const currentTopCustomerShare = topCustomerShare(currentInvoices);
+    const previousTopCustomerShare = topCustomerShare(previousInvoices);
     const currentExpenseValue = currentReceipts.reduce(
       (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
       0
@@ -3209,6 +4819,220 @@ export default function Reports() {
       (sum, receipt) => sum + receiptSubtotalAed(receipt) + receiptVatAed(receipt),
       0
     );
+    const currentAverageReceiptValue =
+      currentReceipts.length > 0
+        ? Math.round((currentExpenseValue / currentReceipts.length) * 100) / 100
+        : 0;
+    const previousAverageReceiptValue =
+      previousReceipts.length > 0
+        ? Math.round((previousExpenseValue / previousReceipts.length) * 100) / 100
+        : 0;
+    const expenseClaimReviewRows = (rows: ExpenseClaimReportRow[]) =>
+      rows.filter((claim) => claim.status === "submitted" || claim.status === "approved");
+    const submittedExpenseClaimRows = (rows: ExpenseClaimReportRow[]) =>
+      rows.filter((claim) => claim.status === "submitted");
+    const approvedExpenseClaimRows = (rows: ExpenseClaimReportRow[]) =>
+      rows.filter((claim) => claim.status === "approved");
+    const expenseClaimReviewValue = (rows: ExpenseClaimReportRow[]) =>
+      expenseClaimReviewRows(rows).reduce((sum, claim) => sum + expenseClaimAmount(claim), 0);
+    const submittedExpenseClaimValue = (rows: ExpenseClaimReportRow[]) =>
+      submittedExpenseClaimRows(rows).reduce((sum, claim) => sum + expenseClaimAmount(claim), 0);
+    const approvedExpenseClaimValue = (rows: ExpenseClaimReportRow[]) =>
+      approvedExpenseClaimRows(rows).reduce((sum, claim) => sum + expenseClaimAmount(claim), 0);
+    const currentExpenseClaimReviewValue = expenseClaimReviewValue(currentExpenseClaims);
+    const previousExpenseClaimReviewValue = expenseClaimReviewValue(previousExpenseClaims);
+    const currentSubmittedExpenseClaimValue = submittedExpenseClaimValue(currentExpenseClaims);
+    const previousSubmittedExpenseClaimValue = submittedExpenseClaimValue(previousExpenseClaims);
+    const currentApprovedExpenseClaimValue = approvedExpenseClaimValue(currentExpenseClaims);
+    const previousApprovedExpenseClaimValue = approvedExpenseClaimValue(previousExpenseClaims);
+    const currentExpenseClaimReviewCount = expenseClaimReviewRows(currentExpenseClaims).length;
+    const previousExpenseClaimReviewCount = expenseClaimReviewRows(previousExpenseClaims).length;
+    const currentSubmittedExpenseClaimCount =
+      submittedExpenseClaimRows(currentExpenseClaims).length;
+    const previousSubmittedExpenseClaimCount =
+      submittedExpenseClaimRows(previousExpenseClaims).length;
+    const currentApprovedExpenseClaimCount = approvedExpenseClaimRows(currentExpenseClaims).length;
+    const previousApprovedExpenseClaimCount =
+      approvedExpenseClaimRows(previousExpenseClaims).length;
+    const receiptTotalAed = (receipt: ReceiptReportRow) =>
+      receiptSubtotalAed(receipt) + receiptVatAed(receipt);
+    const unpostedReceiptRows = (rows: ReceiptReportRow[]) =>
+      rows.filter((receipt) => !receipt.posted);
+    const unpostedReceiptValue = (rows: ReceiptReportRow[]) =>
+      unpostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    const currentUnpostedReceiptValue = unpostedReceiptValue(currentReceipts);
+    const previousUnpostedReceiptValue = unpostedReceiptValue(previousReceipts);
+    const unpostedExpenseShare = (rows: ReceiptReportRow[]) => {
+      const total = rows.reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+      if (total <= 0.005) return 0;
+
+      const unpostedTotal = unpostedReceiptValue(rows);
+      return Math.round((unpostedTotal / total) * 10000) / 100;
+    };
+    const currentUnpostedExpenseShare = unpostedExpenseShare(currentReceipts);
+    const previousUnpostedExpenseShare = unpostedExpenseShare(previousReceipts);
+    const currentUnpostedReceiptCount = unpostedReceiptRows(currentReceipts).length;
+    const previousUnpostedReceiptCount = unpostedReceiptRows(previousReceipts).length;
+    const autoPostedReceiptRows = (rows: ReceiptReportRow[]) =>
+      rows.filter((receipt) => receipt.autoPosted);
+    const autoPostedReceiptValue = (rows: ReceiptReportRow[]) =>
+      autoPostedReceiptRows(rows).reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+    const currentAutoPostedReceiptCount = autoPostedReceiptRows(currentReceipts).length;
+    const previousAutoPostedReceiptCount = autoPostedReceiptRows(previousReceipts).length;
+    const currentAutoPostedReceiptValue = autoPostedReceiptValue(currentReceipts);
+    const previousAutoPostedReceiptValue = autoPostedReceiptValue(previousReceipts);
+    const receiptAutomationCoverage = (rows: ReceiptReportRow[]) => {
+      if (rows.length === 0) return 0;
+
+      return Math.round((autoPostedReceiptRows(rows).length / rows.length) * 10000) / 100;
+    };
+    const currentReceiptAutomationCoverage = receiptAutomationCoverage(currentReceipts);
+    const previousReceiptAutomationCoverage = receiptAutomationCoverage(previousReceipts);
+    const receiptAutomationValueCoverage = (rows: ReceiptReportRow[]) => {
+      const total = rows.reduce((sum, receipt) => sum + receiptTotalAed(receipt), 0);
+      if (total <= 0.005) return 0;
+
+      return Math.round((autoPostedReceiptValue(rows) / total) * 10000) / 100;
+    };
+    const currentReceiptAutomationValueCoverage = receiptAutomationValueCoverage(currentReceipts);
+    const previousReceiptAutomationValueCoverage = receiptAutomationValueCoverage(previousReceipts);
+    const bankReconciliationCoverage = (rows: BankTransactionReportRow[]) => {
+      if (rows.length === 0) return 0;
+
+      const reconciledRows = rows.filter((transaction) => transaction.isReconciled).length;
+      return Math.round((reconciledRows / rows.length) * 10000) / 100;
+    };
+    const currentBankReconciliationCoverage = bankReconciliationCoverage(currentBankTransactions);
+    const previousBankReconciliationCoverage = bankReconciliationCoverage(previousBankTransactions);
+    const bankTransactionReviewValue = (transaction: BankTransactionReportRow) =>
+      Math.abs(Number(transaction.amount) || 0);
+    const reconciledBankTransactionRows = (rows: BankTransactionReportRow[]) =>
+      rows.filter((transaction) => transaction.isReconciled);
+    const currentReconciledBankCount =
+      reconciledBankTransactionRows(currentBankTransactions).length;
+    const previousReconciledBankCount =
+      reconciledBankTransactionRows(previousBankTransactions).length;
+    const currentReconciledBankValue = reconciledBankTransactionRows(
+      currentBankTransactions
+    ).reduce((sum, transaction) => sum + bankTransactionReviewValue(transaction), 0);
+    const previousReconciledBankValue = reconciledBankTransactionRows(
+      previousBankTransactions
+    ).reduce((sum, transaction) => sum + bankTransactionReviewValue(transaction), 0);
+    const currentUnreconciledBankCount = currentBankTransactions.filter(
+      (transaction) => !transaction.isReconciled
+    ).length;
+    const previousUnreconciledBankCount = previousBankTransactions.filter(
+      (transaction) => !transaction.isReconciled
+    ).length;
+    const currentUnreconciledBankValue = currentBankTransactions
+      .filter((transaction) => !transaction.isReconciled)
+      .reduce((sum, transaction) => sum + bankTransactionReviewValue(transaction), 0);
+    const previousUnreconciledBankValue = previousBankTransactions
+      .filter((transaction) => !transaction.isReconciled)
+      .reduce((sum, transaction) => sum + bankTransactionReviewValue(transaction), 0);
+    const bankSuggestedMatchRows = (rows: BankTransactionReportRow[]) =>
+      rows.filter(
+        (transaction) => !transaction.isReconciled && transaction.matchStatus === "suggested"
+      );
+    const currentSuggestedBankMatchCount = bankSuggestedMatchRows(currentBankTransactions).length;
+    const previousSuggestedBankMatchCount = bankSuggestedMatchRows(previousBankTransactions).length;
+    const currentSuggestedBankMatchValue = bankSuggestedMatchRows(currentBankTransactions).reduce(
+      (sum, transaction) => sum + bankTransactionReviewValue(transaction),
+      0
+    );
+    const previousSuggestedBankMatchValue = bankSuggestedMatchRows(previousBankTransactions).reduce(
+      (sum, transaction) => sum + bankTransactionReviewValue(transaction),
+      0
+    );
+    const currentBankMatchSuggestionCoverage = ratioPercent(
+      currentSuggestedBankMatchCount,
+      currentUnreconciledBankCount
+    );
+    const previousBankMatchSuggestionCoverage = ratioPercent(
+      previousSuggestedBankMatchCount,
+      previousUnreconciledBankCount
+    );
+    const currentBankMatchSuggestionValueCoverage = ratioPercent(
+      currentSuggestedBankMatchValue,
+      currentUnreconciledBankValue
+    );
+    const previousBankMatchSuggestionValueCoverage = ratioPercent(
+      previousSuggestedBankMatchValue,
+      previousUnreconciledBankValue
+    );
+    const bankAssistedTransactionRows = (rows: BankTransactionReportRow[]) =>
+      rows.filter(
+        (transaction) =>
+          transaction.isReconciled ||
+          (!transaction.isReconciled && transaction.matchStatus === "suggested")
+      );
+    const bankAssistedTransactionValue = (rows: BankTransactionReportRow[]) =>
+      bankAssistedTransactionRows(rows).reduce(
+        (sum, transaction) => sum + bankTransactionReviewValue(transaction),
+        0
+      );
+    const currentBankAssistedTransactionCount =
+      bankAssistedTransactionRows(currentBankTransactions).length;
+    const previousBankAssistedTransactionCount =
+      bankAssistedTransactionRows(previousBankTransactions).length;
+    const currentBankAssistedTransactionValue =
+      bankAssistedTransactionValue(currentBankTransactions);
+    const previousBankAssistedTransactionValue =
+      bankAssistedTransactionValue(previousBankTransactions);
+    const bankAssistedTransactionCoverage = (rows: BankTransactionReportRow[]) => {
+      if (rows.length === 0) return null;
+
+      return ratioPercent(bankAssistedTransactionRows(rows).length, rows.length);
+    };
+    const currentBankAssistedTransactionCoverage =
+      bankAssistedTransactionCoverage(currentBankTransactions);
+    const previousBankAssistedTransactionCoverage =
+      bankAssistedTransactionCoverage(previousBankTransactions);
+    const bankAssistedTransactionValueCoverage = (rows: BankTransactionReportRow[]) => {
+      const total = rows.reduce(
+        (sum, transaction) => sum + bankTransactionReviewValue(transaction),
+        0
+      );
+      if (total <= 0.005) return null;
+
+      return ratioPercent(bankAssistedTransactionValue(rows), total);
+    };
+    const currentBankAssistedTransactionValueCoverage =
+      bankAssistedTransactionValueCoverage(currentBankTransactions);
+    const previousBankAssistedTransactionValueCoverage =
+      bankAssistedTransactionValueCoverage(previousBankTransactions);
+    const currentAutomationWorkQueueCount =
+      currentOverdueInvoiceCount +
+      currentDueSoonReceivableInvoices.length +
+      currentOverdueBillCount +
+      currentDueSoonBills.length +
+      currentUnpostedReceiptCount +
+      currentExpenseClaimReviewCount +
+      currentSuggestedBankMatchCount;
+    const previousAutomationWorkQueueCount =
+      previousOverdueInvoiceCount +
+      previousDueSoonReceivableInvoices.length +
+      previousOverdueBillCount +
+      previousDueSoonBills.length +
+      previousUnpostedReceiptCount +
+      previousExpenseClaimReviewCount +
+      previousSuggestedBankMatchCount;
+    const currentAutomationWorkQueueValue =
+      currentOverdueReceivableValue +
+      currentDueSoonReceivableValue +
+      currentOverduePayableValue +
+      currentDueSoonBillValue +
+      currentUnpostedReceiptValue +
+      currentExpenseClaimReviewValue +
+      currentSuggestedBankMatchValue;
+    const previousAutomationWorkQueueValue =
+      previousOverdueReceivableValue +
+      previousDueSoonReceivableValue +
+      previousOverduePayableValue +
+      previousDueSoonBillValue +
+      previousUnpostedReceiptValue +
+      previousExpenseClaimReviewValue +
+      previousSuggestedBankMatchValue;
     const currentPayrollValue = currentPayrollRuns.reduce(
       (sum, run) => sum + payrollAmount(run.total_net),
       0
@@ -3217,6 +5041,89 @@ export default function Reports() {
       (sum, run) => sum + payrollAmount(run.total_net),
       0
     );
+    const payrollGrossValue = (rows: PayrollRunReportRow[]) =>
+      rows.reduce(
+        (sum, run) => sum + payrollAmount(run.total_basic) + payrollAmount(run.total_allowances),
+        0
+      );
+    const payrollDeductionValue = (rows: PayrollRunReportRow[]) =>
+      rows.reduce((sum, run) => sum + payrollAmount(run.total_deductions), 0);
+    const currentPayrollGrossValue = payrollGrossValue(currentPayrollRuns);
+    const previousPayrollGrossValue = payrollGrossValue(previousPayrollRuns);
+    const currentPayrollDeductionValue = payrollDeductionValue(currentPayrollRuns);
+    const previousPayrollDeductionValue = payrollDeductionValue(previousPayrollRuns);
+    const currentPayrollDeductionShare = ratioPercent(
+      currentPayrollDeductionValue,
+      currentPayrollGrossValue
+    );
+    const previousPayrollDeductionShare = ratioPercent(
+      previousPayrollDeductionValue,
+      previousPayrollGrossValue
+    );
+    const currentAveragePayrollRunValue =
+      currentPayrollRuns.length > 0
+        ? Math.round((currentPayrollValue / currentPayrollRuns.length) * 100) / 100
+        : 0;
+    const previousAveragePayrollRunValue =
+      previousPayrollRuns.length > 0
+        ? Math.round((previousPayrollValue / previousPayrollRuns.length) * 100) / 100
+        : 0;
+    const currentPayrollCoveredEmployees = currentPayrollRuns.reduce(
+      (sum, run) => sum + Number(run.employee_count ?? 0),
+      0
+    );
+    const previousPayrollCoveredEmployees = previousPayrollRuns.reduce(
+      (sum, run) => sum + Number(run.employee_count ?? 0),
+      0
+    );
+    const currentPayrollCostPerCoveredEmployee =
+      currentPayrollCoveredEmployees > 0
+        ? Math.round((currentPayrollValue / currentPayrollCoveredEmployees) * 100) / 100
+        : 0;
+    const previousPayrollCostPerCoveredEmployee =
+      previousPayrollCoveredEmployees > 0
+        ? Math.round((previousPayrollValue / previousPayrollCoveredEmployees) * 100) / 100
+        : 0;
+    const payrollApprovalQueueRows = (rows: PayrollRunReportRow[]) =>
+      rows.filter((run) => run.status === "calculated");
+    const payrollApprovalQueueCount = (rows: PayrollRunReportRow[]) =>
+      payrollApprovalQueueRows(rows).length;
+    const payrollApprovalQueueValue = (rows: PayrollRunReportRow[]) =>
+      payrollApprovalQueueRows(rows).reduce((sum, run) => sum + payrollAmount(run.total_net), 0);
+    const wpsMissingRunRows = (rows: PayrollRunReportRow[]) =>
+      rows.filter(
+        (run) => (run.status === "calculated" || run.status === "approved") && !run.sif_file_content
+      );
+    const wpsMissingRunCount = (rows: PayrollRunReportRow[]) => wpsMissingRunRows(rows).length;
+    const wpsMissingRunValue = (rows: PayrollRunReportRow[]) =>
+      wpsMissingRunRows(rows).reduce((sum, run) => sum + payrollAmount(run.total_net), 0);
+    const currentPayrollApprovalQueueCount = payrollApprovalQueueCount(currentPayrollRuns);
+    const previousPayrollApprovalQueueCount = payrollApprovalQueueCount(previousPayrollRuns);
+    const currentPayrollApprovalQueueValue = payrollApprovalQueueValue(currentPayrollRuns);
+    const previousPayrollApprovalQueueValue = payrollApprovalQueueValue(previousPayrollRuns);
+    const currentWpsMissingRunCount = wpsMissingRunCount(currentPayrollRuns);
+    const previousWpsMissingRunCount = wpsMissingRunCount(previousPayrollRuns);
+    const currentWpsMissingRunValue = wpsMissingRunValue(currentPayrollRuns);
+    const previousWpsMissingRunValue = wpsMissingRunValue(previousPayrollRuns);
+    const currentPayrollReadinessQueueCount =
+      currentPayrollApprovalQueueCount + currentWpsMissingRunCount;
+    const previousPayrollReadinessQueueCount =
+      previousPayrollApprovalQueueCount + previousWpsMissingRunCount;
+    const currentPayrollReadinessQueueValue =
+      currentPayrollApprovalQueueValue + currentWpsMissingRunValue;
+    const previousPayrollReadinessQueueValue =
+      previousPayrollApprovalQueueValue + previousWpsMissingRunValue;
+    const wpsReadyShare = (rows: PayrollRunReportRow[]) => {
+      const eligibleRuns = rows.filter(
+        (run) => run.status === "calculated" || run.status === "approved"
+      );
+      if (eligibleRuns.length === 0) return 0;
+
+      const readyRuns = eligibleRuns.filter((run) => Boolean(run.sif_file_content)).length;
+      return Math.round((readyRuns / eligibleRuns.length) * 10000) / 100;
+    };
+    const currentWpsReadyShare = wpsReadyShare(currentPayrollRuns);
+    const previousWpsReadyShare = wpsReadyShare(previousPayrollRuns);
     const currentInventoryMovementValue = currentInventoryMovements.reduce(
       (sum, movement) => sum + inventoryMovementValue(movement),
       0
@@ -3225,21 +5132,248 @@ export default function Reports() {
       (sum, movement) => sum + inventoryMovementValue(movement),
       0
     );
-    const ledgerActivityForRange = (range: ComparisonRange) =>
-      journalEntries
-        .filter((entry) => entry.status === "posted" && valueInDateRange(entry.date, range))
-        .reduce(
-          (entrySum, entry) =>
-            entrySum +
-            (entry.lines ?? []).reduce(
-              (lineSum, line) =>
-                lineSum + Math.max(Number(line.debit) || 0, Number(line.credit) || 0),
-              0
-            ),
-          0
-        );
-    const currentLedgerActivity = ledgerActivityForRange(comparisonCurrentRange);
-    const previousLedgerActivity = ledgerActivityForRange(comparisonPreviousRange);
+    const ledgerActivityBreakdownForRange = (range: ComparisonRange) => {
+      const postedEntries = journalEntries.filter(
+        (entry) => entry.status === "posted" && valueInDateRange(entry.date, range)
+      );
+      return postedEntries.reduce(
+        (summary, entry) => {
+          const entryActivity = (entry.lines ?? []).reduce(
+            (lineSum, line) =>
+              lineSum + Math.max(Number(line.debit) || 0, Number(line.credit) || 0),
+            0
+          );
+          summary.totalActivity += entryActivity;
+          if (!entry.source || entry.source === "manual") {
+            summary.manualActivity += entryActivity;
+          }
+          return summary;
+        },
+        { totalActivity: 0, manualActivity: 0 }
+      );
+    };
+    const currentLedgerActivityBreakdown = ledgerActivityBreakdownForRange(comparisonCurrentRange);
+    const previousLedgerActivityBreakdown =
+      ledgerActivityBreakdownForRange(comparisonPreviousRange);
+    const currentLedgerActivity = currentLedgerActivityBreakdown.totalActivity;
+    const previousLedgerActivity = previousLedgerActivityBreakdown.totalActivity;
+    const currentManualLedgerShare = ratioPercent(
+      currentLedgerActivityBreakdown.manualActivity,
+      currentLedgerActivityBreakdown.totalActivity
+    );
+    const previousManualLedgerShare = ratioPercent(
+      previousLedgerActivityBreakdown.manualActivity,
+      previousLedgerActivityBreakdown.totalActivity
+    );
+    const currentManualLedgerActivity = currentLedgerActivityBreakdown.manualActivity;
+    const previousManualLedgerActivity = previousLedgerActivityBreakdown.manualActivity;
+    const automatedLedgerActivity = (summary: { totalActivity: number; manualActivity: number }) =>
+      Math.max(0, summary.totalActivity - summary.manualActivity);
+    const currentAutomatedLedgerActivity = automatedLedgerActivity(currentLedgerActivityBreakdown);
+    const previousAutomatedLedgerActivity = automatedLedgerActivity(
+      previousLedgerActivityBreakdown
+    );
+    const currentHighRiskActivityCount = currentActivityLogs.filter(
+      (log) => activityLogRiskLevel(log) === "High"
+    ).length;
+    const previousHighRiskActivityCount = previousActivityLogs.filter(
+      (log) => activityLogRiskLevel(log) === "High"
+    ).length;
+    const currentHighRiskActivityShare = ratioPercent(
+      currentHighRiskActivityCount,
+      currentActivityLogs.length
+    );
+    const previousHighRiskActivityShare = ratioPercent(
+      previousHighRiskActivityCount,
+      previousActivityLogs.length
+    );
+    const currentReviewActivityCount = currentActivityLogs.filter(
+      (log) => activityLogRiskLevel(log) !== "Low"
+    ).length;
+    const previousReviewActivityCount = previousActivityLogs.filter(
+      (log) => activityLogRiskLevel(log) !== "Low"
+    ).length;
+    const currentReviewActivityShare = ratioPercent(
+      currentReviewActivityCount,
+      currentActivityLogs.length
+    );
+    const previousReviewActivityShare = ratioPercent(
+      previousReviewActivityCount,
+      previousActivityLogs.length
+    );
+    const currentFxUnrealizedExposure =
+      Math.abs(fxGainsLosses?.totalUnrealizedGain ?? 0) +
+      Math.abs(fxGainsLosses?.totalUnrealizedLoss ?? 0);
+    const currentLedgerAutomationCoverage =
+      currentLedgerActivityBreakdown.totalActivity > 0.005 ? 100 - currentManualLedgerShare : null;
+    const previousLedgerAutomationCoverage =
+      previousLedgerActivityBreakdown.totalActivity > 0.005
+        ? 100 - previousManualLedgerShare
+        : null;
+    const currentLedgerAutomationShare = currentLedgerAutomationCoverage ?? 0;
+    const previousLedgerAutomationShare = previousLedgerAutomationCoverage ?? 0;
+    const currentAutomationAdoptionIndex = averageAvailablePercent([
+      currentReceipts.length > 0 ? currentReceiptAutomationCoverage : null,
+      currentBankAssistedTransactionCoverage,
+      currentLedgerAutomationCoverage,
+    ]);
+    const previousAutomationAdoptionIndex = averageAvailablePercent([
+      previousReceipts.length > 0 ? previousReceiptAutomationCoverage : null,
+      previousBankAssistedTransactionCoverage,
+      previousLedgerAutomationCoverage,
+    ]);
+    const currentAutomationValueAdoptionIndex = averageAvailablePercent([
+      currentExpenseValue > 0.005 ? currentReceiptAutomationValueCoverage : null,
+      currentBankAssistedTransactionValueCoverage,
+      currentLedgerAutomationCoverage,
+    ]);
+    const previousAutomationValueAdoptionIndex = averageAvailablePercent([
+      previousExpenseValue > 0.005 ? previousReceiptAutomationValueCoverage : null,
+      previousBankAssistedTransactionValueCoverage,
+      previousLedgerAutomationCoverage,
+    ]);
+    const currentBurnRate = normalizeMonthlyBurn(
+      comparisonCurrentProfitLoss?.totalRevenue ?? 0,
+      comparisonCurrentProfitLoss?.totalExpenses ?? 0,
+      currentComparisonDays
+    );
+    const previousBurnRate = normalizeMonthlyBurn(
+      comparisonPreviousProfitLoss?.totalRevenue ?? 0,
+      comparisonPreviousProfitLoss?.totalExpenses ?? 0,
+      previousComparisonDays
+    );
+    const currentRunwayDays = runwayCoverageDays(
+      cashFlowForecast?.currentBalance ?? 0,
+      currentBurnRate
+    );
+    const previousRunwayDays = runwayCoverageDays(
+      cashFlowForecast?.currentBalance ?? 0,
+      previousBurnRate
+    );
+    const cashForecastProjections = cashFlowForecast?.projections ?? [];
+    const lowestForecastBalance = cashForecastProjections.length
+      ? Math.min(...cashForecastProjections.map((projection) => projection.projectedBalance))
+      : (cashFlowForecast?.currentBalance ?? 0);
+    const currentProjectedCashShortfall = Math.max(0, -lowestForecastBalance);
+    const currentCashRiskWeekCount = cashForecastProjections.filter(
+      (projection) => projection.projectedBalance < 0
+    ).length;
+    const currentNetMargin = ratioPercent(
+      comparisonCurrentProfitLoss?.netProfit ?? 0,
+      comparisonCurrentProfitLoss?.totalRevenue ?? 0
+    );
+    const previousNetMargin = ratioPercent(
+      comparisonPreviousProfitLoss?.netProfit ?? 0,
+      comparisonPreviousProfitLoss?.totalRevenue ?? 0
+    );
+    const currentExpenseRatio = ratioPercent(
+      comparisonCurrentProfitLoss?.totalExpenses ?? 0,
+      comparisonCurrentProfitLoss?.totalRevenue ?? 0
+    );
+    const previousExpenseRatio = ratioPercent(
+      comparisonPreviousProfitLoss?.totalExpenses ?? 0,
+      comparisonPreviousProfitLoss?.totalRevenue ?? 0
+    );
+    const currentRevenueExpenseCoverage = ratioPercent(
+      comparisonCurrentProfitLoss?.totalRevenue ?? 0,
+      comparisonCurrentProfitLoss?.totalExpenses ?? 0
+    );
+    const previousRevenueExpenseCoverage = ratioPercent(
+      comparisonPreviousProfitLoss?.totalRevenue ?? 0,
+      comparisonPreviousProfitLoss?.totalExpenses ?? 0
+    );
+    const currentConsolidatedMargin = ratioPercent(
+      consolidatedStatementsReport.currentComparisonNetProfit,
+      consolidatedStatementsReport.currentComparisonRevenue
+    );
+    const previousConsolidatedMargin = ratioPercent(
+      consolidatedStatementsReport.previousNetProfit,
+      consolidatedStatementsReport.previousRevenue
+    );
+    const currentBreakEvenGap = Math.max(
+      0,
+      (comparisonCurrentProfitLoss?.totalExpenses ?? 0) -
+        (comparisonCurrentProfitLoss?.totalRevenue ?? 0)
+    );
+    const previousBreakEvenGap = Math.max(
+      0,
+      (comparisonPreviousProfitLoss?.totalExpenses ?? 0) -
+        (comparisonPreviousProfitLoss?.totalRevenue ?? 0)
+    );
+    const currentPayrollExpenseShare = ratioPercent(
+      currentPayrollValue,
+      comparisonCurrentProfitLoss?.totalExpenses ?? 0
+    );
+    const previousPayrollExpenseShare = ratioPercent(
+      previousPayrollValue,
+      comparisonPreviousProfitLoss?.totalExpenses ?? 0
+    );
+    const operatingCashFlowForRow = (row: CashFlowStatementRow | undefined) =>
+      (row?.operatingInflow ?? 0) - (row?.operatingOutflow ?? 0);
+    const currentOperatingCashFlow = operatingCashFlowForRow(cashFlowStatement.at(-1));
+    const previousOperatingCashFlow = operatingCashFlowForRow(cashFlowStatement.at(-2));
+    const currentLiabilityAssetRatio = ratioPercent(
+      comparisonCurrentBalanceSheet?.totalLiabilities ?? 0,
+      comparisonCurrentBalanceSheet?.totalAssets ?? 0
+    );
+    const previousLiabilityAssetRatio = ratioPercent(
+      comparisonPreviousBalanceSheet?.totalLiabilities ?? 0,
+      comparisonPreviousBalanceSheet?.totalAssets ?? 0
+    );
+    const currentDebtEquityRatio = ratioPercent(
+      comparisonCurrentBalanceSheet?.totalLiabilities ?? 0,
+      comparisonCurrentBalanceSheet?.totalEquity ?? 0
+    );
+    const previousDebtEquityRatio = ratioPercent(
+      comparisonPreviousBalanceSheet?.totalLiabilities ?? 0,
+      comparisonPreviousBalanceSheet?.totalEquity ?? 0
+    );
+    const budgetComparisonLines = varianceReport?.varianceLines ?? [];
+    const currentBudgetActualValue = budgetComparisonLines.reduce(
+      (sum, line) => sum + line.totals.actual,
+      0
+    );
+    const currentBudgetBaselineValue = budgetComparisonLines.reduce(
+      (sum, line) => sum + line.totals.budget,
+      0
+    );
+    const currentTotalTaxExposure =
+      (comparisonCurrentVat?.netVATPayable ?? 0) + (corporateTaxEstimate?.taxPayable ?? 0);
+    const previousTotalTaxExposure =
+      (comparisonPreviousVat?.netVATPayable ?? 0) +
+      (comparisonPreviousCorporateTaxEstimate?.taxPayable ?? 0);
+    const currentTaxExposureRate = ratioPercent(
+      currentTotalTaxExposure,
+      comparisonCurrentProfitLoss?.totalRevenue ?? 0
+    );
+    const previousTaxExposureRate = ratioPercent(
+      previousTotalTaxExposure,
+      comparisonPreviousProfitLoss?.totalRevenue ?? 0
+    );
+    const currentAvailableTaxCash = Math.max(0, cashFlowForecast?.currentBalance ?? 0);
+    const currentTaxReserveNeed = Math.max(0, currentTotalTaxExposure);
+    const currentTaxReserveCoverage =
+      currentTaxReserveNeed > 0.005
+        ? ratioPercent(
+            Math.min(currentAvailableTaxCash, currentTaxReserveNeed),
+            currentTaxReserveNeed
+          )
+        : 100;
+    const currentTaxFundingGap = Math.max(0, currentTaxReserveNeed - currentAvailableTaxCash);
+    const currentTaxAdjustedRunwayDays = runwayCoverageDays(
+      Math.max(0, currentAvailableTaxCash - currentTaxReserveNeed),
+      currentBurnRate
+    );
+    const monthEndChecklistItems = monthEndCloseStatus?.checklist ?? [];
+    const currentMonthEndOpenChecks = monthEndChecklistItems.filter(
+      (item) => item.status !== "complete"
+    ).length;
+    const currentMonthEndReadiness = monthEndChecklistItems.length
+      ? ratioPercent(
+          monthEndChecklistItems.length - currentMonthEndOpenChecks,
+          monthEndChecklistItems.length
+        )
+      : 100;
 
     return [
       makeComparisonMetric({
@@ -3265,6 +5399,50 @@ export default function Reports() {
         tab: "pl",
       }),
       makeComparisonMetric({
+        id: "net-margin",
+        label: "Net margin",
+        current: currentNetMargin,
+        previous: previousNetMargin,
+        currency: "%",
+        signal: "Profit efficiency",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
+        id: "expense-ratio",
+        label: "Expense ratio",
+        current: currentExpenseRatio,
+        previous: previousExpenseRatio,
+        currency: "%",
+        signal: "Cost efficiency",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
+        id: "revenue-expense-coverage",
+        label: "Revenue expense coverage",
+        current: currentRevenueExpenseCoverage,
+        previous: previousRevenueExpenseCoverage,
+        currency: "%",
+        signal: "Revenue covers expenses",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
+        id: "break-even-gap",
+        label: "Break-even gap",
+        current: currentBreakEvenGap,
+        previous: previousBreakEvenGap,
+        currency: "AED",
+        signal: "Break-even shortfall",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "pl",
+      }),
+      makeComparisonMetric({
         id: "invoice-value",
         label: "Invoice value",
         current: currentInvoiceValue,
@@ -3272,6 +5450,683 @@ export default function Reports() {
         currency: "AED",
         signal: "Sales activity",
         favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "invoice-count",
+        label: "Invoice count",
+        current: currentInvoices.length,
+        previous: previousInvoices.length,
+        currency: "count",
+        signal: "Invoice volume",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "paid-invoice-share",
+        label: "Paid invoice share",
+        current: currentPaidInvoiceShare,
+        previous: previousPaidInvoiceShare,
+        currency: "%",
+        signal: "Collections effectiveness",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "average-invoice-value",
+        label: "Average invoice value",
+        current: currentAverageInvoiceValue,
+        previous: previousAverageInvoiceValue,
+        currency: "AED",
+        signal: "Deal size",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "liability-asset-ratio",
+        label: "Liabilities to assets",
+        current: currentLiabilityAssetRatio,
+        previous: previousLiabilityAssetRatio,
+        currency: "%",
+        signal: "Balance leverage",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "bs",
+      }),
+      makeComparisonMetric({
+        id: "debt-to-equity-ratio",
+        label: "Debt to equity",
+        current: currentDebtEquityRatio,
+        previous: previousDebtEquityRatio,
+        currency: "%",
+        signal: "Capital structure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "bs",
+      }),
+      makeComparisonMetric({
+        id: "burn-rate",
+        label: "Monthly burn rate",
+        current: currentBurnRate,
+        previous: previousBurnRate,
+        currency: "AED",
+        signal: "Cash pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "cash-runway-days",
+        label: "Cash runway coverage",
+        current: currentRunwayDays,
+        previous: previousRunwayDays,
+        currency: "days",
+        signal: "90-day runway",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "projected-cash-shortfall",
+        label: "Projected cash shortfall",
+        current: currentProjectedCashShortfall,
+        previous: 0,
+        currentLabel: "Forecast",
+        previousLabel: "Zero shortfall",
+        currency: "AED",
+        signal: "Negative cash risk",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "cash-risk-week-count",
+        label: "Cash risk week count",
+        current: currentCashRiskWeekCount,
+        previous: 0,
+        currentLabel: "Forecast",
+        previousLabel: "Clear weeks",
+        currency: "count",
+        signal: "Forecast risk weeks",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "operating-cash-flow",
+        label: "Operating cash flow",
+        current: currentOperatingCashFlow,
+        previous: previousOperatingCashFlow,
+        currency: "AED",
+        signal: "Cash movement",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "budget-actual-variance",
+        label: "Budget actual variance",
+        current: currentBudgetActualValue,
+        previous: currentBudgetBaselineValue,
+        currentLabel: "Actual",
+        previousLabel: "Budget",
+        currency: "AED",
+        signal: "Budget vs actual",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "open-receivables",
+        label: "Open receivables",
+        current: currentOpenReceivableValue,
+        previous: previousOpenReceivableValue,
+        currency: "AED",
+        signal: "Collections pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-invoice-count",
+        label: "Open invoice count",
+        current: currentOpenReceivableInvoices.length,
+        previous: previousOpenReceivableInvoices.length,
+        currency: "count",
+        signal: "Collections workload",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-open-invoice-value",
+        label: "Average open invoice value",
+        current: currentAverageOpenInvoiceValue,
+        previous: previousAverageOpenInvoiceValue,
+        currency: "AED",
+        signal: "Open invoice size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-invoice-value-share",
+        label: "Open invoice value share",
+        current: currentOpenInvoiceValueShare,
+        previous: previousOpenInvoiceValueShare,
+        currency: "%",
+        signal: "Collections value mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-invoice-count",
+        label: "Invoices due soon",
+        current: currentDueSoonReceivableInvoices.length,
+        previous: previousDueSoonReceivableInvoices.length,
+        currency: "count",
+        signal: "7-day collections queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-invoice-value",
+        label: "Value due soon",
+        current: currentDueSoonReceivableValue,
+        previous: previousDueSoonReceivableValue,
+        currency: "AED",
+        signal: "7-day cash collection",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-due-soon-invoice-value",
+        label: "Average due-soon invoice value",
+        current: currentAverageDueSoonInvoiceValue,
+        previous: previousAverageDueSoonInvoiceValue,
+        currency: "AED",
+        signal: "7-day invoice size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-invoice-share",
+        label: "Due-soon invoice share",
+        current: currentDueSoonInvoiceShare,
+        previous: previousDueSoonInvoiceShare,
+        currency: "%",
+        signal: "7-day collections mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-invoice-share",
+        label: "Open invoice share",
+        current: currentOpenInvoiceShare,
+        previous: previousOpenInvoiceShare,
+        currency: "%",
+        signal: "Collections workload mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-receivables",
+        label: "Overdue receivables",
+        current: currentOverdueReceivableValue,
+        previous: previousOverdueReceivableValue,
+        currency: "AED",
+        signal: "A/R at risk",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-receivable-share",
+        label: "Overdue receivable share",
+        current: currentOverdueReceivableShare,
+        previous: previousOverdueReceivableShare,
+        currency: "%",
+        signal: "A/R overdue mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-invoice-count",
+        label: "Overdue invoice count",
+        current: currentOverdueInvoiceCount,
+        previous: previousOverdueInvoiceCount,
+        currency: "count",
+        signal: "Customer follow-ups",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-overdue-invoice-value",
+        label: "Average overdue invoice value",
+        current: currentAverageOverdueInvoiceValue,
+        previous: previousAverageOverdueInvoiceValue,
+        currency: "AED",
+        signal: "Overdue invoice size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-overdue-invoice-days",
+        label: "Average overdue invoice age",
+        current: currentAverageOverdueInvoiceDays,
+        previous: previousAverageOverdueInvoiceDays,
+        currency: "days",
+        signal: "Overdue aging",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-invoice-share",
+        label: "Overdue invoice share",
+        current: currentOverdueInvoiceShare,
+        previous: previousOverdueInvoiceShare,
+        currency: "%",
+        signal: "Overdue workload mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "vendor-bill-value",
+        label: "Vendor bill value",
+        current: currentVendorBillValue,
+        previous: previousVendorBillValue,
+        currency: "AED",
+        signal: "Supplier spend",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "vendor-bill-count",
+        label: "Vendor bill count",
+        current: currentVendorBillDocuments.length,
+        previous: previousVendorBillDocuments.length,
+        currency: "count",
+        signal: "Supplier bill volume",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-bill-value",
+        label: "Average bill value",
+        current: currentAverageVendorBillValue,
+        previous: previousAverageVendorBillValue,
+        currency: "AED",
+        signal: "Supplier bill size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "top-vendor-share",
+        label: "Top vendor share",
+        current: currentTopVendorShare,
+        previous: previousTopVendorShare,
+        currency: "%",
+        signal: "Supplier concentration",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "paid-bill-share",
+        label: "Paid bill share",
+        current: currentPaidVendorBillShare,
+        previous: previousPaidVendorBillShare,
+        currency: "%",
+        signal: "Supplier payment coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-payables",
+        label: "Open payables",
+        current: currentOpenPayableValue,
+        previous: previousOpenPayableValue,
+        currency: "AED",
+        signal: "Bill-pay pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-bill-value-share",
+        label: "Open bill value share",
+        current: currentOpenBillValueShare,
+        previous: previousOpenBillValueShare,
+        currency: "%",
+        signal: "Bill-pay value mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "open-cash-gap",
+        label: "Open cash gap",
+        current: currentOpenCashGap,
+        previous: previousOpenCashGap,
+        currency: "AED",
+        signal: "Net unpaid pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "open-cash-coverage",
+        label: "Open cash coverage",
+        current: currentOpenCashCoverage,
+        previous: previousOpenCashCoverage,
+        currency: "%",
+        signal: "Open bill coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "open-workload-gap",
+        label: "Open workload gap",
+        current: currentOpenWorkloadGap,
+        previous: previousOpenWorkloadGap,
+        currency: "count",
+        signal: "Net unpaid workload",
+        favorable: "neutral",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "open-bill-count",
+        label: "Open bill count",
+        current: currentVendorBills.length,
+        previous: previousVendorBills.length,
+        currency: "count",
+        signal: "Bill-pay workload",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-open-bill-value",
+        label: "Average open bill value",
+        current: currentAverageOpenBillValue,
+        previous: previousAverageOpenBillValue,
+        currency: "AED",
+        signal: "Open bill size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-bill-count",
+        label: "Bills due soon",
+        current: currentDueSoonBills.length,
+        previous: previousDueSoonBills.length,
+        currency: "count",
+        signal: "7-day bill-pay queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-bill-value",
+        label: "Value due soon",
+        current: currentDueSoonBillValue,
+        previous: previousDueSoonBillValue,
+        currency: "AED",
+        signal: "7-day cash need",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-due-soon-bill-value",
+        label: "Average due-soon bill value",
+        current: currentAverageDueSoonBillValue,
+        previous: previousAverageDueSoonBillValue,
+        currency: "AED",
+        signal: "7-day bill size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-bill-share",
+        label: "Due-soon bill share",
+        current: currentDueSoonBillShare,
+        previous: previousDueSoonBillShare,
+        currency: "%",
+        signal: "7-day bill-pay mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-cash-gap",
+        label: "Due-soon cash gap",
+        current: currentDueSoonCashGap,
+        previous: previousDueSoonCashGap,
+        currency: "AED",
+        signal: "7-day net cash need",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-cash-coverage",
+        label: "Due-soon cash coverage",
+        current: currentDueSoonCashCoverage,
+        previous: previousDueSoonCashCoverage,
+        currency: "%",
+        signal: "7-day bill coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "due-soon-workload-gap",
+        label: "Due-soon workload gap",
+        current: currentDueSoonWorkloadGap,
+        previous: previousDueSoonWorkloadGap,
+        currency: "count",
+        signal: "7-day net workload",
+        favorable: "neutral",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "open-bill-share",
+        label: "Open bill share",
+        current: currentOpenBillShare,
+        previous: previousOpenBillShare,
+        currency: "%",
+        signal: "Bill-pay workload mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-payables",
+        label: "Overdue payables",
+        current: currentOverduePayableValue,
+        previous: previousOverduePayableValue,
+        currency: "AED",
+        signal: "A/P at risk",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-cash-gap",
+        label: "Overdue cash gap",
+        current: currentOverdueCashGap,
+        previous: previousOverdueCashGap,
+        currency: "AED",
+        signal: "Net overdue pressure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "overdue-cash-coverage",
+        label: "Overdue cash coverage",
+        current: currentOverdueCashCoverage,
+        previous: previousOverdueCashCoverage,
+        currency: "%",
+        signal: "Overdue bill coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "overdue-workload-gap",
+        label: "Overdue workload gap",
+        current: currentOverdueWorkloadGap,
+        previous: previousOverdueWorkloadGap,
+        currency: "count",
+        signal: "Net overdue workload",
+        favorable: "neutral",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "overdue-payable-share",
+        label: "Overdue payable share",
+        current: currentOverduePayableShare,
+        previous: previousOverduePayableShare,
+        currency: "%",
+        signal: "A/P overdue mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-bill-count",
+        label: "Overdue bill count",
+        current: currentOverdueBillCount,
+        previous: previousOverdueBillCount,
+        currency: "count",
+        signal: "Vendor follow-ups",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-overdue-bill-value",
+        label: "Average overdue bill value",
+        current: currentAverageOverdueBillValue,
+        previous: previousAverageOverdueBillValue,
+        currency: "AED",
+        signal: "Overdue bill size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "average-overdue-bill-days",
+        label: "Average overdue bill age",
+        current: currentAverageOverdueBillDays,
+        previous: previousAverageOverdueBillDays,
+        currency: "days",
+        signal: "Overdue aging",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "overdue-bill-share",
+        label: "Overdue bill share",
+        current: currentOverdueBillShare,
+        previous: previousOverdueBillShare,
+        currency: "%",
+        signal: "Overdue bill mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "working-capital-proxy",
+        label: "Working capital proxy",
+        current: currentWorkingCapitalProxy,
+        previous: previousWorkingCapitalProxy,
+        currency: "AED",
+        signal: "A/R less A/P",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "collection-days",
+        label: "Collection days",
+        current: currentCollectionDays,
+        previous: previousCollectionDays,
+        currency: "days",
+        signal: "DSO proxy",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "payable-days",
+        label: "Payable days",
+        current: currentPayableDays,
+        previous: previousPayableDays,
+        currency: "days",
+        signal: "DPO proxy",
+        favorable: "neutral",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "cash-conversion-gap",
+        label: "Cash conversion gap",
+        current: currentCashConversionGap,
+        previous: previousCashConversionGap,
+        currency: "days",
+        signal: "DSO less DPO",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "top-customer-share",
+        label: "Top customer share",
+        current: currentTopCustomerShare,
+        previous: previousTopCustomerShare,
+        currency: "%",
+        signal: "Client concentration",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "sales",
+      }),
+      makeComparisonMetric({
+        id: "top-product-service-share",
+        label: "Top product/service share",
+        current: comparisonCurrentSalesProductService?.totals.topProductServiceShare ?? 0,
+        previous: comparisonPreviousSalesProductService?.totals.topProductServiceShare ?? 0,
+        currency: "%",
+        signal: "Sales mix concentration",
+        favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
@@ -3287,6 +6142,402 @@ export default function Reports() {
         tab: "expenses",
       }),
       makeComparisonMetric({
+        id: "receipt-count",
+        label: "Receipt count",
+        current: currentReceipts.length,
+        previous: previousReceipts.length,
+        currency: "count",
+        signal: "Receipt workload",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "average-receipt-value",
+        label: "Average receipt value",
+        current: currentAverageReceiptValue,
+        previous: previousAverageReceiptValue,
+        currency: "AED",
+        signal: "Receipt size",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "expense-claim-review-value",
+        label: "Expense claim review value",
+        current: currentExpenseClaimReviewValue,
+        previous: previousExpenseClaimReviewValue,
+        currency: "AED",
+        signal: "Claims queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "expense-claim-review-count",
+        label: "Expense claim review count",
+        current: currentExpenseClaimReviewCount,
+        previous: previousExpenseClaimReviewCount,
+        currency: "count",
+        signal: "Claims awaiting review",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "submitted-expense-claim-count",
+        label: "Submitted expense claim count",
+        current: currentSubmittedExpenseClaimCount,
+        previous: previousSubmittedExpenseClaimCount,
+        currency: "count",
+        signal: "Claim approvals",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "submitted-expense-claim-value",
+        label: "Submitted expense claim value",
+        current: currentSubmittedExpenseClaimValue,
+        previous: previousSubmittedExpenseClaimValue,
+        currency: "AED",
+        signal: "Claim approval value",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "approved-expense-claim-count",
+        label: "Approved expense claim count",
+        current: currentApprovedExpenseClaimCount,
+        previous: previousApprovedExpenseClaimCount,
+        currency: "count",
+        signal: "Reimbursement follow-up",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "approved-expense-claim-value",
+        label: "Approved expense claim value",
+        current: currentApprovedExpenseClaimValue,
+        previous: previousApprovedExpenseClaimValue,
+        currency: "AED",
+        signal: "Reimbursement value",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "unposted-expense-share",
+        label: "Unposted expense share",
+        current: currentUnpostedExpenseShare,
+        previous: previousUnpostedExpenseShare,
+        currency: "%",
+        signal: "Bookkeeping backlog",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "unposted-receipt-count",
+        label: "Unposted receipt count",
+        current: currentUnpostedReceiptCount,
+        previous: previousUnpostedReceiptCount,
+        currency: "count",
+        signal: "Posting queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "unposted-receipt-value",
+        label: "Unposted receipt value",
+        current: currentUnpostedReceiptValue,
+        previous: previousUnpostedReceiptValue,
+        currency: "AED",
+        signal: "Posting value",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "auto-posted-receipt-count",
+        label: "Auto-posted receipt count",
+        current: currentAutoPostedReceiptCount,
+        previous: previousAutoPostedReceiptCount,
+        currency: "count",
+        signal: "Receipts automated",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "auto-posted-receipt-value",
+        label: "Auto-posted receipt value",
+        current: currentAutoPostedReceiptValue,
+        previous: previousAutoPostedReceiptValue,
+        currency: "AED",
+        signal: "Automated expense value",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "receipt-automation-coverage",
+        label: "Receipt automation coverage",
+        current: currentReceiptAutomationCoverage,
+        previous: previousReceiptAutomationCoverage,
+        currency: "%",
+        signal: "Auto-post coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "receipt-automation-value-coverage",
+        label: "Receipt automation value coverage",
+        current: currentReceiptAutomationValueCoverage,
+        previous: previousReceiptAutomationValueCoverage,
+        currency: "%",
+        signal: "Auto-posted value",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "bank-reconciliation-coverage",
+        label: "Bank reconciliation coverage",
+        current: currentBankReconciliationCoverage,
+        previous: previousBankReconciliationCoverage,
+        currency: "%",
+        signal: "Bank automation coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "reconciled-bank-count",
+        label: "Reconciled bank count",
+        current: currentReconciledBankCount,
+        previous: previousReconciledBankCount,
+        currency: "count",
+        signal: "Bank transactions cleared",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "reconciled-bank-value",
+        label: "Reconciled bank value",
+        current: currentReconciledBankValue,
+        previous: previousReconciledBankValue,
+        currency: "AED",
+        signal: "Bank value cleared",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "unreconciled-bank-count",
+        label: "Unreconciled bank count",
+        current: currentUnreconciledBankCount,
+        previous: previousUnreconciledBankCount,
+        currency: "count",
+        signal: "Bank review queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "unreconciled-bank-value",
+        label: "Unreconciled bank value",
+        current: currentUnreconciledBankValue,
+        previous: previousUnreconciledBankValue,
+        currency: "AED",
+        signal: "Bank value at review",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-match-suggestion-coverage",
+        label: "Bank match suggestion coverage",
+        current: currentBankMatchSuggestionCoverage,
+        previous: previousBankMatchSuggestionCoverage,
+        currency: "%",
+        signal: "Suggested match coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-match-suggestion-value-coverage",
+        label: "Bank match suggestion value coverage",
+        current: currentBankMatchSuggestionValueCoverage,
+        previous: previousBankMatchSuggestionValueCoverage,
+        currency: "%",
+        signal: "Suggested match value",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "suggested-bank-match-count",
+        label: "Suggested bank match count",
+        current: currentSuggestedBankMatchCount,
+        previous: previousSuggestedBankMatchCount,
+        currency: "count",
+        signal: "Review-ready matches",
+        favorable: "neutral",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-assisted-transaction-count",
+        label: "Bank-assisted transaction count",
+        current: currentBankAssistedTransactionCount,
+        previous: previousBankAssistedTransactionCount,
+        currency: "count",
+        signal: "Bank work assisted",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-assisted-transaction-value",
+        label: "Bank-assisted transaction value",
+        current: currentBankAssistedTransactionValue,
+        previous: previousBankAssistedTransactionValue,
+        currency: "AED",
+        signal: "Assisted bank value",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-assisted-transaction-coverage",
+        label: "Bank-assisted transaction coverage",
+        current: currentBankAssistedTransactionCoverage ?? 0,
+        previous: previousBankAssistedTransactionCoverage ?? 0,
+        currency: "%",
+        signal: "Bank work coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "bank-assisted-transaction-value-coverage",
+        label: "Bank-assisted transaction value coverage",
+        current: currentBankAssistedTransactionValueCoverage ?? 0,
+        previous: previousBankAssistedTransactionValueCoverage ?? 0,
+        currency: "%",
+        signal: "Assisted bank value coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "automation-work-queue-count",
+        label: "Automation work queue count",
+        current: currentAutomationWorkQueueCount,
+        previous: previousAutomationWorkQueueCount,
+        currency: "count",
+        signal: "Action queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "automation-work-queue-value",
+        label: "Automation work queue value",
+        current: currentAutomationWorkQueueValue,
+        previous: previousAutomationWorkQueueValue,
+        currency: "AED",
+        signal: "Queue value",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "ledger-automation-share",
+        label: "Ledger automation share",
+        current: currentLedgerAutomationShare,
+        previous: previousLedgerAutomationShare,
+        currency: "%",
+        signal: "Ledger automation coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "manual-ledger-activity",
+        label: "Manual ledger activity",
+        current: currentManualLedgerActivity,
+        previous: previousManualLedgerActivity,
+        currency: "AED",
+        signal: "Manual ledger value",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "automated-ledger-activity",
+        label: "Automated ledger activity",
+        current: currentAutomatedLedgerActivity,
+        previous: previousAutomatedLedgerActivity,
+        currency: "AED",
+        signal: "Automated ledger value",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "automation-adoption-index",
+        label: "Automation adoption index",
+        current: currentAutomationAdoptionIndex,
+        previous: previousAutomationAdoptionIndex,
+        currency: "%",
+        signal: "Automation adoption",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "automation-value-adoption-index",
+        label: "Automation value adoption index",
+        current: currentAutomationValueAdoptionIndex,
+        previous: previousAutomationValueAdoptionIndex,
+        currency: "%",
+        signal: "Automation value adoption",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "planning",
+      }),
+      makeComparisonMetric({
+        id: "cost-center-net-income",
+        label: "Cost center net income",
+        current: comparisonCurrentCostCenterProfitability?.totals.netIncome ?? 0,
+        previous: comparisonPreviousCostCenterProfitability?.totals.netIncome ?? 0,
+        currency: "AED",
+        signal: "Department profitability",
+        favorable: "increase",
+        personas: ["owner", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
+        id: "cost-center-expenses",
+        label: "Cost center expenses",
+        current: comparisonCurrentCostCenterProfitability?.totals.totalExpenses ?? 0,
+        previous: comparisonPreviousCostCenterProfitability?.totals.totalExpenses ?? 0,
+        currency: "AED",
+        signal: "Department cost pressure",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "expenses",
+      }),
+      makeComparisonMetric({
         id: "vat-due",
         label: "Net VAT due",
         current: comparisonCurrentVat?.netVATPayable ?? 0,
@@ -3298,6 +6549,78 @@ export default function Reports() {
         tab: "vat",
       }),
       makeComparisonMetric({
+        id: "corporate-tax-payable",
+        label: "Corporate tax payable",
+        current: corporateTaxEstimate?.taxPayable ?? 0,
+        previous: comparisonPreviousCorporateTaxEstimate?.taxPayable ?? 0,
+        currency: "AED",
+        signal: "Tax exposure",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
+        id: "total-tax-exposure",
+        label: "Total tax exposure",
+        current: currentTotalTaxExposure,
+        previous: previousTotalTaxExposure,
+        currency: "AED",
+        signal: "VAT plus corporate tax",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
+        id: "tax-exposure-rate",
+        label: "Tax exposure rate",
+        current: currentTaxExposureRate,
+        previous: previousTaxExposureRate,
+        currency: "%",
+        signal: "Tax load",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
+        id: "tax-reserve-coverage",
+        label: "Tax reserve coverage",
+        current: currentTaxReserveCoverage,
+        previous: 100,
+        currentLabel: "Current cash",
+        previousLabel: "Fully funded",
+        currency: "%",
+        signal: "Tax cash coverage",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
+        id: "tax-funding-gap",
+        label: "Tax funding gap",
+        current: currentTaxFundingGap,
+        previous: 0,
+        currentLabel: "Current gap",
+        previousLabel: "Zero gap",
+        currency: "AED",
+        signal: "Tax cash gap",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
+        id: "tax-adjusted-runway-days",
+        label: "Tax-adjusted runway",
+        current: currentTaxAdjustedRunwayDays,
+        previous: currentRunwayDays,
+        currentLabel: "After tax reserve",
+        previousLabel: "Before tax reserve",
+        currency: "days",
+        signal: "Post-tax runway",
+        favorable: "increase",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "tax",
+      }),
+      makeComparisonMetric({
         id: "payroll-cost",
         label: "Payroll cost",
         current: currentPayrollValue,
@@ -3305,6 +6628,149 @@ export default function Reports() {
         currency: "AED",
         signal: "Payroll movement",
         favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-run-count",
+        label: "Payroll run count",
+        current: currentPayrollRuns.length,
+        previous: previousPayrollRuns.length,
+        currency: "count",
+        signal: "Payroll run volume",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-deduction-share",
+        label: "Payroll deduction share",
+        current: currentPayrollDeductionShare,
+        previous: previousPayrollDeductionShare,
+        currency: "%",
+        signal: "Gross-to-net payroll",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "average-payroll-run-value",
+        label: "Average payroll run value",
+        current: currentAveragePayrollRunValue,
+        previous: previousAveragePayrollRunValue,
+        currency: "AED",
+        signal: "Payroll run size",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-covered-employees",
+        label: "Payroll covered employees",
+        current: currentPayrollCoveredEmployees,
+        previous: previousPayrollCoveredEmployees,
+        currency: "count",
+        signal: "Payroll headcount",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-cost-per-covered-employee",
+        label: "Payroll cost per covered employee",
+        current: currentPayrollCostPerCoveredEmployee,
+        previous: previousPayrollCostPerCoveredEmployee,
+        currency: "AED",
+        signal: "Payroll unit cost",
+        favorable: "neutral",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-approval-queue-count",
+        label: "Payroll approval queue",
+        current: currentPayrollApprovalQueueCount,
+        previous: previousPayrollApprovalQueueCount,
+        currency: "count",
+        signal: "Payroll approvals",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-approval-queue-value",
+        label: "Payroll approval queue value",
+        current: currentPayrollApprovalQueueValue,
+        previous: previousPayrollApprovalQueueValue,
+        currency: "AED",
+        signal: "Payroll approval value",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-readiness-queue-count",
+        label: "Payroll readiness queue",
+        current: currentPayrollReadinessQueueCount,
+        previous: previousPayrollReadinessQueueCount,
+        currency: "count",
+        signal: "Payroll approvals and WPS",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-readiness-queue-value",
+        label: "Payroll readiness queue value",
+        current: currentPayrollReadinessQueueValue,
+        previous: previousPayrollReadinessQueueValue,
+        currency: "AED",
+        signal: "Payroll readiness value",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "wps-missing-run-count",
+        label: "WPS missing run count",
+        current: currentWpsMissingRunCount,
+        previous: previousWpsMissingRunCount,
+        currency: "count",
+        signal: "WPS file gap",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "wps-missing-run-value",
+        label: "WPS missing run value",
+        current: currentWpsMissingRunValue,
+        previous: previousWpsMissingRunValue,
+        currency: "AED",
+        signal: "WPS file value gap",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "payroll-expense-share",
+        label: "Payroll expense share",
+        current: currentPayrollExpenseShare,
+        previous: previousPayrollExpenseShare,
+        currency: "%",
+        signal: "Payroll burden",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "payroll",
+      }),
+      makeComparisonMetric({
+        id: "wps-ready-share",
+        label: "WPS ready share",
+        current: currentWpsReadyShare,
+        previous: previousWpsReadyShare,
+        currency: "%",
+        signal: "Payroll file readiness",
+        favorable: "increase",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
@@ -3320,6 +6786,145 @@ export default function Reports() {
         tab: "balances",
       }),
       makeComparisonMetric({
+        id: "inventory-review-items",
+        label: "Inventory review items",
+        current: inventoryValuationReport.reviewCount,
+        previous: 0,
+        currentLabel: "Review items",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Stock review queue",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "inventory-review-share",
+        label: "Inventory review share",
+        current: ratioPercent(
+          inventoryValuationReport.reviewCount,
+          inventoryValuationReport.activeProductCount
+        ),
+        previous: 0,
+        currentLabel: "Review share",
+        previousLabel: "Clear baseline",
+        currency: "%",
+        signal: "Stock review mix",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "inventory-review-value",
+        label: "Inventory review value",
+        current: inventoryValuationReport.reviewValueAed,
+        previous: 0,
+        currentLabel: "Review value",
+        previousLabel: "Clear baseline",
+        currency: "AED",
+        signal: "Stock value at review",
+        favorable: "decrease",
+        personas: ["owner", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "fixed-asset-review-items",
+        label: "Fixed asset review items",
+        current: fixedAssetRegisterReport.reviewCount,
+        previous: 0,
+        currentLabel: "Review items",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Asset review queue",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "fixed-asset-review-share",
+        label: "Fixed asset review share",
+        current: ratioPercent(
+          fixedAssetRegisterReport.reviewCount,
+          fixedAssetRegisterReport.activeRows.length
+        ),
+        previous: 0,
+        currentLabel: "Review share",
+        previousLabel: "Clear baseline",
+        currency: "%",
+        signal: "Asset review mix",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "fixed-asset-review-value",
+        label: "Fixed asset review value",
+        current: fixedAssetRegisterReport.reviewValueAed,
+        previous: 0,
+        currentLabel: "Review value",
+        previousLabel: "Clear baseline",
+        currency: "AED",
+        signal: "Asset value at review",
+        favorable: "decrease",
+        personas: ["owner", "freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "depreciation-review-items",
+        label: "Depreciation review items",
+        current: depreciationScheduleReport.reviewCount,
+        previous: 0,
+        currentLabel: "Review items",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Depreciation setup queue",
+        favorable: "decrease",
+        personas: ["freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "depreciation-review-value",
+        label: "Depreciation review value",
+        current: depreciationScheduleReport.reviewValueAed,
+        previous: 0,
+        currentLabel: "Review value",
+        previousLabel: "Clear baseline",
+        currency: "AED",
+        signal: "Depreciable value at review",
+        favorable: "decrease",
+        personas: ["freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "depreciation-ready-items",
+        label: "Depreciation ready items",
+        current: depreciationScheduleReport.readyToPostCount,
+        previous: 0,
+        currentLabel: "Ready items",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Depreciation posting queue",
+        favorable: "decrease",
+        personas: ["freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "depreciation-ready-share",
+        label: "Depreciation ready share",
+        current: ratioPercent(
+          depreciationScheduleReport.readyToPostCount,
+          depreciationScheduleReport.readyToPostCount + depreciationScheduleReport.reviewCount
+        ),
+        previous: 100,
+        currentLabel: "Ready share",
+        previousLabel: "Ready",
+        currency: "%",
+        signal: "Depreciation readiness",
+        favorable: "increase",
+        personas: ["freelancer", "accountant"],
+        tab: "balances",
+      }),
+      makeComparisonMetric({
         id: "depreciation-estimate",
         label: "Depreciation estimate",
         current: currentDepreciationEstimate,
@@ -3327,8 +6932,30 @@ export default function Reports() {
         currency: "AED",
         signal: "Depreciation schedule",
         favorable: "neutral",
-        personas: ["accountant"],
+        personas: ["freelancer", "accountant"],
         tab: "balances",
+      }),
+      makeComparisonMetric({
+        id: "consolidated-revenue",
+        label: "Consolidated revenue",
+        current: consolidatedStatementsReport.currentComparisonRevenue,
+        previous: consolidatedStatementsReport.previousRevenue,
+        currency: "AED",
+        signal: "Group revenue",
+        favorable: "increase",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "consolidated-expenses",
+        label: "Consolidated expenses",
+        current: consolidatedStatementsReport.currentComparisonExpenses,
+        previous: consolidatedStatementsReport.previousExpenses,
+        currency: "AED",
+        signal: "Group expenses",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
       }),
       makeComparisonMetric({
         id: "consolidated-net-profit",
@@ -3340,6 +6967,124 @@ export default function Reports() {
         favorable: "increase",
         personas: ["accountant"],
         tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "consolidated-margin",
+        label: "Consolidated margin",
+        current: currentConsolidatedMargin,
+        previous: previousConsolidatedMargin,
+        currency: "%",
+        signal: "Group profitability",
+        favorable: "increase",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "consolidation-review-items",
+        label: "Consolidation review items",
+        current: consolidatedStatementsReport.reviewCount,
+        previous: 0,
+        currentLabel: "Review items",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Consolidation review queue",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "month-end-open-checks",
+        label: "Month-end open checks",
+        current: currentMonthEndOpenChecks,
+        previous: 0,
+        currentLabel: "Open checks",
+        previousLabel: "Clear baseline",
+        currency: "count",
+        signal: "Close checklist",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "month-end-readiness",
+        label: "Month-end readiness",
+        current: currentMonthEndReadiness,
+        previous: 100,
+        currentLabel: "Checklist",
+        previousLabel: "Ready",
+        currency: "%",
+        signal: "Close readiness",
+        favorable: "increase",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "audit-high-risk-event-count",
+        label: "Audit high-risk events",
+        current: currentHighRiskActivityCount,
+        previous: previousHighRiskActivityCount,
+        currency: "count",
+        signal: "Risky audit activity",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "audit-high-risk-event-share",
+        label: "Audit high-risk event share",
+        current: currentHighRiskActivityShare,
+        previous: previousHighRiskActivityShare,
+        currency: "%",
+        signal: "Risky activity mix",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "audit-review-event-count",
+        label: "Audit review events",
+        current: currentReviewActivityCount,
+        previous: previousReviewActivityCount,
+        currency: "count",
+        signal: "Audit review workload",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "audit-review-event-share",
+        label: "Audit review event share",
+        current: currentReviewActivityShare,
+        previous: previousReviewActivityShare,
+        currency: "%",
+        signal: "Audit review mix",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "fx-unrealized-exposure",
+        label: "FX unrealized exposure",
+        current: currentFxUnrealizedExposure,
+        previous: 0,
+        currentLabel: "Exposure",
+        previousLabel: "Clear baseline",
+        currency: "AED",
+        signal: "FX exposure at review",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "close",
+      }),
+      makeComparisonMetric({
+        id: "manual-ledger-share",
+        label: "Manual ledger share",
+        current: currentManualLedgerShare,
+        previous: previousManualLedgerShare,
+        currency: "%",
+        signal: "Manual source coverage",
+        favorable: "decrease",
+        personas: ["accountant"],
+        tab: "ledger",
       }),
       makeComparisonMetric({
         id: "ledger-activity",
@@ -3355,21 +7100,60 @@ export default function Reports() {
     ];
   }, [
     comparisonCurrentProfitLoss?.netProfit,
+    comparisonCurrentProfitLoss?.totalExpenses,
     comparisonCurrentProfitLoss?.totalRevenue,
+    comparisonCurrentBalanceSheet?.totalAssets,
+    comparisonCurrentBalanceSheet?.totalEquity,
+    comparisonCurrentBalanceSheet?.totalLiabilities,
+    comparisonCurrentCostCenterProfitability?.totals.netIncome,
+    comparisonCurrentCostCenterProfitability?.totals.totalExpenses,
     comparisonCurrentRange,
+    comparisonCurrentSalesProductService?.totals.topProductServiceShare,
     comparisonCurrentVat?.netVATPayable,
+    comparisonPreviousCostCenterProfitability?.totals.netIncome,
+    comparisonPreviousCostCenterProfitability?.totals.totalExpenses,
+    comparisonPreviousCorporateTaxEstimate?.taxPayable,
     comparisonPreviousProfitLoss?.netProfit,
+    comparisonPreviousProfitLoss?.totalExpenses,
     comparisonPreviousProfitLoss?.totalRevenue,
+    comparisonPreviousBalanceSheet?.totalAssets,
+    comparisonPreviousBalanceSheet?.totalEquity,
+    comparisonPreviousBalanceSheet?.totalLiabilities,
     comparisonPreviousRange,
+    comparisonPreviousSalesProductService?.totals.topProductServiceShare,
     comparisonPreviousVat?.netVATPayable,
+    consolidatedStatementsReport.currentComparisonExpenses,
     consolidatedStatementsReport.currentComparisonNetProfit,
+    consolidatedStatementsReport.currentComparisonRevenue,
+    consolidatedStatementsReport.previousExpenses,
     consolidatedStatementsReport.previousNetProfit,
+    consolidatedStatementsReport.previousRevenue,
+    consolidatedStatementsReport.reviewCount,
+    activityLogs,
+    bankTransactions,
+    cashFlowForecast?.currentBalance,
+    cashFlowForecast?.projections,
+    cashFlowStatement,
+    corporateTaxEstimate?.taxPayable,
+    depreciationScheduleReport.readyToPostCount,
+    depreciationScheduleReport.reviewCount,
+    depreciationScheduleReport.reviewValueAed,
+    expenseClaims,
     fixedAssetRegisterReport.activeRows,
+    fixedAssetRegisterReport.reviewCount,
+    fixedAssetRegisterReport.reviewValueAed,
+    fxGainsLosses?.totalUnrealizedGain,
+    fxGainsLosses?.totalUnrealizedLoss,
     invoices,
     inventoryMovements,
+    inventoryValuationReport.reviewCount,
+    inventoryValuationReport.reviewValueAed,
     journalEntries,
+    monthEndCloseStatus?.checklist,
     payrollRuns,
     receipts,
+    varianceReport?.varianceLines,
+    vendorBills,
   ]);
 
   const visibleComparisonRows = useMemo(() => {
@@ -3433,12 +7217,26 @@ export default function Reports() {
   const comparisonLoading =
     comparisonCurrentPlLoading ||
     comparisonPreviousPlLoading ||
+    comparisonCurrentBalanceSheetLoading ||
+    comparisonPreviousBalanceSheetLoading ||
+    comparisonCurrentSalesProductServiceLoading ||
+    comparisonPreviousSalesProductServiceLoading ||
     comparisonCurrentVatLoading ||
     comparisonPreviousVatLoading ||
+    comparisonCurrentCostCenterLoading ||
+    comparisonPreviousCostCenterLoading ||
+    corporateTaxLoading ||
+    comparisonPreviousCorporateTaxLoading ||
     consolidatedStatementsLoading ||
+    cashFlowForecastLoading ||
+    varianceLoading ||
+    expenseClaimsLoading ||
     invoicesLoading ||
     journalLoading ||
-    receiptsLoading;
+    monthEndCloseLoading ||
+    receiptsLoading ||
+    bankTransactionsLoading ||
+    vendorBillsLoading;
 
   const reportJournalEntries = useMemo(() => {
     return journalEntries.filter(
@@ -3713,6 +7511,14 @@ export default function Reports() {
   }, [budgetPlans, cashFlowForecast, varianceReport]);
 
   const planningLoading = budgetPlansLoading || varianceLoading || cashFlowForecastLoading;
+  const advancedReportsLoading =
+    cashFlowStatementLoading ||
+    agingReportLoading ||
+    billAgingLoading ||
+    advancedPeriodComparisonLoading ||
+    fxGainsLossesLoading ||
+    vatReturnsLoading ||
+    costCenterProfitabilityLoading;
 
   const automationLoading =
     balancesLoading ||
@@ -3725,7 +7531,8 @@ export default function Reports() {
     auditTrailLoading ||
     consolidatedStatementsLoading ||
     payrollLoading ||
-    planningLoading;
+    planningLoading ||
+    advancedReportsLoading;
 
   const automationQueue = useMemo<AutomationQueueItem[]>(() => {
     const vatNet = vatSummary?.netVATPayable ?? 0;
@@ -3756,7 +7563,7 @@ export default function Reports() {
         count: balanceReport.overdueVendorCount,
         amount: balanceReport.vendorOverdueAed,
         currency: "AED",
-        personas: ["owner", "accountant"],
+        personas: ["owner", "freelancer", "accountant"],
         icon: Wallet,
         actionLabel: "Open bills",
         href: "/bill-pay?tab=summary",
@@ -3807,7 +7614,7 @@ export default function Reports() {
         count: fixedAssetRegisterReport.reviewCount,
         amount: fixedAssetRegisterReport.totalNetBookValue,
         currency: "AED",
-        personas: ["owner", "accountant"],
+        personas: ["owner", "freelancer", "accountant"],
         icon: Building2,
         actionLabel: "Open fixed assets",
         href: "/fixed-assets",
@@ -3826,7 +7633,7 @@ export default function Reports() {
         count: depreciationScheduleReport.readyToPostCount + depreciationScheduleReport.reviewCount,
         amount: depreciationScheduleReport.periodDepreciationAed,
         currency: "AED",
-        personas: ["accountant"],
+        personas: ["freelancer", "accountant"],
         icon: FileSpreadsheet,
         actionLabel: "Open fixed assets",
         href: "/fixed-assets",
@@ -3855,7 +7662,7 @@ export default function Reports() {
         count: expenseClaimReport.reviewCount,
         amount: expenseClaimReport.submittedAmount + expenseClaimReport.approvedUnpaidAmount,
         currency: "AED",
-        personas: ["owner", "accountant"],
+        personas: ["owner", "freelancer", "accountant"],
         icon: ClipboardCheck,
         actionLabel: "Open claims",
         href: "/expense-claims",
@@ -3904,7 +7711,7 @@ export default function Reports() {
         count: productServiceTopShare >= 50 ? 1 : 0,
         amount: topProductServiceSalesRow?.amountAed ?? 0,
         currency: "AED",
-        personas: ["owner", "accountant"],
+        personas: ["owner", "freelancer", "accountant"],
         icon: BarChart3,
         actionLabel: "Open sales mix",
         tab: "sales",
@@ -3917,7 +7724,7 @@ export default function Reports() {
         count: corporateTaxPayable > 0.005 ? 1 : 0,
         amount: Math.max(0, corporateTaxPayable),
         currency: "AED",
-        personas: ["owner", "accountant"],
+        personas: ["owner", "freelancer", "accountant"],
         icon: Scale,
         actionLabel: "Open estimate",
         tab: "tax",
@@ -4140,7 +7947,8 @@ export default function Reports() {
           amountAtRisk,
           href: reportAutomationTriggerRuleHref(rule),
           primaryReportHref: primaryReport
-            ? (reportHref(primaryReport) ?? reportAutomationTriggerRuleHref(rule))
+            ? (reportPersonaHref(primaryReport, rule.persona) ??
+              reportAutomationTriggerRuleHref(rule))
             : reportAutomationTriggerRuleHref(rule),
           automationStarterHref: automationStarter?.href ?? reportAutomationTriggerRuleHref(rule),
           decisionShortcutHref: decisionShortcut?.href ?? reportAutomationTriggerRuleHref(rule),
@@ -4224,6 +8032,11 @@ export default function Reports() {
 
   const latestReportDeliverySchedulerScan =
     reportDeliverySchedulerHealthQuery.data?.latestScan ?? null;
+  const reportDeliverySchedulerHandoffSkipCount =
+    latestReportDeliverySchedulerScan?.snapshot?.skippedHandoff ??
+    latestReportDeliverySchedulerScan?.snapshot?.skippedSubscriptionIds?.handoff?.length ??
+    latestReportDeliverySchedulerScan?.snapshot?.handoffReviews?.length ??
+    0;
   const reportDeliverySchedulerGuardrailSkips = latestReportDeliverySchedulerScan
     ? latestReportDeliverySchedulerScan.skippedPaused +
       latestReportDeliverySchedulerScan.skippedSetup
@@ -4251,6 +8064,17 @@ export default function Reports() {
       if (!workspace) return [];
       const deliveryPlan = reportDeliveryPlanById.get(subscription.id);
       const deliveryRuns = reportDeliveryRunsBySubscriptionId.get(subscription.id) ?? [];
+      const reportSuites = reportSuiteSummaries.filter(
+        (suite) => suite.deliverySubscriptionId === subscription.id
+      );
+      const plannedReportSuites =
+        deliveryPlan?.reportSuites ??
+        reportSuites.map((suite) => ({
+          id: suite.id,
+          title: suite.title,
+          workflow: suite.workflow,
+          href: suite.href,
+        }));
 
       const reports = subscription.reportIds
         .map((reportId) => reportCatalog.find((report) => report.id === reportId))
@@ -4297,6 +8121,8 @@ export default function Reports() {
           triggerRules,
           automationStarter,
           decisionShortcut,
+          reportSuites: plannedReportSuites,
+          suiteCount: deliveryPlan?.suiteCount ?? plannedReportSuites.length,
           openWorkItemCount,
           amountAtRisk,
           cadence: deliveryPlan?.cadence ?? subscription.cadence,
@@ -4325,6 +8151,7 @@ export default function Reports() {
               ],
               reportNames: reports.map((report) => report.name),
               triggerRuleTitles: triggerRules.map((rule) => rule.title),
+              suiteTitles: plannedReportSuites.map((suite) => suite.title),
             } satisfies ReportDeliveryPlanPreview),
           deliveryRuns,
           latestDeliveryRun: deliveryRuns[0] ?? null,
@@ -4351,6 +8178,57 @@ export default function Reports() {
     reportAutomationTriggerRuleSummaries,
     reportDecisionShortcutSummaries,
     reportPackTemplateSummaries,
+    reportSuiteSummaries,
+    workspaceSummaries,
+  ]);
+
+  const reportDeliverySchedulerHandoffReviews = useMemo(() => {
+    const reviews = latestReportDeliverySchedulerScan?.snapshot?.handoffReviews ?? [];
+    return reviews
+      .map((review) => {
+        const subscription =
+          reportDeliverySubscriptionSummaries.find((item) => item.id === review.subscriptionId) ??
+          null;
+        const workspace =
+          subscription?.workspace ??
+          workspaceSummaries.find((item) => item.persona === (subscription?.persona ?? "owner")) ??
+          workspaceSummaries[0] ??
+          null;
+        if (!workspace) return null;
+        const title = subscription?.title ?? review.subscriptionId;
+        const href = reportWorkflowContextHref({
+          persona: workspace.persona,
+          tab: workspace.primaryTab,
+          search: title,
+          gap: review.gap,
+        });
+
+        return {
+          ...review,
+          title,
+          href,
+          subscriptionHref: subscription?.href ?? href,
+          persona: workspace.persona,
+          gapLabel: reportWorkflowGapFilterLabels[review.gap],
+        };
+      })
+      .filter((review): review is NonNullable<typeof review> => Boolean(review))
+      .filter(
+        (review) =>
+          matchesReportPersona([review.persona], personaFilter) &&
+          matchesReportWorkflowSearch([
+            review.title,
+            review.gapLabel,
+            review.detail,
+            review.message,
+            review.subscriptionId,
+          ])
+      );
+  }, [
+    latestReportDeliverySchedulerScan?.snapshot?.handoffReviews,
+    matchesReportWorkflowSearch,
+    personaFilter,
+    reportDeliverySubscriptionSummaries,
     workspaceSummaries,
   ]);
 
@@ -4371,6 +8249,8 @@ export default function Reports() {
           subscription.packTemplate?.title,
           subscription.automationStarter?.title,
           subscription.decisionShortcut?.question,
+          subscription.reportSuites.map((suite) => `${suite.title} ${suite.workflow}`).join(" "),
+          subscription.preview.suiteTitles.join(" "),
         ])
     );
   }, [matchesReportWorkflowSearch, personaFilter, reportDeliverySubscriptionSummaries]);
@@ -4447,18 +8327,49 @@ export default function Reports() {
     const reportResults = filteredReports.map((report) => {
       const reportPersona =
         personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
+      const context = reportActionContextByPersonaReportId.get(`${reportPersona}:${report.id}`);
       const status = reportStatusMeta[report.status];
+      const localReportHref =
+        report.href ??
+        (report.tab
+          ? reportsHref({ tab: report.tab, persona: reportPersona })
+          : reportsHref({ persona: reportPersona }));
+      const reportActionLinks: ReportWorkflowFinderAction[] = [
+        {
+          href:
+            context?.workflowHref ??
+            reportWorkflowContextHref({
+              persona: reportPersona,
+              tab: report.tab,
+              search: report.name,
+            }),
+          label: "Automate",
+          testId: `report-workflow-finder-result-automation-${report.id}`,
+        },
+      ];
+      if (context?.comparisonPresets[0]) {
+        reportActionLinks.push({
+          href: context.comparisonPresets[0].href,
+          label: "Compare",
+          testId: `report-workflow-finder-result-comparison-${report.id}`,
+        });
+      }
+      if (context?.deliverySubscriptions[0]) {
+        reportActionLinks.push({
+          href: context.deliverySubscriptions[0].href,
+          label: "Schedule",
+          testId: `report-workflow-finder-result-delivery-${report.id}`,
+        });
+      }
+
       return {
         id: `report-${report.id}`,
         type: "Report",
         title: report.name,
         description: report.decisionQuestion,
         meta: `${report.category} · ${report.comparison}`,
-        href:
-          report.href ??
-          (report.tab
-            ? reportsHref({ tab: report.tab, persona: reportPersona })
-            : reportsHref({ persona: reportPersona })),
+        href: context?.reportHref ?? localReportHref,
+        actionLinks: reportActionLinks,
         persona: reportPersona,
         badgeVariant: status.variant,
         coverageCues: buildReportWorkflowCoverageCues({
@@ -4496,6 +8407,62 @@ export default function Reports() {
       coverageCues: buildReportWorkflowCoverageCues({
         persona: preset.persona,
         reportIds: preset.reportIds,
+      }),
+    }));
+
+    const suiteResults = visibleReportSuiteSummaries.map((suite) => ({
+      id: `report-suite-${suite.id}`,
+      type: "Suite",
+      title: suite.title,
+      description: suite.outcome,
+      meta: `${suite.workflow} · ${suite.readyCount}/${suite.reports.length} reports`,
+      href: suite.href,
+      persona: suite.persona,
+      badgeVariant:
+        suite.readyCount === suite.reports.length ? ("success" as const) : ("warning" as const),
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: suite.persona,
+        reportIds: suite.reportIds,
+        packTemplateId: suite.packTemplateId,
+        automationStarterId: suite.automationStarterId,
+        triggerRuleIds: suite.triggerRuleIds,
+        deliverySubscriptionId: suite.deliverySubscriptionId,
+      }),
+    }));
+
+    const managementBriefResults = visibleReportManagementBriefSummaries.map((brief) => ({
+      id: `management-brief-${brief.id}`,
+      type: "Brief",
+      title: brief.title,
+      description: brief.outcome,
+      meta: `${brief.kpiMetricIds.length} KPIs · ${brief.dimensionBreakdowns.length} dimensions`,
+      href: brief.href,
+      persona: brief.persona,
+      badgeVariant:
+        brief.readyCount === brief.reports.length ? ("success" as const) : ("warning" as const),
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: brief.persona,
+        reportIds: brief.reportIds,
+        packTemplateId: brief.packTemplateId,
+        automationStarterId: brief.automationStarterId,
+        triggerRuleIds: brief.reportSuite.triggerRuleIds,
+        deliverySubscriptionId: brief.deliverySubscriptionId,
+      }),
+    }));
+
+    const savedViewResults = visibleReportSavedViewSummaries.map((view) => ({
+      id: `saved-view-${view.id}`,
+      type: "Saved view",
+      title: view.title,
+      description: view.description,
+      meta: `${view.dateRangePreset} · ${view.comparisonPeriod} · ${view.currency}`,
+      href: view.href,
+      persona: view.persona,
+      badgeVariant: "info" as const,
+      coverageCues: buildReportWorkflowCoverageCues({
+        persona: view.persona,
+        reportIds: [view.reportId],
+        automationStarterId: view.automationStarterId,
       }),
     }));
 
@@ -4571,6 +8538,9 @@ export default function Reports() {
       ...reportResults,
       ...packTemplateResults,
       ...comparisonResults,
+      ...suiteResults,
+      ...managementBriefResults,
+      ...savedViewResults,
       ...automationStarterResults,
       ...deliveryResults,
       ...triggerRuleResults,
@@ -4580,6 +8550,7 @@ export default function Reports() {
     filteredReports,
     personaFilter,
     reportAutomationTriggerRuleSummaries,
+    reportActionContextByPersonaReportId,
     reportDeliverySubscriptionSummaries,
     reportPackTemplateSummaries,
     visibleReportAutomationStarters,
@@ -4587,7 +8558,10 @@ export default function Reports() {
     visibleReportComparisonPresets,
     visibleReportDecisionShortcuts,
     visibleReportDeliverySubscriptions,
+    visibleReportManagementBriefSummaries,
     visibleReportPackTemplates,
+    visibleReportSavedViewSummaries,
+    visibleReportSuiteSummaries,
   ]);
 
   const filteredReportWorkflowFinderResults = useMemo(() => {
@@ -4610,13 +8584,42 @@ export default function Reports() {
       workspace?.navLabel ?? reportWorkflowGapFilter.persona
     }`;
   }, [reportWorkflowGapFilter]);
-
+  const reportWorkflowContextSearchLabel = reportWorkflowSearch.trim();
+  const hasReportWorkflowContextFilters =
+    personaFilter !== "all" ||
+    Boolean(reportWorkflowContextSearchLabel) ||
+    reportWorkflowGapFilter.type !== "all";
+  const reportWorkflowContextSharePersona: PersonaFilter =
+    reportWorkflowGapFilter.persona ?? personaFilter;
+  const reportWorkflowContextShareHref = useMemo(
+    () =>
+      reportWorkflowContextHref({
+        persona: reportWorkflowContextSharePersona,
+        tab: activeTab,
+        search: reportWorkflowContextSearchLabel,
+        gap: reportWorkflowGapFilter.type === "all" ? null : reportWorkflowGapFilter.type,
+      }),
+    [
+      activeTab,
+      reportWorkflowContextSearchLabel,
+      reportWorkflowContextSharePersona,
+      reportWorkflowGapFilter.type,
+    ]
+  );
   const reportWorkflowFinderResults = useMemo(() => {
     if (normalizedReportWorkflowSearch || reportWorkflowGapFilter.type !== "all") {
       return filteredReportWorkflowFinderResults.slice(0, 12);
     }
 
-    const preferredTypes = ["Report", "Pack", "Comparison", "Automation", "Delivery", "Question"];
+    const preferredTypes = [
+      "Report",
+      "Pack",
+      "Brief",
+      "Comparison",
+      "Automation",
+      "Delivery",
+      "Question",
+    ];
     return preferredTypes
       .flatMap((type) =>
         filteredReportWorkflowFinderResults.filter((result) => result.type === type).slice(0, 2)
@@ -4758,41 +8761,6 @@ export default function Reports() {
     visibleReportDeliverySubscriptions,
   ]);
 
-  const reportDeliveryLauncherPreviewById = useMemo(() => {
-    return reportDeliverySubscriptionSummaries.reduce<Record<string, ReportLaunchDeliveryPreview>>(
-      (previews, subscription) => {
-        const latestRun = subscription.latestDeliveryRun;
-        previews[subscription.id] = {
-          status: subscription.status,
-          statusVariant: subscription.statusVariant,
-          enabled: subscription.enabled,
-          nextRunLabel: subscription.nextRunLabel,
-          channel: subscription.channel,
-          format: subscription.format,
-          recipients: subscription.recipients,
-          deliveryGuardrail: subscription.deliveryGuardrail,
-          summary: subscription.preview.summary,
-          latestRunStatus: latestRun?.status,
-          latestRunStatusVariant: latestRun
-            ? deliveryRunStatusVariant(latestRun.status)
-            : undefined,
-          latestRunId: latestRun?.id,
-          latestRunLabel: latestRun ? formatDeliveryRunTimestamp(latestRun.createdAt) : undefined,
-          latestRunDetail: latestRun
-            ? `Scheduled ${formatDeliveryRunTimestamp(latestRun.scheduledFor)} - ${latestRun.readyReportCount}/${latestRun.reportCount} reports - ${latestRun.channel}`
-            : undefined,
-          latestRunError:
-            latestRun?.status === "failed"
-              ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
-              : null,
-          queueDisabled: !subscription.enabled,
-        };
-        return previews;
-      },
-      {}
-    );
-  }, [reportDeliverySubscriptionSummaries]);
-
   const startEditingReportDeliverySubscription = useCallback(
     (subscription: (typeof reportDeliverySubscriptionSummaries)[number]) => {
       setEditingReportDeliverySubscriptionId(subscription.id);
@@ -4924,7 +8892,8 @@ export default function Reports() {
         roadmapStatus: workspace.plannedReports.length > 0 ? "Roadmap gaps" : "Coverage complete",
         nextWorkflow:
           nextReports.length > 0
-            ? (reportHref(nextReports[0]) ?? reportWorkspaceHref(workspace))
+            ? (reportPersonaHref(nextReports[0], workspace.persona) ??
+              reportWorkspaceHref(workspace))
             : reportWorkspaceHref(workspace),
       };
     });
@@ -4938,6 +8907,43 @@ export default function Reports() {
 
   const visiblePlannedReportCount = visibleReportRoadmap.reduce(
     (sum, item) => sum + item.plannedReportCount,
+    0
+  );
+
+  const localReportProductDepthAreas = useMemo<ReportCatalogDiscovery["productDepthAreas"]>(() => {
+    return reportProductDepthAreas.map((area) => ({
+      ...area,
+      href: reportProductDepthAreaHref(area),
+      subgoals: area.subgoals.map((subgoal) => ({
+        ...subgoal,
+        href: reportProductDepthSubgoalHref(area, subgoal),
+      })),
+    }));
+  }, []);
+
+  const reportProductDepthCoverage: ReportCatalogDiscovery["productDepthAreas"] =
+    reportCatalogDiscoveryQuery.data?.productDepthAreas ?? localReportProductDepthAreas;
+
+  const visibleReportProductDepthAreas = useMemo<
+    ReportCatalogDiscovery["productDepthAreas"]
+  >(() => {
+    return reportProductDepthCoverage
+      .map((area) => ({
+        ...area,
+        subgoals: area.subgoals
+          .filter((subgoal) => matchesReportPersona(subgoal.personas, personaFilter))
+          .map((subgoal) => ({
+            ...subgoal,
+            sourceDrilldownTargets: subgoal.sourceDrilldownTargets?.filter((target) =>
+              matchesReportPersona(target.personas, personaFilter)
+            ),
+          })),
+      }))
+      .filter((area) => area.subgoals.length > 0);
+  }, [personaFilter, reportProductDepthCoverage]);
+
+  const visibleReportProductDepthSubgoalCount = visibleReportProductDepthAreas.reduce(
+    (sum, area) => sum + area.subgoals.length,
     0
   );
 
@@ -4987,7 +8993,7 @@ export default function Reports() {
         recommendations.push({
           id: `comparison-${workspace.persona}-${row.id}`,
           title: row.label,
-          detail: `${row.signal}: ${formatComparisonPercent(row.percentChange)} vs prior period`,
+          detail: `${row.signal}: ${formatComparisonPercent(row.percentChange)} vs baseline`,
           badge: "Movement",
           badgeVariant: comparisonBadgeVariant(row),
           amount: row.delta,
@@ -5152,6 +9158,7 @@ export default function Reports() {
           .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
         const liveReportCount = linkedReports.filter((report) => report.status === "live").length;
         const targetWorkflow = reportAutomationPlaybookHref(playbook, workspace.persona);
+        const runbookSteps = buildReportAutomationRunbookSteps(workspace, playbook);
         const matchingSignals = workspaceSignals.filter((signal) => {
           if (playbook.href && signal.href === playbook.href) return true;
           if (playbook.tab && signal.tab === playbook.tab) return true;
@@ -5181,6 +9188,7 @@ export default function Reports() {
           reportCount: linkedReports.length,
           matchingSignals,
           openSignals,
+          runbookSteps,
           openWorkItemCount,
           amountAtRisk,
           comparisonMetricCount,
@@ -5422,6 +9430,209 @@ export default function Reports() {
   const reportAutomationOperationsNeedingReview = visibleReportAutomationOperations.filter(
     (item) => item.status !== "Ready to automate"
   ).length;
+  const reportAutomationImpactSummaries = useMemo(() => {
+    return reportAutomationImpactProfiles.flatMap((profile) => {
+      const workspace = workspaceSummaries.find((item) => item.persona === profile.persona);
+      if (!workspace) return [];
+
+      const operation = reportAutomationOperationSummaries.find(
+        (item) => item.workspace.persona === profile.persona
+      );
+      const profileReports = profile.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is ReportCatalogItem => Boolean(report));
+      const starters = profile.automationStarterIds
+        .map((starterId) => reportAutomationStarters.find((starter) => starter.id === starterId))
+        .filter((starter): starter is (typeof reportAutomationStarters)[number] =>
+          Boolean(starter)
+        );
+      const triggerRules = profile.triggerRuleIds
+        .map((ruleId) => reportAutomationTriggerRules.find((rule) => rule.id === ruleId))
+        .filter((rule): rule is (typeof reportAutomationTriggerRules)[number] => Boolean(rule));
+      const estimate = calculateReportAutomationImpact(profile, {
+        readyRuleCount: operation?.readyRuleCount ?? 0,
+        readyDeliveryCount: operation?.readyDeliveryCount ?? 0,
+        readyReportCount:
+          operation?.readyReportCount ??
+          profileReports.filter((report) => report.status !== "planned").length,
+        openWorkItemCount: operation?.openWorkItemCount ?? 0,
+        recommendationCount: operation?.recommendationCount ?? 0,
+        amountAtRisk: operation?.amountAtRisk ?? 0,
+      });
+
+      return [
+        {
+          profile,
+          workspace,
+          estimate,
+          reports: profileReports,
+          starters,
+          triggerRules,
+          href: reportSectionHref(workspace, "automation-impact"),
+          commandCenterHref: reportSectionHref(workspace, "automation-command-center"),
+          starterHref: starters[0]
+            ? reportAutomationStarterHref(starters[0])
+            : reportWorkspaceHref(workspace),
+        },
+      ];
+    });
+  }, [reportAutomationOperationSummaries, workspaceSummaries]);
+  const visibleReportAutomationImpactSummaries = useMemo(() => {
+    return reportAutomationImpactSummaries.filter((item) =>
+      matchesReportPersona([item.workspace.persona], personaFilter)
+    );
+  }, [personaFilter, reportAutomationImpactSummaries]);
+  const reportAutomationImpactTotals = useMemo(() => {
+    return visibleReportAutomationImpactSummaries.reduce(
+      (totals, item) => ({
+        estimatedMonthlyHoursSaved:
+          totals.estimatedMonthlyHoursSaved + item.estimate.estimatedMonthlyHoursSaved,
+        estimatedAutomatedItemCount:
+          totals.estimatedAutomatedItemCount + item.estimate.estimatedAutomatedItemCount,
+        reviewItemCount: totals.reviewItemCount + item.estimate.reviewItemCount,
+        amountAtRisk: totals.amountAtRisk + item.estimate.amountAtRisk,
+      }),
+      {
+        estimatedMonthlyHoursSaved: 0,
+        estimatedAutomatedItemCount: 0,
+        reviewItemCount: 0,
+        amountAtRisk: 0,
+      }
+    );
+  }, [visibleReportAutomationImpactSummaries]);
+  const reportAccountantHandoffSummaries = useMemo(() => {
+    return visibleReportAutomationOperations.map((item) => {
+      const workspace = item.workspace;
+      const priorityGap: ReportWorkflowGapFilter | null =
+        item.failedRunCount > 0 || item.deliveryGapCount > 0
+          ? "delivery-gaps"
+          : item.automationRuleGapCount > 0 || item.openWorkItemCount > 0
+            ? "rule-gaps"
+            : item.reportGapCount > 0
+              ? "report-gaps"
+              : null;
+
+      return {
+        ...item,
+        shareHref: reportWorkflowContextHref({
+          persona: workspace.persona,
+          tab: workspace.primaryTab,
+          search: reportWorkflowContextSearchLabel,
+          gap: priorityGap,
+        }),
+        gapHref: priorityGap
+          ? reportWorkflowContextHref({
+              persona: workspace.persona,
+              tab: workspace.primaryTab,
+              search: reportWorkflowContextSearchLabel,
+              gap: priorityGap,
+            })
+          : reportWorkflowContextHref({
+              persona: workspace.persona,
+              tab: workspace.primaryTab,
+              search: reportWorkflowContextSearchLabel,
+            }),
+        priorityGap,
+        priorityGapLabel: priorityGap ? reportWorkflowGapFilterLabels[priorityGap] : "No open gap",
+      };
+    });
+  }, [reportWorkflowContextSearchLabel, visibleReportAutomationOperations]);
+  const reportDeliveryHandoffPreviewByPersona = useMemo(() => {
+    return reportAccountantHandoffSummaries.reduce<
+      Partial<Record<ReportPersona, NonNullable<ReportDeliveryPlanPreview["handoffRows"]>>>
+    >((previews, item) => {
+      previews[item.workspace.persona] = [
+        {
+          label: "Shared context",
+          value: item.status,
+          status: item.status === "Ready to automate" ? "ready" : "review",
+          detail: `${item.readyReportCount}/${item.reportCount} reports, ${item.readyRuleCount}/${item.automationRuleCount} rules, ${item.readyDeliveryCount}/${item.deliverySubscriptionCount} deliveries ready.`,
+          href: item.shareHref,
+        },
+        {
+          label: "Priority gap",
+          value: item.priorityGapLabel,
+          status: item.priorityGap ? "review" : "ready",
+          detail: `${item.reportGapCount} report gaps, ${item.automationRuleGapCount} rule gaps, ${item.deliveryGapCount} delivery gaps.`,
+          href: item.gapHref,
+        },
+        {
+          label: "Next action",
+          value: item.nextAction.label,
+          status: item.nextAction.badgeVariant === "success" ? "ready" : "review",
+          detail: item.nextAction.detail,
+          href: item.nextAction.href,
+        },
+      ];
+      return previews;
+    }, {});
+  }, [reportAccountantHandoffSummaries]);
+  const reportDeliverySubscriptionHasReviewHandoff = useCallback(
+    (subscriptionId: string) => {
+      const subscription = reportDeliverySubscriptionSummaries.find(
+        (item) => item.id === subscriptionId
+      );
+      if (!subscription) return false;
+      const handoffRows =
+        reportDeliveryHandoffPreviewByPersona[subscription.persona] ??
+        subscription.preview.handoffRows ??
+        [];
+      return handoffRows.some((row) => row.status === "review");
+    },
+    [reportDeliveryHandoffPreviewByPersona, reportDeliverySubscriptionSummaries]
+  );
+  const isReportDeliveryHandoffAcknowledged = useCallback(
+    (subscriptionId: string) => Boolean(acknowledgedReportDeliveryHandoffGaps[subscriptionId]),
+    [acknowledgedReportDeliveryHandoffGaps]
+  );
+  const reportDeliveryLauncherPreviewById = useMemo(() => {
+    return reportDeliverySubscriptionSummaries.reduce<Record<string, ReportLaunchDeliveryPreview>>(
+      (previews, subscription) => {
+        const latestRun = subscription.latestDeliveryRun;
+        const handoffRows = reportDeliveryHandoffPreviewByPersona[subscription.persona];
+        const requiresHandoffAcknowledgement =
+          handoffRows?.some((row) => row.status === "review") ?? false;
+        previews[subscription.id] = {
+          status: subscription.status,
+          statusVariant: subscription.statusVariant,
+          enabled: subscription.enabled,
+          nextRunLabel: subscription.nextRunLabel,
+          channel: subscription.channel,
+          format: subscription.format,
+          recipients: subscription.recipients,
+          deliveryGuardrail: subscription.deliveryGuardrail,
+          summary: subscription.preview.summary,
+          suiteTitles:
+            subscription.preview.suiteTitles.length > 0
+              ? subscription.preview.suiteTitles
+              : subscription.reportSuites.map((suite) => suite.title),
+          handoffRows,
+          handoffRequiresAcknowledgement: requiresHandoffAcknowledgement,
+          handoffAcknowledged: Boolean(acknowledgedReportDeliveryHandoffGaps[subscription.id]),
+          latestRunStatus: latestRun?.status,
+          latestRunStatusVariant: latestRun
+            ? deliveryRunStatusVariant(latestRun.status)
+            : undefined,
+          latestRunId: latestRun?.id,
+          latestRunLabel: latestRun ? formatDeliveryRunTimestamp(latestRun.createdAt) : undefined,
+          latestRunDetail: latestRun
+            ? `Scheduled ${formatDeliveryRunTimestamp(latestRun.scheduledFor)} - ${latestRun.readyReportCount}/${latestRun.reportCount} reports - ${latestRun.channel}`
+            : undefined,
+          latestRunError:
+            latestRun?.status === "failed"
+              ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
+              : null,
+          queueDisabled: !subscription.enabled,
+        };
+        return previews;
+      },
+      {}
+    );
+  }, [
+    acknowledgedReportDeliveryHandoffGaps,
+    reportDeliveryHandoffPreviewByPersona,
+    reportDeliverySubscriptionSummaries,
+  ]);
   const reportAutomationOperationsLoading =
     automationLoading ||
     comparisonLoading ||
@@ -5477,11 +9688,18 @@ export default function Reports() {
   });
 
   const queueReportDeliverySubscription = useMutation({
-    mutationFn: (subscriptionId: string) => {
+    mutationFn: ({
+      subscriptionId,
+      acknowledgeHandoffGaps,
+    }: {
+      subscriptionId: string;
+      acknowledgeHandoffGaps?: boolean;
+    }) => {
       if (!selectedCompanyId) throw new Error("Select a company before queuing delivery.");
       return apiRequest(
         "POST",
-        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`,
+        acknowledgeHandoffGaps ? { acknowledgeHandoffGaps: true } : undefined
       );
     },
     onSuccess: (result: any) => {
@@ -5507,6 +9725,50 @@ export default function Reports() {
       });
     },
   });
+  const queueReportDeliverySubscriptionWithHandoffGuard = useCallback(
+    (subscriptionId: string) => {
+      if (
+        reportDeliverySubscriptionHasReviewHandoff(subscriptionId) &&
+        !isReportDeliveryHandoffAcknowledged(subscriptionId)
+      ) {
+        const subscription = reportDeliverySubscriptionSummaries.find(
+          (item) => item.id === subscriptionId
+        );
+        setAcknowledgedReportDeliveryHandoffGaps((current) => ({
+          ...current,
+          [subscriptionId]: true,
+        }));
+        toast({
+          title: "Handoff gaps acknowledged",
+          description: `${
+            subscription?.title ?? "This report delivery"
+          } has review gaps in the accountant handoff. Click queue again to send with those gaps acknowledged.`,
+        });
+        return;
+      }
+
+      queueReportDeliverySubscription.mutate({
+        subscriptionId,
+        acknowledgeHandoffGaps: isReportDeliveryHandoffAcknowledged(subscriptionId),
+      });
+    },
+    [
+      isReportDeliveryHandoffAcknowledged,
+      queueReportDeliverySubscription,
+      reportDeliverySubscriptionHasReviewHandoff,
+      reportDeliverySubscriptionSummaries,
+      toast,
+    ]
+  );
+  const commandQueueSubscriptionRequiresHandoffAcknowledgement = Boolean(
+    reportDeliveryAutomationCommandTargets.queueSubscription &&
+    reportDeliverySubscriptionHasReviewHandoff(
+      reportDeliveryAutomationCommandTargets.queueSubscription.id
+    ) &&
+    !isReportDeliveryHandoffAcknowledged(
+      reportDeliveryAutomationCommandTargets.queueSubscription.id
+    )
+  );
 
   const retryReportDeliveryRun = useMutation({
     mutationFn: (runId: string) => {
@@ -5548,18 +9810,78 @@ export default function Reports() {
     const workbookSheets: ExportData[] = [];
 
     const addSheets = (reportIds: string[], sheets: ExportData | ExportData[]) => {
-      if (!reportIds.some((reportId) => workspaceReportIds.has(reportId))) return;
-      reportIds.forEach((reportId) => workbookReportIds.add(reportId));
+      const includedReportIds = reportIds.filter((reportId) => workspaceReportIds.has(reportId));
+      if (!includedReportIds.length) return;
+      includedReportIds.forEach((reportId) => workbookReportIds.add(reportId));
       workbookSheets.push(...(Array.isArray(sheets) ? sheets : [sheets]));
     };
 
+    const latestVatReturn =
+      vatReturns
+        .slice()
+        .sort((a, b) => new Date(b.periodEnd).getTime() - new Date(a.periodEnd).getTime())[0] ??
+      null;
+    const vatReturnRegister: ExportData = {
+      sheetName: "VAT Return Register",
+      columns: [
+        { header: "Period Start", key: "periodStart", width: 14 },
+        { header: "Period End", key: "periodEnd", width: 14 },
+        { header: "Due Date", key: "dueDate", width: 14 },
+        { header: "Status", key: "status", width: 16 },
+        { header: "Output VAT (AED)", key: "outputVat", width: 18 },
+        { header: "Recoverable VAT (AED)", key: "recoverableVat", width: 20 },
+        { header: "Payable VAT (AED)", key: "payableVat", width: 18 },
+        { header: "FTA Reference", key: "ftaReference", width: 24 },
+        { header: "Payment Status", key: "paymentStatus", width: 18 },
+        { header: "Payment Amount (AED)", key: "paymentAmount", width: 22 },
+      ],
+      rows: vatReturns.map((vatReturn) => ({
+        periodStart: vatReturn.periodStart,
+        periodEnd: vatReturn.periodEnd,
+        dueDate: vatReturn.dueDate,
+        status: vatReturn.status,
+        outputVat: vatReturn.box12TotalDueTax,
+        recoverableVat: vatReturn.box13RecoverableTax,
+        payableVat: vatReturn.box14PayableTax,
+        ftaReference: vatReturn.ftaReferenceNumber ?? "",
+        paymentStatus: vatReturn.paymentStatus ?? "",
+        paymentAmount: vatReturn.paymentAmount ?? "",
+      })),
+    };
+    const periodComparisonRows = comparisonRows.filter((row) =>
+      matchesReportPersona(row.personas, workspace.persona)
+    );
+
     addSheets(["profit-loss"], prepareProfitLossForExport(profitLoss));
+    addSheets(
+      ["cost-center-profitability"],
+      prepareCostCenterProfitabilityForExport(costCenterProfitability)
+    );
     addSheets(["balance-sheet"], prepareBalanceSheetForExport(balanceSheet));
+    addSheets(["cash-flow"], prepareCashFlowStatementForExport(cashFlowStatement));
     addSheets(["vat-summary"], prepareVATSummaryForExport(vatSummary));
+    addSheets(
+      ["vat-return"],
+      [
+        vatReturnRegister,
+        ...(latestVatReturn ? prepareVat201ForExport(latestVatReturn, selectedCompany) : []),
+      ]
+    );
+    addSheets(
+      ["period-comparison"],
+      preparePeriodComparisonForExport(
+        periodComparisonRows.length ? periodComparisonRows : advancedPeriodComparison
+      )
+    );
+    addSheets(
+      ["ar-aging", "ap-aging"],
+      prepareAgingReportsForExport({ receivables: agingReport, payables: billAgingReport })
+    );
     addSheets(
       ["corporate-tax-estimate"],
       prepareCorporateTaxEstimateForExport(corporateTaxEstimate)
     );
+    addSheets(["fx-gains-losses"], prepareFxGainsLossesForExport(fxGainsLosses));
     addSheets(["trial-balance"], prepareTrialBalanceForExport(trialBalance));
     addSheets(
       ["invoice-status", "revenue-customer", "sales-product-service"],
@@ -5680,6 +10002,40 @@ export default function Reports() {
       reportAutomationOperationSummaries.find(
         (item) => item.workspace.persona === workspace.persona
       ) ?? null;
+    const packHandoff =
+      reportAccountantHandoffSummaries.find(
+        (item) => item.workspace.persona === workspace.persona
+      ) ?? null;
+    const packPriorityGap: ReportWorkflowGapFilter | null =
+      packHandoff?.priorityGap ??
+      (packOperations
+        ? packOperations.failedRunCount > 0 || packOperations.deliveryGapCount > 0
+          ? "delivery-gaps"
+          : packOperations.automationRuleGapCount > 0 || packOperations.openWorkItemCount > 0
+            ? "rule-gaps"
+            : packOperations.reportGapCount > 0
+              ? "report-gaps"
+              : null
+        : null);
+    const packSharedContextHref =
+      packHandoff?.shareHref ??
+      reportWorkflowContextHref({
+        persona: workspace.persona,
+        tab: workspace.primaryTab,
+        search: reportWorkflowContextSearchLabel,
+        gap: packPriorityGap,
+      });
+    const packGapHref =
+      packHandoff?.gapHref ??
+      reportWorkflowContextHref({
+        persona: workspace.persona,
+        tab: workspace.primaryTab,
+        search: reportWorkflowContextSearchLabel,
+        gap: packPriorityGap,
+      });
+    const packPriorityGapLabel =
+      packHandoff?.priorityGapLabel ??
+      (packPriorityGap ? reportWorkflowGapFilterLabels[packPriorityGap] : "No open gap");
     const operationsWorkflow = reportSectionHref(workspace, "automation-operations");
     const commandCenterWorkflow = reportSectionHref(workspace, "automation-command-center");
     const deliveryWorkflow = reportSectionHref(workspace, "delivery-subscriptions");
@@ -5702,7 +10058,7 @@ export default function Reports() {
         comparison: report.comparison,
         automation: report.automation,
         delivery: workbookReportIds.has(report.id) ? "Included in workbook" : "Open workflow",
-        workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
+        workflow: reportPersonaHref(report, workspace.persona) ?? reportWorkspaceHref(workspace),
       })),
     };
 
@@ -5792,6 +10148,52 @@ export default function Reports() {
           field: "Recommended actions",
           value: packOperations?.recommendationCount ?? packRecommendations.length,
           workflow: reportSectionHref(workspace, "recommendations"),
+        },
+      ],
+    };
+
+    const accountantHandoff: ExportData = {
+      sheetName: "Accountant Handoff",
+      columns: [
+        { header: "Workspace", key: "workspace", width: 30 },
+        { header: "Persona", key: "persona", width: 18 },
+        { header: "Status", key: "status", width: 24 },
+        { header: "Priority Gap", key: "priorityGap", width: 24 },
+        { header: "Reports Ready", key: "reportsReady", width: 18 },
+        { header: "Rules Ready", key: "rulesReady", width: 18 },
+        { header: "Deliveries Ready", key: "deliveriesReady", width: 18 },
+        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
+        { header: "Shared Context", key: "sharedContext", width: 54 },
+        { header: "Gap Workflow", key: "gapWorkflow", width: 54 },
+        { header: "Next Action", key: "nextAction", width: 30 },
+        { header: "Next Action Detail", key: "nextActionDetail", width: 78 },
+        { header: "Next Action Workflow", key: "nextActionWorkflow", width: 54 },
+      ],
+      rows: [
+        {
+          workspace: workspace.title,
+          persona: workspace.persona,
+          status: packOperations?.status ?? "Not available",
+          priorityGap: packPriorityGapLabel,
+          reportsReady: packOperations
+            ? `${packOperations.readyReportCount}/${packOperations.reportCount}`
+            : `${workspace.readyReports}/${workspace.reports.length}`,
+          rulesReady: packOperations
+            ? `${packOperations.readyRuleCount}/${packOperations.automationRuleCount}`
+            : `${packReadyAutomationRules}/${packAutomationRules.length}`,
+          deliveriesReady: packOperations
+            ? `${packOperations.readyDeliveryCount}/${packOperations.deliverySubscriptionCount}`
+            : `${
+                packDeliverySubscriptions.filter(
+                  (subscription) => subscription.status === "Ready to send"
+                ).length
+              }/${packDeliverySubscriptions.length}`,
+          amountAtRisk: `AED ${(packOperations?.amountAtRisk ?? packRuleAmountAtRisk).toFixed(2)}`,
+          sharedContext: packSharedContextHref,
+          gapWorkflow: packGapHref,
+          nextAction: packOperations?.nextAction.label ?? "Not available",
+          nextActionDetail: packOperations?.nextAction.detail ?? "Not available",
+          nextActionWorkflow: packOperations?.nextAction.href ?? operationsWorkflow,
         },
       ],
     };
@@ -6121,7 +10523,7 @@ export default function Reports() {
           dataSource: report.roadmapPrerequisites?.dataSource ?? "",
           workflowDependency: report.roadmapPrerequisites?.workflowDependency ?? "",
           automationRule: report.roadmapPrerequisites?.automationRule ?? "",
-          workflow: reportHref(report) ?? reportWorkspaceHref(workspace),
+          workflow: reportPersonaHref(report, workspace.persona) ?? reportWorkspaceHref(workspace),
         })),
     };
 
@@ -6242,7 +10644,7 @@ export default function Reports() {
         { header: "Metric", key: "metric", width: 28 },
         { header: "Signal", key: "signal", width: 22 },
         { header: "Current", key: "current", width: 18 },
-        { header: "Prior", key: "prior", width: 18 },
+        { header: "Baseline", key: "prior", width: 18 },
         { header: "Change", key: "change", width: 18 },
         { header: "Change %", key: "changePercent", width: 16 },
         { header: "Status", key: "status", width: 18 },
@@ -6261,9 +10663,9 @@ export default function Reports() {
         return {
           metric: row.label,
           signal: row.signal,
-          current: `${row.currency} ${row.current.toFixed(2)}`,
-          prior: `${row.currency} ${row.previous.toFixed(2)}`,
-          change: `${row.currency} ${row.delta.toFixed(2)}`,
+          current: formatComparisonExportValue(row, row.current),
+          prior: formatComparisonExportValue(row, row.previous),
+          change: formatComparisonExportValue(row, row.delta),
           changePercent: formatComparisonPercent(row.percentChange),
           status,
           workflow: reportsHref({ tab: row.tab, persona: workspace.persona }),
@@ -6371,6 +10773,7 @@ export default function Reports() {
       packIndex,
       packSummary,
       operationsControl,
+      accountantHandoff,
       coverageMap,
       decisionShortcutsSheet,
       packTemplatesSheet,
@@ -6685,6 +11088,772 @@ export default function Reports() {
             </Button>
           ))}
         </div>
+        <div
+          className="rounded-md border border-border/70 bg-muted/20 p-3"
+          data-testid="reports-workflow-context-summary"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                Saved reporting context
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge variant="info" data-testid="reports-workflow-context-role">
+                  Role: {personaFilterLabel}
+                </Badge>
+                {reportWorkflowContextSearchLabel ? (
+                  <Badge variant="outline" data-testid="reports-workflow-context-search">
+                    <span className="max-w-[14rem] truncate">
+                      Search: {reportWorkflowContextSearchLabel}
+                    </span>
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">No saved search</Badge>
+                )}
+                {activeReportWorkflowGapFilterLabel ? (
+                  <Badge variant="outline" data-testid="reports-workflow-context-gap">
+                    <span className="max-w-[14rem] truncate">
+                      Gap: {activeReportWorkflowGapFilterLabel}
+                    </span>
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">No gap filter</Badge>
+                )}
+              </div>
+            </div>
+            {hasReportWorkflowContextFilters ? (
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    href={reportWorkflowContextShareHref}
+                    data-testid="button-open-report-workflow-context-link"
+                  >
+                    Open share link
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={resetReportWorkflowContext}
+                  data-testid="button-reset-report-workflow-context"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Reset context
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-suites-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-suites-title" className="text-xl font-semibold">
+              Report suites
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Role-based bundles that combine reports, comparisons, saved views, packs, and
+              automations into the business workflows users open most.
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportSuiteSummaries.length} suites
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3" data-testid="report-suites">
+          {visibleReportSuiteSummaries.map((suite) => {
+            const WorkspaceIcon = suite.workspace.icon;
+            const suiteDeliverySubscription = reportDeliverySubscriptionSummaries.find(
+              (subscription) => subscription.id === suite.deliverySubscriptionId
+            );
+            const suiteRequiresHandoffAcknowledgement =
+              reportDeliverySubscriptionHasReviewHandoff(suite.deliverySubscriptionId) &&
+              !isReportDeliveryHandoffAcknowledged(suite.deliverySubscriptionId);
+            const isQueueingThisSuiteDelivery =
+              queueReportDeliverySubscription.isPending &&
+              queueReportDeliverySubscription.variables?.subscriptionId ===
+                suite.deliverySubscriptionId;
+            const isSuiteDeliveryPaused = suiteDeliverySubscription?.enabled === false;
+            const suiteQueueLabel = isQueueingThisSuiteDelivery
+              ? "Queueing"
+              : suiteRequiresHandoffAcknowledgement
+                ? "Acknowledge handoff"
+                : isSuiteDeliveryPaused
+                  ? "Paused"
+                  : "Queue delivery";
+
+            return (
+              <Card
+                key={suite.id}
+                id={`report-suite-${suite.id}`}
+                data-testid={`report-suite-${suite.id}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{suite.title}</CardTitle>
+                        <CardDescription>{suite.workflow}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={suite.readyCount === suite.reports.length ? "success" : "warning"}
+                      dot
+                    >
+                      {suite.readyCount}/{suite.reports.length}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm leading-relaxed text-muted-foreground">{suite.outcome}</p>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Comparison</div>
+                      <div className="mt-1 truncate font-medium text-foreground">
+                        {suite.comparisonPreset.title}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Pack</div>
+                      <div className="mt-1 truncate font-medium text-foreground">
+                        {suite.packTemplate.cadence}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Automation</div>
+                      <div className="mt-1 truncate font-medium text-foreground">
+                        {suite.automationStarter.setupTime}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Trigger rules</div>
+                      <div className="mt-1 font-mono font-medium text-foreground">
+                        {suite.triggerRules.length}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Delivery</div>
+                      <div className="mt-1 truncate font-medium text-foreground">
+                        {suite.deliverySubscription.channel}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Saved views</div>
+                      <div className="mt-1 font-mono font-medium text-foreground">
+                        {suite.savedViews.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="rounded-md border border-border/70 bg-secondary/30 p-3 text-xs"
+                    data-testid={`report-suite-delivery-readiness-${suite.id}`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="font-medium text-foreground">Delivery readiness</div>
+                        <div className="mt-1 text-muted-foreground">
+                          {suiteDeliverySubscription
+                            ? `${suiteDeliverySubscription.channel} · ${
+                                suiteDeliverySubscription.nextRunLabel ||
+                                "Next run calculated on queue"
+                              }`
+                            : suite.deliverySubscription.channel}
+                        </div>
+                      </div>
+                      <Badge
+                        variant={suiteDeliverySubscription?.statusVariant ?? "neutral"}
+                        dot
+                        className="w-fit"
+                      >
+                        {suiteRequiresHandoffAcknowledgement
+                          ? "Handoff review"
+                          : (suiteDeliverySubscription?.status ?? "Catalog")}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1">
+                    {suite.reports.slice(0, 5).map((report) => (
+                      <Badge key={report.id} variant="outline">
+                        {report.name}
+                      </Badge>
+                    ))}
+                    {suite.reports.length > 5 ? (
+                      <Badge variant="neutral">+{suite.reports.length - 5}</Badge>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    <Button asChild size="sm" variant="outline" className="justify-start">
+                      <Link href={suite.comparisonHref}>
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Compare
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline" className="justify-start">
+                      <Link href={suite.packHref}>
+                        <FileText className="h-3.5 w-3.5" />
+                        Pack
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
+                      <Link href={suite.automationHref}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Autopilot
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
+                      <Link href={suite.deliveryHref}>
+                        <Send className="h-3.5 w-3.5" />
+                        Delivery
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="justify-start"
+                      disabled={
+                        !selectedCompanyId ||
+                        queueReportDeliverySubscription.isPending ||
+                        isSuiteDeliveryPaused
+                      }
+                      onClick={() =>
+                        queueReportDeliverySubscriptionWithHandoffGuard(
+                          suite.deliverySubscriptionId
+                        )
+                      }
+                      data-testid={`report-suite-queue-delivery-${suite.id}`}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {suiteQueueLabel}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section
+        className="space-y-4"
+        aria-labelledby="report-management-briefs-title"
+        data-testid="report-management-briefs"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-management-briefs-title" className="text-xl font-semibold">
+              Management pack briefs
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Advisory-ready KPI, narrative, dimensional, and delivery context for each role.{" "}
+              {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportManagementBriefSummaries.length} briefs
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleReportManagementBriefSummaries.map((brief) => {
+            const WorkspaceIcon = brief.workspace.icon;
+
+            return (
+              <Card
+                key={brief.id}
+                id={`report-management-brief-${brief.id}`}
+                data-testid={`report-management-brief-${brief.id}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{brief.title}</CardTitle>
+                        <CardDescription>{brief.audience}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={brief.readyCount === brief.reports.length ? "success" : "warning"}
+                      dot
+                    >
+                      {brief.readyCount}/{brief.reports.length}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm leading-relaxed text-muted-foreground">{brief.outcome}</p>
+
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">KPIs</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {brief.kpiMetricIds.length}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Narratives</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {brief.narrativeSections.length}
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-2">
+                      <div className="text-muted-foreground">Dimensions</div>
+                      <div className="mt-1 font-mono text-base font-semibold">
+                        {brief.dimensionBreakdowns.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      KPI widgets
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {brief.kpiWidgets.map((widget) => (
+                        <div
+                          key={widget.id}
+                          className="rounded-md border p-2 text-xs"
+                          data-testid={`report-management-brief-kpi-${widget.id}`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium text-foreground">{widget.label}</div>
+                            <Badge variant="outline">{widget.display}</Badge>
+                          </div>
+                          <div className="mt-1 text-muted-foreground">{widget.question}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Narrative sections
+                    </div>
+                    {brief.narrativeSections.map((section) => (
+                      <div
+                        key={section.id}
+                        className="rounded-md border p-3"
+                        data-testid={`report-management-brief-narrative-${section.id}`}
+                      >
+                        <div className="text-sm font-medium text-foreground">{section.title}</div>
+                        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {section.prompt}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="outline">{section.sourceReportIds.length} reports</Badge>
+                          <Badge variant="outline">
+                            {section.comparisonMetricIds.length} metrics
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                      Dimensional lenses
+                    </div>
+                    <div className="grid gap-2">
+                      {brief.dimensionBreakdowns.map((dimension) => (
+                        <div
+                          key={dimension.id}
+                          className="rounded-md bg-muted/30 p-2 text-xs"
+                          data-testid={`report-management-brief-dimension-${dimension.id}`}
+                        >
+                          <div className="font-medium text-foreground">{dimension.label}</div>
+                          <div className="mt-1 text-muted-foreground">
+                            {dimension.dimension} · {dimension.question}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {brief.batchAction ? (
+                    <div
+                      className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs"
+                      data-testid={`report-management-brief-batch-${brief.id}`}
+                    >
+                      <div className="font-medium text-foreground">{brief.batchAction.label}</div>
+                      <div className="mt-1 text-muted-foreground">{brief.batchAction.detail}</div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <Link href={brief.href}>
+                        Open brief <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={brief.suiteHref}>Open suite</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={brief.deliveryHref}>Open delivery</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-quick-access-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-quick-access-title" className="text-xl font-semibold">
+              Quick access reports
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Role-specific launch boards for the reports, comparison, autopilot, and delivery pack
+              each workspace needs most often.
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportQuickAccessSummaries.length} boards
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3" data-testid="report-quick-access">
+          {visibleReportQuickAccessSummaries.map((profile) => {
+            const WorkspaceIcon = profile.workspace.icon;
+
+            return (
+              <Card
+                key={profile.id}
+                id={`report-quick-access-${profile.id}`}
+                data-testid={`report-quick-access-${profile.persona}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">{profile.title}</CardTitle>
+                        <CardDescription>{profile.outcome}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        profile.readyCount === profile.reports.length ? "success" : "warning"
+                      }
+                      dot
+                    >
+                      {profile.readyCount}/{profile.reports.length}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-2">
+                    {profile.primaryReports.map(
+                      ({ report, href, workflowHref, comparisonHref, deliveryHref }) => (
+                        <div
+                          key={report.id}
+                          className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
+                          data-testid={`report-quick-access-report-${report.id}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">
+                              {report.name}
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {report.category} · {report.comparison}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                              <Link href={href}>Open</Link>
+                            </Button>
+                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                              <Link
+                                href={workflowHref}
+                                data-testid={`report-quick-access-report-automation-${report.id}`}
+                              >
+                                Automate
+                              </Link>
+                            </Button>
+                            {comparisonHref ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={comparisonHref}
+                                  data-testid={`report-quick-access-report-comparison-${report.id}`}
+                                >
+                                  Compare
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {deliveryHref ? (
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link
+                                  href={deliveryHref}
+                                  data-testid={`report-quick-access-report-delivery-${report.id}`}
+                                >
+                                  Schedule
+                                </Link>
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {profile.additionalReports.length > 0 ? (
+                    <div
+                      className="rounded-md border bg-muted/20 p-3"
+                      data-testid={`report-quick-access-more-${profile.persona}`}
+                    >
+                      <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+                        More reports
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {profile.additionalReports.map(({ report, href }) => (
+                          <Button
+                            key={report.id}
+                            asChild
+                            size="sm"
+                            variant="secondary"
+                            className="h-7 max-w-full justify-start px-2"
+                          >
+                            <Link href={href}>
+                              <span className="truncate">{report.name}</span>
+                            </Link>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+                    <Button asChild size="sm" variant="outline" className="h-auto justify-start">
+                      <Link href={profile.comparisonHref}>
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Comparison
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline" className="h-auto justify-start">
+                      <Link href={profile.automationHref}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Autopilot
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline" className="h-auto justify-start">
+                      <Link href={profile.deliveryHref}>
+                        <Send className="h-3.5 w-3.5" />
+                        Delivery
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-saved-views-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-saved-views-title" className="text-xl font-semibold">
+              Saved report views
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Prebuilt report-view presets with date range, comparison period, basis, currency,
+              dimension, export format, and automation trigger.
+            </p>
+          </div>
+          <Badge variant="info" dot>
+            {visibleReportSavedViewSummaries.length} views
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="report-saved-views">
+          {visibleReportSavedViewSummaries.map((view) => (
+            <Card
+              key={view.id}
+              id={`report-saved-view-${view.id}`}
+              data-testid={`report-saved-view-${view.id}`}
+            >
+              <CardHeader className="space-y-3 pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <CardTitle className="text-base font-semibold">{view.title}</CardTitle>
+                    <CardDescription>{view.description}</CardDescription>
+                  </div>
+                  <Badge variant="info" className="capitalize">
+                    {view.persona}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
+                  {[
+                    ["Date range", view.dateRangePreset],
+                    ["Comparison", view.comparisonPeriod],
+                    ["Basis", view.basis],
+                    ["Currency", view.currency],
+                    ["Dimension", view.dimension],
+                    ["Export", view.exportFormat],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-md border p-2">
+                      <div className="text-muted-foreground">{label}</div>
+                      <div className="mt-1 truncate font-medium text-foreground">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-md bg-muted/30 p-3 text-xs leading-relaxed">
+                  <div className="font-medium text-foreground">{view.report.name}</div>
+                  <div className="mt-1 text-muted-foreground">{view.automationTrigger}</div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={view.reportHref}>Open report</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={view.comparisonHref}>Open comparison</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="ghost" className="text-accent">
+                    <Link
+                      href={view.workflowHref}
+                      data-testid={`report-saved-view-automation-${view.id}`}
+                    >
+                      Open automation <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section
+        className="space-y-4"
+        aria-labelledby="report-accountant-handoff-title"
+        data-testid="report-accountant-handoff"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-accountant-handoff-title" className="text-xl font-semibold">
+              Accountant handoff
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Share role-specific report context, readiness status, and the next automation action
+              without rebuilding the workspace view.
+            </p>
+          </div>
+          <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
+            {reportAutomationOperationsNeedingReview > 0
+              ? `${reportAutomationOperationsNeedingReview} handoffs need action`
+              : "Handoffs ready"}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {reportAccountantHandoffSummaries.map((item) => (
+            <Card
+              key={item.workspace.persona}
+              data-testid={`report-accountant-handoff-${item.workspace.persona}`}
+            >
+              <CardHeader className="space-y-3 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardTitle className="truncate text-base font-semibold">
+                      {item.workspace.navLabel}
+                    </CardTitle>
+                    <CardDescription>{item.workspace.automationOutcome}</CardDescription>
+                  </div>
+                  <Badge variant={item.statusVariant} dot>
+                    {item.status}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-md border p-2">
+                    <div className="text-muted-foreground">Reports</div>
+                    <div className="mt-1 font-mono font-semibold text-foreground">
+                      {item.readyReportCount}/{item.reportCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <div className="text-muted-foreground">Rules</div>
+                    <div className="mt-1 font-mono font-semibold text-foreground">
+                      {item.readyRuleCount}/{item.automationRuleCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <div className="text-muted-foreground">Delivery</div>
+                    <div className="mt-1 font-mono font-semibold text-foreground">
+                      {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-muted/30 p-3 text-xs leading-relaxed">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{item.priorityGapLabel}</span>
+                    <Badge variant={item.nextAction.badgeVariant}>{item.nextAction.badge}</Badge>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{item.nextAction.detail}</p>
+                  <div className="mt-2 text-muted-foreground">
+                    Amount at risk:{" "}
+                    <span className="font-mono text-foreground">
+                      {formatCurrency(item.amountAtRisk, "AED", locale)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={item.shareHref}
+                      data-testid={`report-accountant-handoff-share-${item.workspace.persona}`}
+                    >
+                      Open shared view
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={item.gapHref}
+                      data-testid={`report-accountant-handoff-gap-${item.workspace.persona}`}
+                    >
+                      {item.priorityGap ? "Review gap" : "Open finder"}
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="ghost" className="text-accent">
+                    <Link
+                      href={item.nextAction.href}
+                      data-testid={`report-accountant-handoff-action-${item.workspace.persona}`}
+                    >
+                      Next action
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </section>
 
       <section
@@ -6900,47 +12069,63 @@ export default function Reports() {
         {reportWorkflowFinderResults.length > 0 ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {reportWorkflowFinderResults.map((result) => (
-              <Link key={result.id} href={result.href}>
-                <div
-                  className="rounded-md border border-border/70 p-4 transition-colors hover:bg-accent/5"
-                  data-testid={`report-workflow-finder-result-${result.id}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={result.badgeVariant}>{result.type}</Badge>
-                        {result.persona ? (
-                          <Badge variant="outline" className="capitalize">
-                            {result.persona}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 truncate text-sm font-semibold text-foreground">
-                        {result.title}
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                        {result.description}
-                      </p>
+              <div
+                key={result.id}
+                className="rounded-md border border-border/70 p-4 transition-colors hover:bg-accent/5"
+                data-testid={`report-workflow-finder-result-${result.id}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={result.badgeVariant}>{result.type}</Badge>
+                      {result.persona ? (
+                        <Badge variant="outline" className="capitalize">
+                          {result.persona}
+                        </Badge>
+                      ) : null}
                     </div>
-                  </div>
-                  <div className="mt-3 truncate text-xs text-muted-foreground">{result.meta}</div>
-                  <div
-                    className="mt-3 flex flex-wrap gap-1.5"
-                    data-testid={`report-workflow-coverage-${result.id}`}
-                  >
-                    {result.coverageCues.map((cue) => (
-                      <Badge
-                        key={cue.id}
-                        variant={cue.variant}
-                        title={cue.detail}
-                        data-testid={`report-workflow-coverage-${result.id}-${cue.id}`}
-                      >
-                        {cue.label}
-                      </Badge>
-                    ))}
+                    <div className="mt-2 truncate text-sm font-semibold text-foreground">
+                      {result.title}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      {result.description}
+                    </p>
                   </div>
                 </div>
-              </Link>
+                <div className="mt-3 truncate text-xs text-muted-foreground">{result.meta}</div>
+                <div
+                  className="mt-3 flex flex-wrap gap-1.5"
+                  data-testid={`report-workflow-coverage-${result.id}`}
+                >
+                  {result.coverageCues.map((cue) => (
+                    <Badge
+                      key={cue.id}
+                      variant={cue.variant}
+                      title={cue.detail}
+                      data-testid={`report-workflow-coverage-${result.id}-${cue.id}`}
+                    >
+                      {cue.label}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={result.href}
+                      data-testid={`report-workflow-finder-result-open-${result.id}`}
+                    >
+                      Open
+                    </Link>
+                  </Button>
+                  {result.actionLinks?.map((action) => (
+                    <Button key={action.testId} asChild size="sm" variant="outline">
+                      <Link href={action.href} data-testid={action.testId}>
+                        {action.label}
+                      </Link>
+                    </Button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         ) : (
@@ -7001,7 +12186,7 @@ export default function Reports() {
             <div className="text-xs text-muted-foreground">Pack templates</div>
             <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.packTemplates}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.deliverySubscriptions} delivery subscriptions
+              {reportStats.reportSuites} suites · {reportStats.deliverySubscriptions} delivery
             </div>
           </div>
           <div className="rounded-md border p-3">
@@ -7009,7 +12194,9 @@ export default function Reports() {
             <div className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.comparisonPresets}
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">Current-vs-prior review paths</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {reportStats.quickAccessProfiles} quick boards · current-vs-prior paths
+            </div>
           </div>
           <div className="rounded-md border p-3">
             <div className="text-xs text-muted-foreground">Automation starters</div>
@@ -7017,7 +12204,8 @@ export default function Reports() {
               {reportStats.automationStarters}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.automationPlaybooks} playbooks
+              {reportStats.automationPlaybooks} playbooks · {reportStats.automationImpactProfiles}{" "}
+              impact profiles
             </div>
           </div>
         </div>
@@ -7071,6 +12259,201 @@ export default function Reports() {
                   </div>
                 </div>
               </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-role-setup-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-role-setup-title" className="text-xl font-semibold">
+              Role setup paths
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              First-run checklists for owners, solo entrepreneurs, freelancers, and accountants to
+              move from report review into automated delivery. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="outline">
+            {visibleWorkspaceSummaries.reduce(
+              (total, workspace) => total + workspace.setupStepCount,
+              0
+            )}{" "}
+            steps
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleWorkspaceSummaries.map((workspace) => (
+            <Card key={workspace.persona} data-testid={`report-role-setup-${workspace.persona}`}>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base font-semibold">{workspace.navLabel}</CardTitle>
+                    <CardDescription>{workspace.automationOutcome}</CardDescription>
+                  </div>
+                  <Badge variant="info">{workspace.setupStepCount} steps</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {workspace.setupChecklist.map((step, index) => (
+                  <Link key={step.id} href={step.href}>
+                    <div
+                      className="rounded-md border p-3 transition-colors hover:bg-accent/5"
+                      data-testid={`report-role-setup-step-${step.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{step.title}</div>
+                          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {step.outcome}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <Badge variant="outline">{step.reports.length} reports</Badge>
+                            <Badge variant="outline">{step.command}</Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section
+        className="space-y-4"
+        aria-labelledby="report-role-workflows-title"
+        data-testid="report-role-workflows"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-role-workflows-title" className="text-xl font-semibold">
+              Role workflow checklist
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Recurring report routines for owner, freelancer, and accountant workspaces after the
+              first setup path is complete. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info">
+            {visibleWorkspaceSummaries.reduce(
+              (total, workspace) => total + workspace.workflowStepCount,
+              0
+            )}{" "}
+            workflows
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          {visibleWorkspaceSummaries.map((workspace) => {
+            const WorkspaceIcon = workspace.icon;
+
+            return (
+              <Card
+                key={workspace.persona}
+                data-testid={`report-role-workflows-${workspace.persona}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold">
+                          {workspace.navLabel}
+                        </CardTitle>
+                        <CardDescription>{workspace.focus}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{workspace.workflowStepCount} workflows</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {workspace.workflowSteps.map((step, index) => (
+                    <div
+                      key={step.id}
+                      id={`report-role-workflow-step-${step.id}`}
+                      className="rounded-md border p-3"
+                      data-testid={`report-role-workflow-step-${step.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-foreground">
+                                {step.title}
+                              </div>
+                              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {step.outcome}
+                              </div>
+                            </div>
+                            <Badge variant="neutral">{step.cadence}</Badge>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant="outline">{step.reports.length} reports</Badge>
+                            {step.reportSuite ? (
+                              <Badge variant="outline">{step.reportSuite.workflow}</Badge>
+                            ) : null}
+                            {step.savedView ? (
+                              <Badge variant="outline">{step.savedView.dateRangePreset}</Badge>
+                            ) : null}
+                          </div>
+
+                          <div
+                            className="grid grid-cols-1 gap-2 rounded-md bg-secondary/30 p-2 text-xs md:grid-cols-2"
+                            data-testid={`report-role-workflow-defaults-${step.id}`}
+                          >
+                            <div>
+                              <div className="font-medium text-foreground">Default view</div>
+                              <Link
+                                href={step.defaultViewHref}
+                                className="mt-1 block text-muted-foreground hover:text-primary"
+                              >
+                                {step.defaultViewLabel}
+                              </Link>
+                            </div>
+                            <div>
+                              <div className="font-medium text-foreground">Handoff guardrail</div>
+                              <div className="mt-1 text-muted-foreground">
+                                {step.handoffGuardrail}
+                              </div>
+                              <div className="mt-1 text-muted-foreground">
+                                Recipients: {step.handoffRecipients}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button asChild size="sm">
+                              <Link href={step.href}>
+                                {step.primaryAction} <ArrowRight className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={step.automationHref}>Open automation</Link>
+                            </Button>
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={step.deliveryHref}>Open delivery</Link>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
             );
           })}
         </div>
@@ -7231,6 +12614,169 @@ export default function Reports() {
         )}
       </section>
 
+      <section className="space-y-4" aria-labelledby="report-automation-impact-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-automation-impact-title" className="text-xl font-semibold">
+              Automation impact
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Estimated monthly work removed by ready report rules, scheduled packs, and linked
+              automation starters. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge
+            variant={reportAutomationImpactTotals.reviewItemCount > 0 ? "warning" : "success"}
+            dot
+          >
+            {reportAutomationImpactTotals.estimatedMonthlyHoursSaved} hrs saved/mo
+          </Badge>
+        </div>
+
+        {reportAutomationOperationsLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <div
+            className="grid grid-cols-1 gap-3 xl:grid-cols-3"
+            data-testid="report-automation-impact"
+          >
+            {visibleReportAutomationImpactSummaries.map((item) => {
+              const workspace = item.workspace;
+              const WorkspaceIcon = workspace.icon;
+              const impactVariant =
+                item.estimate.status === "compounding"
+                  ? "success"
+                  : item.estimate.status === "review"
+                    ? "warning"
+                    : "neutral";
+
+              return (
+                <Card
+                  key={workspace.persona}
+                  data-testid={`report-automation-impact-${workspace.persona}`}
+                >
+                  <CardHeader className="space-y-3 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                          <WorkspaceIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-semibold">
+                            {item.profile.title}
+                          </CardTitle>
+                          <CardDescription>{item.profile.outcome}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={impactVariant} dot>
+                        {item.estimate.statusLabel}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Hours saved</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.estimate.estimatedMonthlyHoursSaved}
+                        </div>
+                        <div className="mt-1 text-muted-foreground">estimated / month</div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Automated items</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.estimate.estimatedAutomatedItemCount}
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          {item.profile.itemUnitLabel}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Coverage</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {item.estimate.coverageScore}%
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          {item.triggerRules.length} trigger rules
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Amount watched</div>
+                        <div className="mt-1 truncate font-mono text-sm font-semibold">
+                          {formatCurrency(item.estimate.amountAtRisk, "AED", locale)}
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          {item.estimate.reviewItemCount} review items
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-3 text-xs">
+                      <div className="font-medium text-foreground">
+                        {item.profile.manualWorkLabel}
+                      </div>
+                      <p className="mt-1 text-muted-foreground">{item.estimate.summary}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      {item.profile.evidence.map((evidence) => (
+                        <div key={evidence.label} className="rounded-md bg-muted/30 p-2 text-xs">
+                          <div className="font-medium text-foreground">{evidence.label}</div>
+                          <div className="mt-1 text-muted-foreground">{evidence.detail}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Outcome signals
+                      </div>
+                      {item.profile.outcomeSignals.map((signal) => (
+                        <div
+                          key={signal.id}
+                          className="rounded-md border p-2 text-xs"
+                          data-testid={`report-automation-outcome-signal-${signal.id}`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium text-foreground">{signal.label}</div>
+                            <Badge variant="info">Proxy</Badge>
+                          </div>
+                          <div className="mt-1 text-muted-foreground">{signal.currentProxy}</div>
+                          <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
+                            Missing counter: {signal.missingCounter}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">{signal.guardrail}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {item.reports.slice(0, 4).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {item.reports.length > 4 ? (
+                        <Badge variant="neutral">+{item.reports.length - 4}</Badge>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={item.commandCenterHref}>Open command center</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={item.starterHref}>Open autopilot</Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4" aria-labelledby="decision-shortcuts-title">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -7327,7 +12873,12 @@ export default function Reports() {
                       <Link href={shortcut.comparisonHref}>Open comparison</Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={shortcut.automationHref}>Open automation</Link>
+                      <Link
+                        href={shortcut.workflowHref}
+                        data-testid={`report-decision-shortcut-automation-${shortcut.id}`}
+                      >
+                        Open automation
+                      </Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -7354,7 +12905,7 @@ export default function Reports() {
         </div>
 
         <div
-          className="grid grid-cols-2 gap-2 text-xs lg:grid-cols-5"
+          className="grid grid-cols-2 gap-2 text-xs lg:grid-cols-6"
           data-testid="report-delivery-scheduler-health"
         >
           <div className="rounded-md border p-3">
@@ -7390,6 +12941,12 @@ export default function Reports() {
             </div>
           </div>
           <div className="rounded-md border p-3">
+            <div className="text-muted-foreground">Handoff skips</div>
+            <div className="mt-1 font-mono text-base font-semibold">
+              {reportDeliverySchedulerHandoffSkipCount}
+            </div>
+          </div>
+          <div className="rounded-md border p-3">
             <div className="text-muted-foreground">Actor skips</div>
             <div className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.skippedNoActor ?? 0}
@@ -7402,6 +12959,55 @@ export default function Reports() {
             </div>
           </div>
         </div>
+
+        {reportDeliverySchedulerHandoffReviews.length > 0 ? (
+          <div
+            className="rounded-md border border-warning/40 bg-warning/5 p-3"
+            data-testid="report-delivery-scheduler-handoff-skips"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  Scheduled sends held for handoff
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  These due report packs were not auto-sent because the latest scheduler scan found
+                  unresolved handoff gaps.
+                </p>
+              </div>
+              <Badge variant="warning" dot>
+                {reportDeliverySchedulerHandoffReviews.length} held
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {reportDeliverySchedulerHandoffReviews.slice(0, 3).map((review) => (
+                <div
+                  key={`${review.subscriptionId}-${review.latestRunId ?? review.gap}`}
+                  className="flex flex-col gap-2 rounded-md bg-background/70 p-2 text-xs sm:flex-row sm:items-start sm:justify-between"
+                  data-testid={`report-delivery-scheduler-handoff-${review.subscriptionId}`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{review.title}</span>
+                      <Badge variant="warning">{review.gapLabel}</Badge>
+                    </div>
+                    <div className="mt-1 text-muted-foreground">{review.detail}</div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                      <Link href={review.href}>
+                        Open handoff <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                      <Link href={review.subscriptionHref}>Open delivery</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {automationLoading ? (
           <Skeleton className="h-56 w-full" />
@@ -7653,12 +13259,12 @@ export default function Reports() {
           persona={reportDeliveryLauncherPersona}
           mode="delivery"
           onQueueDeliverySubscription={(subscriptionId) =>
-            queueReportDeliverySubscription.mutate(subscriptionId)
+            queueReportDeliverySubscriptionWithHandoffGuard(subscriptionId)
           }
           onRetryDeliveryRun={(runId) => retryReportDeliveryRun.mutate(runId)}
           queueingDeliverySubscriptionId={
             queueReportDeliverySubscription.isPending
-              ? (queueReportDeliverySubscription.variables ?? null)
+              ? (queueReportDeliverySubscription.variables?.subscriptionId ?? null)
               : null
           }
           retryingDeliveryRunId={
@@ -7925,11 +13531,13 @@ export default function Reports() {
                   const subscriptionId =
                     reportDeliveryAutomationCommandTargets.queueSubscription?.id;
                   if (!subscriptionId) return;
-                  queueReportDeliverySubscription.mutate(subscriptionId);
+                  queueReportDeliverySubscriptionWithHandoffGuard(subscriptionId);
                 }}
                 data-testid="report-delivery-command-queue"
               >
-                Queue pack
+                {commandQueueSubscriptionRequiresHandoffAcknowledgement
+                  ? "Acknowledge handoff"
+                  : "Queue pack"}
               </Button>
             </div>
 
@@ -8088,6 +13696,13 @@ export default function Reports() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {visibleReportDeliverySubscriptions.map((subscription) => {
               const WorkspaceIcon = subscription.workspace.icon;
+              const subscriptionHandoffRows =
+                reportDeliveryHandoffPreviewByPersona[subscription.persona] ??
+                subscription.preview.handoffRows ??
+                [];
+              const subscriptionRequiresHandoffAcknowledgement =
+                subscriptionHandoffRows.some((row) => row.status === "review") &&
+                !isReportDeliveryHandoffAcknowledged(subscription.id);
               const isEditingDeliverySettings =
                 editingReportDeliverySubscriptionId === subscription.id;
               const isSavingThisDeliverySubscription =
@@ -8147,7 +13762,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                       <div className="rounded-md border p-3">
                         <div className="text-muted-foreground">Next delivery</div>
                         <div className="mt-1 font-medium text-foreground">
@@ -8160,6 +13775,12 @@ export default function Reports() {
                         <div className="text-muted-foreground">Settings</div>
                         <div className="mt-1 font-medium capitalize text-foreground">
                           {subscription.settingsSource}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Suite</div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {subscription.reportSuites[0]?.title ?? "Not linked"}
                         </div>
                       </div>
                     </div>
@@ -8355,6 +13976,18 @@ export default function Reports() {
                           </Badge>
                         ) : null}
                       </div>
+                      {subscription.preview.suiteTitles.length > 0 ? (
+                        <div
+                          className="mt-3 flex flex-wrap gap-1"
+                          data-testid={`report-delivery-preview-suites-${subscription.id}`}
+                        >
+                          {subscription.preview.suiteTitles.map((suiteTitle) => (
+                            <Badge key={suiteTitle} variant="info">
+                              {suiteTitle}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="mt-3 grid gap-2">
                         {subscription.preview.checklist.slice(0, 3).map((check) => (
                           <div
@@ -8371,6 +14004,37 @@ export default function Reports() {
                           </div>
                         ))}
                       </div>
+                      {subscriptionHandoffRows.length ? (
+                        <div
+                          className="mt-3 grid gap-2"
+                          data-testid={`report-delivery-preview-handoff-${subscription.id}`}
+                        >
+                          {subscriptionHandoffRows.slice(0, 3).map((row) => (
+                            <div
+                              key={row.label}
+                              className="flex items-start justify-between gap-2 rounded-md bg-muted/30 p-2"
+                            >
+                              <div>
+                                <div className="font-medium text-foreground">{row.label}</div>
+                                <div className="mt-0.5 text-muted-foreground">
+                                  {row.value} - {row.detail}
+                                </div>
+                              </div>
+                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                                <Link href={row.href}>Open</Link>
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {subscriptionRequiresHandoffAcknowledgement ? (
+                        <Badge
+                          variant="warning"
+                          data-testid={`report-delivery-handoff-acknowledgement-${subscription.id}`}
+                        >
+                          Acknowledge handoff gaps before queueing
+                        </Badge>
+                      ) : null}
                     </div>
 
                     <div
@@ -8487,9 +14151,13 @@ export default function Reports() {
                           !subscription.enabled ||
                           queueReportDeliverySubscription.isPending
                         }
-                        onClick={() => queueReportDeliverySubscription.mutate(subscription.id)}
+                        onClick={() =>
+                          queueReportDeliverySubscriptionWithHandoffGuard(subscription.id)
+                        }
                       >
-                        Queue delivery
+                        {subscriptionRequiresHandoffAcknowledgement
+                          ? "Acknowledge handoff"
+                          : "Queue delivery"}
                       </Button>
                       {!isEditingDeliverySettings ? (
                         <Button
@@ -8524,6 +14192,11 @@ export default function Reports() {
                       <Button asChild size="sm" variant="outline">
                         <Link href={subscription.packTemplateHref}>Open pack</Link>
                       </Button>
+                      {subscription.reportSuites[0] ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={subscription.reportSuites[0].href}>Open suite</Link>
+                        </Button>
+                      ) : null}
                       <Button asChild size="sm" variant="outline">
                         <Link href={subscription.automationStarterHref}>Open automation</Link>
                       </Button>
@@ -8625,6 +14298,201 @@ export default function Reports() {
             })}
           </div>
         )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="report-product-depth-title">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="report-product-depth-title" className="text-xl font-semibold">
+              Reporting workflow map
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Open the reporting work that is ready, being hardened, or waiting on deeper accounting
+              evidence. {personaScopeDescription}
+            </p>
+          </div>
+          <Badge variant="info" dot data-testid="report-product-depth-count">
+            {visibleReportProductDepthSubgoalCount} subgoals
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {visibleReportProductDepthAreas.map((area) => {
+            const areaStatus = productDepthStatusMeta[area.status];
+
+            return (
+              <Card
+                key={area.id}
+                id={`report-product-depth-${area.id}`}
+                data-testid={`report-product-depth-${area.id}`}
+              >
+                <CardHeader className="space-y-3 pb-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle className="text-base font-semibold">{area.title}</CardTitle>
+                      <CardDescription>{area.objective}</CardDescription>
+                    </div>
+                    <Badge variant={areaStatus.variant} dot>
+                      {areaStatus.label}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {area.subgoals.map((subgoal) => {
+                    const subgoalStatus = productDepthStatusMeta[subgoal.status];
+
+                    return (
+                      <div
+                        key={subgoal.id}
+                        id={`report-product-depth-subgoal-${subgoal.id}`}
+                        data-testid={`report-product-depth-subgoal-${subgoal.id}`}
+                        className="rounded-md border p-3"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-medium">{subgoal.title}</div>
+                              <Badge variant={subgoalStatus.variant} dot>
+                                {subgoalStatus.label}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{subgoal.outcome}</p>
+                            <div className="text-xs text-muted-foreground">{subgoal.evidence}</div>
+                            {subgoal.dataDependency ? (
+                              <div className="rounded-md bg-secondary/40 p-2 text-xs text-muted-foreground">
+                                {subgoal.dataDependency}
+                              </div>
+                            ) : null}
+                          </div>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={subgoal.href}>Open workflow</Link>
+                          </Button>
+                        </div>
+
+                        {subgoal.sourceDrilldownTargets?.length ? (
+                          <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                            {subgoal.sourceDrilldownTargets.map((target) => (
+                              <div
+                                key={target.id}
+                                data-testid={`report-source-drilldown-target-${target.id}`}
+                                className="rounded-md border bg-secondary/20 p-3"
+                              >
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-medium">{target.title}</div>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {target.availableEvidence}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    asChild
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 shrink-0 px-2"
+                                  >
+                                    <Link href={target.href}>Open target</Link>
+                                  </Button>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  <Badge variant="outline">{target.reportIds.length} reports</Badge>
+                                  {target.sourceEntities.slice(0, 3).map((entity) => (
+                                    <Badge key={entity} variant="neutral">
+                                      {entity}
+                                    </Badge>
+                                  ))}
+                                </div>
+                                <div className="mt-2 rounded-md bg-background/60 p-2 text-xs text-muted-foreground">
+                                  {target.universalLinkGap}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {subgoal.evidenceCheckpoints?.length ? (
+                          <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+                            {subgoal.evidenceCheckpoints.map((checkpoint) => {
+                              const checkpointStatus =
+                                productDepthEvidenceCheckpointStatusMeta[checkpoint.status];
+
+                              return (
+                                <div
+                                  key={checkpoint.id}
+                                  data-testid={`report-evidence-checkpoint-${checkpoint.id}`}
+                                  className="rounded-md border bg-secondary/20 p-2"
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-xs font-medium">{checkpoint.label}</div>
+                                    <Badge variant={checkpointStatus.variant} dot>
+                                      {checkpointStatus.label}
+                                    </Badge>
+                                  </div>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {checkpoint.detail}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
+                        {subgoal.requiredSourceRecords?.length ? (
+                          <div className="mt-3 space-y-2">
+                            <div className="text-xs font-medium uppercase text-muted-foreground">
+                              Required source records
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                              {subgoal.requiredSourceRecords.map((record) => (
+                                <div
+                                  key={record.id}
+                                  className="rounded-md border p-2 text-xs"
+                                  data-testid={`report-required-source-record-${record.id}`}
+                                >
+                                  <div className="font-medium text-foreground">{record.label}</div>
+                                  <div className="mt-1 text-muted-foreground">
+                                    {record.systemOfRecord}
+                                  </div>
+                                  <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
+                                    Unlocks: {record.unlocks}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          <Badge variant="outline">{subgoal.reportIds.length} reports</Badge>
+                          <Badge variant="outline">
+                            {subgoal.comparisonPresetIds.length} comparisons
+                          </Badge>
+                          <Badge variant="outline">
+                            {subgoal.automationStarterIds.length} automations
+                          </Badge>
+                          <Badge variant="outline">
+                            {subgoal.deliverySubscriptionIds.length} deliveries
+                          </Badge>
+                          <Badge variant="outline">
+                            {subgoal.decisionShortcutIds.length} questions
+                          </Badge>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-xs text-muted-foreground">
+                            Next: {subgoal.nextAction}
+                          </div>
+                          <Button asChild size="sm" variant="ghost" className="justify-start">
+                            <Link href={area.href}>Open header</Link>
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="report-pack-readiness-title">
@@ -8866,15 +14734,19 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Current</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.currentLabel ?? "Current"}
+                      </div>
                       <div className="font-mono text-lg font-semibold">
-                        {formatCurrency(row.current, row.currency, locale)}
+                        {formatComparisonValue(row, row.current, locale)}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Previous</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.previousLabel ?? "Previous"}
+                      </div>
                       <div className="font-mono text-lg font-semibold">
-                        {formatCurrency(row.previous, row.currency, locale)}
+                        {formatComparisonValue(row, row.previous, locale)}
                       </div>
                     </div>
                   </div>
@@ -8882,7 +14754,7 @@ export default function Reports() {
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground">Movement</div>
                       <div className="truncate font-mono text-sm font-semibold">
-                        {formatCurrency(row.delta, row.currency, locale)}
+                        {formatComparisonValue(row, row.delta, locale)}
                       </div>
                     </div>
                     <Button
@@ -9429,6 +15301,50 @@ export default function Reports() {
                       )}
                     </div>
 
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium uppercase text-muted-foreground">
+                        Automation runbook
+                      </div>
+                      {rule.runbookSteps.map((step, index) => (
+                        <div
+                          key={step.id}
+                          className="rounded-md border p-3"
+                          data-testid={`automation-rule-runbook-${rule.id}-${step.phase}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold">
+                              {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium text-foreground">
+                                    {step.title}
+                                  </div>
+                                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                    {step.outcome}
+                                  </div>
+                                </div>
+                                <Badge variant="outline">{step.phase}</Badge>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                <Badge variant="outline">{step.reportIds.length} reports</Badge>
+                                <Badge variant="outline">{step.triggerRuleIds.length} rules</Badge>
+                                <Badge variant="outline">
+                                  {step.deliverySubscriptionIds.length} deliveries
+                                </Badge>
+                              </div>
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={step.href}>
+                                  {step.actionLabel} <ArrowRight className="h-3.5 w-3.5" />
+                                </Link>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
                     <Button asChild size="sm" variant="outline">
                       <Link href={rule.targetWorkflow}>{rule.playbook.cta}</Link>
                     </Button>
@@ -9588,7 +15504,12 @@ export default function Reports() {
                               ) : null}
                             </div>
                             <Button asChild size="sm" variant="outline">
-                              <Link href={reportHref(report) ?? reportWorkspaceHref(workspace)}>
+                              <Link
+                                href={
+                                  reportPersonaHref(report, workspace.persona) ??
+                                  reportWorkspaceHref(workspace)
+                                }
+                              >
                                 Open area
                               </Link>
                             </Button>
@@ -9828,7 +15749,7 @@ export default function Reports() {
                       <TableHead>Metric</TableHead>
                       <TableHead>Signal</TableHead>
                       <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Prior</TableHead>
+                      <TableHead className="text-right">Baseline</TableHead>
                       <TableHead className="text-right">Change</TableHead>
                       <TableHead>Roles</TableHead>
                       <TableHead className="text-right">Open</TableHead>
@@ -9844,14 +15765,14 @@ export default function Reports() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {formatCurrency(row.current, row.currency, locale)}
+                          {formatComparisonValue(row, row.current, locale)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {formatCurrency(row.previous, row.currency, locale)}
+                          {formatComparisonValue(row, row.previous, locale)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="font-mono font-medium">
-                            {formatCurrency(row.delta, row.currency, locale)}
+                            {formatComparisonValue(row, row.delta, locale)}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {formatComparisonPercent(row.percentChange)}
@@ -10274,6 +16195,70 @@ export default function Reports() {
           </Card>
         </div>
 
+        {favoriteReports.length > 0 ? (
+          <Card data-testid="favorite-report-shortcuts">
+            <CardHeader className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Pinned reports</CardTitle>
+                  <CardDescription>
+                    Report shortcuts saved for the current role filter and shown first in the
+                    library.
+                  </CardDescription>
+                </div>
+                <Badge variant="success" dot>
+                  {favoriteReports.length} pinned
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {favoriteReports.map((report) => {
+                  const favoritePersona =
+                    personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
+                  const openHref =
+                    reportPersonaHref(report, favoritePersona) ?? reportHref(report) ?? "/reports";
+
+                  return (
+                    <div key={report.id} className="rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{report.name}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {report.category} · {report.automation}
+                          </div>
+                        </div>
+                        <Pin className="h-4 w-4 shrink-0 text-accent" />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={openHref}>Open</Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => toggleReportFavorite(report)}
+                          data-testid={`report-favorite-shortcut-toggle-${report.id}`}
+                        >
+                          Unpin
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card data-testid="favorite-report-shortcuts-empty">
+            <CardContent className="flex flex-col gap-2 p-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <span>Pin reports from the library to keep role-specific shortcuts here.</span>
+              <Badge variant="neutral">No pinned reports</Badge>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -10378,16 +16363,45 @@ export default function Reports() {
                     <TableHead>Status</TableHead>
                     <TableHead>Comparison</TableHead>
                     <TableHead>Automation</TableHead>
-                    <TableHead className="text-right">Open</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredReports.map((report) => {
                     const status = reportStatusMeta[report.status];
+                    const isFavoriteReport = favoriteReportIdSet.has(report.id);
+                    const reportPersona =
+                      personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
+                    const context = reportActionContextByPersonaReportId.get(
+                      `${reportPersona}:${report.id}`
+                    );
+                    const localReportHref =
+                      report.href ??
+                      (report.tab
+                        ? reportsHref({ tab: report.tab, persona: reportPersona })
+                        : null);
+                    const openHref = context?.reportHref ?? localReportHref;
+                    const workflowHref =
+                      context?.workflowHref ??
+                      reportWorkflowContextHref({
+                        persona: reportPersona,
+                        tab: report.tab,
+                        search: report.name,
+                      });
+                    const comparisonHref = context?.comparisonPresets[0]?.href;
+                    const deliveryHref = context?.deliverySubscriptions[0]?.href;
+
                     return (
                       <TableRow key={report.name}>
                         <TableCell>
-                          <div className="font-medium">{report.name}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium">{report.name}</div>
+                            {isFavoriteReport ? (
+                              <Badge variant="success" dot>
+                                Pinned
+                              </Badge>
+                            ) : null}
+                          </div>
                           <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                             {report.decisionQuestion}
                           </div>
@@ -10407,27 +16421,59 @@ export default function Reports() {
                         </TableCell>
                         <TableCell>{report.comparison}</TableCell>
                         <TableCell>{report.automation}</TableCell>
-                        <TableCell className="text-right">
-                          {report.tab ? (
+                        <TableCell>
+                          <div className="flex justify-end gap-2">
                             <Button
                               type="button"
                               size="sm"
-                              variant="outline"
-                              onClick={() => setActiveTab(report.tab!)}
+                              variant={isFavoriteReport ? "default" : "outline"}
+                              aria-pressed={isFavoriteReport}
+                              onClick={() => toggleReportFavorite(report)}
+                              data-testid={`report-library-favorite-${report.id}`}
                             >
-                              Open
+                              <Pin className="h-3.5 w-3.5" />
+                              {isFavoriteReport ? "Pinned" : "Pin"}
                             </Button>
-                          ) : report.href ? (
+                            {openHref ? (
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={openHref}>
+                                  {report.status === "planned" ? "Open area" : "Open"}
+                                </Link>
+                              </Button>
+                            ) : (
+                              <Button type="button" size="sm" variant="ghost" disabled>
+                                Queued
+                              </Button>
+                            )}
                             <Button asChild size="sm" variant="outline">
-                              <Link href={report.href}>
-                                {report.status === "planned" ? "Open area" : "Open"}
+                              <Link
+                                href={workflowHref}
+                                data-testid={`report-library-automation-${report.id}`}
+                              >
+                                Automate
                               </Link>
                             </Button>
-                          ) : (
-                            <Button type="button" size="sm" variant="ghost" disabled>
-                              Queued
-                            </Button>
-                          )}
+                            {comparisonHref ? (
+                              <Button asChild size="sm" variant="outline">
+                                <Link
+                                  href={comparisonHref}
+                                  data-testid={`report-library-comparison-${report.id}`}
+                                >
+                                  Compare
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {deliveryHref ? (
+                              <Button asChild size="sm" variant="outline">
+                                <Link
+                                  href={deliveryHref}
+                                  data-testid={`report-library-delivery-${report.id}`}
+                                >
+                                  Schedule
+                                </Link>
+                              </Button>
+                            ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -13367,7 +19413,7 @@ export default function Reports() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle>Audit Trail</CardTitle>
+                  <CardTitle id="audit-trail-title">Audit Trail</CardTitle>
                   <CardDescription>{auditTrailPeriodLabel}</CardDescription>
                 </div>
                 <Button asChild size="sm" variant="outline">

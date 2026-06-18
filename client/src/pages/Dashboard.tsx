@@ -22,10 +22,15 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   reportAutomationTriggerRuleHref,
   reportAutomationTriggerRules,
+  calculateReportAutomationImpact,
   calculateReportAutomationHealth,
+  clearPreferredReportWorkflowGapFilter,
+  clearPreferredReportWorkflowSearch,
   getPreferredReportPersona,
+  getPreferredReportWorkflowGapFilter,
   getPreferredReportWorkflowSearch,
   parseReportDeliveryAutomationCommand,
+  reportAutomationImpactProfiles,
   reportAutomationPlaybookHref,
   reportAutomationStarterHref,
   reportAutomationStarters,
@@ -36,16 +41,26 @@ import {
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
-  reportHref,
   reportPackTemplateHref,
   reportPackTemplates,
+  reportPersonaHref,
   reportPersonaWorkspaces,
+  reportQuickAccessProfiles,
+  reportSavedViewHref,
+  reportSavedViewProfiles,
   reportSectionHref,
+  reportSuiteHref,
+  reportSuiteProfiles,
+  reportWorkflowContextHref,
+  reportWorkflowGapFilterLabels,
   reportsHref,
   reportWorkspaceHref,
+  reportWorkflowFinderGapHref,
   setPreferredReportPersona,
+  setPreferredReportWorkflowGapFilter,
   type ReportDeliveryAutomationCommand,
   type ReportPersona,
+  type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import {
   TrendingUp,
@@ -61,6 +76,7 @@ import {
   BarChart3,
   ArrowUpRight,
   Coins,
+  X,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -547,15 +563,27 @@ function CustomerDashboard() {
   const [preferredReportPersona, setDashboardReportPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
   );
+  const [reportWorkflowPreferenceRevision, setReportWorkflowPreferenceRevision] = useState(0);
+  const [
+    acknowledgedDashboardReportDeliveryHandoffGaps,
+    setAcknowledgedDashboardReportDeliveryHandoffGaps,
+  ] = useState<Record<string, true>>({});
   const preferredReportWorkspace = useMemo(() => {
     return (
       reportPersonaWorkspaces.find((workspace) => workspace.persona === preferredReportPersona) ??
       reportPersonaWorkspaces[0]
     );
   }, [preferredReportPersona]);
+  useEffect(() => {
+    setAcknowledgedDashboardReportDeliveryHandoffGaps({});
+  }, [preferredReportWorkspace.persona, selectedCompanyId]);
   const preferredReportWorkflowSearch = useMemo(
     () => getPreferredReportWorkflowSearch(preferredReportWorkspace.persona).trim(),
-    [preferredReportWorkspace.persona]
+    [preferredReportWorkspace.persona, reportWorkflowPreferenceRevision]
+  );
+  const preferredReportWorkflowGapFilter = useMemo(
+    () => getPreferredReportWorkflowGapFilter(preferredReportWorkspace.persona),
+    [preferredReportWorkspace.persona, reportWorkflowPreferenceRevision]
   );
   const normalizedPreferredReportWorkflowSearch = preferredReportWorkflowSearch.toLowerCase();
   const reportCatalogDiscoveryQuery = useQuery<ReportCatalogDiscovery>({
@@ -564,6 +592,13 @@ function CustomerDashboard() {
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  const dashboardReportActionContextById = useMemo(() => {
+    return new Map(
+      (reportCatalogDiscoveryQuery.data?.reportActionContexts ?? [])
+        .filter((context) => context.persona === preferredReportWorkspace.persona)
+        .map((context) => [context.reportId, context])
+    );
+  }, [preferredReportWorkspace.persona, reportCatalogDiscoveryQuery.data?.reportActionContexts]);
   const reportAutomationPreferencesQuery = useQuery<{
     preferences: DashboardReportAutomationPreference[];
   }>({
@@ -593,7 +628,7 @@ function CustomerDashboard() {
           ? selectedReportPersonaSummary
           : null;
       const totalReports = syncedSummary?.reportCount ?? reports.length;
-      const readyReportCount = syncedSummary?.liveReportCount ?? readyReports;
+      const readyReportCount = syncedSummary?.readyReportCount ?? readyReports;
       return {
         ...workspace,
         readyReports: readyReportCount,
@@ -610,6 +645,11 @@ function CustomerDashboard() {
   const selectDashboardReportPersona = (persona: ReportPersona) => {
     setPreferredReportPersona(persona);
     setDashboardReportPersona(persona);
+  };
+  const clearDashboardReportWorkflowContext = () => {
+    clearPreferredReportWorkflowSearch(preferredReportWorkspace.persona);
+    clearPreferredReportWorkflowGapFilter(preferredReportWorkspace.persona);
+    setReportWorkflowPreferenceRevision((revision) => revision + 1);
   };
   const preferredWorkspaceCatalogReports = useMemo(() => {
     return reportCatalog.filter((report) =>
@@ -638,6 +678,175 @@ function CustomerDashboard() {
       .map(({ report }) => report)
       .slice(0, 4);
   }, [normalizedPreferredReportWorkflowSearch, preferredWorkspaceCatalogReports]);
+  const preferredReportQuickAccess = useMemo(() => {
+    const profile =
+      reportQuickAccessProfiles.find((item) => item.persona === preferredReportWorkspace.persona) ??
+      reportQuickAccessProfiles[0]!;
+    const reports = profile.reportIds
+      .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+      .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+    const reportEntries = reports.map((report) => {
+      const context = dashboardReportActionContextById.get(report.id);
+      return {
+        report,
+        context,
+        href:
+          context?.reportHref ??
+          reportPersonaHref(report, preferredReportWorkspace.persona) ??
+          reportWorkspaceHref(preferredReportWorkspace),
+        workflowHref:
+          context?.workflowHref ??
+          reportWorkflowContextHref({
+            persona: preferredReportWorkspace.persona,
+            tab: report.tab ?? preferredReportWorkspace.primaryTab,
+            search: report.name,
+          }),
+        comparisonHref: context?.comparisonPresets[0]?.href,
+        deliveryHref: context?.deliverySubscriptions[0]?.href,
+      };
+    });
+    const comparisonPreset = reportComparisonPresets.find(
+      (preset) => preset.id === profile.comparisonPresetId
+    );
+    const automationStarter = reportAutomationStarters.find(
+      (starter) => starter.id === profile.automationStarterId
+    );
+    const deliverySubscription = reportDeliverySubscriptions.find(
+      (subscription) => subscription.id === profile.deliverySubscriptionId
+    );
+
+    return {
+      profile,
+      reports,
+      primaryReports: reportEntries.slice(0, 6),
+      additionalReports: reportEntries.slice(6),
+      readyReports: reports.filter((report) => report.status !== "planned").length,
+      comparisonHref: comparisonPreset
+        ? reportComparisonPresetHref(comparisonPreset)
+        : reportSectionHref(preferredReportWorkspace, "recommendations"),
+      automationHref: automationStarter
+        ? reportAutomationStarterHref(automationStarter)
+        : reportSectionHref(preferredReportWorkspace, "automation-starters"),
+      deliveryHref: deliverySubscription
+        ? reportDeliverySubscriptionHref(deliverySubscription)
+        : reportSectionHref(preferredReportWorkspace, "delivery-subscriptions"),
+      href: reportSectionHref(preferredReportWorkspace, "quick-access"),
+    };
+  }, [dashboardReportActionContextById, preferredReportWorkspace]);
+  const preferredReportSetupSteps = useMemo(() => {
+    return preferredReportWorkspace.setupChecklist.map((step) => {
+      const reports = step.reportIds
+        .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+        .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+
+      return {
+        ...step,
+        reports,
+        href: reportSectionHref(preferredReportWorkspace, step.section),
+      };
+    });
+  }, [preferredReportWorkspace]);
+  const preferredReportSavedViews = useMemo(() => {
+    return reportSavedViewProfiles
+      .filter((view) => view.persona === preferredReportWorkspace.persona)
+      .map((view) => {
+        const report = reportCatalog.find((item) => item.id === view.reportId);
+        const comparisonPreset = reportComparisonPresets.find(
+          (preset) => preset.id === view.comparisonPresetId
+        );
+        const automationStarter = reportAutomationStarters.find(
+          (starter) => starter.id === view.automationStarterId
+        );
+        const context = report ? dashboardReportActionContextById.get(report.id) : undefined;
+
+        return {
+          ...view,
+          report,
+          comparisonPreset,
+          automationStarter,
+          href: reportSavedViewHref(view),
+          reportHref: report
+            ? (context?.reportHref ??
+              reportPersonaHref(report, preferredReportWorkspace.persona) ??
+              reportWorkspaceHref(preferredReportWorkspace))
+            : reportWorkspaceHref(preferredReportWorkspace),
+          workflowHref:
+            context?.workflowHref ??
+            (report
+              ? reportWorkflowContextHref({
+                  persona: preferredReportWorkspace.persona,
+                  tab: report.tab ?? preferredReportWorkspace.primaryTab,
+                  search: view.title,
+                })
+              : reportSectionHref(preferredReportWorkspace, "workflow-finder")),
+          comparisonHref: comparisonPreset
+            ? reportComparisonPresetHref(comparisonPreset)
+            : reportSectionHref(preferredReportWorkspace, "recommendations"),
+          automationHref: automationStarter
+            ? reportAutomationStarterHref(automationStarter)
+            : reportSectionHref(preferredReportWorkspace, "automation-starters"),
+        };
+      });
+  }, [dashboardReportActionContextById, preferredReportWorkspace]);
+  const preferredReportSuites = useMemo(() => {
+    return reportSuiteProfiles
+      .filter((suite) => suite.persona === preferredReportWorkspace.persona)
+      .map((suite) => {
+        const reports = suite.reportIds
+          .map((reportId) => reportCatalog.find((report) => report.id === reportId))
+          .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
+        const comparisonPreset = reportComparisonPresets.find(
+          (preset) => preset.id === suite.comparisonPresetId
+        );
+        const packTemplate = reportPackTemplates.find(
+          (template) => template.id === suite.packTemplateId
+        );
+        const automationStarter = reportAutomationStarters.find(
+          (starter) => starter.id === suite.automationStarterId
+        );
+        const deliverySubscription = reportDeliverySubscriptions.find(
+          (subscription) => subscription.id === suite.deliverySubscriptionId
+        );
+        const triggerRules = suite.triggerRuleIds
+          .map((ruleId) => reportAutomationTriggerRules.find((rule) => rule.id === ruleId))
+          .filter((rule): rule is (typeof reportAutomationTriggerRules)[number] => Boolean(rule));
+        const decisionShortcut = reportDecisionShortcuts.find(
+          (shortcut) => shortcut.id === suite.decisionShortcutId
+        );
+        const savedViews = suite.savedViewIds
+          .map((viewId) => reportSavedViewProfiles.find((view) => view.id === viewId))
+          .filter((view): view is (typeof reportSavedViewProfiles)[number] => Boolean(view));
+
+        return {
+          ...suite,
+          reports,
+          readyReports: reports.filter((report) => report.status !== "planned").length,
+          comparisonPreset,
+          packTemplate,
+          automationStarter,
+          deliverySubscription,
+          triggerRules,
+          decisionShortcut,
+          savedViews,
+          href: reportSuiteHref(suite),
+          comparisonHref: comparisonPreset
+            ? reportComparisonPresetHref(comparisonPreset)
+            : reportSectionHref(preferredReportWorkspace, "recommendations"),
+          packHref: packTemplate
+            ? reportPackTemplateHref(packTemplate)
+            : reportSectionHref(preferredReportWorkspace, "pack-readiness"),
+          automationHref: automationStarter
+            ? reportAutomationStarterHref(automationStarter)
+            : reportSectionHref(preferredReportWorkspace, "automation-starters"),
+          deliveryHref: deliverySubscription
+            ? reportDeliverySubscriptionHref(deliverySubscription)
+            : reportSectionHref(preferredReportWorkspace, "delivery-subscriptions"),
+          decisionHref: decisionShortcut
+            ? reportDecisionShortcutHref(decisionShortcut)
+            : reportSectionHref(preferredReportWorkspace, "decision-shortcuts"),
+        };
+      });
+  }, [preferredReportWorkspace]);
   const preferredReportPackReadiness = useMemo(() => {
     const readyReports = preferredWorkspaceCatalogReports.filter(
       (report) => report.status !== "planned"
@@ -649,7 +858,7 @@ function CustomerDashboard() {
       plannedReports,
       totalReports: preferredWorkspaceCatalogReports.length,
       automationLanes: preferredReportWorkspace.automations.length,
-      syncedLiveReports: reportCatalogDiscoveryQuery.data?.summary.liveReportCount ?? readyReports,
+      syncedReadyReports: selectedReportPersonaSummary?.readyReportCount ?? readyReports,
       syncedPackTemplates:
         selectedReportPersonaSummary?.packTemplateCount ??
         reportPackTemplates.filter(
@@ -757,6 +966,9 @@ function CustomerDashboard() {
           .filter((report): report is (typeof reportCatalog)[number] => Boolean(report));
         const primaryReport =
           reports.find((report) => report.id === shortcut.primaryReportId) ?? reports[0];
+        const context = primaryReport
+          ? dashboardReportActionContextById.get(primaryReport.id)
+          : undefined;
 
         return {
           ...shortcut,
@@ -764,8 +976,19 @@ function CustomerDashboard() {
           primaryReport,
           href: reportDecisionShortcutHref(shortcut),
           primaryReportHref: primaryReport
-            ? (reportHref(primaryReport) ?? reportDecisionShortcutHref(shortcut))
+            ? (context?.reportHref ??
+              reportPersonaHref(primaryReport, preferredReportWorkspace.persona) ??
+              reportDecisionShortcutHref(shortcut))
             : reportDecisionShortcutHref(shortcut),
+          workflowHref:
+            context?.workflowHref ??
+            (primaryReport
+              ? reportWorkflowContextHref({
+                  persona: preferredReportWorkspace.persona,
+                  tab: primaryReport.tab ?? preferredReportWorkspace.primaryTab,
+                  search: shortcut.question,
+                })
+              : reportDecisionShortcutHref(shortcut)),
           searchScore: dashboardReportWorkflowSearchScore(
             [
               shortcut.question,
@@ -780,7 +1003,12 @@ function CustomerDashboard() {
         };
       })
       .sort((a, b) => b.searchScore - a.searchScore);
-  }, [normalizedPreferredReportWorkflowSearch, preferredReportWorkspace.persona]);
+  }, [
+    dashboardReportActionContextById,
+    normalizedPreferredReportWorkflowSearch,
+    preferredReportWorkspace.persona,
+    preferredReportWorkspace.primaryTab,
+  ]);
   const preferredReportComparisonPresets = useMemo(() => {
     return reportComparisonPresets
       .filter((preset) => preset.persona === preferredReportWorkspace.persona)
@@ -823,7 +1051,8 @@ function CustomerDashboard() {
           primaryReport,
           href: reportAutomationTriggerRuleHref(rule),
           primaryReportHref: primaryReport
-            ? (reportHref(primaryReport) ?? reportAutomationTriggerRuleHref(rule))
+            ? (reportPersonaHref(primaryReport, preferredReportWorkspace.persona) ??
+              reportAutomationTriggerRuleHref(rule))
             : reportAutomationTriggerRuleHref(rule),
         };
       });
@@ -907,11 +1136,18 @@ function CustomerDashboard() {
   });
 
   const queueDashboardReportDeliverySubscription = useMutation({
-    mutationFn: (subscriptionId: string) => {
+    mutationFn: ({
+      subscriptionId,
+      acknowledgeHandoffGaps,
+    }: {
+      subscriptionId: string;
+      acknowledgeHandoffGaps?: boolean;
+    }) => {
       if (!selectedCompanyId) throw new Error("Select a company before queuing delivery.");
       return apiRequest(
         "POST",
-        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`
+        `/api/companies/${selectedCompanyId}/report-delivery/subscriptions/${subscriptionId}/queue`,
+        acknowledgeHandoffGaps ? { acknowledgeHandoffGaps: true } : undefined
       );
     },
     onSuccess: (result: any) => {
@@ -1047,6 +1283,38 @@ function CustomerDashboard() {
       plannedReportCount: preferredReportPackReadiness.plannedReports,
     });
   }, [dashboardComparisonRows, preferredReportPackReadiness]);
+  const preferredReportAutomationImpact = useMemo(() => {
+    const profile =
+      reportAutomationImpactProfiles.find(
+        (item) => item.persona === preferredReportWorkspace.persona
+      ) ?? reportAutomationImpactProfiles[0]!;
+    const readyDeliveryCount = preferredReportDeliverySubscriptions.filter(
+      (subscription) => subscription.readyReports >= subscription.reports.length
+    ).length;
+    const estimate = calculateReportAutomationImpact(profile, {
+      readyRuleCount: preferredReportTriggerRules.length,
+      readyDeliveryCount,
+      readyReportCount: preferredReportPackReadiness.readyReports,
+      openWorkItemCount: reportAutomationHealth.reviewSignals,
+      recommendationCount: preferredReportDecisionShortcuts.length,
+      amountAtRisk: Number(stats?.outstanding ?? 0),
+    });
+
+    return {
+      profile,
+      estimate,
+      readyDeliveryCount,
+      href: reportSectionHref(preferredReportWorkspace, "automation-impact"),
+    };
+  }, [
+    preferredReportDecisionShortcuts.length,
+    preferredReportDeliverySubscriptions,
+    preferredReportPackReadiness.readyReports,
+    preferredReportTriggerRules.length,
+    preferredReportWorkspace,
+    reportAutomationHealth.reviewSignals,
+    stats?.outstanding,
+  ]);
 
   const dashboardPersonaDeliveryRuns = useMemo(() => {
     const subscriptionIds = new Set(
@@ -1065,12 +1333,98 @@ function CustomerDashboard() {
         (subscription) => subscription.id === dashboardLatestDeliveryRun.subscriptionId
       ) ?? null)
     : null;
+  const dashboardReportDeliveryHandoffBySubscriptionId = useMemo(() => {
+    return preferredReportDeliverySubscriptions.reduce<
+      Record<
+        string,
+        {
+          priorityGap: ReportWorkflowGapFilter | null;
+          rows: NonNullable<ReportLaunchDeliveryPreview["handoffRows"]>;
+        }
+      >
+    >((handoffs, subscription) => {
+      const failedRun =
+        dashboardPersonaDeliveryRuns.find(
+          (run) => run.subscriptionId === subscription.id && run.status === "failed"
+        ) ?? null;
+      const latestRun =
+        dashboardPersonaDeliveryRuns.find((run) => run.subscriptionId === subscription.id) ?? null;
+      const reportGapCount = Math.max(0, subscription.reports.length - subscription.readyReports);
+      const priorityGap: ReportWorkflowGapFilter | null = failedRun
+        ? "delivery-gaps"
+        : reportGapCount > 0
+          ? "report-gaps"
+          : latestRun && latestRun.readinessStatus !== "ready"
+            ? "delivery-gaps"
+            : null;
+      const gapHref = reportWorkflowContextHref({
+        persona: preferredReportWorkspace.persona,
+        tab: preferredReportWorkspace.primaryTab,
+        search: subscription.title,
+        gap: priorityGap,
+      });
+      const gapDetail = failedRun
+        ? (failedRun.errorMessage ?? "Recover the failed delivery before the next send.")
+        : reportGapCount > 0
+          ? `${reportGapCount} report${reportGapCount === 1 ? "" : "s"} need setup before delivery.`
+          : latestRun && latestRun.readinessStatus !== "ready"
+            ? `Latest run readiness is ${latestRun.readinessStatus}.`
+            : "Ready for the next scheduled send.";
+
+      handoffs[subscription.id] = {
+        priorityGap,
+        rows: [
+          {
+            label: "Shared context",
+            value: priorityGap ? "Needs acknowledgement" : "Ready",
+            status: priorityGap ? "review" : "ready",
+            detail: `${subscription.readyReports}/${subscription.reports.length} reports and ${subscription.triggerRules.length} guardrails tracked from Dashboard.`,
+            href: reportWorkflowContextHref({
+              persona: preferredReportWorkspace.persona,
+              tab: preferredReportWorkspace.primaryTab,
+              search: subscription.title,
+            }),
+          },
+          {
+            label: "Priority gap",
+            value: priorityGap ? reportWorkflowGapFilterLabels[priorityGap] : "No open gap",
+            status: priorityGap ? "review" : "ready",
+            detail: gapDetail,
+            href: gapHref,
+          },
+          {
+            label: "Next action",
+            value: failedRun
+              ? "Recover failed delivery"
+              : priorityGap
+                ? "Review handoff gaps"
+                : "Queue from Dashboard",
+            status: priorityGap ? "review" : "ready",
+            detail: priorityGap
+              ? "Acknowledge the handoff before queuing this report pack from Dashboard."
+              : "The dashboard launcher can queue this pack when needed.",
+            href: gapHref,
+          },
+        ],
+      };
+      return handoffs;
+    }, {});
+  }, [
+    dashboardPersonaDeliveryRuns,
+    preferredReportDeliverySubscriptions,
+    preferredReportWorkspace.persona,
+    preferredReportWorkspace.primaryTab,
+  ]);
   const dashboardReportDeliveryLauncherPreviewById = useMemo(() => {
     return preferredReportDeliverySubscriptions.reduce<
       Record<string, ReportLaunchDeliveryPreview | undefined>
     >((previews, subscription) => {
       const latestRun =
         dashboardPersonaDeliveryRuns.find((run) => run.subscriptionId === subscription.id) ?? null;
+      const handoff = dashboardReportDeliveryHandoffBySubscriptionId[subscription.id];
+      const reportSuites = preferredReportSuites.filter(
+        (suite) => suite.deliverySubscriptionId === subscription.id
+      );
       previews[subscription.id] = {
         status: latestRun ? dashboardDeliveryRunStatusLabel(latestRun.status) : "Scheduled",
         statusVariant: latestRun ? dashboardDeliveryRunStatusVariant(latestRun.status) : "info",
@@ -1080,6 +1434,7 @@ function CustomerDashboard() {
         recipients: latestRun?.recipients ?? subscription.recipients,
         deliveryGuardrail: latestRun?.deliveryGuardrail ?? subscription.deliveryGuardrail,
         summary: `${subscription.reportIds.length} reports · ${subscription.triggerRuleIds.length} guardrails`,
+        suiteTitles: reportSuites.map((suite) => suite.title),
         latestRunStatus: latestRun?.status,
         latestRunStatusVariant: latestRun
           ? dashboardDeliveryRunStatusVariant(latestRun.status)
@@ -1095,10 +1450,22 @@ function CustomerDashboard() {
           latestRun?.status === "failed"
             ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
             : null,
+        handoffRows: handoff?.rows,
+        handoffRequiresAcknowledgement: Boolean(handoff?.priorityGap),
+        handoffAcknowledged: Boolean(
+          acknowledgedDashboardReportDeliveryHandoffGaps[subscription.id]
+        ),
       };
       return previews;
     }, {});
-  }, [dashboardPersonaDeliveryRuns, locale, preferredReportDeliverySubscriptions]);
+  }, [
+    acknowledgedDashboardReportDeliveryHandoffGaps,
+    dashboardPersonaDeliveryRuns,
+    dashboardReportDeliveryHandoffBySubscriptionId,
+    locale,
+    preferredReportDeliverySubscriptions,
+    preferredReportSuites,
+  ]);
   const dashboardDeliveryRunStatusSummary = useMemo(() => {
     if (!dashboardLatestDeliveryRun) return null;
 
@@ -1129,6 +1496,70 @@ function CustomerDashboard() {
       detail,
     };
   }, [dashboardLatestDeliveryRun, dashboardLatestDeliveryRunSubscription, locale]);
+  const preferredReportWorkflowGapLinks = useMemo(() => {
+    const deliverySetupGapCount = preferredReportDeliverySubscriptions.filter(
+      (subscription) => subscription.readyReports < subscription.reports.length
+    ).length;
+    const failedDeliveryRunCount = dashboardPersonaDeliveryRuns.filter(
+      (run) => run.status === "failed"
+    ).length;
+
+    return [
+      {
+        gap: "report-gaps" as const,
+        label: reportWorkflowGapFilterLabels["report-gaps"],
+        count: preferredReportPackReadiness.plannedReports,
+        isPreferred: preferredReportWorkflowGapFilter === "report-gaps",
+        href: reportWorkflowFinderGapHref({
+          persona: preferredReportWorkspace.persona,
+          gap: "report-gaps",
+          search: preferredReportWorkflowSearch,
+        }),
+      },
+      {
+        gap: "rule-gaps" as const,
+        label: reportWorkflowGapFilterLabels["rule-gaps"],
+        count: reportAutomationHealth.reviewSignals,
+        isPreferred: preferredReportWorkflowGapFilter === "rule-gaps",
+        href: reportWorkflowFinderGapHref({
+          persona: preferredReportWorkspace.persona,
+          gap: "rule-gaps",
+          search: preferredReportWorkflowSearch,
+        }),
+      },
+      {
+        gap: "delivery-gaps" as const,
+        label: reportWorkflowGapFilterLabels["delivery-gaps"],
+        count: deliverySetupGapCount + failedDeliveryRunCount,
+        isPreferred: preferredReportWorkflowGapFilter === "delivery-gaps",
+        href: reportWorkflowFinderGapHref({
+          persona: preferredReportWorkspace.persona,
+          gap: "delivery-gaps",
+          search: preferredReportWorkflowSearch,
+        }),
+      },
+    ];
+  }, [
+    dashboardPersonaDeliveryRuns,
+    preferredReportDeliverySubscriptions,
+    preferredReportPackReadiness.plannedReports,
+    preferredReportWorkflowGapFilter,
+    preferredReportWorkflowSearch,
+    preferredReportWorkspace.persona,
+    reportAutomationHealth.reviewSignals,
+  ]);
+  const preferredReportWorkflowGapLabel = preferredReportWorkflowGapFilter
+    ? reportWorkflowGapFilterLabels[preferredReportWorkflowGapFilter]
+    : "";
+  const hasDashboardReportWorkflowContext = Boolean(
+    preferredReportWorkflowSearch || preferredReportWorkflowGapFilter
+  );
+  const dashboardReportWorkflowContextHref = reportWorkflowContextHref({
+    persona: preferredReportWorkspace.persona,
+    tab: preferredReportWorkspace.primaryTab,
+    search: preferredReportWorkflowSearch,
+    gap: preferredReportWorkflowGapFilter,
+  });
 
   const dashboardPinnedAutomationAction = useMemo<DashboardAutomationAction | null>(() => {
     if (!dashboardPinnedDeliveryAutomationCommand) return null;
@@ -1268,6 +1699,41 @@ function CustomerDashboard() {
     preferredReportWorkspace,
     reportAutomationHealth.reviewSignals,
   ]);
+  const queueDashboardReportDeliverySubscriptionWithHandoffGuard = (subscriptionId: string) => {
+    const handoff = dashboardReportDeliveryHandoffBySubscriptionId[subscriptionId];
+    if (handoff?.priorityGap && !acknowledgedDashboardReportDeliveryHandoffGaps[subscriptionId]) {
+      const subscription = preferredReportDeliverySubscriptions.find(
+        (item) => item.id === subscriptionId
+      );
+      setAcknowledgedDashboardReportDeliveryHandoffGaps((current) => ({
+        ...current,
+        [subscriptionId]: true,
+      }));
+      toast({
+        title: "Handoff gaps acknowledged",
+        description: `${
+          subscription?.title ?? "This report delivery"
+        } has ${reportWorkflowGapFilterLabels[
+          handoff.priorityGap
+        ].toLowerCase()}. Click queue again to send with those gaps acknowledged.`,
+      });
+      return;
+    }
+
+    queueDashboardReportDeliverySubscription.mutate({
+      subscriptionId,
+      acknowledgeHandoffGaps: Boolean(
+        acknowledgedDashboardReportDeliveryHandoffGaps[subscriptionId]
+      ),
+    });
+  };
+  const preferredAutomationQueueRequiresHandoffAcknowledgement = Boolean(
+    preferredAutomationNextAction.actionType === "queue" &&
+    preferredAutomationNextAction.subscriptionId &&
+    dashboardReportDeliveryHandoffBySubscriptionId[preferredAutomationNextAction.subscriptionId]
+      ?.priorityGap &&
+    !acknowledgedDashboardReportDeliveryHandoffGaps[preferredAutomationNextAction.subscriptionId]
+  );
 
   const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
   const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
@@ -1680,6 +2146,359 @@ function CustomerDashboard() {
             </div>
             <div
               className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-role-setup"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Role setup path
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    Follow the workspace path from first report review to scheduled automation for{" "}
+                    {preferredReportWorkspace.navLabel}.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "role-setup")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open setup path <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+                {preferredReportSetupSteps.map((step, index) => (
+                  <Link key={step.id} href={step.href}>
+                    <div
+                      className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                      data-testid={`dashboard-report-role-setup-step-${step.id}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-[11px] font-semibold text-accent">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">{step.title}</div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {step.outcome}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <Badge variant="outline">{step.reports.length} reports</Badge>
+                        <Badge variant="outline">{step.command}</Badge>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="border-b border-border/60 p-5" data-testid="dashboard-report-suites">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Report suites
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    Role-based bundles that connect reports, comparisons, saved views, packs, and
+                    autopilots for this workspace.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "report-suites")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open suites <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportSuites.map((suite) => (
+                  <div
+                    key={suite.id}
+                    className="rounded-md border border-border/70 p-3"
+                    data-testid={`dashboard-report-suite-${suite.id}`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-foreground">
+                          {suite.title}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">{suite.workflow}</div>
+                      </div>
+                      <Badge
+                        variant={
+                          suite.readyReports === suite.reports.length ? "success" : "warning"
+                        }
+                        dot
+                      >
+                        {suite.readyReports}/{suite.reports.length}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      {suite.outcome}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Trigger rules</div>
+                        <div className="mt-1 font-mono font-semibold text-foreground">
+                          {suite.triggerRules.length}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Delivery</div>
+                        <div className="mt-1 truncate font-medium text-foreground">
+                          {suite.deliverySubscription?.channel ?? "Open setup"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {suite.reports.slice(0, 4).map((report) => (
+                        <Badge key={report.id} variant="outline">
+                          {report.name}
+                        </Badge>
+                      ))}
+                      {suite.reports.length > 4 ? (
+                        <Badge variant="neutral">+{suite.reports.length - 4}</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4">
+                      <Link href={suite.comparisonHref}>
+                        <Button variant="outline" size="sm" className="w-full justify-start">
+                          <BarChart3 className="w-3.5 h-3.5" />
+                          Compare
+                        </Button>
+                      </Link>
+                      <Link href={suite.packHref}>
+                        <Button variant="outline" size="sm" className="w-full justify-start">
+                          <FileText className="w-3.5 h-3.5" />
+                          Pack
+                        </Button>
+                      </Link>
+                      <Link href={suite.automationHref}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-accent hover:text-accent"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Autopilot
+                        </Button>
+                      </Link>
+                      <Link href={suite.deliveryHref}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-accent hover:text-accent"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          Delivery
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-quick-access"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Quick access reports
+                    </div>
+                    <Badge variant="info" dot>
+                      {preferredReportQuickAccess.readyReports}/
+                      {preferredReportQuickAccess.reports.length} ready
+                    </Badge>
+                  </div>
+                  <h3 className="mt-2 text-base font-semibold text-foreground">
+                    {preferredReportQuickAccess.profile.title}
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    {preferredReportQuickAccess.profile.outcome}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Link href={preferredReportQuickAccess.comparisonHref}>
+                    <Button variant="outline" size="sm">
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      Comparison
+                    </Button>
+                  </Link>
+                  <Link href={preferredReportQuickAccess.automationHref}>
+                    <Button variant="outline" size="sm">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Autopilot
+                    </Button>
+                  </Link>
+                  <Link href={preferredReportQuickAccess.deliveryHref}>
+                    <Button variant="outline" size="sm">
+                      <Clock className="w-3.5 h-3.5" />
+                      Delivery
+                    </Button>
+                  </Link>
+                  <Link href={preferredReportQuickAccess.href}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open board <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {preferredReportQuickAccess.primaryReports.map(
+                  ({ report, href, workflowHref, comparisonHref, deliveryHref }) => (
+                    <div
+                      key={report.id}
+                      className="rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                      data-testid={`dashboard-report-quick-access-${report.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-foreground">
+                            {report.name}
+                          </div>
+                          <div className="mt-1 truncate text-xs text-muted-foreground">
+                            {report.category} · {report.comparison}
+                          </div>
+                        </div>
+                        <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={href}>
+                          <Button size="sm" variant="outline" className="h-7 px-2">
+                            Open
+                          </Button>
+                        </Link>
+                        <Link href={workflowHref}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            data-testid={`dashboard-report-quick-access-automation-${report.id}`}
+                          >
+                            Automate
+                          </Button>
+                        </Link>
+                        {comparisonHref ? (
+                          <Link href={comparisonHref}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              data-testid={`dashboard-report-quick-access-comparison-${report.id}`}
+                            >
+                              Compare
+                            </Button>
+                          </Link>
+                        ) : null}
+                        {deliveryHref ? (
+                          <Link href={deliveryHref}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              data-testid={`dashboard-report-quick-access-delivery-${report.id}`}
+                            >
+                              Schedule
+                            </Button>
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+
+              {preferredReportQuickAccess.additionalReports.length > 0 ? (
+                <div
+                  className="mt-4 rounded-md border border-border/70 bg-muted/20 p-3"
+                  data-testid="dashboard-report-quick-access-more"
+                >
+                  <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+                    More reports
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {preferredReportQuickAccess.additionalReports.map(({ report, href }) => (
+                      <Link key={report.id} href={href}>
+                        <Badge variant="outline" className="max-w-[220px] truncate">
+                          {report.name}
+                        </Badge>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div
+              className="border-b border-border/60 p-5"
+              data-testid="dashboard-report-saved-views"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Saved report views
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                    Preset views with date range, comparison period, basis, currency, dimension,
+                    export format, and automation trigger for this workspace.
+                  </p>
+                </div>
+                <Link href={reportSectionHref(preferredReportWorkspace, "saved-views")}>
+                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                    Open saved views <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {preferredReportSavedViews.map((view) => (
+                  <div
+                    key={view.id}
+                    className="rounded-md border border-border/70 p-3"
+                    data-testid={`dashboard-report-saved-view-${view.id}`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-foreground">
+                          {view.title}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {view.dateRangePreset} · {view.comparisonPeriod} · {view.currency}
+                        </div>
+                      </div>
+                      <Badge variant="outline">{view.dimension}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={view.reportHref}>
+                        <Button variant="outline" size="sm">
+                          Open report
+                        </Button>
+                      </Link>
+                      <Link href={view.comparisonHref}>
+                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                          Comparison
+                        </Button>
+                      </Link>
+                      <Link href={view.workflowHref}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-accent hover:text-accent"
+                          data-testid={`dashboard-report-saved-view-automation-${view.id}`}
+                        >
+                          Automation
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div
+              className="border-b border-border/60 p-5"
               data-testid="dashboard-report-automation-health"
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -1699,7 +2518,7 @@ function CustomerDashboard() {
                         ? "Syncing catalog"
                         : reportCatalogDiscoveryQuery.isError
                           ? "Local catalog"
-                          : `${preferredReportPackReadiness.syncedLiveReports} synced reports`}
+                          : `${preferredReportPackReadiness.syncedReadyReports} synced reports`}
                     </Badge>
                     <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
                       {preferredReportPackReadiness.syncedPackTemplates} packs
@@ -1751,6 +2570,75 @@ function CustomerDashboard() {
                 </div>
               </div>
 
+              <div
+                className="mt-4 rounded-md border border-border/70 p-4"
+                data-testid="dashboard-report-automation-impact"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Automation impact
+                      </div>
+                      <Badge
+                        variant={
+                          preferredReportAutomationImpact.estimate.status === "compounding"
+                            ? "success"
+                            : preferredReportAutomationImpact.estimate.status === "review"
+                              ? "warning"
+                              : "neutral"
+                        }
+                        dot
+                      >
+                        {preferredReportAutomationImpact.estimate.statusLabel}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {preferredReportAutomationImpact.profile.manualWorkLabel}.{" "}
+                      {preferredReportAutomationImpact.estimate.summary}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+                    <div className="rounded-md bg-muted/30 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Hours saved
+                      </div>
+                      <div className="mt-1 font-mono text-lg font-semibold">
+                        {preferredReportAutomationImpact.estimate.estimatedMonthlyHoursSaved}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/30 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Items handled
+                      </div>
+                      <div className="mt-1 font-mono text-lg font-semibold">
+                        {preferredReportAutomationImpact.estimate.estimatedAutomatedItemCount}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/30 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Coverage
+                      </div>
+                      <div className="mt-1 font-mono text-lg font-semibold">
+                        {preferredReportAutomationImpact.estimate.coverageScore}%
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/30 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Watched
+                      </div>
+                      <div className="mt-1 truncate font-mono text-sm font-semibold">
+                        {formatCurrency(
+                          preferredReportAutomationImpact.estimate.amountAtRisk,
+                          "AED",
+                          locale
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="mt-4">
                 <div className="flex flex-wrap gap-2">
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-operations")}>
@@ -1763,6 +2651,11 @@ function CustomerDashboard() {
                   >
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                       Open automation center <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                  <Link href={preferredReportAutomationImpact.href}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open automation impact <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-starters")}>
@@ -1937,13 +2830,15 @@ function CustomerDashboard() {
                       onClick={() => {
                         const subscriptionId = preferredAutomationNextAction.subscriptionId;
                         if (!subscriptionId) return;
-                        queueDashboardReportDeliverySubscription.mutate(subscriptionId);
+                        queueDashboardReportDeliverySubscriptionWithHandoffGuard(subscriptionId);
                       }}
                       data-testid="dashboard-next-automation-queue"
                     >
                       {queueDashboardReportDeliverySubscription.isPending
                         ? "Queueing"
-                        : preferredAutomationNextAction.cta}
+                        : preferredAutomationQueueRequiresHandoffAcknowledgement
+                          ? "Acknowledge handoff"
+                          : preferredAutomationNextAction.cta}
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   ) : preferredAutomationNextAction.actionType === "retry" ? (
@@ -2171,6 +3066,15 @@ function CustomerDashboard() {
                           Open report
                         </Button>
                       </Link>
+                      <Link href={shortcut.workflowHref}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid={`dashboard-report-decision-shortcut-automation-${shortcut.id}`}
+                        >
+                          Automate
+                        </Button>
+                      </Link>
                       <Link href={shortcut.href}>
                         <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
                           View shortcut <ArrowRight className="w-3.5 h-3.5" />
@@ -2252,15 +3156,68 @@ function CustomerDashboard() {
                       <span className="font-semibold text-foreground">Automation outcome:</span>{" "}
                       {preferredReportWorkspace.automationOutcome}
                     </div>
+                    <div
+                      className="mt-3 rounded-md border border-border/70 bg-muted/20 p-3"
+                      data-testid="dashboard-report-context-summary"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                            Saved reporting context
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant="info" data-testid="dashboard-report-role-context">
+                              Role: {preferredReportWorkspace.navLabel}
+                            </Badge>
+                            {preferredReportWorkflowSearch ? (
+                              <Badge
+                                variant="outline"
+                                data-testid="dashboard-report-search-context"
+                              >
+                                <span className="max-w-[12rem] truncate">
+                                  Search: {preferredReportWorkflowSearch}
+                                </span>
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">No saved search</Badge>
+                            )}
+                            {preferredReportWorkflowGapLabel ? (
+                              <Badge variant="outline" data-testid="dashboard-report-gap-context">
+                                Gap: {preferredReportWorkflowGapLabel}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">No gap filter</Badge>
+                            )}
+                          </div>
+                        </div>
+                        {hasDashboardReportWorkflowContext ? (
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <Link href={dashboardReportWorkflowContextHref}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                data-testid="button-open-dashboard-report-context-link"
+                              >
+                                Open shared view
+                                <ArrowRight className="h-3.5 w-3.5" />
+                              </Button>
+                            </Link>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={clearDashboardReportWorkflowContext}
+                              data-testid="button-clear-dashboard-report-context"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              Clear saved filters
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                    {preferredReportWorkflowSearch ? (
-                      <Badge variant="outline" data-testid="dashboard-report-search-context">
-                        <span className="max-w-[12rem] truncate">
-                          Search: {preferredReportWorkflowSearch}
-                        </span>
-                      </Badge>
-                    ) : null}
                     <Badge variant="info" dot>
                       {preferredWorkspaceReports.length} ready reports
                     </Badge>
@@ -2271,7 +3228,10 @@ function CustomerDashboard() {
                   {preferredWorkspaceReports.map((report) => (
                     <Link
                       key={report.id}
-                      href={reportHref(report) ?? reportWorkspaceHref(preferredReportWorkspace)}
+                      href={
+                        reportPersonaHref(report, preferredReportWorkspace.persona) ??
+                        reportWorkspaceHref(preferredReportWorkspace)
+                      }
                     >
                       <div className="rounded-md border border-border/70 p-3 hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer">
                         <div className="flex items-center justify-between gap-2">
@@ -2408,6 +3368,32 @@ function CustomerDashboard() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div
+                className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
+                data-testid="dashboard-report-workflow-gap-filters"
+              >
+                {preferredReportWorkflowGapLinks.map((link) => (
+                  <Link key={link.gap} href={link.href}>
+                    <Button
+                      variant={link.isPreferred ? "default" : "outline"}
+                      size="sm"
+                      className="h-auto w-full justify-between gap-2 px-3 py-2 text-left"
+                      onClick={() => {
+                        setPreferredReportWorkflowGapFilter(
+                          preferredReportWorkspace.persona,
+                          link.gap
+                        );
+                        setReportWorkflowPreferenceRevision((revision) => revision + 1);
+                      }}
+                      data-testid={`dashboard-report-workflow-gap-${link.gap}`}
+                    >
+                      <span className="truncate">{link.label}</span>
+                      <Badge variant={link.count > 0 ? "warning" : "success"}>{link.count}</Badge>
+                    </Button>
+                  </Link>
+                ))}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -2756,12 +3742,12 @@ function CustomerDashboard() {
           companyId={selectedCompanyId}
           preferredDeliveryAutomationCommand={dashboardPinnedDeliveryAutomationCommand}
           onQueueDeliverySubscription={(subscriptionId) =>
-            queueDashboardReportDeliverySubscription.mutate(subscriptionId)
+            queueDashboardReportDeliverySubscriptionWithHandoffGuard(subscriptionId)
           }
           onRetryDeliveryRun={(runId) => retryDashboardReportDeliveryRun.mutate(runId)}
           queueingDeliverySubscriptionId={
             queueDashboardReportDeliverySubscription.isPending
-              ? (queueDashboardReportDeliverySubscription.variables ?? null)
+              ? (queueDashboardReportDeliverySubscription.variables?.subscriptionId ?? null)
               : null
           }
           retryingDeliveryRunId={

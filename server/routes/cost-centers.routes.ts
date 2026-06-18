@@ -5,10 +5,15 @@ import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { db } from "../db";
 import { journalLines, journalEntries, accounts, costCenters } from "../../shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, lte, sql } from "drizzle-orm";
 import { createLogger } from "../config/logger";
+import { uaeDayEnd, uaeDayStart } from "../utils/date";
 
 const logger = createLogger("cost-centers-routes");
+
+function roundCurrencyAmount(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 export function registerCostCenterRoutes(app: Express) {
   // =====================================
@@ -146,6 +151,122 @@ export function registerCostCenterRoutes(app: Express) {
   // =====================================
   // Cost Center Report Routes
   // =====================================
+
+  // Customer-only: P&L profitability summary across all cost centers
+  app.get(
+    "/api/companies/:companyId/cost-centers/profitability",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("costCenters"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+
+      const fromDate = startDate ? uaeDayStart(startDate) : undefined;
+      const toDate = endDate ? uaeDayEnd(endDate) : undefined;
+      if (
+        (fromDate && Number.isNaN(fromDate.getTime())) ||
+        (toDate && Number.isNaN(toDate.getTime()))
+      ) {
+        return res.status(400).json({ message: "Invalid startDate or endDate query parameter" });
+      }
+      if (fromDate && toDate && fromDate > toDate) {
+        return res.status(400).json({ message: "startDate must be before endDate" });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const [costCentersList, periodEntryRows] = await Promise.all([
+        storage.getCostCentersByCompanyId(companyId),
+        db
+          .select({ id: journalEntries.id })
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.companyId, companyId),
+              eq(journalEntries.status, "posted"),
+              fromDate ? gte(journalEntries.date, fromDate) : undefined,
+              toDate ? lte(journalEntries.date, toDate) : undefined
+            )
+          ),
+      ]);
+
+      const entryIds = (periodEntryRows as Array<{ id: string }>).map((entry) => entry.id);
+      const lineRows =
+        entryIds.length > 0
+          ? await db
+              .select({
+                costCenterId: journalLines.costCenterId,
+                accountType: accounts.type,
+                debit: journalLines.debit,
+                credit: journalLines.credit,
+              })
+              .from(journalLines)
+              .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
+              .where(inArray(journalLines.entryId, entryIds))
+          : [];
+
+      const summaries = new Map(
+        costCentersList.map((costCenter) => [
+          costCenter.id,
+          {
+            costCenterId: costCenter.id,
+            code: costCenter.code,
+            name: costCenter.name,
+            isActive: costCenter.isActive,
+            totalIncome: 0,
+            totalExpenses: 0,
+            lineCount: 0,
+          },
+        ])
+      );
+
+      for (const row of lineRows) {
+        if (!row.costCenterId) continue;
+        const summary = summaries.get(row.costCenterId);
+        if (!summary) continue;
+
+        const debit = Number(row.debit ?? 0) || 0;
+        const credit = Number(row.credit ?? 0) || 0;
+        if (row.accountType === "income") {
+          summary.totalIncome += credit - debit;
+          summary.lineCount += 1;
+        } else if (row.accountType === "expense") {
+          summary.totalExpenses += debit - credit;
+          summary.lineCount += 1;
+        }
+      }
+
+      const rows = Array.from(summaries.values()).map((row) => ({
+        ...row,
+        totalIncome: roundCurrencyAmount(row.totalIncome),
+        totalExpenses: roundCurrencyAmount(row.totalExpenses),
+        netIncome: roundCurrencyAmount(row.totalIncome - row.totalExpenses),
+      }));
+      const totalIncome = roundCurrencyAmount(rows.reduce((sum, row) => sum + row.totalIncome, 0));
+      const totalExpenses = roundCurrencyAmount(
+        rows.reduce((sum, row) => sum + row.totalExpenses, 0)
+      );
+
+      res.json({
+        periodStart: startDate ?? null,
+        periodEnd: endDate ?? null,
+        costCenters: rows,
+        totals: {
+          costCenterCount: rows.length,
+          activeCostCenterCount: rows.filter((row) => row.isActive).length,
+          allocatedLineCount: rows.reduce((sum, row) => sum + row.lineCount, 0),
+          totalIncome,
+          totalExpenses,
+          netIncome: roundCurrencyAmount(totalIncome - totalExpenses),
+        },
+      });
+    })
+  );
 
   // Customer-only: P&L report by cost center
   app.get(
