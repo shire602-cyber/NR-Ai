@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import { createLogger } from "../config/logger";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
@@ -12,6 +13,8 @@ import {
   getReportDeliveryPlans,
   isReportDeliveryPersona,
 } from "../services/report-delivery.service";
+
+const log = createLogger("report-delivery-routes");
 
 const reportDeliveryQuerySchema = z.object({
   persona: z
@@ -58,6 +61,37 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Report delivery failed";
 }
 
+function optionalReportDeliveryStorageErrorCode(error: unknown): string | null {
+  let current = error as { code?: unknown; cause?: unknown } | null | undefined;
+  for (let depth = 0; current && depth < 3; depth += 1) {
+    if (typeof current.code === "string") return current.code;
+    current = current.cause as { code?: unknown; cause?: unknown } | null | undefined;
+  }
+  return null;
+}
+
+function isOptionalReportDeliveryStorageError(error: unknown): boolean {
+  const code = optionalReportDeliveryStorageErrorCode(error);
+  return code === "42P01" || code === "42703";
+}
+
+async function readOptionalReportDeliveryStorage<T>(
+  label: string,
+  read: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (!isOptionalReportDeliveryStorageError(error)) throw error;
+    log.warn(
+      { err: error, label },
+      "Report delivery optional storage is unavailable; using catalog fallback"
+    );
+    return fallback;
+  }
+}
+
 export function registerReportDeliveryRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/report-delivery/subscriptions",
@@ -70,7 +104,11 @@ export function registerReportDeliveryRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
       const query = reportDeliveryQuerySchema.parse(req.query);
-      const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
+      const settings = await readOptionalReportDeliveryStorage(
+        "subscription settings",
+        () => storage.getReportDeliverySubscriptionSettings(companyId),
+        []
+      );
       const subscriptions = getReportDeliveryPlans({
         persona: isReportDeliveryPersona(query.persona) ? query.persona : null,
         settings,
@@ -95,10 +133,15 @@ export function registerReportDeliveryRoutes(app: Express) {
         return res.status(404).json({ message: "Report delivery subscription not found" });
       }
 
-      const runs = await storage.getReportDeliveryRuns(companyId, {
-        subscriptionId: query.subscriptionId,
-        limit: query.limit,
-      });
+      const runs = await readOptionalReportDeliveryStorage(
+        "delivery runs",
+        () =>
+          storage.getReportDeliveryRuns(companyId, {
+            subscriptionId: query.subscriptionId,
+            limit: query.limit,
+          }),
+        []
+      );
 
       res.json({ runs });
     })
@@ -116,8 +159,16 @@ export function registerReportDeliveryRoutes(app: Express) {
 
       const query = reportDeliverySchedulerHealthQuerySchema.parse(req.query);
       const [latestScan, recentScans] = await Promise.all([
-        storage.getLatestReportDeliverySchedulerScan(companyId),
-        storage.getReportDeliverySchedulerScans(companyId, { limit: query.limit ?? 5 }),
+        readOptionalReportDeliveryStorage(
+          "latest scheduler scan",
+          () => storage.getLatestReportDeliverySchedulerScan(companyId),
+          null
+        ),
+        readOptionalReportDeliveryStorage(
+          "scheduler scans",
+          () => storage.getReportDeliverySchedulerScans(companyId, { limit: query.limit ?? 5 }),
+          []
+        ),
       ]);
 
       res.json({ latestScan: latestScan ?? null, recentScans });
@@ -134,7 +185,11 @@ export function registerReportDeliveryRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const preferences = await storage.getReportAutomationPreferences(companyId, userId);
+      const preferences = await readOptionalReportDeliveryStorage(
+        "automation preferences",
+        () => storage.getReportAutomationPreferences(companyId, userId),
+        []
+      );
 
       res.json({ preferences });
     })

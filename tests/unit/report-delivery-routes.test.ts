@@ -87,6 +87,12 @@ async function request(
   }
 }
 
+function missingOptionalReportDeliveryStorage(tableName: string): Error & { code: string } {
+  const error = new Error(`relation "${tableName}" does not exist`) as Error & { code: string };
+  error.code = "42P01";
+  return error;
+}
+
 describe("report delivery subscriptions", () => {
   beforeEach(() => {
     vi.mocked(storage.hasCompanyAccess).mockResolvedValue(true);
@@ -244,6 +250,26 @@ describe("report delivery subscriptions", () => {
     expect(storage.getReportDeliverySubscriptionSettings).toHaveBeenCalledWith(companyId);
   });
 
+  it("falls back to catalog delivery plans when optional delivery settings storage is unavailable", async () => {
+    vi.mocked(storage.getReportDeliverySubscriptionSettings).mockRejectedValueOnce(
+      missingOptionalReportDeliveryStorage("company_report_delivery_subscriptions")
+    );
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/subscriptions?persona=owner`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.subscriptions).toHaveLength(2);
+    expect(res.body.subscriptions[0]).toMatchObject({
+      id: "owner-weekly-executive-delivery",
+      persona: "owner",
+      settingsSource: "catalog",
+    });
+  });
+
   it("returns recent report delivery runs by subscription", async () => {
     vi.mocked(storage.getReportDeliveryRuns).mockResolvedValue([
       {
@@ -289,6 +315,21 @@ describe("report delivery subscriptions", () => {
     });
   });
 
+  it("returns an empty run list when optional delivery run storage is unavailable", async () => {
+    vi.mocked(storage.getReportDeliveryRuns).mockRejectedValueOnce(
+      missingOptionalReportDeliveryStorage("company_report_delivery_runs")
+    );
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/runs?subscriptionId=owner-weekly-executive-delivery`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ runs: [] });
+  });
+
   it("returns report delivery scheduler health for the company", async () => {
     const scan = {
       id: "scan-1",
@@ -328,6 +369,24 @@ describe("report delivery subscriptions", () => {
     expect(storage.getReportDeliverySchedulerScans).toHaveBeenCalledWith(companyId, { limit: 3 });
   });
 
+  it("returns empty scheduler health when optional scheduler storage is unavailable", async () => {
+    vi.mocked(storage.getLatestReportDeliverySchedulerScan).mockRejectedValueOnce(
+      missingOptionalReportDeliveryStorage("company_report_delivery_scheduler_scans")
+    );
+    vi.mocked(storage.getReportDeliverySchedulerScans).mockRejectedValueOnce(
+      missingOptionalReportDeliveryStorage("company_report_delivery_scheduler_scans")
+    );
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/scheduler-health`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ latestScan: null, recentScans: [] });
+  });
+
   it("returns persisted report automation preferences for the current user and company", async () => {
     vi.mocked(storage.getReportAutomationPreferences).mockResolvedValue([
       {
@@ -356,6 +415,21 @@ describe("report delivery subscriptions", () => {
       preferredDeliveryAutomationCommand: "queue",
     });
     expect(storage.getReportAutomationPreferences).toHaveBeenCalledWith(companyId, userId);
+  });
+
+  it("returns empty automation preferences when optional preference storage is unavailable", async () => {
+    vi.mocked(storage.getReportAutomationPreferences).mockRejectedValueOnce(
+      missingOptionalReportDeliveryStorage("company_report_automation_preferences")
+    );
+
+    const res = await request(
+      appWithRoutes(),
+      "GET",
+      `/api/companies/${companyId}/report-delivery/preferences`
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ preferences: [] });
   });
 
   it("persists a report automation command preference for the current user and company", async () => {
