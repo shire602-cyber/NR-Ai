@@ -1165,12 +1165,21 @@ async function probeReports(companyId, dates, budgetId) {
 
   const trialBalance = await http(
     "trial balance report",
-    `/api/companies/${companyId}/reports/trial-balance?startDate=${start}&endDate=${end}`
+    `/api/companies/${companyId}/reports/trial-balance?from=${start}&to=${end}`
   );
+  const trialBalanceRows = Array.isArray(trialBalance?.rows)
+    ? trialBalance.rows
+    : Array.isArray(trialBalance?.accounts)
+      ? trialBalance.accounts
+      : Array.isArray(trialBalance)
+        ? trialBalance
+        : [];
   assertProbe(
     "Trial balance returns account activity",
-    Array.isArray(trialBalance?.accounts) ? trialBalance.accounts.length > 0 : Array.isArray(trialBalance) && trialBalance.length > 0,
-    { rows: trialBalance?.accounts?.length || trialBalance?.length || 0 }
+    trialBalanceRows.some(
+      (row) => Math.abs(safeNumber(row?.totalDebit)) > 0 || Math.abs(safeNumber(row?.totalCredit)) > 0
+    ),
+    { rows: trialBalanceRows.length }
   );
 
   const balanceSummaries = await http(
@@ -1195,8 +1204,13 @@ async function probeReports(companyId, dates, budgetId) {
     "period comparison",
     `/api/reports/${companyId}/comparison/month?startDate=${start}&endDate=${end}`
   );
-  assertProbe("Period comparison exposes metrics", Array.isArray(comparison?.metrics) && comparison.metrics.length > 0, {
-    metrics: comparison?.metrics?.length || 0,
+  const comparisonRows = Array.isArray(comparison)
+    ? comparison
+    : Array.isArray(comparison?.metrics)
+      ? comparison.metrics
+      : [];
+  assertProbe("Period comparison exposes metrics", comparisonRows.some((row) => row?.metric), {
+    metrics: comparisonRows.length,
   });
 
   await optional("financial statement P&L", () =>
