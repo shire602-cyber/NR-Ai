@@ -97,6 +97,7 @@ interface AgingItem {
   days90: number;
   over90: number;
   total: number;
+  currency?: "AED";
 }
 
 interface PeriodComparison {
@@ -456,6 +457,11 @@ export default function AdvancedReports() {
                 <CardTitle className="text-sm font-medium">
                   {locale === "ar" ? "الذمم المدينة" : "Accounts Receivable"}
                 </CardTitle>
+                <CardDescription>
+                  {locale === "ar"
+                    ? "فواتير العملاء المفتوحة بعد الدفعات المسجلة"
+                    : "Open customer invoices, net of recorded payments."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -464,7 +470,7 @@ export default function AdvancedReports() {
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
                     <span className="font-mono text-green-600">
-                      {formatCurrency(agingSummary.receivables.current)}
+                      {formatCurrency(agingSummary.receivables.current, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -472,14 +478,14 @@ export default function AdvancedReports() {
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
                     <span className="font-mono text-red-600">
-                      {formatCurrency(agingSummary.receivables.overdue)}
+                      {formatCurrency(agingSummary.receivables.overdue, "AED", locale)}
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === "ar" ? "الإجمالي" : "Total"}</span>
                     <span className="font-mono">
-                      {formatCurrency(agingSummary.receivables.total ?? 0)}
+                      {formatCurrency(agingSummary.receivables.total ?? 0, "AED", locale)}
                     </span>
                   </div>
                 </div>
@@ -490,6 +496,11 @@ export default function AdvancedReports() {
                 <CardTitle className="text-sm font-medium">
                   {locale === "ar" ? "الذمم الدائنة" : "Accounts Payable"}
                 </CardTitle>
+                <CardDescription>
+                  {locale === "ar"
+                    ? "فواتير الموردين المفتوحة بعد الدفعات المسجلة"
+                    : "Open vendor bills, net of recorded payments."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -498,7 +509,7 @@ export default function AdvancedReports() {
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
                     <span className="font-mono text-green-600">
-                      {formatCurrency(agingSummary.payables.current)}
+                      {formatCurrency(agingSummary.payables.current, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -506,14 +517,14 @@ export default function AdvancedReports() {
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
                     <span className="font-mono text-red-600">
-                      {formatCurrency(agingSummary.payables.overdue)}
+                      {formatCurrency(agingSummary.payables.overdue, "AED", locale)}
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === "ar" ? "الإجمالي" : "Total"}</span>
                     <span className="font-mono">
-                      {formatCurrency(agingSummary.payables.total ?? 0)}
+                      {formatCurrency(agingSummary.payables.total ?? 0, "AED", locale)}
                     </span>
                   </div>
                 </div>
@@ -526,7 +537,9 @@ export default function AdvancedReports() {
               <div>
                 <CardTitle>{locale === "ar" ? "تقادم الأرصدة" : "Aging Analysis"}</CardTitle>
                 <CardDescription>
-                  {locale === "ar" ? "توزيع الأرصدة حسب العمر" : "Distribution of balances by age"}
+                  {locale === "ar"
+                    ? "الأرصدة المفتوحة حسب تاريخ الاستحقاق، معروضة بالدرهم"
+                    : "Open invoice and bill balances by due-date bucket, shown in AED."}
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Aging")}>
@@ -543,7 +556,7 @@ export default function AdvancedReports() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`} />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Tooltip formatter={(value: number) => formatCurrency(value, "AED", locale)} />
                     <Legend />
                     <Bar
                       dataKey="receivables"
@@ -564,7 +577,12 @@ export default function AdvancedReports() {
           {agingData && agingData.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>{locale === "ar" ? "تفاصيل التقادم" : "Aging Details"}</CardTitle>
+                <CardTitle>{locale === "ar" ? "تفاصيل التقادم" : "A/R and A/P Aging Detail"}</CardTitle>
+                <CardDescription>
+                  {locale === "ar"
+                    ? "الأرصدة المفتوحة بعد الدفعات المسجلة، مجمعة حسب العميل أو المورد."
+                    : "Open balances after recorded payments, grouped by customer or vendor."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="rounded-md border overflow-x-auto">
@@ -601,22 +619,22 @@ export default function AdvancedReports() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(item.current)}
+                            {formatCurrency(item.current, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days30)}
+                            {formatCurrency(item.days30, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days60)}
+                            {formatCurrency(item.days60, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(item.days90)}
+                            {formatCurrency(item.days90, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-red-600">
-                            {formatCurrency(item.over90)}
+                            {formatCurrency(item.over90, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(item.total)}
+                            {formatCurrency(item.total, "AED", locale)}
                           </TableCell>
                         </TableRow>
                       ))}

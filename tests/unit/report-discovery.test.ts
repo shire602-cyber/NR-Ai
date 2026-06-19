@@ -459,8 +459,9 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("description: workspace.focus");
     expect(commandSource).toContain("id: `report-role-setup-${workspace.persona}`");
     expect(commandSource).toContain('reportSectionHref(workspace, "role-setup")');
-    expect(sidebarSource).toContain("reportRoleSetup-${workspace.persona}");
-    expect(sidebarSource).toContain("testId: `report-role-setup-${workspace.persona}`");
+    expect(sidebarSource).toContain('key: "reports"');
+    expect(sidebarSource).toContain('url: "/reports"');
+    expect(sidebarSource).toContain("items: []");
     expect(mobileNavSource).toContain("Role setup - ${workspace.title}");
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
@@ -975,77 +976,8 @@ describe("report discoverability", () => {
       'reportSectionHref(selectedWorkspace, "automation-command-center")'
     );
     expect(onboardingSource).toContain("workspace.automations.length");
-    expect(sidebarSource).toContain("reportPersonaWorkspaces.map");
-    expect(sidebarSource).toContain("readyReportCatalog");
-    expect(sidebarSource).toContain("reportPersonaWorkspaces.flatMap");
-    expect(sidebarSource).toContain("report.personas.includes(workspace.persona)");
-    expect(sidebarSource).toContain("reportPersonaHref(report, workspace.persona)");
-    expect(sidebarSource).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(sidebarSource).toContain("title: `${report.name} - ${workspace.title}`");
-    expect(sidebarSource).toContain(
-      "description: `${report.category} - ${report.comparison} - ${report.automation}`"
-    );
-    expect(sidebarSource).toContain("testId: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(sidebarSource).toContain("key={item.key ?? item.testId ?? item.url}");
-    expect(sidebarSource).toContain("description?: string");
-    expect(sidebarSource).toContain("item.description");
-    expect(sidebarSource).toContain("reportWorkspaceHref(workspace)");
-    expect(sidebarSource).toContain("description: workspace.focus");
-    expect(sidebarSource).toContain("reportSuiteProfiles.map");
-    expect(sidebarSource).toContain("reportSuiteHref(suite)");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "report-suites")');
-    expect(sidebarSource).toContain("testId: `report-suite-${suite.id}`");
-    expect(sidebarSource).toContain("reportQuickAccessProfiles");
-    expect(sidebarSource).toContain("Quick access reports - ${workspace.title}");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "quick-access")');
-    expect(sidebarSource).toContain("testId: `report-quick-access-${workspace.persona}`");
-    expect(sidebarSource).toContain("reportSavedViewProfiles.map");
-    expect(sidebarSource).toContain("reportSavedViewHref(view)");
-    expect(sidebarSource).toContain("Saved report views - ${workspace.title}");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "saved-views")');
-    expect(sidebarSource).toContain("testId: `report-saved-views-${workspace.persona}`");
-    expect(sidebarSource).toContain("testId: `report-saved-view-${view.id}`");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-operations")');
-    expect(sidebarSource).toContain("Report operations - ${workspace.title}");
-    expect(sidebarSource).toContain("description: workspace.automationOutcome");
-    expect(sidebarSource).toContain("report-automation-operations-${workspace.persona}");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-command-center")');
-    expect(sidebarSource).toContain("description: workspace.packSchedule.automation");
-    expect(sidebarSource).toContain("reportAutomationImpactProfiles");
-    expect(sidebarSource).toContain("Automation impact - ${workspace.title}");
-    expect(sidebarSource).toContain('reportSectionHref(workspace, "automation-impact")');
-    expect(sidebarSource).toContain("testId: `report-automation-impact-${workspace.persona}`");
-    expect(sidebarSource).toContain("reportDecisionShortcuts.map");
-    expect(sidebarSource).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(sidebarSource).toContain("description: shortcut.answer");
-    expect(sidebarSource).toContain("reportAutomationTriggerRules.map");
-    expect(sidebarSource).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(sidebarSource).toContain("description: `${rule.condition} - ${rule.actionLabel}`");
-    expect(sidebarSource).toContain("reportDeliverySubscriptions.map");
-    expect(sidebarSource).toContain("reportDeliverySubscriptionHref(subscription)");
-    expect(sidebarSource).toContain(
-      "description: `${subscription.cadence} - ${subscription.channel}`"
-    );
-    expect(sidebarSource).toContain("reportAutomationStarters.map");
-    expect(sidebarSource).toContain("reportAutomationStarterHref(starter)");
-    expect(sidebarSource).toContain("description: `${starter.audience} - ${starter.outcome}`");
-    expect(sidebarSource).toContain("reportPackTemplates.map");
-    expect(sidebarSource).toContain("reportPackTemplateHref(template)");
-    expect(sidebarSource).toContain("description: `${template.cadence} - ${template.delivery}`");
-    expect(sidebarSource).toContain("reportComparisonPresets.map");
-    expect(sidebarSource).toContain("reportComparisonPresetHref(preset)");
-    expect(sidebarSource).toContain(
-      "description: `${preset.baseline} - ${preset.automationTrigger}`"
-    );
-    expect(sidebarSource).toContain('className={item.description ? "h-auto min-h-10 py-1.5"');
-    expect(sidebarSource).toContain("testId: `report-pack-template-${template.id}`");
-    expect(sidebarSource).toContain("testId: `report-decision-shortcut-${shortcut.id}`");
-    expect(sidebarSource).toContain("testId: `report-trigger-rule-${rule.id}`");
-    expect(sidebarSource).toContain("testId: `report-delivery-subscription-${subscription.id}`");
-    expect(sidebarSource).toContain("testId: `report-automation-starter-${starter.id}`");
-    expect(sidebarSource).toContain("testId: `report-comparison-preset-${preset.id}`");
-    expect(sidebarSource).toContain("reportWorkspaceTitleKeys[workspace.persona]");
-    expect(sidebarSource).toContain("reportAutomationCenterTitleKeys[workspace.persona]");
+    expect(sidebarSource).not.toContain("reportPersonaWorkspaces.map");
+    expect(sidebarSource).not.toContain("reportPersonaWorkspaces.flatMap");
     expect(i18nSource).toContain("ownerReports");
     expect(i18nSource).toContain("freelancerReports");
     expect(i18nSource).toContain("accountantReports");

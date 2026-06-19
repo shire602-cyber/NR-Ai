@@ -19,15 +19,16 @@ Scope: this file applies to the whole repository.
   through `prepareCostCenterProfitabilityForExport`, `buildWorkspaceReportPack`, and the
   `cost-center-net-income` / `cost-center-expenses` comparison metrics before changing
   owner/accountant delivery subscriptions.
-- Keep persistent sidebar/mobile report shortcuts catalog-driven from `reportPersonaWorkspaces`,
-  `readyReportCatalog`, and `reportPersonaHref`; use stable persona/report item keys because
-  multiple reports can share the same tab URL.
+- Keep desktop sidebar Reports navigation as a single direct `/reports` item; do not add report
+  dropdowns or report-specific links under Reports. Keep mobile report shortcuts catalog-driven
+  from `reportPersonaWorkspaces`, `readyReportCatalog`, and `reportPersonaHref`; use stable
+  persona/report item keys because multiple reports can share the same tab URL.
 - Keep report-level favorites/pins persona-scoped through `getFavoriteReportIds`,
   `setFavoriteReportIds`, and `toggleFavoriteReportId`; sanitize stored IDs against
   `readyReportCatalog` rather than trusting localStorage values.
 - Keep decision shortcuts as persona-scoped business-question entry points with stable IDs,
   question-copy ending in `?`, valid report coverage, a same-persona comparison preset, and a
-  same-persona automation starter; Dashboard, Onboarding, Sidebar, Command Palette, Reports
+  same-persona automation starter; Dashboard, Onboarding, Mobile Nav, Command Palette, Reports
   workflow finder, workbook exports, and the catalog API consume them directly.
 - Keep the five-header product-depth coverage model (`reportProductDepthAreas`) catalog-driven:
   report discovery, role workflows, report automation, advisory/management, and accounting/data

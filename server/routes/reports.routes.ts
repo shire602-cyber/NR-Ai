@@ -290,63 +290,84 @@ export function registerReportRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const now = new Date();
-      const agingData: any[] = [];
+      const [receivableResult, payableResult] = await Promise.all([
+        pool.query(
+          `WITH payments AS (
+            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
+            FROM invoice_payments
+            WHERE company_id = $1
+            GROUP BY invoice_id
+          ),
+          open_invoices AS (
+            SELECT
+              COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
+              GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)
+                * COALESCE(NULLIF(i.exchange_rate, 0), 1) AS open_balance_aed,
+              COALESCE(i.due_date, i.date + INTERVAL '30 days') AS due_date
+            FROM invoices i
+            LEFT JOIN payments p ON p.invoice_id = i.id
+            WHERE i.company_id = $1
+              AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
+              AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
+          )
+          SELECT
+            name,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date >= NOW()), 0)::float AS current_balance,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'), 0)::float AS days_30,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'), 0)::float AS days_60,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'), 0)::float AS days_90,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '90 days'), 0)::float AS over_90,
+            COALESCE(SUM(open_balance_aed), 0)::float AS total
+          FROM open_invoices
+          GROUP BY name
+          ORDER BY total DESC, name ASC`,
+          [companyId]
+        ),
+        pool.query(
+          `WITH open_bills AS (
+            SELECT
+              COALESCE(NULLIF(TRIM(vendor_name), ''), 'Unknown Vendor') AS name,
+              GREATEST(total_amount - COALESCE(amount_paid, 0), 0)
+                * COALESCE(NULLIF(exchange_rate, 0), 1) AS open_balance_aed,
+              due_date
+            FROM vendor_bills
+            WHERE company_id = $1
+              AND COALESCE(status, 'pending') NOT IN ('paid', 'void', 'cancelled')
+              AND GREATEST(total_amount - COALESCE(amount_paid, 0), 0) > 0
+          )
+          SELECT
+            name,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date IS NULL OR due_date >= NOW()), 0)::float AS current_balance,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'), 0)::float AS days_30,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'), 0)::float AS days_60,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'), 0)::float AS days_90,
+            COALESCE(SUM(open_balance_aed) FILTER (WHERE due_date < NOW() - INTERVAL '90 days'), 0)::float AS over_90,
+            COALESCE(SUM(open_balance_aed), 0)::float AS total
+          FROM open_bills
+          GROUP BY name
+          ORDER BY total DESC, name ASC`,
+          [companyId]
+        ),
+      ]);
 
-      // Group unpaid invoices by customer — exclude drafts (not yet billed),
-      // voids, and cancelled invoices so aging only reflects real receivables.
-      const unpaidInvoices = invoices.filter(
-        (inv) =>
-          inv.status !== "paid" &&
-          inv.status !== "draft" &&
-          inv.status !== "void" &&
-          inv.status !== "cancelled"
-      );
-      const customerTotals: Record<string, any> = {};
+      const mapAgingRows = (rows: any[], type: "receivable" | "payable") =>
+        rows.map((row) => ({
+          id: `${type}:${row.name}`,
+          name: row.name,
+          type,
+          current: Number(row.current_balance) || 0,
+          days30: Number(row.days_30) || 0,
+          days60: Number(row.days_60) || 0,
+          days90: Number(row.days_90) || 0,
+          over90: Number(row.over_90) || 0,
+          total: Number(row.total) || 0,
+          currency: "AED",
+        }));
 
-      for (const inv of unpaidInvoices) {
-        // Aging is measured from due date, not issue date — otherwise a
-        // freshly-issued net-60 invoice would land in the 30+ bucket the day
-        // after issuance. Default to issue date + 30 (net-30) when dueDate
-        // is missing.
-        const due = inv.dueDate
-          ? new Date(inv.dueDate)
-          : new Date(new Date(inv.date).getTime() + 30 * 86400000);
-        const daysPastDue = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (!customerTotals[inv.customerName]) {
-          customerTotals[inv.customerName] = {
-            id: inv.id,
-            name: inv.customerName,
-            type: "receivable",
-            current: 0,
-            days30: 0,
-            days60: 0,
-            days90: 0,
-            over90: 0,
-            total: 0,
-          };
-        }
-
-        const customer = customerTotals[inv.customerName];
-        customer.total += inv.total;
-
-        if (daysPastDue <= 0) {
-          customer.current += inv.total;
-        } else if (daysPastDue <= 30) {
-          customer.days30 += inv.total;
-        } else if (daysPastDue <= 60) {
-          customer.days60 += inv.total;
-        } else if (daysPastDue <= 90) {
-          customer.days90 += inv.total;
-        } else {
-          customer.over90 += inv.total;
-        }
-      }
-
-      agingData.push(...Object.values(customerTotals));
-      res.json(agingData);
+      res.json([
+        ...mapAgingRows(receivableResult.rows, "receivable"),
+        ...mapAgingRows(payableResult.rows, "payable"),
+      ]);
     })
   );
 

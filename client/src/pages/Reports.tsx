@@ -18590,7 +18590,7 @@ export default function Reports() {
                   {balancesLoading ? (
                     <Skeleton className="h-72" />
                   ) : balanceReport.customers.length ? (
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[460px] overflow-auto rounded-md border">
                       <Table className="min-w-[760px]">
                         <TableHeader>
                           <TableRow>
@@ -18602,7 +18602,7 @@ export default function Reports() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {balanceReport.customers.slice(0, 10).map((row) => (
+                          {balanceReport.customers.map((row) => (
                             <TableRow key={`${row.name}-${row.currency}`}>
                               <TableCell>
                                 <div className="font-medium">{row.name}</div>
@@ -18667,7 +18667,7 @@ export default function Reports() {
                   {balancesLoading ? (
                     <Skeleton className="h-72" />
                   ) : balanceReport.vendors.length ? (
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[460px] overflow-auto rounded-md border">
                       <Table className="min-w-[760px]">
                         <TableHeader>
                           <TableRow>
@@ -18679,7 +18679,7 @@ export default function Reports() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {balanceReport.vendors.slice(0, 10).map((row) => (
+                          {balanceReport.vendors.map((row) => (
                             <TableRow key={`${row.name}-${row.currency}`}>
                               <TableCell>
                                 <div className="font-medium">{row.name}</div>
