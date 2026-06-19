@@ -20,7 +20,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sidebar,
@@ -342,9 +342,7 @@ export function AppSidebar() {
   const renderNavGroup = (group: NavGroup) => {
     const Icon = group.icon;
     const isExpanded = expandedGroup === group.key;
-    const hasActive = group.items.some(
-      (item) => location === item.url || location.startsWith(item.url + "/")
-    );
+    const hasActive = group.items.some((item) => routeMatchesItem(location, item.url));
     const groupTitle = (t as Record<string, string>)[group.titleKey] ?? group.titleKey;
 
     return (
@@ -397,7 +395,7 @@ export function AppSidebar() {
                         )}
                         data-testid={`link-${item.testId ?? item.titleKey}`}
                       >
-                        <button type="button" title={label} onClick={() => setLocation(item.url)}>
+                        <Link href={item.url} title={label}>
                           <span className="min-w-0 flex-1 overflow-hidden">
                             <span className="block truncate">{label}</span>
                             {description ? (
@@ -406,7 +404,7 @@ export function AppSidebar() {
                               </span>
                             ) : null}
                           </span>
-                        </button>
+                        </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
                   );
