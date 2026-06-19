@@ -2395,9 +2395,9 @@ export default function Reports() {
     return location.includes("?") ? location.slice(location.indexOf("?")) : "";
   }, [location]);
 
-  const activeTab = useMemo(() => {
-    return reportTabFromSearch(locationSearch || window.location.search);
-  }, [locationSearch]);
+  const [activeTab, setActiveReportTab] = useState<ReportTab>(() =>
+    reportTabFromSearch(typeof window === "undefined" ? "" : window.location.search)
+  );
   const [activeReportWorkspaceTab, setActiveReportWorkspaceTabState] = useState<ReportWorkspaceTab>(
     () =>
       reportWorkspaceTabFromLocation(
@@ -2444,6 +2444,7 @@ export default function Reports() {
 
   const setActiveTab = useCallback(
     (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
+      setActiveReportTab(tab);
       setActiveReportWorkspaceTabState("reports");
       navigate(reportsWorkspaceHref({ tab, persona, workspace: "reports" }));
     },
@@ -2507,9 +2508,15 @@ export default function Reports() {
     reportViewerOptions.find((option) => option.tab === activeTab) ?? reportViewerOptions[0];
 
   useEffect(() => {
+    const nextTab = reportTabFromSearch(locationSearch || window.location.search);
+    setActiveReportTab((current) => (current === nextTab ? current : nextTab));
+  }, [locationSearch]);
+
+  useEffect(() => {
     if (activeReportWorkspaceTab !== "reports" || reportViewerOptions.length === 0) return;
     if (reportViewerOptions.some((option) => option.tab === activeTab)) return;
 
+    setActiveReportTab(reportViewerOptions[0].tab);
     navigate(
       reportsWorkspaceHref({
         tab: reportViewerOptions[0].tab,
