@@ -145,6 +145,7 @@ import {
 } from "@/lib/reportCatalog";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   BarChart3,
   Briefcase,
@@ -11547,6 +11548,11 @@ export default function Reports() {
   const reportWorkspacePanelClass = (tab: ReportWorkspaceTab, className: string) =>
     activeReportWorkspaceTab === tab ? className : `${className} hidden`;
   const reportDiscoveryPanelClass = (className: string) => `${className} hidden`;
+  const backToReportsHref = reportsWorkspaceHref({
+    tab: activeReportViewerOption?.tab ?? activeTab,
+    persona: activeReportViewerOption?.persona ?? effectiveReportPersona,
+    workspace: "reports",
+  });
 
   return (
     <div className="space-y-8">
@@ -11583,11 +11589,23 @@ export default function Reports() {
         >
           <div className="flex flex-col gap-4">
             <div className="min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+                {hasFocusedReportSelection ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    data-testid="button-back-to-report-center"
+                  >
+                    <Link href={backToReportsHref}>
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back to reports
+                    </Link>
+                  </Button>
+                ) : null}
                 {activeReportViewerOption?.categoryLabel ? (
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {activeReportViewerOption.categoryLabel}
-                  </span>
+                  <span>{activeReportViewerOption.categoryLabel}</span>
                 ) : null}
               </div>
               <div>
