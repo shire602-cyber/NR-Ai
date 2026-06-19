@@ -17,23 +17,7 @@ import {
   CalendarDays,
   ListTodo,
   Newspaper,
-  Building2,
-  UserPlus,
-  FileUp,
-  History,
-  Database,
-  CreditCard,
-  Landmark,
-  PieChart,
   ClipboardList,
-  ShieldAlert,
-  Zap,
-  Brain,
-  CalendarCheck,
-  LineChart,
-  Kanban,
-  Users,
-  Activity,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useLocation } from "wouter";
@@ -60,14 +44,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import {
-  readyReportCatalog,
-  reportPersonaHref,
-  reportPersonaWorkspaces,
-  reportQuickAccessProfiles,
-  reportWorkspaceHref,
-  type ReportPersona,
-} from "@/lib/reportCatalog";
+import { reportsHref, type ReportPersona, type ReportTab } from "@/lib/reportCatalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,102 +66,31 @@ interface NavGroup {
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
-const reportWorkspaceTitleKeys: Record<ReportPersona, string> = {
-  owner: "ownerReports",
-  freelancer: "freelancerReports",
-  accountant: "accountantReports",
-};
+const reportSidebarTabs: Array<{ key: string; title: string; tab: ReportTab }> = [
+  { key: "profit-loss", title: "Profit & Loss", tab: "pl" },
+  { key: "balance-sheet", title: "Balance Sheet", tab: "bs" },
+  { key: "vat-summary", title: "VAT Summary", tab: "vat" },
+  { key: "sales", title: "Sales", tab: "sales" },
+  { key: "expenses", title: "Expenses", tab: "expenses" },
+  { key: "payroll", title: "Payroll", tab: "payroll" },
+  { key: "trial-balance", title: "Trial Balance", tab: "trial" },
+  { key: "general-ledger", title: "General Ledger", tab: "ledger" },
+  { key: "balances", title: "Balances", tab: "balances" },
+  { key: "close", title: "Month-End Close", tab: "close" },
+  { key: "planning", title: "Planning", tab: "planning" },
+  { key: "corporate-tax-report", title: "Corporate Tax", tab: "tax" },
+];
 
-const REPORT_NAV_REPORTS_PER_PERSONA = 6;
-
-function reportNavQuickAccessReportIds(persona: ReportPersona): Set<string> {
-  return new Set(
-    reportQuickAccessProfiles.find((profile) => profile.persona === persona)?.reportIds ?? []
-  );
-}
-
-function reportNavReportsForWorkspace(workspace: (typeof reportPersonaWorkspaces)[number]) {
-  const quickAccessReportIds = reportNavQuickAccessReportIds(workspace.persona);
-  return readyReportCatalog
-    .filter((report) => report.personas.includes(workspace.persona))
-    .filter((report) => quickAccessReportIds.size === 0 || quickAccessReportIds.has(report.id))
-    .slice(0, REPORT_NAV_REPORTS_PER_PERSONA);
-}
-
-function reportWorkspaceTabHref(workspace: string): string {
-  return workspace === "home" ? "/reports" : `/reports?workspace=${workspace}`;
-}
-
-function reportNavWorkspaceLabel(persona: ReportPersona): string {
-  const workspace = reportPersonaWorkspaces.find((item) => item.persona === persona);
-  return workspace?.navLabel.replace(/\s+Reports$/, "") ?? persona;
-}
-
-function reportNavItems(): SubItem[] {
-  const ownerWorkspace =
-    reportPersonaWorkspaces.find((workspace) => workspace.persona === "owner") ??
-    reportPersonaWorkspaces[0];
-  const commonReports = ownerWorkspace ? reportNavReportsForWorkspace(ownerWorkspace) : [];
-  const commonReportPersona = ownerWorkspace?.persona ?? "owner";
-
+function reportNavItems(persona?: ReportPersona): SubItem[] {
   return [
-    { key: "reports-home", titleKey: "reports", title: "Reports Home", url: "/reports" },
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      key: `reports-workspace-${workspace.persona}`,
-      titleKey: reportWorkspaceTitleKeys[workspace.persona],
-      title: reportNavWorkspaceLabel(workspace.persona),
-      url: reportWorkspaceHref(workspace),
+    { key: "reports-home", titleKey: "reports", title: "Reports", url: "/reports" },
+    ...reportSidebarTabs.map((report) => ({
+      key: `report-${report.key}`,
+      titleKey: `report-${report.key}`,
+      title: report.title,
+      url: reportsHref({ tab: report.tab, persona }),
+      testId: `report-${report.key}`,
     })),
-    {
-      key: "reports-library",
-      titleKey: "reportsLibrary",
-      title: "All Reports",
-      url: reportWorkspaceTabHref("reports"),
-    },
-    {
-      key: "reports-suites",
-      titleKey: "reportSuites",
-      title: "Suites",
-      url: reportWorkspaceTabHref("suites"),
-    },
-    {
-      key: "reports-compare",
-      titleKey: "reportCompare",
-      title: "Compare",
-      url: reportWorkspaceTabHref("comparisons"),
-    },
-    {
-      key: "reports-automations",
-      titleKey: "reportAutomations",
-      title: "Automations",
-      url: reportWorkspaceTabHref("automation"),
-    },
-    {
-      key: "reports-delivery",
-      titleKey: "reportDelivery",
-      title: "Delivery",
-      url: reportWorkspaceTabHref("delivery"),
-    },
-    {
-      key: "reports-setup",
-      titleKey: "reportSetup",
-      title: "Setup",
-      url: reportWorkspaceTabHref("setup"),
-    },
-    ...commonReports.flatMap((report) => {
-      const href = reportPersonaHref(report, commonReportPersona);
-      return href
-        ? [
-            {
-              key: `report-common-${report.id}`,
-              titleKey: report.name,
-              title: report.name,
-              url: href,
-              testId: `report-common-${report.id}`,
-            },
-          ]
-        : [];
-    }),
     { key: "financial-statements", titleKey: "financialStatements", url: "/financial-statements" },
     { key: "vat-filing", titleKey: "vatFiling", url: "/vat-filing" },
     { key: "corporate-tax", titleKey: "corporateTax", url: "/corporate-tax" },
@@ -317,10 +223,28 @@ const CLIENT_PORTAL_ITEMS = [
 
 const SIDEBAR_LS_KEY = "sidebar-expanded-group";
 
+function reportPersonaFromLocation(location: string): ReportPersona | undefined {
+  const [, search] = location.split("?");
+  if (!search) return undefined;
+
+  const persona = new URLSearchParams(search).get("persona");
+  if (persona === "owner" || persona === "freelancer" || persona === "accountant") {
+    return persona;
+  }
+
+  return undefined;
+}
+
+function routeMatchesItem(location: string, itemUrl: string): boolean {
+  if (location === itemUrl || location.startsWith(itemUrl + "/")) return true;
+  if (itemUrl.includes("?")) return location.startsWith(itemUrl + "&");
+  return location.startsWith(itemUrl + "?");
+}
+
 function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
   for (const group of groups) {
     for (const item of group.items) {
-      if (location === item.url || location.startsWith(item.url + "/")) {
+      if (routeMatchesItem(location, item.url)) {
         return group.key;
       }
     }
@@ -342,20 +266,28 @@ export function AppSidebar() {
   const userType = currentUser?.userType || "customer";
 
   const showNraCenter = canAccessNraCenter(currentUser);
+  const reportPersona = useMemo(() => reportPersonaFromLocation(location), [location]);
+  const customerGroups = useMemo<NavGroup[]>(
+    () =>
+      CUSTOMER_GROUPS.map((group) =>
+        group.key === "reports" ? { ...group, items: reportNavItems(reportPersona) } : group
+      ),
+    [reportPersona]
+  );
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
-      ...CUSTOMER_GROUPS,
+      ...customerGroups,
       ...(showNraCenter ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
     ],
-    [showNraCenter, isAdmin]
+    [customerGroups, showNraCenter, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP]);
+    const fromRoute = getGroupForRoute(location, [...customerGroups, NRA_GROUP, ADMIN_GROUP]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);
@@ -450,7 +382,7 @@ export function AppSidebar() {
                 )}
               >
                 {group.items.map((item) => {
-                  const isActive = location === item.url || location.startsWith(item.url + "/");
+                  const isActive = routeMatchesItem(location, item.url);
                   const label =
                     item.title ?? (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
                   const description = group.key === "reports" ? undefined : item.description;

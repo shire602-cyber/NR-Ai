@@ -10,6 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -95,6 +102,7 @@ import {
   reportDecisionShortcuts,
   reportDeliverySubscriptionHref,
   reportDeliverySubscriptions,
+  readyReportCatalog,
   reportCatalog,
   reportAutomationPlaybookHref,
   reportManagementBriefHref,
@@ -1205,6 +1213,42 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "accountant", label: "Accountant" },
 ];
 
+const reportViewerTabLabels = {
+  pl: "Profit & Loss",
+  bs: "Balance Sheet",
+  vat: "VAT Summary",
+  tax: "Corporate Tax",
+  trial: "Trial Balance",
+  sales: "Sales",
+  balances: "Balances",
+  expenses: "Expenses",
+  payroll: "Payroll",
+  ledger: "General Ledger",
+  close: "Month-End Close",
+  planning: "Planning",
+} as const satisfies Record<ReportTab, string>;
+
+const reportViewerTabDescriptions = {
+  pl: "Income, expenses, and net profit for the selected period.",
+  bs: "Assets, liabilities, and equity as of the selected date.",
+  vat: "VAT output, input, and payable or reclaimable balance.",
+  tax: "Corporate tax estimate for the selected reporting period.",
+  trial: "Debit and credit balances before financial statement review.",
+  sales: "Invoices, customers, products, receivables, and collections.",
+  balances: "Cash, working capital, aging, and balance summaries.",
+  expenses: "Receipts, claims, spend, and purchase-side reporting.",
+  payroll: "Payroll run, WPS, and approval reporting.",
+  ledger: "General ledger activity and account-level transaction detail.",
+  close: "Month-end close, audit trail, and consolidated review signals.",
+  planning: "Budget, forecast, variance, and planning reports.",
+} as const satisfies Record<ReportTab, string>;
+
+const reportViewerPersonaLabels = {
+  owner: "Business reports",
+  freelancer: "Freelancer reports",
+  accountant: "Accountant reports",
+} as const satisfies Record<ReportPersona, string>;
+
 type ReportWorkspaceTab =
   | "home"
   | "reports"
@@ -1330,7 +1374,7 @@ function reportWorkspaceTabFromLocation(search: string, hash: string): ReportWor
     return "reports";
   }
 
-  return "home";
+  return "reports";
 }
 
 function reportsWorkspaceHref({
@@ -2398,10 +2442,13 @@ export default function Reports() {
     );
   }, [reportCatalogDiscoveryQuery.data?.reportActionContexts]);
 
-  const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
-    setActiveReportWorkspaceTabState("reports");
-    navigate(reportsWorkspaceHref({ tab, persona, workspace: "reports" }));
-  };
+  const setActiveTab = useCallback(
+    (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
+      setActiveReportWorkspaceTabState("reports");
+      navigate(reportsWorkspaceHref({ tab, persona, workspace: "reports" }));
+    },
+    [navigate, personaFilter]
+  );
 
   const setReportWorkspaceTab = (tab: ReportWorkspaceTab) => {
     setActiveReportWorkspaceTabState(tab);
@@ -2430,6 +2477,47 @@ export default function Reports() {
       })
     );
   };
+
+  const effectiveReportPersona: ReportPersona =
+    personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
+  const reportViewerOptions = useMemo(() => {
+    const reportByTab = new Map<ReportTab, ReportCatalogItem>();
+
+    readyReportCatalog.forEach((report) => {
+      if (!report.tab || !report.personas.includes(effectiveReportPersona)) return;
+      if (!reportByTab.has(report.tab)) {
+        reportByTab.set(report.tab, report);
+      }
+    });
+
+    return reportTabs
+      .filter((tab) => reportByTab.has(tab))
+      .map((tab) => {
+        const report = reportByTab.get(tab);
+        return {
+          tab,
+          label: reportViewerTabLabels[tab],
+          description: reportViewerTabDescriptions[tab],
+          category: report?.category,
+          status: report?.status,
+        };
+      });
+  }, [effectiveReportPersona]);
+  const activeReportViewerOption =
+    reportViewerOptions.find((option) => option.tab === activeTab) ?? reportViewerOptions[0];
+
+  useEffect(() => {
+    if (activeReportWorkspaceTab !== "reports" || reportViewerOptions.length === 0) return;
+    if (reportViewerOptions.some((option) => option.tab === activeTab)) return;
+
+    navigate(
+      reportsWorkspaceHref({
+        tab: reportViewerOptions[0].tab,
+        persona: effectiveReportPersona,
+        workspace: "reports",
+      })
+    );
+  }, [activeReportWorkspaceTab, activeTab, effectiveReportPersona, navigate, reportViewerOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -11262,6 +11350,7 @@ export default function Reports() {
 
   const reportWorkspacePanelClass = (tab: ReportWorkspaceTab, className: string) =>
     activeReportWorkspaceTab === tab ? className : `${className} hidden`;
+  const reportDiscoveryPanelClass = (className: string) => `${className} hidden`;
 
   return (
     <div className="space-y-8">
@@ -11291,117 +11380,177 @@ export default function Reports() {
         }
       />
 
-      <section className="space-y-3" aria-labelledby="role-focus-title">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 id="role-focus-title" className="text-xl font-semibold">
-              Role focus
-            </h2>
-            <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
-          </div>
-          <Badge
-            variant={personaFilter === "all" ? "outline" : "info"}
-            className="hidden sm:inline-flex"
-          >
-            {personaFilterLabel}
-          </Badge>
-        </div>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
-          {personaFilters.map((filter) => (
-            <Button
-              key={filter.id}
-              type="button"
-              size="sm"
-              variant={personaFilter === filter.id ? "default" : "outline"}
-              onClick={() => setReportPersonaFilter(filter.id)}
-              data-testid={`button-role-focus-${filter.id}`}
-            >
-              {filter.label}
-            </Button>
-          ))}
-        </div>
-        <div
-          className="rounded-md border border-border/70 bg-muted/20 p-3"
-          data-testid="reports-workflow-context-summary"
+      {activeReportWorkspaceTab === "reports" ? (
+        <section
+          className="rounded-lg border border-border/70 bg-card p-4 shadow-sm"
+          aria-labelledby="report-viewer-title"
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                Saved reporting context
+          <div className="flex flex-col gap-4">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{reportViewerPersonaLabels[effectiveReportPersona]}</Badge>
+                {activeReportViewerOption?.category ? (
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {activeReportViewerOption.category}
+                  </span>
+                ) : null}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge variant="info" data-testid="reports-workflow-context-role">
-                  Role: {personaFilterLabel}
-                </Badge>
-                {reportWorkflowContextSearchLabel ? (
-                  <Badge variant="outline" data-testid="reports-workflow-context-search">
-                    <span className="max-w-[14rem] truncate">
-                      Search: {reportWorkflowContextSearchLabel}
-                    </span>
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">No saved search</Badge>
-                )}
-                {activeReportWorkflowGapFilterLabel ? (
-                  <Badge variant="outline" data-testid="reports-workflow-context-gap">
-                    <span className="max-w-[14rem] truncate">
-                      Gap: {activeReportWorkflowGapFilterLabel}
-                    </span>
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">No gap filter</Badge>
-                )}
+              <div>
+                <h2 id="report-viewer-title" className="text-2xl font-semibold tracking-tight">
+                  {activeReportViewerOption?.label ?? "Reports"}
+                </h2>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  {activeReportViewerOption?.description ??
+                    "Choose a report and review it for the selected period."}
+                </p>
               </div>
             </div>
-            {hasReportWorkflowContextFilters ? (
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    href={reportWorkflowContextShareHref}
-                    data-testid="button-open-report-workflow-context-link"
-                  >
-                    Open share link
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
+            <div className="space-y-1.5">
+              <Label htmlFor="report-viewer-select">Report</Label>
+              <Select
+                value={activeReportViewerOption?.tab ?? activeTab}
+                onValueChange={(value) => setActiveTab(value as ReportTab, effectiveReportPersona)}
+              >
+                <SelectTrigger id="report-viewer-select" data-testid="select-report-viewer">
+                  <SelectValue placeholder="Choose a report" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reportViewerOptions.map((option) => (
+                    <SelectItem key={option.tab} value={option.tab}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Period</Label>
+              <div className="rounded-md border bg-background p-2">
+                <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeReportWorkspaceTab !== "reports" ? (
+        <>
+          <section className="space-y-3" aria-labelledby="role-focus-title">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 id="role-focus-title" className="text-xl font-semibold">
+                  Role focus
+                </h2>
+                <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
+              </div>
+              <Badge
+                variant={personaFilter === "all" ? "outline" : "info"}
+                className="hidden sm:inline-flex"
+              >
+                {personaFilterLabel}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
+              {personaFilters.map((filter) => (
                 <Button
+                  key={filter.id}
                   type="button"
                   size="sm"
-                  variant="outline"
-                  onClick={resetReportWorkflowContext}
-                  data-testid="button-reset-report-workflow-context"
+                  variant={personaFilter === filter.id ? "default" : "outline"}
+                  onClick={() => setReportPersonaFilter(filter.id)}
+                  data-testid={`button-role-focus-${filter.id}`}
                 >
-                  <X className="h-3.5 w-3.5" />
-                  Reset context
+                  {filter.label}
                 </Button>
+              ))}
+            </div>
+            <div
+              className="rounded-md border border-border/70 bg-muted/20 p-3"
+              data-testid="reports-workflow-context-summary"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Saved reporting context
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant="info" data-testid="reports-workflow-context-role">
+                      Role: {personaFilterLabel}
+                    </Badge>
+                    {reportWorkflowContextSearchLabel ? (
+                      <Badge variant="outline" data-testid="reports-workflow-context-search">
+                        <span className="max-w-[14rem] truncate">
+                          Search: {reportWorkflowContextSearchLabel}
+                        </span>
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">No saved search</Badge>
+                    )}
+                    {activeReportWorkflowGapFilterLabel ? (
+                      <Badge variant="outline" data-testid="reports-workflow-context-gap">
+                        <span className="max-w-[14rem] truncate">
+                          Gap: {activeReportWorkflowGapFilterLabel}
+                        </span>
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">No gap filter</Badge>
+                    )}
+                  </div>
+                </div>
+                {hasReportWorkflowContextFilters ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={reportWorkflowContextShareHref}
+                        data-testid="button-open-report-workflow-context-link"
+                      >
+                        Open share link
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={resetReportWorkflowContext}
+                      data-testid="button-reset-report-workflow-context"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Reset context
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
+            </div>
+          </section>
 
-      <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <Tabs
-          value={activeReportWorkspaceTab}
-          onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
-        >
-          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
-            {reportWorkspaceTabs.map((tab) => (
-              <TabsTrigger
-                key={tab.id}
-                value={tab.id}
-                className="h-10 min-w-[7.25rem] flex-none px-3 py-2 text-center lg:min-w-0 lg:flex-1 xl:h-auto xl:flex-col xl:gap-0.5"
-                data-testid={`reports-workspace-tab-${tab.id}`}
-              >
-                <span className="text-sm font-semibold">{tab.label}</span>
-                <span className="hidden text-[11px] font-normal text-muted-foreground xl:block">
-                  {tab.description}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
+          <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <Tabs
+              value={activeReportWorkspaceTab}
+              onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
+            >
+              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
+                {reportWorkspaceTabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="h-10 min-w-[7.25rem] flex-none px-3 py-2 text-center lg:min-w-0 lg:flex-1 xl:h-auto xl:flex-col xl:gap-0.5"
+                    data-testid={`reports-workspace-tab-${tab.id}`}
+                  >
+                    <span className="text-sm font-semibold">{tab.label}</span>
+                    <span className="hidden text-[11px] font-normal text-muted-foreground xl:block">
+                      {tab.description}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        </>
+      ) : null}
 
       {activeReportWorkspaceTab === "home" ? (
         <section className="space-y-4" aria-labelledby="reports-home-title">
@@ -12099,7 +12248,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="report-quick-access-title"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -12257,7 +12406,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="report-saved-views-title"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -12594,7 +12743,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="report-workflow-finder-title"
         id="report-workflow-finder"
         data-testid="report-workflow-finder"
@@ -12730,7 +12879,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="report-catalog-readiness-title"
         data-testid="reports-catalog-discovery-summary"
       >
@@ -14822,7 +14971,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="recommended-reports-title"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -16784,7 +16933,7 @@ export default function Reports() {
       </section>
 
       <section
-        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        className={reportDiscoveryPanelClass("space-y-4")}
         aria-labelledby="report-center-title"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -17196,21 +17345,12 @@ export default function Reports() {
       </section>
 
       <div className={reportWorkspacePanelClass("reports", "space-y-6")}>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-sm font-medium">Filter by date:</span>
-              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-            </div>
-          </CardContent>
-        </Card>
-
         <Tabs
           value={activeTab}
-          onValueChange={(value) => setActiveTab(value as ReportTab)}
+          onValueChange={(value) => setActiveTab(value as ReportTab, effectiveReportPersona)}
           className="space-y-6"
         >
-          <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
+          <TabsList className="sr-only">
             <TabsTrigger value="pl" data-testid="tab-profit-loss">
               {t.profitLoss}
             </TabsTrigger>
