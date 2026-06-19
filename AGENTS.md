@@ -387,6 +387,9 @@ Scope: this file applies to the whole repository.
   `npm run test:coverage` for the baseline coverage ratchet.
 - Run the broader readiness sweep with `npm run audit:campaign`; it chains type/contract checks,
   audit inventory, frontend API coverage, production dependency audit, unit tests, and build.
+- Populate a dedicated synthetic report-audit company with `BASE_URL=... npm run
+  e2e:report-fixture`; it writes ignored evidence to `tests/e2e/.artifacts/` and should not be
+  pointed at real client books.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.

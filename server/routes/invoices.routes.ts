@@ -86,6 +86,24 @@ function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
   };
 }
 
+function normalizeOptionalInvoiceDateField(
+  data: Record<string, any>,
+  field: "dueDate"
+): { ok: true } | { ok: false; message: string } {
+  if (data[field] === undefined) return { ok: true };
+  if (data[field] === null || data[field] === "") {
+    data[field] = null;
+    return { ok: true };
+  }
+
+  const parsed = data[field] instanceof Date ? data[field] : new Date(data[field]);
+  if (Number.isNaN(parsed.getTime())) {
+    return { ok: false, message: `Invalid invoice ${field}` };
+  }
+  data[field] = parsed;
+  return { ok: true };
+}
+
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
   // Invoice Routes
@@ -243,6 +261,13 @@ export function registerInvoiceRoutes(app: Express) {
 
       // Convert date string to Date object if it's a string
       const invoiceDate = typeof date === "string" ? new Date(date) : date;
+      if (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime())) {
+        return res.status(400).json({ message: "Invalid invoice date" });
+      }
+      const dueDateResult = normalizeOptionalInvoiceDateField(invoiceData, "dueDate");
+      if (!dueDateResult.ok) {
+        return res.status(400).json({ message: dueDateResult.message });
+      }
 
       // Foreign-currency invoices must carry a rate to AED at transaction
       // date — the GL, VAT return, and FTA reporting are all AED. Accept an
@@ -463,6 +488,13 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       const invoiceDate = typeof date === "string" ? new Date(date) : date;
+      if (invoiceDate && (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime()))) {
+        return res.status(400).json({ message: "Invalid invoice date" });
+      }
+      const dueDateResult = normalizeOptionalInvoiceDateField(invoiceData, "dueDate");
+      if (!dueDateResult.ok) {
+        return res.status(400).json({ message: dueDateResult.message });
+      }
 
       // Block updates that would touch a locked period (either the invoice's
       // existing date or the requested new date).
