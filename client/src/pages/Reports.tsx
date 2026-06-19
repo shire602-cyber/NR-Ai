@@ -4264,9 +4264,7 @@ export default function Reports() {
       summary.amountAed += amountInAed(invoice);
       summaries.set(customerName, summary);
     }
-    return Array.from(summaries.values())
-      .sort((a, b) => b.amountAed - a.amountAed)
-      .slice(0, 8);
+    return Array.from(summaries.values()).sort((a, b) => b.amountAed - a.amountAed);
   }, [reportInvoices]);
 
   const overdueRows = useMemo(() => overdueReport?.rows ?? [], [overdueReport?.rows]);
@@ -4297,9 +4295,7 @@ export default function Reports() {
       summary.recommendedLevel = Math.max(summary.recommendedLevel, row.recommendedLevel);
       summaries.set(key, summary);
     }
-    return Array.from(summaries.values())
-      .sort((a, b) => b.outstanding - a.outstanding)
-      .slice(0, 8);
+    return Array.from(summaries.values()).sort((a, b) => b.outstanding - a.outstanding);
   }, [overdueRows]);
 
   const invoiceStatusReport = useMemo(() => {
@@ -4630,12 +4626,12 @@ export default function Reports() {
   );
 
   const expenseByVendor = useMemo(
-    () => buildExpenseSummary((receipt) => receipt.merchant || "Unknown Merchant").slice(0, 8),
+    () => buildExpenseSummary((receipt) => receipt.merchant || "Unknown Merchant"),
     [buildExpenseSummary]
   );
 
   const expenseByCategory = useMemo(
-    () => buildExpenseSummary((receipt) => receipt.category || "Uncategorized").slice(0, 8),
+    () => buildExpenseSummary((receipt) => receipt.category || "Uncategorized"),
     [buildExpenseSummary]
   );
 
@@ -7955,9 +7951,9 @@ export default function Reports() {
     const variance = budgetTotal - actualTotal;
     const variancePercent = budgetTotal !== 0 ? (variance / budgetTotal) * 100 : 0;
     const overBudgetLines = varianceLines.filter((line) => line.totals.variance < 0).length;
-    const largestVarianceLines = [...varianceLines]
-      .sort((a, b) => Math.abs(b.totals.variance) - Math.abs(a.totals.variance))
-      .slice(0, 8);
+    const largestVarianceLines = [...varianceLines].sort(
+      (a, b) => Math.abs(b.totals.variance) - Math.abs(a.totals.variance)
+    );
 
     const projections = cashFlowForecast?.projections ?? [];
     const projectedInflows = projections.reduce((sum, row) => sum + row.expectedInflows, 0);
@@ -18230,43 +18226,47 @@ export default function Reports() {
                 {salesProductServiceLoading ? (
                   <Skeleton className="h-64" />
                 ) : productServiceSalesRows.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product / service</TableHead>
-                        <TableHead className="text-right">Invoices</TableHead>
-                        <TableHead className="text-right">Quantity</TableHead>
-                        <TableHead className="text-right">Sales</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead className="text-right">Avg unit</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {productServiceSalesRows.slice(0, 12).map((row) => (
-                        <TableRow key={row.productService}>
-                          <TableCell>
-                            <div className="font-medium">{row.productService}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {row.lineCount} lines - {row.supplyTypes.join(", ")}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.amountAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.vatAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
-                          </TableCell>
+                  <div className="max-h-[460px] overflow-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product / service</TableHead>
+                          <TableHead className="text-right">Invoices</TableHead>
+                          <TableHead className="text-right">Quantity</TableHead>
+                          <TableHead className="text-right">Sales</TableHead>
+                          <TableHead className="text-right">VAT</TableHead>
+                          <TableHead className="text-right">Avg unit</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {productServiceSalesRows.map((row) => (
+                          <TableRow key={row.productService}>
+                            <TableCell>
+                              <div className="font-medium">{row.productService}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {row.lineCount} lines - {row.supplyTypes.join(", ")}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.invoiceCount}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.amountAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.vatAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                     No invoice line-item sales found for this period.
@@ -18320,34 +18320,36 @@ export default function Reports() {
               <Card className={reportSectionClass(["revenue-customer"])}>
                 <CardHeader>
                   <CardTitle>Revenue by customer</CardTitle>
-                  <CardDescription>Top customers by issued invoice value.</CardDescription>
+                  <CardDescription>Issued invoice value by customer, shown in AED.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {salesLoading ? (
                     <Skeleton className="h-64" />
                   ) : customerRevenue.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Customer</TableHead>
-                          <TableHead className="text-right">Invoices</TableHead>
-                          <TableHead className="text-right">Value</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {customerRevenue.map((row) => (
-                          <TableRow key={row.customerName}>
-                            <TableCell className="font-medium">{row.customerName}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.invoiceCount}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(row.amountAed, "AED", locale)}
-                            </TableCell>
+                    <div className="max-h-[420px] overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Customer</TableHead>
+                            <TableHead className="text-right">Invoices</TableHead>
+                            <TableHead className="text-right">Value</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {customerRevenue.map((row) => (
+                            <TableRow key={row.customerName}>
+                              <TableCell className="font-medium">{row.customerName}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.invoiceCount}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(row.amountAed, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                       No issued customer revenue found for this period.
@@ -18375,34 +18377,38 @@ export default function Reports() {
                 {salesLoading ? (
                   <Skeleton className="h-64" />
                 ) : overdueCustomerRows.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Customer</TableHead>
-                        <TableHead className="text-right">Invoices</TableHead>
-                        <TableHead className="text-right">Outstanding</TableHead>
-                        <TableHead className="text-right">Oldest</TableHead>
-                        <TableHead className="text-right">Next level</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {overdueCustomerRows.map((row) => (
-                        <TableRow key={`${row.customerName}-${row.currency}`}>
-                          <TableCell className="font-medium">{row.customerName}</TableCell>
-                          <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.outstanding, row.currency, locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.maxDaysOverdue} days
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="warning">Level {row.recommendedLevel}</Badge>
-                          </TableCell>
+                  <div className="max-h-[420px] overflow-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer</TableHead>
+                          <TableHead className="text-right">Invoices</TableHead>
+                          <TableHead className="text-right">Outstanding</TableHead>
+                          <TableHead className="text-right">Oldest</TableHead>
+                          <TableHead className="text-right">Next level</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {overdueCustomerRows.map((row) => (
+                          <TableRow key={`${row.customerName}-${row.currency}`}>
+                            <TableCell className="font-medium">{row.customerName}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.invoiceCount}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.outstanding, row.currency, locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.maxDaysOverdue} days
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="warning">Level {row.recommendedLevel}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                     No overdue invoices in the reminder queue.
@@ -18424,7 +18430,7 @@ export default function Reports() {
                 {salesLoading ? (
                   <Skeleton className="h-96" />
                 ) : reportInvoices.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[520px] overflow-auto rounded-md border">
                     <Table className="min-w-[900px]">
                       <TableHeader>
                         <TableRow>
@@ -18438,7 +18444,7 @@ export default function Reports() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reportInvoices.slice(0, 25).map((invoice) => (
+                        {reportInvoices.map((invoice) => (
                           <TableRow key={invoice.id}>
                             <TableCell className="font-mono font-medium">
                               {invoice.number}
@@ -18777,7 +18783,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[520px] overflow-auto rounded-md border">
                       <Table className="min-w-[940px]">
                         <TableHeader>
                           <TableRow>
@@ -18791,7 +18797,7 @@ export default function Reports() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {inventoryValuationReport.rows.slice(0, 12).map((product) => (
+                          {inventoryValuationReport.rows.map((product) => (
                             <TableRow key={product.id}>
                               <TableCell>
                                 <div className="font-medium">{product.name}</div>
@@ -18931,7 +18937,7 @@ export default function Reports() {
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto">
+                      <div className="max-h-[520px] overflow-auto rounded-md border">
                         <Table className="min-w-[920px]">
                           <TableHeader>
                             <TableRow>
@@ -18945,7 +18951,7 @@ export default function Reports() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {inventoryMovementReport.rows.slice(0, 12).map((movement) => (
+                            {inventoryMovementReport.rows.map((movement) => (
                               <TableRow key={movement.id}>
                                 <TableCell className="whitespace-nowrap text-muted-foreground">
                                   {formatReportDate(movement.createdAt)}
@@ -19046,7 +19052,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[520px] overflow-auto rounded-md border">
                       <Table className="min-w-[980px]">
                         <TableHeader>
                           <TableRow>
@@ -19059,7 +19065,7 @@ export default function Reports() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {depreciationScheduleReport.rows.slice(0, 12).map((row) => (
+                          {depreciationScheduleReport.rows.map((row) => (
                             <TableRow key={row.assetId}>
                               <TableCell>
                                 <div className="font-medium">{row.assetName}</div>
@@ -19155,7 +19161,7 @@ export default function Reports() {
                     </div>
 
                     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-                      <div className="overflow-x-auto">
+                      <div className="max-h-[520px] overflow-auto rounded-md border">
                         <Table className="min-w-[960px]">
                           <TableHeader>
                             <TableRow>
@@ -19169,7 +19175,7 @@ export default function Reports() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {fixedAssetRegisterReport.rows.slice(0, 12).map((asset) => (
+                            {fixedAssetRegisterReport.rows.map((asset) => (
                               <TableRow key={asset.id}>
                                 <TableCell>
                                   <div className="font-medium">{asset.asset_name}</div>
@@ -19210,9 +19216,9 @@ export default function Reports() {
                             Active assets grouped by category.
                           </div>
                         </div>
-                        <div className="space-y-3">
+                        <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
                           {fixedAssetRegisterReport.byCategory.length ? (
-                            fixedAssetRegisterReport.byCategory.slice(0, 8).map((category) => (
+                            fixedAssetRegisterReport.byCategory.map((category) => (
                               <div
                                 key={category.category}
                                 className="flex items-center justify-between gap-4 text-sm"
@@ -19378,38 +19384,40 @@ export default function Reports() {
               <Card className={reportSectionClass(["expenses-vendor"])}>
                 <CardHeader>
                   <CardTitle>Expenses by vendor</CardTitle>
-                  <CardDescription>Top merchants by AED-equivalent total spend.</CardDescription>
+                  <CardDescription>Merchant spend by receipt total, shown in AED.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {expensesLoading ? (
                     <Skeleton className="h-64" />
                   ) : expenseReport.byVendor.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Vendor</TableHead>
-                          <TableHead className="text-right">Receipts</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                          <TableHead className="text-right">Unposted</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {expenseReport.byVendor.map((row) => (
-                          <TableRow key={row.label}>
-                            <TableCell className="font-medium">{row.label}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.receiptCount}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(row.totalAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.unpostedCount}
-                            </TableCell>
+                    <div className="max-h-[420px] overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Vendor</TableHead>
+                            <TableHead className="text-right">Receipts</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right">Unposted</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {expenseReport.byVendor.map((row) => (
+                            <TableRow key={row.label}>
+                              <TableCell className="font-medium">{row.label}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.receiptCount}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(row.totalAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.unpostedCount}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                       No expenses found for this period.
@@ -19427,36 +19435,38 @@ export default function Reports() {
                   {expensesLoading ? (
                     <Skeleton className="h-64" />
                   ) : expenseReport.byCategory.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Category</TableHead>
-                          <TableHead className="text-right">Receipts</TableHead>
-                          <TableHead className="text-right">Subtotal</TableHead>
-                          <TableHead className="text-right">VAT</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {expenseReport.byCategory.map((row) => (
-                          <TableRow key={row.label}>
-                            <TableCell className="font-medium">{row.label}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.receiptCount}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.subtotalAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.vatAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(row.totalAed, "AED", locale)}
-                            </TableCell>
+                    <div className="max-h-[420px] overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">Receipts</TableHead>
+                            <TableHead className="text-right">Subtotal</TableHead>
+                            <TableHead className="text-right">VAT</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {expenseReport.byCategory.map((row) => (
+                            <TableRow key={row.label}>
+                              <TableCell className="font-medium">{row.label}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.receiptCount}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.subtotalAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.vatAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(row.totalAed, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                       No categorized expenses found for this period.
@@ -19542,7 +19552,7 @@ export default function Reports() {
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto">
+                      <div className="max-h-[420px] overflow-auto rounded-md border">
                         <Table className="min-w-[880px]">
                           <TableHeader>
                             <TableRow>
@@ -19554,7 +19564,7 @@ export default function Reports() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {expenseClaimReport.claims.slice(0, 12).map((claim) => (
+                            {expenseClaimReport.claims.map((claim) => (
                               <TableRow key={claim.id}>
                                 <TableCell>
                                   <div className="font-medium">{claim.title}</div>
@@ -19652,7 +19662,7 @@ export default function Reports() {
                 {expensesLoading ? (
                   <Skeleton className="h-96" />
                 ) : reportReceipts.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[520px] overflow-auto rounded-md border">
                     <Table className="min-w-[900px]">
                       <TableHeader>
                         <TableRow>
@@ -19666,7 +19676,7 @@ export default function Reports() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reportReceipts.slice(0, 25).map((receipt) => {
+                        {reportReceipts.map((receipt) => {
                           const subtotalAed = receiptSubtotalAed(receipt);
                           const vatAed = receiptVatAed(receipt);
                           return (
@@ -19848,7 +19858,7 @@ export default function Reports() {
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto">
+                      <div className="max-h-[520px] overflow-auto rounded-md border">
                         <Table className="min-w-[920px]">
                           <TableHeader>
                             <TableRow>
@@ -19863,7 +19873,7 @@ export default function Reports() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {payrollReport.runs.slice(0, 12).map((run) => (
+                            {payrollReport.runs.map((run) => (
                               <TableRow key={run.id}>
                                 <TableCell className="font-medium">
                                   {payrollPeriodLabel(run)}
@@ -20250,41 +20260,45 @@ export default function Reports() {
                   {ledgerLoading ? (
                     <Skeleton className="h-64" />
                   ) : accountActivity.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Account</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead className="text-right">Lines</TableHead>
-                          <TableHead className="text-right">Debit</TableHead>
-                          <TableHead className="text-right">Credit</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {accountActivity.slice(0, 10).map((row) => (
-                          <TableRow key={row.accountId}>
-                            <TableCell>
-                              <div className="font-medium">{row.accountName}</div>
-                              <div className="font-mono text-xs text-muted-foreground">
-                                {row.accountCode || "-"}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="capitalize">
-                                {row.accountType}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.debit, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.credit, "AED", locale)}
-                            </TableCell>
+                    <div className="max-h-[520px] overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Account</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead className="text-right">Lines</TableHead>
+                            <TableHead className="text-right">Debit</TableHead>
+                            <TableHead className="text-right">Credit</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {accountActivity.map((row) => (
+                            <TableRow key={row.accountId}>
+                              <TableCell>
+                                <div className="font-medium">{row.accountName}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {row.accountCode || "-"}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="capitalize">
+                                  {row.accountType}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.lineCount}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.debit, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.credit, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                       No posted account activity found for this period.
@@ -21008,36 +21022,38 @@ export default function Reports() {
                   {planningLoading ? (
                     <Skeleton className="h-64" />
                   ) : planningReport.projections.length ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Week</TableHead>
-                          <TableHead>Period</TableHead>
-                          <TableHead className="text-right">In</TableHead>
-                          <TableHead className="text-right">Out</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {planningReport.projections.slice(0, 8).map((row) => (
-                          <TableRow key={row.week}>
-                            <TableCell className="font-medium">Week {row.week}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {row.weekStart} - {row.weekEnd}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.expectedInflows, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.expectedOutflows, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(row.projectedBalance, "AED", locale)}
-                            </TableCell>
+                    <div className="max-h-[520px] overflow-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Week</TableHead>
+                            <TableHead>Period</TableHead>
+                            <TableHead className="text-right">In</TableHead>
+                            <TableHead className="text-right">Out</TableHead>
+                            <TableHead className="text-right">Balance</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {planningReport.projections.map((row) => (
+                            <TableRow key={row.week}>
+                              <TableCell className="font-medium">Week {row.week}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {row.weekStart} - {row.weekEnd}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.expectedInflows, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.expectedOutflows, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(row.projectedBalance, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                       No cash flow projection data available.
