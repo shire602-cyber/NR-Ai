@@ -1002,6 +1002,7 @@ async function seedCommercialDocs(companyId, dates) {
     const quote = await http("create quote", `/api/companies/${companyId}/quotes`, {
       method: "POST",
       body: {
+        number: `Q-${runStamp}-001`,
         customerName: "Quote Prospect LLC",
         date: dates.currentMid,
         expiryDate: dates.futureLater,
@@ -1023,6 +1024,7 @@ async function seedCommercialDocs(companyId, dates) {
     const po = await http("create purchase order", `/api/companies/${companyId}/purchase-orders`, {
       method: "POST",
       body: {
+        number: `PO-${runStamp}-001`,
         vendorName: "Hardware Supplier LLC",
         date: dates.currentMid,
         expectedDeliveryDate: dates.futureLater,
@@ -1148,12 +1150,17 @@ async function probeReports(companyId, dates, budgetId) {
   });
 
   const aging = await http("aging report", `/api/reports/${companyId}/aging`);
-  const agingRows =
-    (Array.isArray(aging?.receivables) ? aging.receivables.length : 0) +
-    (Array.isArray(aging?.payables) ? aging.payables.length : 0);
-  assertProbe("Aging report has A/R and A/P rows", agingRows > 0, {
-    receivables: aging?.receivables?.length || 0,
-    payables: aging?.payables?.length || 0,
+  const agingRows = Array.isArray(aging)
+    ? aging
+    : [
+        ...(Array.isArray(aging?.receivables) ? aging.receivables : []),
+        ...(Array.isArray(aging?.payables) ? aging.payables : []),
+      ];
+  const receivables = agingRows.filter((row) => row?.type === "receivable").length;
+  const payables = agingRows.filter((row) => row?.type === "payable").length;
+  assertProbe("Aging report has A/R and A/P rows", receivables > 0 && payables > 0, {
+    receivables,
+    payables,
   });
 
   const trialBalance = await http(
