@@ -885,30 +885,37 @@ export function registerReportRoutes(app: Express) {
 
       if (period === "month") {
         currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
         previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        previousEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        previousEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
       } else if (period === "year") {
         currentStart = new Date(now.getFullYear(), 0, 1);
-        currentEnd = new Date(now.getFullYear(), 11, 31);
+        currentEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
         previousStart = new Date(now.getFullYear() - 1, 0, 1);
-        previousEnd = new Date(now.getFullYear() - 1, 11, 31);
+        previousEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
       } else {
         // quarter
         const currentQ = Math.floor(now.getMonth() / 3);
         currentStart = new Date(now.getFullYear(), currentQ * 3, 1);
-        currentEnd = new Date(now.getFullYear(), (currentQ + 1) * 3, 0);
+        currentEnd = new Date(now.getFullYear(), (currentQ + 1) * 3, 0, 23, 59, 59, 999);
         previousStart = new Date(now.getFullYear(), (currentQ - 1) * 3, 1);
-        previousEnd = new Date(now.getFullYear(), currentQ * 3, 0);
+        previousEnd = new Date(now.getFullYear(), currentQ * 3, 0, 23, 59, 59, 999);
       }
 
+      const excludedInvoiceStatuses = new Set(["draft", "void", "cancelled"]);
+      const amountToAed = (amount: unknown, exchangeRate: unknown) =>
+        (Number(amount) || 0) * (Number(exchangeRate) || 1);
       const currentInvoices = invoices.filter((inv) => {
         const d = new Date(inv.date);
-        return d >= currentStart && d <= currentEnd;
+        return (
+          d >= currentStart && d <= currentEnd && !excludedInvoiceStatuses.has(inv.status ?? "")
+        );
       });
       const previousInvoices = invoices.filter((inv) => {
         const d = new Date(inv.date);
-        return d >= previousStart && d <= previousEnd;
+        return (
+          d >= previousStart && d <= previousEnd && !excludedInvoiceStatuses.has(inv.status ?? "")
+        );
       });
 
       const currentReceipts = receipts.filter((rec) => {
@@ -920,11 +927,25 @@ export function registerReportRoutes(app: Express) {
         return d >= previousStart && d <= previousEnd;
       });
 
-      // Use subtotal (excl. VAT) to avoid inflating revenue with collected tax
-      const currentRevenue = currentInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
-      const previousRevenue = previousInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
-      const currentExpenses = currentReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-      const previousExpenses = previousReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+      // Use subtotal/receipt amount (excl. VAT) to avoid inflating revenue or
+      // expenses with collected/recoverable tax. Convert all values to AED for
+      // like-for-like comparison.
+      const currentRevenue = currentInvoices.reduce(
+        (sum, inv) => sum + amountToAed(inv.subtotal, inv.exchangeRate),
+        0
+      );
+      const previousRevenue = previousInvoices.reduce(
+        (sum, inv) => sum + amountToAed(inv.subtotal, inv.exchangeRate),
+        0
+      );
+      const currentExpenses = currentReceipts.reduce(
+        (sum, rec) => sum + amountToAed(rec.amount, rec.exchangeRate),
+        0
+      );
+      const previousExpenses = previousReceipts.reduce(
+        (sum, rec) => sum + amountToAed(rec.amount, rec.exchangeRate),
+        0
+      );
 
       const comparison = [
         {

@@ -119,6 +119,10 @@ function initialAdvancedReportTab(): AdvancedReportTab {
     : "cashflow";
 }
 
+function isComparisonCountMetric(metric: string): boolean {
+  return metric.toLowerCase().includes("count");
+}
+
 export default function AdvancedReports() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -209,6 +213,13 @@ export default function AdvancedReports() {
       balance: latest.endingBalance || 0,
     };
   }, [cashFlowData]);
+
+  const formatComparisonValue = (item: PeriodComparison, value: number) => {
+    if (isComparisonCountMetric(item.metric)) {
+      return Number(value || 0).toLocaleString(locale);
+    }
+    return formatCurrency(value || 0, "AED", locale);
+  };
 
   const agingChartData = useMemo(() => {
     return [
@@ -653,7 +664,10 @@ export default function AdvancedReports() {
                 <CardTitle>{locale === "ar" ? "مقارنة الفترات" : "Period Comparison"}</CardTitle>
                 <CardDescription>
                   {format(periodDates.current.start, "MMM yyyy")} vs{" "}
-                  {format(periodDates.previous.start, "MMM yyyy")}
+                  {format(periodDates.previous.start, "MMM yyyy")} -{" "}
+                  {locale === "ar"
+                    ? "الفواتير الصادرة والإيصالات المسجلة؛ القيم المالية بالدرهم"
+                    : "issued invoices and captured receipts; money metrics shown in AED"}
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleExportPDF("Comparison")}>
@@ -691,10 +705,10 @@ export default function AdvancedReports() {
                         <TableRow key={item.metric}>
                           <TableCell className="font-medium">{item.metric}</TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(item.current)}
+                            {formatComparisonValue(item, item.current)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-muted-foreground">
-                            {formatCurrency(item.previous)}
+                            {formatComparisonValue(item, item.previous)}
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono ${item.change >= 0 ? "text-green-600" : "text-red-600"}`}
@@ -705,7 +719,7 @@ export default function AdvancedReports() {
                               ) : (
                                 <ArrowDown className="w-3 h-3" />
                               )}
-                              {formatCurrency(Math.abs(item.change))}
+                              {formatComparisonValue(item, Math.abs(item.change))}
                             </div>
                           </TableCell>
                           <TableCell
@@ -741,7 +755,14 @@ export default function AdvancedReports() {
                       tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
                     />
                     <YAxis type="category" dataKey="metric" width={120} />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Tooltip
+                      formatter={(value: number, _name: string, item: any) => {
+                        const payload = item?.payload as PeriodComparison | undefined;
+                        return payload
+                          ? formatComparisonValue(payload, Number(value) || 0)
+                          : formatCurrency(Number(value) || 0, "AED", locale);
+                      }}
+                    />
                     <Legend />
                     <Bar
                       dataKey="current"
