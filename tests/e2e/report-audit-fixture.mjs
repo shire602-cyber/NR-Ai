@@ -305,6 +305,19 @@ async function seedOpeningBalances(companyId, account) {
   count("journalEntries");
 }
 
+async function seedExchangeRates(companyId, dates) {
+  await http("create USD exchange rate", `/api/companies/${companyId}/exchange-rates`, {
+    method: "POST",
+    body: {
+      fromCurrency: "USD",
+      toCurrency: "AED",
+      rate: 3.75,
+      effectiveDate: dates.currentLate,
+    },
+  });
+  count("exchangeRates");
+}
+
 async function createInvoice(companyId, payload) {
   const invoice = await http("create invoice", `/api/companies/${companyId}/invoices`, {
     method: "POST",
@@ -389,6 +402,16 @@ async function seedInvoices(companyId, account, dates) {
       date: dates.currentLate,
       issue: false,
       lines: [{ description: "Draft proposal", quantity: 1, unitPrice: 2500, vatRate: 0.05 }],
+    })
+  );
+  invoices.push(
+    await createInvoice(companyId, {
+      customerName: "FX Export Client Inc",
+      date: dates.currentMid,
+      dueDate: dates.futureLater,
+      currency: "USD",
+      exchangeRate: 3.67,
+      lines: [{ description: "USD advisory retainer", quantity: 1, unitPrice: 6400, vatRate: 0 }],
     })
   );
 
@@ -1289,6 +1312,19 @@ async function probeReports(companyId, dates, budgetId) {
     metrics: comparisonRows.length,
   });
 
+  const fxGainsLosses = await http(
+    "FX gains/losses report",
+    `/api/companies/${companyId}/reports/fx-gains-losses`
+  );
+  const fxRows =
+    (Array.isArray(fxGainsLosses?.receivables) ? fxGainsLosses.receivables.length : 0) +
+    (Array.isArray(fxGainsLosses?.payables) ? fxGainsLosses.payables.length : 0);
+  assertProbe("FX gains/losses has foreign-currency exposure", fxRows > 0, {
+    receivables: fxGainsLosses?.receivables?.length || 0,
+    payables: fxGainsLosses?.payables?.length || 0,
+    netUnrealizedGainLoss: fxGainsLosses?.netUnrealizedGainLoss || 0,
+  });
+
   await optional("financial statement P&L", () =>
     http("financial statement P&L", `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${start}&endDate=${end}`)
   );
@@ -1347,6 +1383,7 @@ async function main() {
   };
 
   await seedOpeningBalances(companyId, account);
+  await seedExchangeRates(companyId, dates);
   const costCenters = await seedCostCenters(companyId);
   await seedCostCenterAllocations(companyId, account, dates, costCenters);
   const invoices = await seedInvoices(companyId, account, dates);
