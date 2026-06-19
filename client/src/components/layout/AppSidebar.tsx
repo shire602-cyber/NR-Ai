@@ -44,7 +44,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { reportsHref, type ReportPersona, type ReportTab } from "@/lib/reportCatalog";
+import {
+  readyReportCatalog,
+  reportsHref,
+  type ReportPersona,
+  type ReportTab,
+} from "@/lib/reportCatalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -81,6 +86,26 @@ const reportSidebarTabs: Array<{ key: string; title: string; tab: ReportTab }> =
   { key: "corporate-tax-report", title: "Corporate Tax", tab: "tax" },
 ];
 
+const reportSidebarPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
+
+function reportSidebarPersonaForTab(
+  tab: ReportTab,
+  currentPersona?: ReportPersona
+): ReportPersona | undefined {
+  if (
+    currentPersona &&
+    readyReportCatalog.some(
+      (report) => report.tab === tab && report.personas.includes(currentPersona)
+    )
+  ) {
+    return currentPersona;
+  }
+
+  return reportSidebarPersonaPriority.find((persona) =>
+    readyReportCatalog.some((report) => report.tab === tab && report.personas.includes(persona))
+  );
+}
+
 function reportNavItems(persona?: ReportPersona): SubItem[] {
   return [
     { key: "reports-home", titleKey: "reports", title: "Reports", url: "/reports" },
@@ -88,7 +113,10 @@ function reportNavItems(persona?: ReportPersona): SubItem[] {
       key: `report-${report.key}`,
       titleKey: `report-${report.key}`,
       title: report.title,
-      url: reportsHref({ tab: report.tab, persona }),
+      url: reportsHref({
+        tab: report.tab,
+        persona: reportSidebarPersonaForTab(report.tab, persona),
+      }),
       testId: `report-${report.key}`,
     })),
     { key: "financial-statements", titleKey: "financialStatements", url: "/financial-statements" },
