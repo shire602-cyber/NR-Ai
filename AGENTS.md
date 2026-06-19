@@ -434,6 +434,9 @@ Scope: this file applies to the whole repository.
   production URL or password defaults.
 - For read-only production smoke testing, run
   `SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod -- <url>`.
+- Railway production deploys from `origin/main`; pushing only a feature/Codex branch will not update
+  production until `main` is fast-forwarded or otherwise deployed, and `/api/version` reports the
+  expected commit.
 - For authenticated staging/firm smoke testing, run
   `SMOKE_BASE_URL=<url> SMOKE_EMAIL=<email> SMOKE_PASSWORD=<password> npm run smoke:prod`.
   Set `SMOKE_REQUIRE_OAUTH_CONFIG=true` when OAuth providers must be configured, and use
