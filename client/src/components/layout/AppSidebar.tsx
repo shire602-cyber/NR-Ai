@@ -119,6 +119,103 @@ const reportAutomationCenterTitleKeys: Record<ReportPersona, string> = {
   accountant: "accountantAutomationCenter",
 };
 
+const REPORT_NAV_REPORTS_PER_PERSONA = 6;
+const REPORT_NAV_SECONDARY_LIMIT = 3;
+
+function reportNavQuickAccessReportIds(persona: ReportPersona): Set<string> {
+  return new Set(
+    reportQuickAccessProfiles.find((profile) => profile.persona === persona)?.reportIds ?? []
+  );
+}
+
+function reportNavReportsForWorkspace(workspace: (typeof reportPersonaWorkspaces)[number]) {
+  const quickAccessReportIds = reportNavQuickAccessReportIds(workspace.persona);
+  return readyReportCatalog
+    .filter((report) => report.personas.includes(workspace.persona))
+    .filter((report) => quickAccessReportIds.size === 0 || quickAccessReportIds.has(report.id))
+    .slice(0, REPORT_NAV_REPORTS_PER_PERSONA);
+}
+
+const reportNavSavedViewItems = Array.from(
+  reportSavedViewProfiles.map((view) => ({
+    titleKey: view.title,
+    title: view.title,
+    url: reportSavedViewHref(view),
+    description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
+    testId: `report-saved-view-${view.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavSuiteItems = Array.from(
+  reportSuiteProfiles.map((suite) => ({
+    titleKey: suite.title,
+    title: suite.title,
+    url: reportSuiteHref(suite),
+    description: `${suite.workflow} - ${suite.primaryAction}`,
+    testId: `report-suite-${suite.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavDecisionShortcutItems = Array.from(
+  reportDecisionShortcuts.map((shortcut) => ({
+    titleKey: shortcut.question,
+    title: shortcut.question,
+    url: reportDecisionShortcutHref(shortcut),
+    description: shortcut.answer,
+    testId: `report-decision-shortcut-${shortcut.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavTriggerRuleItems = Array.from(
+  reportAutomationTriggerRules.map((rule) => ({
+    titleKey: rule.title,
+    title: rule.title,
+    url: reportAutomationTriggerRuleHref(rule),
+    description: `${rule.condition} - ${rule.actionLabel}`,
+    testId: `report-trigger-rule-${rule.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavDeliverySubscriptionItems = Array.from(
+  reportDeliverySubscriptions.map((subscription) => ({
+    titleKey: subscription.title,
+    title: subscription.title,
+    url: reportDeliverySubscriptionHref(subscription),
+    description: `${subscription.cadence} - ${subscription.channel}`,
+    testId: `report-delivery-subscription-${subscription.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavAutomationStarterItems = Array.from(
+  reportAutomationStarters.map((starter) => ({
+    titleKey: starter.title,
+    title: starter.title,
+    url: reportAutomationStarterHref(starter),
+    description: `${starter.audience} - ${starter.outcome}`,
+    testId: `report-automation-starter-${starter.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavPackTemplateItems = Array.from(
+  reportPackTemplates.map((template) => ({
+    titleKey: template.title,
+    title: template.title,
+    url: reportPackTemplateHref(template),
+    description: `${template.cadence} - ${template.delivery}`,
+    testId: `report-pack-template-${template.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
+const reportNavComparisonPresetItems = Array.from(
+  reportComparisonPresets.map((preset) => ({
+    titleKey: preset.title,
+    title: preset.title,
+    url: reportComparisonPresetHref(preset),
+    description: `${preset.baseline} - ${preset.automationTrigger}`,
+    testId: `report-comparison-preset-${preset.id}`,
+  }))
+).slice(0, REPORT_NAV_SECONDARY_LIMIT);
+
 const CUSTOMER_GROUPS: NavGroup[] = [
   {
     key: "sales",
@@ -197,23 +294,21 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         testId: `report-quick-access-${workspace.persona}`,
       })),
       ...reportPersonaWorkspaces.flatMap((workspace) =>
-        readyReportCatalog
-          .filter((report) => report.personas.includes(workspace.persona))
-          .flatMap((report) => {
-            const href = reportPersonaHref(report, workspace.persona);
-            return href
-              ? [
-                  {
-                    key: `report-catalog-${workspace.persona}-${report.id}`,
-                    titleKey: report.name,
-                    title: `${report.name} - ${workspace.title}`,
-                    url: href,
-                    description: `${report.category} - ${report.comparison} - ${report.automation}`,
-                    testId: `report-catalog-${workspace.persona}-${report.id}`,
-                  },
-                ]
-              : [];
-          })
+        reportNavReportsForWorkspace(workspace).flatMap((report) => {
+          const href = reportPersonaHref(report, workspace.persona);
+          return href
+            ? [
+                {
+                  key: `report-catalog-${workspace.persona}-${report.id}`,
+                  titleKey: report.name,
+                  title: `${report.name} - ${workspace.title}`,
+                  url: href,
+                  description: `${report.category} - ${report.comparison} - ${report.automation}`,
+                  testId: `report-catalog-${workspace.persona}-${report.id}`,
+                },
+              ]
+            : [];
+        })
       ),
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: `reportSavedViews-${workspace.persona}`,
@@ -222,20 +317,8 @@ const CUSTOMER_GROUPS: NavGroup[] = [
         description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
         testId: `report-saved-views-${workspace.persona}`,
       })),
-      ...reportSavedViewProfiles.map((view) => ({
-        titleKey: view.title,
-        title: view.title,
-        url: reportSavedViewHref(view),
-        description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
-        testId: `report-saved-view-${view.id}`,
-      })),
-      ...reportSuiteProfiles.map((suite) => ({
-        titleKey: suite.title,
-        title: suite.title,
-        url: reportSuiteHref(suite),
-        description: `${suite.workflow} - ${suite.primaryAction}`,
-        testId: `report-suite-${suite.id}`,
-      })),
+      ...reportNavSavedViewItems,
+      ...reportNavSuiteItems,
       ...reportPersonaWorkspaces.map((workspace) => ({
         titleKey: `reportOperations-${workspace.persona}`,
         title: `Report operations - ${workspace.title}`,
@@ -257,48 +340,12 @@ const CUSTOMER_GROUPS: NavGroup[] = [
             ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
         testId: `report-automation-impact-${workspace.persona}`,
       })),
-      ...reportDecisionShortcuts.map((shortcut) => ({
-        titleKey: shortcut.question,
-        title: shortcut.question,
-        url: reportDecisionShortcutHref(shortcut),
-        description: shortcut.answer,
-        testId: `report-decision-shortcut-${shortcut.id}`,
-      })),
-      ...reportAutomationTriggerRules.map((rule) => ({
-        titleKey: rule.title,
-        title: rule.title,
-        url: reportAutomationTriggerRuleHref(rule),
-        description: `${rule.condition} - ${rule.actionLabel}`,
-        testId: `report-trigger-rule-${rule.id}`,
-      })),
-      ...reportDeliverySubscriptions.map((subscription) => ({
-        titleKey: subscription.title,
-        title: subscription.title,
-        url: reportDeliverySubscriptionHref(subscription),
-        description: `${subscription.cadence} - ${subscription.channel}`,
-        testId: `report-delivery-subscription-${subscription.id}`,
-      })),
-      ...reportAutomationStarters.map((starter) => ({
-        titleKey: starter.title,
-        title: starter.title,
-        url: reportAutomationStarterHref(starter),
-        description: `${starter.audience} - ${starter.outcome}`,
-        testId: `report-automation-starter-${starter.id}`,
-      })),
-      ...reportPackTemplates.map((template) => ({
-        titleKey: template.title,
-        title: template.title,
-        url: reportPackTemplateHref(template),
-        description: `${template.cadence} - ${template.delivery}`,
-        testId: `report-pack-template-${template.id}`,
-      })),
-      ...reportComparisonPresets.map((preset) => ({
-        titleKey: preset.title,
-        title: preset.title,
-        url: reportComparisonPresetHref(preset),
-        description: `${preset.baseline} - ${preset.automationTrigger}`,
-        testId: `report-comparison-preset-${preset.id}`,
-      })),
+      ...reportNavDecisionShortcutItems,
+      ...reportNavTriggerRuleItems,
+      ...reportNavDeliverySubscriptionItems,
+      ...reportNavAutomationStarterItems,
+      ...reportNavPackTemplateItems,
+      ...reportNavComparisonPresetItems,
       { titleKey: "financialStatements", url: "/financial-statements" },
       { titleKey: "vatFiling", url: "/vat-filing" },
       { titleKey: "vatAutopilot", url: "/vat-autopilot" },
@@ -510,7 +557,12 @@ export function AppSidebar() {
               transition={{ duration: 0.2, ease: "easeInOut" }}
               style={{ overflow: "hidden" }}
             >
-              <SidebarMenuSub>
+              <SidebarMenuSub
+                className={cn(
+                  group.key === "reports" &&
+                    "max-h-[min(34rem,calc(100vh-18rem))] overflow-y-auto pr-1"
+                )}
+              >
                 {group.items.map((item) => {
                   const isActive = location === item.url || location.startsWith(item.url + "/");
                   const label =

@@ -602,7 +602,7 @@ export function ReportLaunchPicker({
       className={cn("border-card-border", className)}
       data-testid={isDeliveryMode ? "report-delivery-launch-picker" : "report-launch-picker"}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] uppercase font-semibold text-muted-foreground">
@@ -641,15 +641,15 @@ export function ReportLaunchPicker({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
-          <div className="space-y-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[168px_minmax(0,1fr)]">
+          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
             {reportPersonas.map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => setSelectedPersona(item)}
                 className={cn(
-                  "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                  "w-full rounded-md border px-2.5 py-2 text-left text-xs font-medium transition-colors",
                   item === selectedPersona
                     ? "border-accent bg-accent/5 text-foreground"
                     : "border-border/70 text-muted-foreground hover:border-accent hover:bg-accent/5"
@@ -691,8 +691,8 @@ export function ReportLaunchPicker({
               </Button>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-md border border-border/70">
+            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="overflow-hidden rounded-md border border-border/70">
                 <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
                   <div className="text-xs font-semibold uppercase text-muted-foreground">
                     Reports
@@ -703,18 +703,18 @@ export function ReportLaunchPicker({
                     </Button>
                   </Link>
                 </div>
-                <div className="divide-y divide-border/50">
+                <div className="max-h-[30rem] divide-y divide-border/50 overflow-y-auto">
                   {reports.map((report) => {
                     const reportAutomationContext = reportAutomationContextById.get(report.id);
                     return (
                       <div
                         key={report.id}
-                        className="flex cursor-pointer items-start justify-between gap-3 px-3 py-3 transition-colors hover:bg-accent/5"
+                        className="grid cursor-pointer gap-3 px-3 py-3 transition-colors hover:bg-accent/5 sm:grid-cols-[minmax(0,1fr)_auto]"
                         data-testid={`report-launch-report-${report.id}`}
                       >
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-foreground">{report.name}</div>
-                          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          <div className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                             {report.decisionQuestion}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -729,58 +729,58 @@ export function ReportLaunchPicker({
                               <Badge variant="neutral">Comparison</Badge>
                             ) : null}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:max-w-[11rem] sm:justify-end">
+                          <Button asChild size="sm" variant="outline" className="h-7 px-2">
+                            <Link
+                              href={
+                                reportAutomationContext?.syncedContext?.reportHref ??
+                                reportItemHref(report, selectedPersona)
+                              }
+                            >
+                              Open report <ArrowRight className="h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                          {reportAutomationContext?.starter ? (
+                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
                               <Link
-                                href={
-                                  reportAutomationContext?.syncedContext?.reportHref ??
-                                  reportItemHref(report, selectedPersona)
-                                }
+                                href={reportAutomationContext.starter.href}
+                                data-testid={`report-launch-report-automation-${report.id}`}
                               >
-                                Open report <ArrowRight className="h-3.5 w-3.5" />
+                                Autopilot
                               </Link>
                             </Button>
-                            {reportAutomationContext?.starter ? (
-                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link
-                                  href={reportAutomationContext.starter.href}
-                                  data-testid={`report-launch-report-automation-${report.id}`}
-                                >
-                                  Autopilot
-                                </Link>
-                              </Button>
-                            ) : null}
-                            {reportAutomationContext?.delivery ? (
-                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link
-                                  href={reportAutomationContext.delivery.href}
-                                  data-testid={`report-launch-report-delivery-${report.id}`}
-                                >
-                                  Delivery
-                                </Link>
-                              </Button>
-                            ) : null}
-                            {reportAutomationContext?.comparison ? (
-                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link
-                                  href={reportAutomationContext.comparison.href}
-                                  data-testid={`report-launch-report-comparison-${report.id}`}
-                                >
-                                  Compare
-                                </Link>
-                              </Button>
-                            ) : null}
-                            {reportAutomationContext?.suite ? (
-                              <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link
-                                  href={reportAutomationContext.suite.href}
-                                  data-testid={`report-launch-report-suite-${report.id}`}
-                                >
-                                  Suite
-                                </Link>
-                              </Button>
-                            ) : null}
-                          </div>
+                          ) : null}
+                          {reportAutomationContext?.delivery ? (
+                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                              <Link
+                                href={reportAutomationContext.delivery.href}
+                                data-testid={`report-launch-report-delivery-${report.id}`}
+                              >
+                                Delivery
+                              </Link>
+                            </Button>
+                          ) : null}
+                          {reportAutomationContext?.comparison ? (
+                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                              <Link
+                                href={reportAutomationContext.comparison.href}
+                                data-testid={`report-launch-report-comparison-${report.id}`}
+                              >
+                                Compare
+                              </Link>
+                            </Button>
+                          ) : null}
+                          {reportAutomationContext?.suite ? (
+                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
+                              <Link
+                                href={reportAutomationContext.suite.href}
+                                data-testid={`report-launch-report-suite-${report.id}`}
+                              >
+                                Suite
+                              </Link>
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                     );
@@ -788,7 +788,7 @@ export function ReportLaunchPicker({
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="max-h-[30rem] space-y-3 overflow-y-auto pr-1">
                 {pinnedDeliveryAutomationCommand ? (
                   <div
                     className="rounded-md border border-accent/40 bg-accent/5 p-3"

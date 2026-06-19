@@ -51,6 +51,87 @@ const navItems: NavItem[] = [
   { label: "More", icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
+const MOBILE_REPORTS_PER_PERSONA = 6;
+const MOBILE_REPORT_SECONDARY_LIMIT = 3;
+
+function mobileQuickAccessReportIds(persona: (typeof reportPersonaWorkspaces)[number]["persona"]) {
+  return new Set(
+    reportQuickAccessProfiles.find((profile) => profile.persona === persona)?.reportIds ?? []
+  );
+}
+
+function mobileReportsForWorkspace(workspace: (typeof reportPersonaWorkspaces)[number]) {
+  const quickAccessReportIds = mobileQuickAccessReportIds(workspace.persona);
+  return readyReportCatalog
+    .filter((report) => report.personas.includes(workspace.persona))
+    .filter((report) => quickAccessReportIds.size === 0 || quickAccessReportIds.has(report.id))
+    .slice(0, MOBILE_REPORTS_PER_PERSONA);
+}
+
+const mobileSavedViewLinks = Array.from(
+  reportSavedViewProfiles.map((view) => ({
+    label: view.title,
+    href: reportSavedViewHref(view),
+    description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileReportSuiteLinks = Array.from(
+  reportSuiteProfiles.map((suite) => ({
+    label: suite.title,
+    href: reportSuiteHref(suite),
+    description: `${suite.workflow} - ${suite.primaryAction}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileDecisionShortcutLinks = Array.from(
+  reportDecisionShortcuts.map((shortcut) => ({
+    label: shortcut.question,
+    href: reportDecisionShortcutHref(shortcut),
+    description: shortcut.answer,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileAutomationTriggerLinks = Array.from(
+  reportAutomationTriggerRules.map((rule) => ({
+    label: rule.title,
+    href: reportAutomationTriggerRuleHref(rule),
+    description: `${rule.condition} - ${rule.actionLabel}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileDeliverySubscriptionLinks = Array.from(
+  reportDeliverySubscriptions.map((subscription) => ({
+    label: subscription.title,
+    href: reportDeliverySubscriptionHref(subscription),
+    description: `${subscription.cadence} - ${subscription.channel}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileAutomationStarterLinks = Array.from(
+  reportAutomationStarters.map((starter) => ({
+    label: starter.title,
+    href: reportAutomationStarterHref(starter),
+    description: `${starter.audience} - ${starter.outcome}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobilePackTemplateLinks = Array.from(
+  reportPackTemplates.map((template) => ({
+    label: template.title,
+    href: reportPackTemplateHref(template),
+    description: `${template.cadence} - ${template.delivery}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
+const mobileComparisonPresetLinks = Array.from(
+  reportComparisonPresets.map((preset) => ({
+    label: preset.title,
+    href: reportComparisonPresetHref(preset),
+    description: `${preset.baseline} - ${preset.automationTrigger}`,
+  }))
+).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
+
 const moreLinks: MoreLink[] = [
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.navLabel,
@@ -75,37 +156,27 @@ const moreLinks: MoreLink[] = [
       `Daily reports for ${workspace.navLabel.toLowerCase()}`,
   })),
   ...reportPersonaWorkspaces.flatMap((workspace) =>
-    readyReportCatalog
-      .filter((report) => report.personas.includes(workspace.persona))
-      .flatMap((report) => {
-        const href = reportPersonaHref(report, workspace.persona);
-        return href
-          ? [
-              {
-                key: `report-catalog-${workspace.persona}-${report.id}`,
-                label: `${report.name} - ${workspace.title}`,
-                href,
-                description: `${report.category} - ${report.comparison} - ${report.automation}`,
-              },
-            ]
-          : [];
-      })
+    mobileReportsForWorkspace(workspace).flatMap((report) => {
+      const href = reportPersonaHref(report, workspace.persona);
+      return href
+        ? [
+            {
+              key: `report-catalog-${workspace.persona}-${report.id}`,
+              label: `${report.name} - ${workspace.title}`,
+              href,
+              description: `${report.category} - ${report.comparison} - ${report.automation}`,
+            },
+          ]
+        : [];
+    })
   ),
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: `Saved report views - ${workspace.title}`,
     href: reportSectionHref(workspace, "saved-views"),
     description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
   })),
-  ...reportSavedViewProfiles.map((view) => ({
-    label: view.title,
-    href: reportSavedViewHref(view),
-    description: `${view.dateRangePreset} - ${view.comparisonPeriod}`,
-  })),
-  ...reportSuiteProfiles.map((suite) => ({
-    label: suite.title,
-    href: reportSuiteHref(suite),
-    description: `${suite.workflow} - ${suite.primaryAction}`,
-  })),
+  ...mobileSavedViewLinks,
+  ...mobileReportSuiteLinks,
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: `Report operations - ${workspace.title}`,
     href: reportSectionHref(workspace, "automation-operations"),
@@ -123,36 +194,12 @@ const moreLinks: MoreLink[] = [
       reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
         ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
   })),
-  ...reportDecisionShortcuts.map((shortcut) => ({
-    label: shortcut.question,
-    href: reportDecisionShortcutHref(shortcut),
-    description: shortcut.answer,
-  })),
-  ...reportAutomationTriggerRules.map((rule) => ({
-    label: rule.title,
-    href: reportAutomationTriggerRuleHref(rule),
-    description: `${rule.condition} - ${rule.actionLabel}`,
-  })),
-  ...reportDeliverySubscriptions.map((subscription) => ({
-    label: subscription.title,
-    href: reportDeliverySubscriptionHref(subscription),
-    description: `${subscription.cadence} - ${subscription.channel}`,
-  })),
-  ...reportAutomationStarters.map((starter) => ({
-    label: starter.title,
-    href: reportAutomationStarterHref(starter),
-    description: `${starter.audience} - ${starter.outcome}`,
-  })),
-  ...reportPackTemplates.map((template) => ({
-    label: template.title,
-    href: reportPackTemplateHref(template),
-    description: `${template.cadence} - ${template.delivery}`,
-  })),
-  ...reportComparisonPresets.map((preset) => ({
-    label: preset.title,
-    href: reportComparisonPresetHref(preset),
-    description: `${preset.baseline} - ${preset.automationTrigger}`,
-  })),
+  ...mobileDecisionShortcutLinks,
+  ...mobileAutomationTriggerLinks,
+  ...mobileDeliverySubscriptionLinks,
+  ...mobileAutomationStarterLinks,
+  ...mobilePackTemplateLinks,
+  ...mobileComparisonPresetLinks,
   { label: "Accounts", href: "/chart-of-accounts" },
   { label: "Journal", href: "/journal" },
   { label: "Contacts", href: "/contacts" },

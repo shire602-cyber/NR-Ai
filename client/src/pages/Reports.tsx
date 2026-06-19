@@ -1205,6 +1205,155 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "accountant", label: "Accountant" },
 ];
 
+type ReportWorkspaceTab =
+  | "home"
+  | "reports"
+  | "suites"
+  | "comparisons"
+  | "automation"
+  | "delivery"
+  | "setup";
+
+const reportWorkspaceTabs: Array<{
+  id: ReportWorkspaceTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "home",
+    label: "Home",
+    description: "Top reports and next action",
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    description: "Library, saved views, statements",
+  },
+  {
+    id: "suites",
+    label: "Suites",
+    description: "Management packs and bundles",
+  },
+  {
+    id: "comparisons",
+    label: "Compare",
+    description: "Period movement and snapshots",
+  },
+  {
+    id: "automation",
+    label: "Automate",
+    description: "Rules, queues, command center",
+  },
+  {
+    id: "delivery",
+    label: "Delivery",
+    description: "Schedules, packs, handoff",
+  },
+  {
+    id: "setup",
+    label: "Setup",
+    description: "Role workflows and roadmap",
+  },
+];
+
+function reportWorkspaceTabFromLocation(search: string, hash: string): ReportWorkspaceTab {
+  const anchor = hash.replace(/^#/, "");
+  const params = new URLSearchParams(search);
+  const workspace = params.get("workspace");
+
+  if (reportWorkspaceTabs.some((tab) => tab.id === workspace)) {
+    return workspace as ReportWorkspaceTab;
+  }
+
+  if (
+    anchor.startsWith("report-suite") ||
+    anchor.startsWith("report-management-brief") ||
+    anchor.startsWith("report-pack-template")
+  ) {
+    return "suites";
+  }
+
+  if (
+    anchor.startsWith("report-comparison") ||
+    anchor === "period-comparison-title" ||
+    anchor === "comparison-snapshots-title"
+  ) {
+    return "comparisons";
+  }
+
+  if (
+    anchor.startsWith("report-delivery") ||
+    anchor.startsWith("pack-readiness") ||
+    anchor === "report-accountant-handoff-title" ||
+    anchor === "report-pack-readiness-title" ||
+    anchor === "report-pack-automation-title"
+  ) {
+    return "delivery";
+  }
+
+  if (
+    anchor.startsWith("report-automation") ||
+    anchor.startsWith("automation-") ||
+    anchor.startsWith("report-trigger-rule") ||
+    anchor.startsWith("automation-rule") ||
+    anchor === "report-workflow-readiness-title" ||
+    anchor === "decision-shortcuts-title" ||
+    anchor === "automation-starters-title" ||
+    anchor === "trigger-rules-title"
+  ) {
+    return "automation";
+  }
+
+  if (
+    anchor.startsWith("report-role") ||
+    anchor.startsWith("report-product-depth") ||
+    anchor === "report-roadmap-title" ||
+    anchor === "persona-workspaces-title"
+  ) {
+    return "setup";
+  }
+
+  if (
+    anchor.startsWith("report-quick-access") ||
+    anchor.startsWith("report-saved-view") ||
+    anchor === "report-workflow-finder-title" ||
+    anchor === "reports-catalog-discovery-summary" ||
+    anchor === "report-catalog-readiness-title" ||
+    anchor === "recommended-reports-title" ||
+    anchor === "report-center-title" ||
+    anchor === "connected-report-centers-title"
+  ) {
+    return "reports";
+  }
+
+  if (params.has("tab") || params.has("workflowSearch") || params.has("workflowGap")) {
+    return "reports";
+  }
+
+  return "home";
+}
+
+function reportsWorkspaceHref({
+  persona,
+  tab,
+  workspace,
+}: {
+  persona?: PersonaFilter;
+  tab?: ReportTab;
+  workspace?: ReportWorkspaceTab;
+}): string {
+  const params = new URLSearchParams();
+
+  if (tab) params.set("tab", tab);
+  if (persona && persona !== "all") params.set("persona", persona);
+  if (workspace && workspace !== "home" && workspace !== "reports") {
+    params.set("workspace", workspace);
+  }
+
+  const query = params.toString();
+  return query ? `/reports?${query}` : "/reports";
+}
+
 const reportDeliveryRunStatusFilters: Array<{
   id: ReportDeliveryRunStatusFilter;
   label: string;
@@ -2205,6 +2354,13 @@ export default function Reports() {
   const activeTab = useMemo(() => {
     return reportTabFromSearch(locationSearch || window.location.search);
   }, [locationSearch]);
+  const [activeReportWorkspaceTab, setActiveReportWorkspaceTabState] = useState<ReportWorkspaceTab>(
+    () =>
+      reportWorkspaceTabFromLocation(
+        typeof window === "undefined" ? "" : window.location.search,
+        typeof window === "undefined" ? "" : window.location.hash
+      )
+  );
 
   const [preferredReportPersona, setPreferredReportPersonaState] = useState<ReportPersona | null>(
     () => getPreferredReportPersona()
@@ -2243,7 +2399,19 @@ export default function Reports() {
   }, [reportCatalogDiscoveryQuery.data?.reportActionContexts]);
 
   const setActiveTab = (tab: ReportTab, persona: PersonaFilter = personaFilter) => {
-    navigate(reportsHref({ tab, persona }));
+    setActiveReportWorkspaceTabState("reports");
+    navigate(reportsWorkspaceHref({ tab, persona, workspace: "reports" }));
+  };
+
+  const setReportWorkspaceTab = (tab: ReportWorkspaceTab) => {
+    setActiveReportWorkspaceTabState(tab);
+    navigate(
+      reportsWorkspaceHref({
+        tab: tab === "reports" ? activeTab : undefined,
+        persona: personaFilter,
+        workspace: tab,
+      })
+    );
   };
 
   const setReportPersonaFilter = (persona: PersonaFilter) => {
@@ -2254,8 +2422,34 @@ export default function Reports() {
       setPreferredReportPersona(persona);
       setPreferredReportPersonaState(persona);
     }
-    navigate(reportsHref({ tab: activeTab, persona }));
+    navigate(
+      reportsWorkspaceHref({
+        tab: activeReportWorkspaceTab === "reports" ? activeTab : undefined,
+        persona,
+        workspace: activeReportWorkspaceTab,
+      })
+    );
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncWorkspaceTabFromLocation = () => {
+      setActiveReportWorkspaceTabState(
+        reportWorkspaceTabFromLocation(
+          locationSearch || window.location.search,
+          window.location.hash
+        )
+      );
+    };
+
+    syncWorkspaceTabFromLocation();
+    window.addEventListener("hashchange", syncWorkspaceTabFromLocation);
+
+    return () => {
+      window.removeEventListener("hashchange", syncWorkspaceTabFromLocation);
+    };
+  }, [locationSearch]);
 
   useEffect(() => {
     const currentSearch = locationSearch || window.location.search;
@@ -2354,8 +2548,20 @@ export default function Reports() {
     setPreferredReportPersonaState(null);
     setReportWorkflowSearch("");
     setReportWorkflowGapFilter({ type: "all", persona: null });
-    navigate(reportsHref({ tab: activeTab, persona: "all" }));
-  }, [activeTab, navigate, personaFilter, reportWorkflowGapFilter.persona]);
+    navigate(
+      reportsWorkspaceHref({
+        tab: activeReportWorkspaceTab === "reports" ? activeTab : undefined,
+        persona: "all",
+        workspace: activeReportWorkspaceTab,
+      })
+    );
+  }, [
+    activeReportWorkspaceTab,
+    activeTab,
+    navigate,
+    personaFilter,
+    reportWorkflowGapFilter.persona,
+  ]);
   const reportDeliveryLauncherPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const pinnedReportDeliveryAutomationCommand =
@@ -9430,6 +9636,24 @@ export default function Reports() {
   const reportAutomationOperationsNeedingReview = visibleReportAutomationOperations.filter(
     (item) => item.status !== "Ready to automate"
   ).length;
+  const reportHomeQuickReports = useMemo(() => {
+    const seenReportIds = new Set<string>();
+
+    return visibleReportQuickAccessSummaries
+      .flatMap((profile) =>
+        profile.primaryReports.flatMap((entry) => {
+          const key = `${profile.persona}:${entry.report.id}`;
+          if (seenReportIds.has(key)) return [];
+          seenReportIds.add(key);
+          return [{ ...entry, profile }];
+        })
+      )
+      .slice(0, 6);
+  }, [visibleReportQuickAccessSummaries]);
+  const reportHomeSuites = visibleReportSuiteSummaries.slice(0, personaFilter === "all" ? 3 : 2);
+  const reportHomeSavedViews = visibleReportSavedViewSummaries.slice(0, 3);
+  const reportHomeAutomationOperation = visibleReportAutomationOperations[0] ?? null;
+
   const reportAutomationImpactSummaries = useMemo(() => {
     return reportAutomationImpactProfiles.flatMap((profile) => {
       const workspace = workspaceSummaries.find((item) => item.persona === profile.persona);
@@ -11036,6 +11260,9 @@ export default function Reports() {
     }
   };
 
+  const reportWorkspacePanelClass = (tab: ReportWorkspaceTab, className: string) =>
+    activeReportWorkspaceTab === tab ? className : `${className} hidden`;
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -11148,7 +11375,360 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-suites-title">
+      <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <Tabs
+          value={activeReportWorkspaceTab}
+          onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
+        >
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-7">
+            {reportWorkspaceTabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="h-auto flex-col items-start gap-0.5 whitespace-normal px-3 py-2 text-left sm:items-center sm:text-center"
+                data-testid={`reports-workspace-tab-${tab.id}`}
+              >
+                <span className="text-sm font-semibold">{tab.label}</span>
+                <span className="hidden text-[11px] font-normal text-muted-foreground xl:block">
+                  {tab.description}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {activeReportWorkspaceTab === "home" ? (
+        <section className="space-y-4" aria-labelledby="reports-home-title">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.65fr)]">
+            <Card className="border-card-border">
+              <CardHeader className="space-y-3 pb-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle id="reports-home-title" className="text-xl">
+                      Reporting command center
+                    </CardTitle>
+                    <CardDescription>{personaScopeDescription}</CardDescription>
+                  </div>
+                  <Badge
+                    variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"}
+                    dot
+                    className="w-fit"
+                  >
+                    {reportAutomationOperationsNeedingReview > 0
+                      ? `${reportAutomationOperationsNeedingReview} need action`
+                      : "Ready"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Ready reports</div>
+                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.ready}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Live reports</div>
+                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.live}</div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Automations</div>
+                    <div className="mt-1 font-mono text-2xl font-semibold">
+                      {reportStats.automationStarters}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">Open queue</div>
+                    <div className="mt-1 font-mono text-2xl font-semibold">
+                      {automationQueueCount}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={reportWorkflowSearch}
+                      onChange={(event) => updateReportWorkflowSearch(event.target.value)}
+                      placeholder="Search reports, packs, comparisons, automations"
+                      className="pl-9"
+                      data-testid="input-report-home-search"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setReportWorkspaceTab("reports")}
+                    data-testid="button-report-home-search-open"
+                  >
+                    Search library
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => setReportWorkspaceTab("reports")}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Reports
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => setReportWorkspaceTab("comparisons")}
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                    Compare
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => setReportWorkspaceTab("automation")}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Automate
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => setReportWorkspaceTab("delivery")}
+                  >
+                    <Send className="h-4 w-4" />
+                    Delivery
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-card-border">
+              <CardHeader className="space-y-3 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">Next automation</CardTitle>
+                    <CardDescription>
+                      {reportHomeAutomationOperation?.workspace.title ?? personaFilterLabel}
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant={reportHomeAutomationOperation?.statusVariant ?? "neutral"}
+                    dot
+                    className="w-fit"
+                  >
+                    {reportHomeAutomationOperation?.status ?? "No role selected"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {reportHomeAutomationOperation ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">Health</div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {reportHomeAutomationOperation.automationScore}/100
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-muted-foreground">At risk</div>
+                        <div className="mt-1 truncate font-mono text-sm font-semibold">
+                          {formatCurrency(
+                            reportHomeAutomationOperation.amountAtRisk,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3 text-sm">
+                      <div className="font-medium text-foreground">
+                        {reportHomeAutomationOperation.nextAction.label}
+                      </div>
+                      <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {reportHomeAutomationOperation.nextAction.detail}
+                      </div>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={reportHomeAutomationOperation.nextAction.href}>
+                        Open action <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Select a role to show the next automation action.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Top reports</h2>
+                <p className="text-sm text-muted-foreground">
+                  {personaFilterLabel} shortcuts from the active quick-access profile.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setReportWorkspaceTab("reports")}
+              >
+                All reports
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {reportHomeQuickReports.length ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {reportHomeQuickReports.map(
+                  ({ report, href, workflowHref, comparisonHref, deliveryHref, profile }) => (
+                    <Card key={`${profile.persona}-${report.id}`} className="border-card-border">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-foreground">
+                              {report.name}
+                            </div>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                              {report.category} · {profile.workspace.navLabel}
+                            </div>
+                          </div>
+                          <Badge variant={report.status === "planned" ? "warning" : "success"} dot>
+                            {reportStatusMeta[report.status].label}
+                          </Badge>
+                        </div>
+                        <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {report.decisionQuestion}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button asChild size="sm">
+                            <Link href={href}>Open</Link>
+                          </Button>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={workflowHref}>Automate</Link>
+                          </Button>
+                          {comparisonHref ? (
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={comparisonHref}>Compare</Link>
+                            </Button>
+                          ) : null}
+                          {deliveryHref ? (
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={deliveryHref}>Schedule</Link>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                No quick-access reports match the current filters.
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card className="border-card-border">
+              <CardHeader className="space-y-2 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">Suites</CardTitle>
+                    <CardDescription>Report packs ready for recurring review.</CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReportWorkspaceTab("suites")}
+                  >
+                    Open suites
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {reportHomeSuites.map((suite) => (
+                  <div
+                    key={suite.id}
+                    className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-foreground">{suite.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">{suite.workflow}</div>
+                    </div>
+                    <Badge
+                      variant={suite.readyCount === suite.reports.length ? "success" : "warning"}
+                      dot
+                    >
+                      {suite.readyCount}/{suite.reports.length}
+                    </Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-card-border">
+              <CardHeader className="space-y-2 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">Saved views</CardTitle>
+                    <CardDescription>Reusable filters and comparison presets.</CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReportWorkspaceTab("reports")}
+                  >
+                    Open views
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {reportHomeSavedViews.length ? (
+                  reportHomeSavedViews.map((view) => (
+                    <Link key={view.id} href={view.href}>
+                      <div className="rounded-md border p-3 text-sm transition-colors hover:bg-accent/5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">{view.title}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {view.report.name} · {view.comparisonPeriod}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    No saved views match the current filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      ) : null}
+
+      <section
+        className={reportWorkspacePanelClass("suites", "space-y-4")}
+        aria-labelledby="report-suites-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-suites-title" className="text-xl font-semibold">
@@ -11346,7 +11926,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("suites", "space-y-4")}
         aria-labelledby="report-management-briefs-title"
         data-testid="report-management-briefs"
       >
@@ -11513,7 +12093,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-quick-access-title">
+      <section
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        aria-labelledby="report-quick-access-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-quick-access-title" className="text-xl font-semibold">
@@ -11668,7 +12251,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-saved-views-title">
+      <section
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        aria-labelledby="report-saved-views-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-saved-views-title" className="text-xl font-semibold">
@@ -11747,7 +12333,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("delivery", "space-y-4")}
         aria-labelledby="report-accountant-handoff-title"
         data-testid="report-accountant-handoff"
       >
@@ -11857,7 +12443,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
         aria-labelledby="report-workflow-readiness-title"
         data-testid="report-workflow-readiness"
       >
@@ -12003,7 +12589,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
         aria-labelledby="report-workflow-finder-title"
         id="report-workflow-finder"
         data-testid="report-workflow-finder"
@@ -12139,7 +12725,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
         aria-labelledby="report-catalog-readiness-title"
         data-testid="reports-catalog-discovery-summary"
       >
@@ -12264,7 +12850,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-role-setup-title">
+      <section
+        className={reportWorkspacePanelClass("setup", "space-y-4")}
+        aria-labelledby="report-role-setup-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-role-setup-title" className="text-xl font-semibold">
@@ -12328,7 +12917,7 @@ export default function Reports() {
       </section>
 
       <section
-        className="space-y-4"
+        className={reportWorkspacePanelClass("setup", "space-y-4")}
         aria-labelledby="report-role-workflows-title"
         data-testid="report-role-workflows"
       >
@@ -12459,7 +13048,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-automation-operations-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="report-automation-operations-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-operations-title" className="text-xl font-semibold">
@@ -12614,7 +13206,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-automation-impact-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="report-automation-impact-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-impact-title" className="text-xl font-semibold">
@@ -12777,7 +13372,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="decision-shortcuts-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="decision-shortcuts-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="decision-shortcuts-title" className="text-xl font-semibold">
@@ -12888,7 +13486,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="automation-starters-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="automation-starters-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-starters-title" className="text-xl font-semibold">
@@ -13117,7 +13718,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="trigger-rules-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="trigger-rules-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="trigger-rules-title" className="text-xl font-semibold">
@@ -13230,7 +13834,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-delivery-subscriptions-title">
+      <section
+        className={reportWorkspacePanelClass("delivery", "space-y-4")}
+        aria-labelledby="report-delivery-subscriptions-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-delivery-subscriptions-title" className="text-xl font-semibold">
@@ -14209,7 +14816,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="recommended-reports-title">
+      <section
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        aria-labelledby="recommended-reports-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="recommended-reports-title" className="text-xl font-semibold">
@@ -14300,7 +14910,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-product-depth-title">
+      <section
+        className={reportWorkspacePanelClass("setup", "space-y-4")}
+        aria-labelledby="report-product-depth-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-product-depth-title" className="text-xl font-semibold">
@@ -14495,7 +15108,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-pack-readiness-title">
+      <section
+        className={reportWorkspacePanelClass("delivery", "space-y-4")}
+        aria-labelledby="report-pack-readiness-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-readiness-title" className="text-xl font-semibold">
@@ -14625,7 +15241,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="period-comparison-title">
+      <section
+        className={reportWorkspacePanelClass("comparisons", "space-y-4")}
+        aria-labelledby="period-comparison-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="period-comparison-title" className="text-xl font-semibold">
@@ -14773,7 +15392,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="automation-queues-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="automation-queues-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-queues-title" className="text-xl font-semibold">
@@ -14859,7 +15481,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="automation-coverage-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="automation-coverage-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-coverage-title" className="text-xl font-semibold">
@@ -14989,7 +15614,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="automation-command-center-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="automation-command-center-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-command-center-title" className="text-xl font-semibold">
@@ -15172,7 +15800,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-automation-rules-title">
+      <section
+        className={reportWorkspacePanelClass("automation", "space-y-4")}
+        aria-labelledby="report-automation-rules-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-rules-title" className="text-xl font-semibold">
@@ -15356,7 +15987,10 @@ export default function Reports() {
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-roadmap-title">
+      <section
+        className={reportWorkspacePanelClass("setup", "space-y-4")}
+        aria-labelledby="report-roadmap-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-roadmap-title" className="text-xl font-semibold">
@@ -15565,7 +16199,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-pack-automation-title">
+      <section
+        className={reportWorkspacePanelClass("delivery", "space-y-4")}
+        aria-labelledby="report-pack-automation-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-automation-title" className="text-xl font-semibold">
@@ -15712,7 +16349,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="comparison-snapshots-title">
+      <section
+        className={reportWorkspacePanelClass("comparisons", "space-y-4")}
+        aria-labelledby="comparison-snapshots-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="comparison-snapshots-title" className="text-xl font-semibold">
@@ -15807,7 +16447,10 @@ export default function Reports() {
         </Card>
       </section>
 
-      <section className="space-y-4" aria-labelledby="persona-workspaces-title">
+      <section
+        className={reportWorkspacePanelClass("setup", "space-y-4")}
+        aria-labelledby="persona-workspaces-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="persona-workspaces-title" className="text-xl font-semibold">
@@ -16035,7 +16678,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-pack-templates-title">
+      <section
+        className={reportWorkspacePanelClass("suites", "space-y-4")}
+        aria-labelledby="report-pack-templates-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-templates-title" className="text-xl font-semibold">
@@ -16132,7 +16778,10 @@ export default function Reports() {
         </div>
       </section>
 
-      <section className="space-y-4" aria-labelledby="report-center-title">
+      <section
+        className={reportWorkspacePanelClass("reports", "space-y-4")}
+        aria-labelledby="report-center-title"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-center-title" className="text-xl font-semibold">
@@ -16541,716 +17190,882 @@ export default function Reports() {
         ) : null}
       </section>
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-sm font-medium">Filter by date:</span>
-            <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-          </div>
-        </CardContent>
-      </Card>
+      <div className={reportWorkspacePanelClass("reports", "space-y-6")}>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-sm font-medium">Filter by date:</span>
+              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+            </div>
+          </CardContent>
+        </Card>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as ReportTab)}
-        className="space-y-6"
-      >
-        <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
-          <TabsTrigger value="pl" data-testid="tab-profit-loss">
-            {t.profitLoss}
-          </TabsTrigger>
-          <TabsTrigger value="bs" data-testid="tab-balance-sheet">
-            {t.balanceSheet}
-          </TabsTrigger>
-          <TabsTrigger value="vat" data-testid="tab-vat-summary">
-            {t.vatSummary}
-          </TabsTrigger>
-          <TabsTrigger value="tax" data-testid="tab-corporate-tax">
-            Corporate Tax
-          </TabsTrigger>
-          <TabsTrigger value="sales" data-testid="tab-invoice-status">
-            Sales
-          </TabsTrigger>
-          <TabsTrigger value="balances" data-testid="tab-balance-summaries">
-            Balances
-          </TabsTrigger>
-          <TabsTrigger value="expenses" data-testid="tab-expense-reports">
-            Expenses
-          </TabsTrigger>
-          <TabsTrigger value="payroll" data-testid="tab-payroll-reports">
-            Payroll
-          </TabsTrigger>
-          <TabsTrigger value="trial" data-testid="tab-trial-balance">
-            {t.trialBalance}
-          </TabsTrigger>
-          <TabsTrigger value="ledger" data-testid="tab-ledger-reports">
-            Ledger
-          </TabsTrigger>
-          <TabsTrigger value="close" data-testid="tab-month-end-close-status">
-            Close
-          </TabsTrigger>
-          <TabsTrigger value="planning" data-testid="tab-planning-reports">
-            Planning
-          </TabsTrigger>
-        </TabsList>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as ReportTab)}
+          className="space-y-6"
+        >
+          <TabsList className="grid h-auto w-full max-w-7xl grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
+            <TabsTrigger value="pl" data-testid="tab-profit-loss">
+              {t.profitLoss}
+            </TabsTrigger>
+            <TabsTrigger value="bs" data-testid="tab-balance-sheet">
+              {t.balanceSheet}
+            </TabsTrigger>
+            <TabsTrigger value="vat" data-testid="tab-vat-summary">
+              {t.vatSummary}
+            </TabsTrigger>
+            <TabsTrigger value="tax" data-testid="tab-corporate-tax">
+              Corporate Tax
+            </TabsTrigger>
+            <TabsTrigger value="sales" data-testid="tab-invoice-status">
+              Sales
+            </TabsTrigger>
+            <TabsTrigger value="balances" data-testid="tab-balance-summaries">
+              Balances
+            </TabsTrigger>
+            <TabsTrigger value="expenses" data-testid="tab-expense-reports">
+              Expenses
+            </TabsTrigger>
+            <TabsTrigger value="payroll" data-testid="tab-payroll-reports">
+              Payroll
+            </TabsTrigger>
+            <TabsTrigger value="trial" data-testid="tab-trial-balance">
+              {t.trialBalance}
+            </TabsTrigger>
+            <TabsTrigger value="ledger" data-testid="tab-ledger-reports">
+              Ledger
+            </TabsTrigger>
+            <TabsTrigger value="close" data-testid="tab-month-end-close-status">
+              Close
+            </TabsTrigger>
+            <TabsTrigger value="planning" data-testid="tab-planning-reports">
+              Planning
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="pl" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <TabsContent value="pl" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                  <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {plLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="text-2xl font-bold font-mono" data-testid="text-total-revenue">
+                      {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                  <div className="w-8 h-8 rounded-md bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                    <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {plLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="text-2xl font-bold font-mono" data-testid="text-total-expenses">
+                      {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                  <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {plLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="text-2xl font-bold font-mono" data-testid="text-net-profit">
+                      {formatCurrency(profitLoss?.netProfit || 0, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
-                </div>
+              <CardHeader>
+                <CardTitle>{t.profitLoss} Statement</CardTitle>
+                <CardDescription>
+                  {dateRange.from && dateRange.to
+                    ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : "All time"}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {plLoading ? (
-                  <Skeleton className="h-8 w-32" />
+                  <Skeleton className="h-64" />
                 ) : (
-                  <div className="text-2xl font-bold font-mono" data-testid="text-total-revenue">
-                    {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-                <div className="w-8 h-8 rounded-md bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
-                  <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {plLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="text-2xl font-bold font-mono" data-testid="text-total-expenses">
-                    {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-                <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {plLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="text-2xl font-bold font-mono" data-testid="text-net-profit">
-                    {formatCurrency(profitLoss?.netProfit || 0, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{t.profitLoss} Statement</CardTitle>
-              <CardDescription>
-                {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "All time"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {plLoading ? (
-                <Skeleton className="h-64" />
-              ) : (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="font-semibold mb-3 text-green-600 dark:text-green-400">
-                      Revenue
-                    </h3>
-                    <Table>
-                      <TableBody>
-                        {profitLoss?.revenue?.map((item, index) => (
-                          <TableRow key={item.accountCode || `revenue-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {item.accountCode || "-"}
-                            </TableCell>
-                            <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount ?? 0, "AED", locale)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2">
-                          <TableCell colSpan={2} className="font-semibold">
-                            Total Revenue
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">Expenses</h3>
-                    <Table>
-                      <TableBody>
-                        {profitLoss?.expenses?.map((item, index) => (
-                          <TableRow key={item.accountCode || `expense-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {item.accountCode || "-"}
-                            </TableCell>
-                            <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount ?? 0, "AED", locale)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2">
-                          <TableCell colSpan={2} className="font-semibold">
-                            Total Expenses
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div className="border-t-4 pt-4">
-                    <div className="flex justify-between items-center text-lg font-semibold">
-                      <span>Net Profit</span>
-                      <span
-                        className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-                      >
-                        {formatCurrency(profitLoss?.netProfit ?? 0, "AED", locale)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="bs">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t.balanceSheet}</CardTitle>
-              <CardDescription>
-                {dateRange.from && dateRange.to
-                  ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "Assets, liabilities, and equity as of today"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {bsLoading ? (
-                <Skeleton className="h-96" />
-              ) : (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="font-semibold mb-3 text-blue-600 dark:text-blue-400">Assets</h3>
-                    <Table>
-                      <TableBody>
-                        {balanceSheet?.assets?.map((item, index) => (
-                          <TableRow key={item.accountCode || `asset-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {item.accountCode || "-"}
-                            </TableCell>
-                            <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount ?? 0, "AED", locale)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2">
-                          <TableCell colSpan={2} className="font-semibold">
-                            Total Assets
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(balanceSheet?.totalAssets || 0, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
-                      Liabilities
-                    </h3>
-                    <Table>
-                      <TableBody>
-                        {balanceSheet?.liabilities?.map((item, index) => (
-                          <TableRow key={item.accountCode || `liability-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {item.accountCode || "-"}
-                            </TableCell>
-                            <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount ?? 0, "AED", locale)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2">
-                          <TableCell colSpan={2} className="font-semibold">
-                            Total Liabilities
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(balanceSheet?.totalLiabilities || 0, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold mb-3 text-purple-600 dark:text-purple-400">
-                      Equity
-                    </h3>
-                    <Table>
-                      <TableBody>
-                        {balanceSheet?.equity?.map((item, index) => (
-                          <TableRow key={item.accountCode || `equity-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {item.accountCode || "-"}
-                            </TableCell>
-                            <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount ?? 0, "AED", locale)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t-2">
-                          <TableCell colSpan={2} className="font-semibold">
-                            Total Equity
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {formatCurrency(balanceSheet?.totalEquity || 0, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="vat">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t.vatSummary}</CardTitle>
-              <CardDescription>
-                {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "UAE VAT (5%) summary for the current period"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {vatLoading ? (
-                <Skeleton className="h-64" />
-              ) : (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <h3 className="font-semibold text-green-600 dark:text-green-400">
-                        Sales (Output VAT)
-                      </h3>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Subtotal</span>
-                          <span className="font-mono">
-                            {formatCurrency(vatSummary?.salesSubtotal || 0, "AED", locale)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between font-medium">
-                          <span>VAT Collected (5%)</span>
-                          <span className="font-mono">
-                            {formatCurrency(vatSummary?.salesVAT || 0, "AED", locale)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <h3 className="font-semibold text-blue-600 dark:text-blue-400">
-                        Purchases (Input VAT)
-                      </h3>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Subtotal</span>
-                          <span className="font-mono">
-                            {formatCurrency(vatSummary?.purchasesSubtotal || 0, "AED", locale)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between font-medium">
-                          <span>VAT Paid (5%)</span>
-                          <span className="font-mono">
-                            {formatCurrency(vatSummary?.purchasesVAT || 0, "AED", locale)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t-4 pt-6">
-                    <div className="flex justify-between items-center text-lg font-semibold">
-                      <span>Net VAT Payable to FTA</span>
-                      <span
-                        className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
-                      >
-                        {formatCurrency(Math.abs(vatSummary?.netVATPayable ?? 0), "AED", locale)}
-                        {(vatSummary?.netVATPayable ?? 0) < 0 && " (Refund)"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {(vatSummary?.netVATPayable ?? 0) >= 0
-                        ? "Amount to be paid to the Federal Tax Authority"
-                        : "Amount to be refunded by the Federal Tax Authority"}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="tax" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Tax Payable</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <Scale className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {corporateTaxLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div
-                    className="font-mono text-2xl font-bold"
-                    data-testid="text-corporate-tax-payable"
-                  >
-                    {formatCurrency(corporateTaxEstimate?.taxPayable ?? 0, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Taxable Income</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {corporateTaxLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(corporateTaxEstimate?.taxableIncome ?? 0, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Above Band</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {corporateTaxLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <>
-                    <div className="font-mono text-2xl font-bold">
-                      {formatCurrency(corporateTaxEstimate?.taxableAmount ?? 0, "AED", locale)}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Posted Journals</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {corporateTaxLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Corporate Tax Estimate</CardTitle>
-                  <CardDescription>
-                    {corporateTaxEstimate
-                      ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
-                      : corporateTaxPeriodLabel}
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/corporate-tax">Open Corporate Tax</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {corporateTaxLoading ? (
-                <Skeleton className="h-80" />
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-6">
                     <div>
-                      <Badge variant={corporateTaxStatus.variant} dot>
-                        {corporateTaxStatus.label}
-                      </Badge>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {corporateTaxStatus.detail}
+                      <h3 className="font-semibold mb-3 text-green-600 dark:text-green-400">
+                        Revenue
+                      </h3>
+                      <Table>
+                        <TableBody>
+                          {profitLoss?.revenue?.map((item, index) => (
+                            <TableRow key={item.accountCode || `revenue-${index}`}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.accountCode || "-"}
+                              </TableCell>
+                              <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(item.amount ?? 0, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2">
+                            <TableCell colSpan={2} className="font-semibold">
+                              Total Revenue
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
+                        Expenses
+                      </h3>
+                      <Table>
+                        <TableBody>
+                          {profitLoss?.expenses?.map((item, index) => (
+                            <TableRow key={item.accountCode || `expense-${index}`}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.accountCode || "-"}
+                              </TableCell>
+                              <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(item.amount ?? 0, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2">
+                            <TableCell colSpan={2} className="font-semibold">
+                              Total Expenses
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div className="border-t-4 pt-4">
+                      <div className="flex justify-between items-center text-lg font-semibold">
+                        <span>Net Profit</span>
+                        <span
+                          className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                        >
+                          {formatCurrency(profitLoss?.netProfit ?? 0, "AED", locale)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="bs">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t.balanceSheet}</CardTitle>
+                <CardDescription>
+                  {dateRange.from && dateRange.to
+                    ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : "Assets, liabilities, and equity as of today"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {bsLoading ? (
+                  <Skeleton className="h-96" />
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="font-semibold mb-3 text-blue-600 dark:text-blue-400">
+                        Assets
+                      </h3>
+                      <Table>
+                        <TableBody>
+                          {balanceSheet?.assets?.map((item, index) => (
+                            <TableRow key={item.accountCode || `asset-${index}`}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.accountCode || "-"}
+                              </TableCell>
+                              <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(item.amount ?? 0, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2">
+                            <TableCell colSpan={2} className="font-semibold">
+                              Total Assets
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              {formatCurrency(balanceSheet?.totalAssets || 0, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
+                        Liabilities
+                      </h3>
+                      <Table>
+                        <TableBody>
+                          {balanceSheet?.liabilities?.map((item, index) => (
+                            <TableRow key={item.accountCode || `liability-${index}`}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.accountCode || "-"}
+                              </TableCell>
+                              <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(item.amount ?? 0, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2">
+                            <TableCell colSpan={2} className="font-semibold">
+                              Total Liabilities
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              {formatCurrency(balanceSheet?.totalLiabilities || 0, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold mb-3 text-purple-600 dark:text-purple-400">
+                        Equity
+                      </h3>
+                      <Table>
+                        <TableBody>
+                          {balanceSheet?.equity?.map((item, index) => (
+                            <TableRow key={item.accountCode || `equity-${index}`}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.accountCode || "-"}
+                              </TableCell>
+                              <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(item.amount ?? 0, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2">
+                            <TableCell colSpan={2} className="font-semibold">
+                              Total Equity
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-semibold">
+                              {formatCurrency(balanceSheet?.totalEquity || 0, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="vat">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t.vatSummary}</CardTitle>
+                <CardDescription>
+                  {dateRange.from && dateRange.to
+                    ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : "UAE VAT (5%) summary for the current period"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {vatLoading ? (
+                  <Skeleton className="h-64" />
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-green-600 dark:text-green-400">
+                          Sales (Output VAT)
+                        </h3>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span className="font-mono">
+                              {formatCurrency(vatSummary?.salesSubtotal || 0, "AED", locale)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-medium">
+                            <span>VAT Collected (5%)</span>
+                            <span className="font-mono">
+                              {formatCurrency(vatSummary?.salesVAT || 0, "AED", locale)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-blue-600 dark:text-blue-400">
+                          Purchases (Input VAT)
+                        </h3>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span className="font-mono">
+                              {formatCurrency(vatSummary?.purchasesSubtotal || 0, "AED", locale)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-medium">
+                            <span>VAT Paid (5%)</span>
+                            <span className="font-mono">
+                              {formatCurrency(vatSummary?.purchasesVAT || 0, "AED", locale)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t-4 pt-6">
+                      <div className="flex justify-between items-center text-lg font-semibold">
+                        <span>Net VAT Payable to FTA</span>
+                        <span
+                          className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+                        >
+                          {formatCurrency(Math.abs(vatSummary?.netVATPayable ?? 0), "AED", locale)}
+                          {(vatSummary?.netVATPayable ?? 0) < 0 && " (Refund)"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {(vatSummary?.netVATPayable ?? 0) >= 0
+                          ? "Amount to be paid to the Federal Tax Authority"
+                          : "Amount to be refunded by the Federal Tax Authority"}
                       </p>
                     </div>
-                    <p className="max-w-md text-sm text-muted-foreground">
-                      Estimate only. Open Corporate Tax to adjust the workpaper or save a draft;
-                      this report does not submit to the FTA or post accounting entries.
-                    </p>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
+          <TabsContent value="tax" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Tax Payable</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <Scale className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {corporateTaxLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div
+                      className="font-mono text-2xl font-bold"
+                      data-testid="text-corporate-tax-payable"
+                    >
+                      {formatCurrency(corporateTaxEstimate?.taxPayable ?? 0, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Taxable Income</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {corporateTaxLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(corporateTaxEstimate?.taxableIncome ?? 0, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Above Band</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {corporateTaxLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <>
+                      <div className="font-mono text-2xl font-bold">
+                        {formatCurrency(corporateTaxEstimate?.taxableAmount ?? 0, "AED", locale)}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Posted Journals</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {corporateTaxLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Corporate Tax Estimate</CardTitle>
+                    <CardDescription>
+                      {corporateTaxEstimate
+                        ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
+                        : corporateTaxPeriodLabel}
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/corporate-tax">Open Corporate Tax</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {corporateTaxLoading ? (
+                  <Skeleton className="h-80" />
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <Badge variant={corporateTaxStatus.variant} dot>
+                          {corporateTaxStatus.label}
+                        </Badge>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {corporateTaxStatus.detail}
+                        </p>
+                      </div>
+                      <p className="max-w-md text-sm text-muted-foreground">
+                        Estimate only. Open Corporate Tax to adjust the workpaper or save a draft;
+                        this report does not submit to the FTA or post accounting entries.
+                      </p>
+                    </div>
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Bridge</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Note</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {corporateTaxBridgeRows.map((row) => (
+                          <TableRow key={row.metric}>
+                            <TableCell className="font-medium">{row.metric}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.amount, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {row.note}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="sales" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Invoice Value</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(invoiceStatusReport.invoiceValueAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Active Invoices</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {invoiceStatusReport.activeInvoiceCount}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {invoiceStatusReport.unpaidCount}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Overdue Outstanding</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : invoiceStatusReport.overdueCurrency ? (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(
+                        invoiceStatusReport.overdueOutstanding,
+                        invoiceStatusReport.overdueCurrency,
+                        locale
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium">Mixed currencies</div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Sales by product/service</CardTitle>
+                    <CardDescription>
+                      Line-item sales mix, AED value, VAT, and service concentration.
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant={productServiceTopShare >= 50 ? "warning" : "success"}
+                    dot={productServiceSalesRows.length > 0}
+                  >
+                    {productServiceSalesRows.length
+                      ? `${productServiceTopShare.toFixed(1)}% top share`
+                      : "No line items"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {salesProductServiceLoading ? (
+                  <Skeleton className="h-64" />
+                ) : productServiceSalesRows.length ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Bridge</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Note</TableHead>
+                        <TableHead>Product / service</TableHead>
+                        <TableHead className="text-right">Invoices</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Sales</TableHead>
+                        <TableHead className="text-right">VAT</TableHead>
+                        <TableHead className="text-right">Avg unit</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {corporateTaxBridgeRows.map((row) => (
-                        <TableRow key={row.metric}>
-                          <TableCell className="font-medium">{row.metric}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.amount, "AED", locale)}
+                      {productServiceSalesRows.slice(0, 12).map((row) => (
+                        <TableRow key={row.productService}>
+                          <TableCell>
+                            <div className="font-medium">{row.productService}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.lineCount} lines - {row.supplyTypes.join(", ")}
+                            </div>
                           </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {row.note}
+                          <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(row.amountAed, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.vatAed, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="sales" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Invoice Value</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-8 w-32" />
                 ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(invoiceStatusReport.invoiceValueAed, "AED", locale)}
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No invoice line-item sales found for this period.
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Active Invoices</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {invoiceStatusReport.activeInvoiceCount}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Invoice status</CardTitle>
+                  <CardDescription>Status mix and AED-equivalent invoice value.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : statusSummary.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Invoices</TableHead>
+                          <TableHead className="text-right">Value</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {statusSummary.map((row) => (
+                          <TableRow key={row.status}>
+                            <TableCell>
+                              <Badge variant={invoiceStatusVariant(row.status)} dot>
+                                {invoiceStatusLabel(row.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{row.count}</TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.amountAed, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No invoices found for this period.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {invoiceStatusReport.unpaidCount}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Revenue by customer</CardTitle>
+                  <CardDescription>Top customers by issued invoice value.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {salesLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : customerRevenue.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer</TableHead>
+                          <TableHead className="text-right">Invoices</TableHead>
+                          <TableHead className="text-right">Value</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {customerRevenue.map((row) => (
+                          <TableRow key={row.customerName}>
+                            <TableCell className="font-medium">{row.customerName}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.invoiceCount}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.amountAed, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No issued customer revenue found for this period.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Overdue Outstanding</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : invoiceStatusReport.overdueCurrency ? (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(
-                      invoiceStatusReport.overdueOutstanding,
-                      invoiceStatusReport.overdueCurrency,
-                      locale
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-sm font-medium">Mixed currencies</div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Sales by product/service</CardTitle>
-                  <CardDescription>
-                    Line-item sales mix, AED value, VAT, and service concentration.
-                  </CardDescription>
-                </div>
-                <Badge
-                  variant={productServiceTopShare >= 50 ? "warning" : "success"}
-                  dot={productServiceSalesRows.length > 0}
-                >
-                  {productServiceSalesRows.length
-                    ? `${productServiceTopShare.toFixed(1)}% top share`
-                    : "No line items"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {salesProductServiceLoading ? (
-                <Skeleton className="h-64" />
-              ) : productServiceSalesRows.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product / service</TableHead>
-                      <TableHead className="text-right">Invoices</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead className="text-right">Sales</TableHead>
-                      <TableHead className="text-right">VAT</TableHead>
-                      <TableHead className="text-right">Avg unit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {productServiceSalesRows.slice(0, 12).map((row) => (
-                      <TableRow key={row.productService}>
-                        <TableCell>
-                          <div className="font-medium">{row.productService}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {row.lineCount} lines - {row.supplyTypes.join(", ")}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.amountAed, "AED", locale)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.vatAed, "AED", locale)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No invoice line-item sales found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Invoice status</CardTitle>
-                <CardDescription>Status mix and AED-equivalent invoice value.</CardDescription>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Reminder routing</CardTitle>
+                    <CardDescription>
+                      Overdue customer balances grouped by recommended chase level.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/payment-chasing">Open chasing queue</Link>
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {salesLoading ? (
                   <Skeleton className="h-64" />
-                ) : statusSummary.length ? (
+                ) : overdueCustomerRows.length ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Status</TableHead>
+                        <TableHead>Customer</TableHead>
                         <TableHead className="text-right">Invoices</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Outstanding</TableHead>
+                        <TableHead className="text-right">Oldest</TableHead>
+                        <TableHead className="text-right">Next level</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {statusSummary.map((row) => (
-                        <TableRow key={row.status}>
-                          <TableCell>
-                            <Badge variant={invoiceStatusVariant(row.status)} dot>
-                              {invoiceStatusLabel(row.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{row.count}</TableCell>
+                      {overdueCustomerRows.map((row) => (
+                        <TableRow key={`${row.customerName}-${row.currency}`}>
+                          <TableCell className="font-medium">{row.customerName}</TableCell>
+                          <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
                           <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.amountAed, "AED", locale)}
+                            {formatCurrency(row.outstanding, row.currency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {row.maxDaysOverdue} days
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="warning">Level {row.recommendedLevel}</Badge>
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No overdue invoices in the reminder queue.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoice detail</CardTitle>
+                <CardDescription>
+                  {dateRange.from && dateRange.to
+                    ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : "All invoice dates"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {salesLoading ? (
+                  <Skeleton className="h-96" />
+                ) : reportInvoices.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[900px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Invoice</TableHead>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Issue date</TableHead>
+                          <TableHead>Due date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">AED value</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reportInvoices.slice(0, 25).map((invoice) => (
+                          <TableRow key={invoice.id}>
+                            <TableCell className="font-mono font-medium">
+                              {invoice.number}
+                            </TableCell>
+                            <TableCell>{invoice.customerName || "Unknown Customer"}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatReportDate(invoice.date)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatReportDate(invoice.dueDate)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={invoiceStatusVariant(invoice.status)} dot>
+                                {invoiceStatusLabel(invoice.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(
+                                invoice.total ?? 0,
+                                invoice.currency || "AED",
+                                locale
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(amountInAed(invoice), "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                     No invoices found for this period.
@@ -17258,638 +18073,352 @@ export default function Reports() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue by customer</CardTitle>
-                <CardDescription>Top customers by issued invoice value.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-64" />
-                ) : customerRevenue.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Customer</TableHead>
-                        <TableHead className="text-right">Invoices</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {customerRevenue.map((row) => (
-                        <TableRow key={row.customerName}>
-                          <TableCell className="font-medium">{row.customerName}</TableCell>
-                          <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.amountAed, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No issued customer revenue found for this period.
+          <TabsContent value="balances" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Reminder routing</CardTitle>
-                  <CardDescription>
-                    Overdue customer balances grouped by recommended chase level.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/payment-chasing">Open chasing queue</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {salesLoading ? (
-                <Skeleton className="h-64" />
-              ) : overdueCustomerRows.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Invoices</TableHead>
-                      <TableHead className="text-right">Outstanding</TableHead>
-                      <TableHead className="text-right">Oldest</TableHead>
-                      <TableHead className="text-right">Next level</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {overdueCustomerRows.map((row) => (
-                      <TableRow key={`${row.customerName}-${row.currency}`}>
-                        <TableCell className="font-medium">{row.customerName}</TableCell>
-                        <TableCell className="text-right font-mono">{row.invoiceCount}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(row.outstanding, row.currency, locale)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {row.maxDaysOverdue} days
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="warning">Level {row.recommendedLevel}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No overdue invoices in the reminder queue.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Invoice detail</CardTitle>
-              <CardDescription>
-                {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "All invoice dates"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {salesLoading ? (
-                <Skeleton className="h-96" />
-              ) : reportInvoices.length ? (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[900px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Issue date</TableHead>
-                        <TableHead>Due date</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">AED value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reportInvoices.slice(0, 25).map((invoice) => (
-                        <TableRow key={invoice.id}>
-                          <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
-                          <TableCell>{invoice.customerName || "Unknown Customer"}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatReportDate(invoice.date)}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatReportDate(invoice.dueDate)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={invoiceStatusVariant(invoice.status)} dot>
-                              {invoiceStatusLabel(invoice.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(invoice.total ?? 0, invoice.currency || "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(amountInAed(invoice), "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No invoices found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="balances" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(balanceReport.customerOpenAed, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="space-y-1">
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
                     <div className="font-mono text-2xl font-bold">
-                      {formatCurrency(balanceReport.customerOverdueAed, "AED", locale)}
+                      {formatCurrency(balanceReport.customerOpenAed, "AED", locale)}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {balanceReport.overdueCustomerCount} customers
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {formatCurrency(balanceReport.customerOverdueAed, "AED", locale)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {balanceReport.overdueCustomerCount} customers
+                      </div>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(balanceReport.vendorOpenAed, "AED", locale)}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(balanceReport.vendorOpenAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net AR Less AP</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <Scale className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(balanceReport.netBalanceAed, "AED", locale)}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Net AR Less AP</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <Scale className="h-4 w-4 text-muted-foreground" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(balanceReport.netBalanceAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle>Customer balance summary</CardTitle>
+                      <CardDescription>
+                        Current open receivables from issued invoices, net of recorded payments.
+                      </CardDescription>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/payment-chasing">Open collections</Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-72" />
+                  ) : balanceReport.customers.length ? (
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[760px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Customer</TableHead>
+                            <TableHead className="text-right">Invoices</TableHead>
+                            <TableHead className="text-right">Open</TableHead>
+                            <TableHead className="text-right">Overdue</TableHead>
+                            <TableHead className="text-right">Oldest</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {balanceReport.customers.slice(0, 10).map((row) => (
+                            <TableRow key={`${row.name}-${row.currency}`}>
+                              <TableCell>
+                                <div className="font-medium">{row.name}</div>
+                                <Badge
+                                  className="mt-1"
+                                  variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
+                                  dot
+                                >
+                                  {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.invoiceCount}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-mono font-medium">
+                                  {formatCurrency(row.openBalance, row.currency, locale)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatCurrency(row.openBalanceAed, "AED", locale)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-mono font-medium">
+                                  {formatCurrency(row.overdueBalance, row.currency, locale)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.maxDaysOverdue} days
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No open customer balances.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle>Vendor balance summary</CardTitle>
+                      <CardDescription>
+                        Current open payables from vendor bills, net of recorded payments.
+                      </CardDescription>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {balancesLoading ? (
+                    <Skeleton className="h-72" />
+                  ) : balanceReport.vendors.length ? (
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-[760px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Vendor</TableHead>
+                            <TableHead className="text-right">Bills</TableHead>
+                            <TableHead className="text-right">Open</TableHead>
+                            <TableHead className="text-right">Overdue</TableHead>
+                            <TableHead className="text-right">Oldest</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {balanceReport.vendors.slice(0, 10).map((row) => (
+                            <TableRow key={`${row.name}-${row.currency}`}>
+                              <TableCell>
+                                <div className="font-medium">{row.name}</div>
+                                <Badge
+                                  className="mt-1"
+                                  variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
+                                  dot
+                                >
+                                  {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.billCount}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-mono font-medium">
+                                  {formatCurrency(row.openBalance, row.currency, locale)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatCurrency(row.openBalanceAed, "AED", locale)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-mono font-medium">
+                                  {formatCurrency(row.overdueBalance, row.currency, locale)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatCurrency(row.overdueBalanceAed, "AED", locale)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {row.maxDaysOverdue} days
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No open vendor balances.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <CardTitle>Customer balance summary</CardTitle>
+                    <CardTitle>Inventory valuation</CardTitle>
                     <CardDescription>
-                      Current open receivables from issued invoices, net of recorded payments.
+                      Stock quantity, cost value, reorder risk, and costing exceptions.
                     </CardDescription>
                   </div>
                   <Button asChild size="sm" variant="outline">
-                    <Link href="/payment-chasing">Open collections</Link>
+                    <Link href="/inventory">Open inventory</Link>
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 {balancesLoading ? (
-                  <Skeleton className="h-72" />
-                ) : balanceReport.customers.length ? (
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[760px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Customer</TableHead>
-                          <TableHead className="text-right">Invoices</TableHead>
-                          <TableHead className="text-right">Open</TableHead>
-                          <TableHead className="text-right">Overdue</TableHead>
-                          <TableHead className="text-right">Oldest</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {balanceReport.customers.slice(0, 10).map((row) => (
-                          <TableRow key={`${row.name}-${row.currency}`}>
-                            <TableCell>
-                              <div className="font-medium">{row.name}</div>
-                              <Badge
-                                className="mt-1"
-                                variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
-                                dot
-                              >
-                                {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.invoiceCount}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="font-mono font-medium">
-                                {formatCurrency(row.openBalance, row.currency, locale)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatCurrency(row.openBalanceAed, "AED", locale)}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="font-mono font-medium">
-                                {formatCurrency(row.overdueBalance, row.currency, locale)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatCurrency(row.overdueBalanceAed, "AED", locale)}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.maxDaysOverdue} days
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No open customer balances.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <CardTitle>Vendor balance summary</CardTitle>
-                    <CardDescription>
-                      Current open payables from vendor bills, net of recorded payments.
-                    </CardDescription>
-                  </div>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/bill-pay?tab=summary">Open bill pay</Link>
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {balancesLoading ? (
-                  <Skeleton className="h-72" />
-                ) : balanceReport.vendors.length ? (
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[760px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Vendor</TableHead>
-                          <TableHead className="text-right">Bills</TableHead>
-                          <TableHead className="text-right">Open</TableHead>
-                          <TableHead className="text-right">Overdue</TableHead>
-                          <TableHead className="text-right">Oldest</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {balanceReport.vendors.slice(0, 10).map((row) => (
-                          <TableRow key={`${row.name}-${row.currency}`}>
-                            <TableCell>
-                              <div className="font-medium">{row.name}</div>
-                              <Badge
-                                className="mt-1"
-                                variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
-                                dot
-                              >
-                                {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">{row.billCount}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="font-mono font-medium">
-                                {formatCurrency(row.openBalance, row.currency, locale)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatCurrency(row.openBalanceAed, "AED", locale)}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="font-mono font-medium">
-                                {formatCurrency(row.overdueBalance, row.currency, locale)}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatCurrency(row.overdueBalanceAed, "AED", locale)}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {row.maxDaysOverdue} days
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No open vendor balances.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Inventory valuation</CardTitle>
-                  <CardDescription>
-                    Stock quantity, cost value, reorder risk, and costing exceptions.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/inventory">Open inventory</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {balancesLoading ? (
-                <Skeleton className="h-80" />
-              ) : inventoryValuationReport.rows.length ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Active products</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.activeProductCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Stock value</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(inventoryValuationReport.totalStockValueAed, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Low stock</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.lowStockCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Costing review</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryValuationReport.missingCostCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[940px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead>Unit</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Stock</TableHead>
-                          <TableHead className="text-right">Unit cost</TableHead>
-                          <TableHead className="text-right">Value</TableHead>
-                          <TableHead className="text-right">Movements</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {inventoryValuationReport.rows.slice(0, 12).map((product) => (
-                          <TableRow key={product.id}>
-                            <TableCell>
-                              <div className="font-medium">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {product.sku || "No SKU"}
-                              </div>
-                            </TableCell>
-                            <TableCell>{product.unit}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  product.isNegativeStock || product.isMissingCost
-                                    ? "warning"
-                                    : product.isLowStock
-                                      ? "info"
-                                      : product.isActive
-                                        ? "success"
-                                        : "neutral"
-                                }
-                                dot
-                              >
-                                {product.isNegativeStock
-                                  ? "Negative stock"
-                                  : product.isMissingCost
-                                    ? "Missing cost"
-                                    : product.isLowStock
-                                      ? "Low stock"
-                                      : product.isActive
-                                        ? "Valued"
-                                        : "Inactive"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {product.currentStock.toLocaleString(locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(product.unitCost, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(product.stockValueAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {product.movementCount}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No inventory products found yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Inventory movement</CardTitle>
-                  <CardDescription>
-                    Stock receipts, sales, returns, and adjustments for the selected period.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/inventory">Open movements</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {balancesLoading ? (
-                <Skeleton className="h-80" />
-              ) : inventoryMovementReport.movementCount ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Movements</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryMovementReport.movementCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Inbound units</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Outbound units</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Movement value</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(
-                          inventoryMovementReport.totalMovementValueAed,
-                          "AED",
-                          locale
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
-                    <div className="rounded-md border p-4">
-                      <div className="mb-3">
-                        <div className="font-medium">Movement type mix</div>
-                        <div className="text-xs text-muted-foreground">
-                          Quantity and value by movement type.
+                  <Skeleton className="h-80" />
+                ) : inventoryValuationReport.rows.length ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Active products</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryValuationReport.activeProductCount}
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        {inventoryMovementReport.typeRows.map((row) => (
-                          <div
-                            key={row.type}
-                            className="flex items-center justify-between gap-4 text-sm"
-                          >
-                            <div>
-                              <Badge variant={inventoryMovementVariant(row.type)} dot>
-                                {row.type}
-                              </Badge>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {row.count} movements / {row.quantity.toLocaleString(locale)} units
-                              </div>
-                            </div>
-                            <div className="text-right font-mono">
-                              {formatCurrency(row.valueAed, "AED", locale)}
-                            </div>
-                          </div>
-                        ))}
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Stock value</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(
+                            inventoryValuationReport.totalStockValueAed,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Low stock</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryValuationReport.lowStockCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Costing review</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryValuationReport.missingCostCount}
+                        </div>
                       </div>
                     </div>
 
                     <div className="overflow-x-auto">
-                      <Table className="min-w-[920px]">
+                      <Table className="min-w-[940px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Date</TableHead>
                             <TableHead>Product</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
+                            <TableHead>Unit</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Stock</TableHead>
                             <TableHead className="text-right">Unit cost</TableHead>
                             <TableHead className="text-right">Value</TableHead>
-                            <TableHead>Reference</TableHead>
+                            <TableHead className="text-right">Movements</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {inventoryMovementReport.rows.slice(0, 12).map((movement) => (
-                            <TableRow key={movement.id}>
-                              <TableCell className="whitespace-nowrap text-muted-foreground">
-                                {formatReportDate(movement.createdAt)}
-                              </TableCell>
+                          {inventoryValuationReport.rows.slice(0, 12).map((product) => (
+                            <TableRow key={product.id}>
                               <TableCell>
-                                <div className="font-medium">{movement.productName}</div>
+                                <div className="font-medium">{product.name}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {movement.sku || movement.unit || "No SKU"}
+                                  {product.sku || "No SKU"}
                                 </div>
                               </TableCell>
+                              <TableCell>{product.unit}</TableCell>
                               <TableCell>
-                                <Badge variant={inventoryMovementVariant(movement.type)} dot>
-                                  {movement.type}
+                                <Badge
+                                  variant={
+                                    product.isNegativeStock || product.isMissingCost
+                                      ? "warning"
+                                      : product.isLowStock
+                                        ? "info"
+                                        : product.isActive
+                                          ? "success"
+                                          : "neutral"
+                                  }
+                                  dot
+                                >
+                                  {product.isNegativeStock
+                                    ? "Negative stock"
+                                    : product.isMissingCost
+                                      ? "Missing cost"
+                                      : product.isLowStock
+                                        ? "Low stock"
+                                        : product.isActive
+                                          ? "Valued"
+                                          : "Inactive"}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right font-mono">
-                                {movement.type === "sale" ? "-" : "+"}
-                                {Math.abs(movement.quantity).toLocaleString(locale)}
+                                {product.currentStock.toLocaleString(locale)}
                               </TableCell>
                               <TableCell className="text-right font-mono">
-                                {movement.unitCost
-                                  ? formatCurrency(movement.unitCost, "AED", locale)
-                                  : "-"}
+                                {formatCurrency(product.unitCost, "AED", locale)}
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(movement.valueAed, "AED", locale)}
+                                {formatCurrency(product.stockValueAed, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {movement.reference || "-"}
+                              <TableCell className="text-right font-mono">
+                                {product.movementCount}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -17897,588 +18426,251 @@ export default function Reports() {
                       </Table>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No inventory movements found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Depreciation schedule</CardTitle>
-                  <CardDescription>
-                    Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")} from
-                    the fixed asset register.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/fixed-assets">Open fixed assets</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {balancesLoading ? (
-                <Skeleton className="h-80" />
-              ) : depreciationScheduleReport.rows.length ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Period depreciation</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(
-                          depreciationScheduleReport.periodDepreciationAed,
-                          "AED",
-                          locale
-                        )}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Annual run-rate</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(
-                          depreciationScheduleReport.annualDepreciationAed,
-                          "AED",
-                          locale
-                        )}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Ready to post</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {depreciationScheduleReport.readyToPostCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Setup review</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {depreciationScheduleReport.reviewCount}
-                      </div>
-                    </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No inventory products found yet.
                   </div>
+                )}
+              </CardContent>
+            </Card>
 
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[980px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Asset</TableHead>
-                          <TableHead>Method</TableHead>
-                          <TableHead className="text-right">Remaining</TableHead>
-                          <TableHead className="text-right">Monthly depreciation</TableHead>
-                          <TableHead className="text-right">Projected NBV</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {depreciationScheduleReport.rows.slice(0, 12).map((row) => (
-                          <TableRow key={row.assetId}>
-                            <TableCell>
-                              <div className="font-medium">{row.assetName}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {row.assetNumber || row.category}
-                              </div>
-                            </TableCell>
-                            <TableCell className="capitalize">
-                              {row.method.replace(/_/g, " ")}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.remainingDepreciable, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(row.monthlyDepreciation, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(row.projectedNetBookValue, "AED", locale)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={depreciationStatusVariant(row.status)} dot>
-                                {row.statusLabel}
-                              </Badge>
-                              {row.status !== "ready" && (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {row.reviewReason}
-                                </div>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Inventory movement</CardTitle>
+                    <CardDescription>
+                      Stock receipts, sales, returns, and adjustments for the selected period.
+                    </CardDescription>
                   </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/inventory">Open movements</Link>
+                  </Button>
                 </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No active fixed assets available for depreciation.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Fixed asset register</CardTitle>
-                  <CardDescription>
-                    Asset cost, accumulated depreciation, net book value, and capitalization review.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/fixed-assets">Open fixed assets</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {balancesLoading ? (
-                <Skeleton className="h-96" />
-              ) : fixedAssetRegisterReport.rows.length ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Active assets</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {fixedAssetRegisterReport.totalAssets}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Asset cost</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Net book value</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(fixedAssetRegisterReport.totalNetBookValue, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Review items</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {fixedAssetRegisterReport.reviewCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-[960px]">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Asset</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Purchase date</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Cost</TableHead>
-                            <TableHead className="text-right">Depreciation</TableHead>
-                            <TableHead className="text-right">NBV</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {fixedAssetRegisterReport.rows.slice(0, 12).map((asset) => (
-                            <TableRow key={asset.id}>
-                              <TableCell>
-                                <div className="font-medium">{asset.asset_name}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {asset.asset_number || asset.serial_number || "No asset number"}
-                                </div>
-                              </TableCell>
-                              <TableCell>{asset.category}</TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatReportDate(asset.purchase_date)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
-                                  {asset.needs_capitalization_je
-                                    ? "Capitalization review"
-                                    : asset.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(asset.purchaseCost, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(asset.accumulatedDepreciation, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(asset.netBookValue, "AED", locale)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    <div className="rounded-md border p-4">
-                      <div className="mb-3">
-                        <div className="font-medium">Category valuation</div>
-                        <div className="text-xs text-muted-foreground">
-                          Active assets grouped by category.
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-80" />
+                ) : inventoryMovementReport.movementCount ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Movements</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryMovementReport.movementCount}
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        {fixedAssetRegisterReport.byCategory.length ? (
-                          fixedAssetRegisterReport.byCategory.slice(0, 8).map((category) => (
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Inbound units</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Outbound units</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Movement value</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(
+                            inventoryMovementReport.totalMovementValueAed,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
+                      <div className="rounded-md border p-4">
+                        <div className="mb-3">
+                          <div className="font-medium">Movement type mix</div>
+                          <div className="text-xs text-muted-foreground">
+                            Quantity and value by movement type.
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {inventoryMovementReport.typeRows.map((row) => (
                             <div
-                              key={category.category}
+                              key={row.type}
                               className="flex items-center justify-between gap-4 text-sm"
                             >
                               <div>
-                                <div className="font-medium">{category.category}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {category.count} assets
+                                <Badge variant={inventoryMovementVariant(row.type)} dot>
+                                  {row.type}
+                                </Badge>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.count} movements / {row.quantity.toLocaleString(locale)}{" "}
+                                  units
                                 </div>
                               </div>
                               <div className="text-right font-mono">
-                                {formatCurrency(category.totalNetBookValue, "AED", locale)}
+                                {formatCurrency(row.valueAed, "AED", locale)}
                               </div>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-muted-foreground">
-                            No active asset categories.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No fixed assets registered yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Balance automation queues</CardTitle>
-              <CardDescription>
-                Current open-balance signals for collections and payable follow-up.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Collections queue</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {balanceReport.overdueCustomerCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Bill pay queue</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {balanceReport.overdueVendorCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Inventory review</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {inventoryValuationReport.reviewCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Asset review</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {fixedAssetRegisterReport.reviewCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Last refreshed</div>
-                  <div className="text-sm font-medium">
-                    {formatReportDate(balanceReport.generatedAt)}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="expenses" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Spend</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(expenseReport.totalAed, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Expense Subtotal</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(expenseReport.subtotalAed, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Input VAT</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(expenseReport.vatAed, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Posting Queue</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="space-y-1">
-                    <div className="font-mono text-2xl font-bold">
-                      {expenseReport.unpostedReceipts}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {expenseReport.autoPostedReceipts} auto-posted
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Expenses by vendor</CardTitle>
-                <CardDescription>Top merchants by AED-equivalent total spend.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-64" />
-                ) : expenseReport.byVendor.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Vendor</TableHead>
-                        <TableHead className="text-right">Receipts</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead className="text-right">Unposted</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {expenseReport.byVendor.map((row) => (
-                        <TableRow key={row.label}>
-                          <TableCell className="font-medium">{row.label}</TableCell>
-                          <TableCell className="text-right font-mono">{row.receiptCount}</TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.totalAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.unpostedCount}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No expenses found for this period.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Expenses by category</CardTitle>
-                <CardDescription>Cost groups for spend review and alerting.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {expensesLoading ? (
-                  <Skeleton className="h-64" />
-                ) : expenseReport.byCategory.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Receipts</TableHead>
-                        <TableHead className="text-right">Subtotal</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {expenseReport.byCategory.map((row) => (
-                        <TableRow key={row.label}>
-                          <TableCell className="font-medium">{row.label}</TableCell>
-                          <TableCell className="text-right font-mono">{row.receiptCount}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.subtotalAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.vatAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.totalAed, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No categorized expenses found for this period.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Expense claims</CardTitle>
-                  <CardDescription>
-                    Claim status, approval routing, and reimbursement queue.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/expense-claims">Open claims</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {expensesLoading ? (
-                <Skeleton className="h-80" />
-              ) : expenseClaimReport.claimCount ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Claims</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {expenseClaimReport.claimCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Claim value</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Needs approval</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {expenseClaimReport.submittedCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Approved unpaid</div>
-                      <div className="font-mono text-2xl font-semibold">
-                        {expenseClaimReport.approvedUnpaidCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-                    <div className="rounded-md border p-4">
-                      <div className="mb-3">
-                        <div className="font-medium">Claim status mix</div>
-                        <div className="text-xs text-muted-foreground">
-                          Current date-range claims by workflow status.
+                          ))}
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        {expenseClaimReport.statusRows.map((row) => (
-                          <div
-                            key={row.status}
-                            className="flex items-center justify-between gap-4 text-sm"
-                          >
-                            <div>
-                              <Badge variant={expenseClaimStatusVariant(row.status)} dot>
-                                {row.status}
-                              </Badge>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {row.count} claims
-                              </div>
-                            </div>
-                            <div className="text-right font-mono">
-                              {formatCurrency(row.totalAmount, "AED", locale)}
-                            </div>
-                          </div>
-                        ))}
+
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[920px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Product</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead className="text-right">Quantity</TableHead>
+                              <TableHead className="text-right">Unit cost</TableHead>
+                              <TableHead className="text-right">Value</TableHead>
+                              <TableHead>Reference</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {inventoryMovementReport.rows.slice(0, 12).map((movement) => (
+                              <TableRow key={movement.id}>
+                                <TableCell className="whitespace-nowrap text-muted-foreground">
+                                  {formatReportDate(movement.createdAt)}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{movement.productName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {movement.sku || movement.unit || "No SKU"}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={inventoryMovementVariant(movement.type)} dot>
+                                    {movement.type}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {movement.type === "sale" ? "-" : "+"}
+                                  {Math.abs(movement.quantity).toLocaleString(locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {movement.unitCost
+                                    ? formatCurrency(movement.unitCost, "AED", locale)
+                                    : "-"}
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-medium">
+                                  {formatCurrency(movement.valueAed, "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {movement.reference || "-"}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No inventory movements found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Depreciation schedule</CardTitle>
+                    <CardDescription>
+                      Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")} from
+                      the fixed asset register.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/fixed-assets">Open fixed assets</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-80" />
+                ) : depreciationScheduleReport.rows.length ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Period depreciation</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(
+                            depreciationScheduleReport.periodDepreciationAed,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Annual run-rate</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(
+                            depreciationScheduleReport.annualDepreciationAed,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Ready to post</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {depreciationScheduleReport.readyToPostCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Setup review</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {depreciationScheduleReport.reviewCount}
+                        </div>
                       </div>
                     </div>
 
                     <div className="overflow-x-auto">
-                      <Table className="min-w-[880px]">
+                      <Table className="min-w-[980px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Claim</TableHead>
+                            <TableHead>Asset</TableHead>
+                            <TableHead>Method</TableHead>
+                            <TableHead className="text-right">Remaining</TableHead>
+                            <TableHead className="text-right">Monthly depreciation</TableHead>
+                            <TableHead className="text-right">Projected NBV</TableHead>
                             <TableHead>Status</TableHead>
-                            <TableHead>Created</TableHead>
-                            <TableHead>Submitted</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {expenseClaimReport.claims.slice(0, 12).map((claim) => (
-                            <TableRow key={claim.id}>
+                          {depreciationScheduleReport.rows.slice(0, 12).map((row) => (
+                            <TableRow key={row.assetId}>
                               <TableCell>
-                                <div className="font-medium">{claim.title}</div>
+                                <div className="font-medium">{row.assetName}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {claim.claim_number}
+                                  {row.assetNumber || row.category}
                                 </div>
                               </TableCell>
-                              <TableCell>
-                                <Badge variant={expenseClaimStatusVariant(claim.status)} dot>
-                                  {claim.status}
-                                </Badge>
+                              <TableCell className="capitalize">
+                                {row.method.replace(/_/g, " ")}
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatReportDate(claim.created_at)}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatReportDate(claim.submitted_at)}
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.remainingDepreciable, "AED", locale)}
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(
-                                  expenseClaimAmount(claim),
-                                  claim.currency || "AED",
-                                  locale
+                                {formatCurrency(row.monthlyDepreciation, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(row.projectedNetBookValue, "AED", locale)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={depreciationStatusVariant(row.status)} dot>
+                                  {row.statusLabel}
+                                </Badge>
+                                {row.status !== "ready" && (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {row.reviewReason}
+                                  </div>
                                 )}
                               </TableCell>
                             </TableRow>
@@ -18487,1461 +18679,1975 @@ export default function Reports() {
                       </Table>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No expense claims found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No active fixed assets available for depreciation.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Posting automation</CardTitle>
-                  <CardDescription>
-                    Receipts ready for review, posting, and autopilot follow-up.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/receipts">Open receipts</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Captured receipts</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {expenseReport.receiptCount}
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Fixed asset register</CardTitle>
+                    <CardDescription>
+                      Asset cost, accumulated depreciation, net book value, and capitalization
+                      review.
+                    </CardDescription>
                   </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/fixed-assets">Open fixed assets</Link>
+                  </Button>
                 </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Auto-posted</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {expenseReport.autoPostedReceipts}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Needs posting</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {expenseReport.unpostedReceipts}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Claims review</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {expenseClaimReport.reviewCount}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent>
+                {balancesLoading ? (
+                  <Skeleton className="h-96" />
+                ) : fixedAssetRegisterReport.rows.length ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Active assets</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {fixedAssetRegisterReport.totalAssets}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Asset cost</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Net book value</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(
+                            fixedAssetRegisterReport.totalNetBookValue,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Review items</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {fixedAssetRegisterReport.reviewCount}
+                        </div>
+                      </div>
+                    </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Expense detail</CardTitle>
-              <CardDescription>
-                {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                  : "All receipt dates"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {expensesLoading ? (
-                <Skeleton className="h-96" />
-              ) : reportReceipts.length ? (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[900px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Vendor</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Subtotal</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead className="text-right">Total AED</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reportReceipts.slice(0, 25).map((receipt) => {
-                        const subtotalAed = receiptSubtotalAed(receipt);
-                        const vatAed = receiptVatAed(receipt);
-                        return (
-                          <TableRow key={receipt.id}>
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[960px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Asset</TableHead>
+                              <TableHead>Category</TableHead>
+                              <TableHead>Purchase date</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right">Cost</TableHead>
+                              <TableHead className="text-right">Depreciation</TableHead>
+                              <TableHead className="text-right">NBV</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fixedAssetRegisterReport.rows.slice(0, 12).map((asset) => (
+                              <TableRow key={asset.id}>
+                                <TableCell>
+                                  <div className="font-medium">{asset.asset_name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {asset.asset_number || asset.serial_number || "No asset number"}
+                                  </div>
+                                </TableCell>
+                                <TableCell>{asset.category}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {formatReportDate(asset.purchase_date)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
+                                    {asset.needs_capitalization_je
+                                      ? "Capitalization review"
+                                      : asset.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(asset.purchaseCost, "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(asset.accumulatedDepreciation, "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-medium">
+                                  {formatCurrency(asset.netBookValue, "AED", locale)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      <div className="rounded-md border p-4">
+                        <div className="mb-3">
+                          <div className="font-medium">Category valuation</div>
+                          <div className="text-xs text-muted-foreground">
+                            Active assets grouped by category.
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {fixedAssetRegisterReport.byCategory.length ? (
+                            fixedAssetRegisterReport.byCategory.slice(0, 8).map((category) => (
+                              <div
+                                key={category.category}
+                                className="flex items-center justify-between gap-4 text-sm"
+                              >
+                                <div>
+                                  <div className="font-medium">{category.category}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {category.count} assets
+                                  </div>
+                                </div>
+                                <div className="text-right font-mono">
+                                  {formatCurrency(category.totalNetBookValue, "AED", locale)}
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-sm text-muted-foreground">
+                              No active asset categories.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No fixed assets registered yet.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Balance automation queues</CardTitle>
+                <CardDescription>
+                  Current open-balance signals for collections and payable follow-up.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Collections queue</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {balanceReport.overdueCustomerCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Bill pay queue</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {balanceReport.overdueVendorCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Inventory review</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {inventoryValuationReport.reviewCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Asset review</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {fixedAssetRegisterReport.reviewCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Last refreshed</div>
+                    <div className="text-sm font-medium">
+                      {formatReportDate(balanceReport.generatedAt)}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="expenses" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Total Spend</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(expenseReport.totalAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Expense Subtotal</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(expenseReport.subtotalAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Input VAT</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(expenseReport.vatAed, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Posting Queue</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {expenseReport.unpostedReceipts}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {expenseReport.autoPostedReceipts} auto-posted
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Expenses by vendor</CardTitle>
+                  <CardDescription>Top merchants by AED-equivalent total spend.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : expenseReport.byVendor.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead className="text-right">Receipts</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Unposted</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {expenseReport.byVendor.map((row) => (
+                          <TableRow key={row.label}>
+                            <TableCell className="font-medium">{row.label}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.receiptCount}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.totalAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.unpostedCount}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No expenses found for this period.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Expenses by category</CardTitle>
+                  <CardDescription>Cost groups for spend review and alerting.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {expensesLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : expenseReport.byCategory.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Receipts</TableHead>
+                          <TableHead className="text-right">Subtotal</TableHead>
+                          <TableHead className="text-right">VAT</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {expenseReport.byCategory.map((row) => (
+                          <TableRow key={row.label}>
+                            <TableCell className="font-medium">{row.label}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {row.receiptCount}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.subtotalAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.vatAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.totalAed, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No categorized expenses found for this period.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Expense claims</CardTitle>
+                    <CardDescription>
+                      Claim status, approval routing, and reimbursement queue.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/expense-claims">Open claims</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {expensesLoading ? (
+                  <Skeleton className="h-80" />
+                ) : expenseClaimReport.claimCount ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Claims</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {expenseClaimReport.claimCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Claim value</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Needs approval</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {expenseClaimReport.submittedCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-4">
+                        <div className="text-xs text-muted-foreground">Approved unpaid</div>
+                        <div className="font-mono text-2xl font-semibold">
+                          {expenseClaimReport.approvedUnpaidCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+                      <div className="rounded-md border p-4">
+                        <div className="mb-3">
+                          <div className="font-medium">Claim status mix</div>
+                          <div className="text-xs text-muted-foreground">
+                            Current date-range claims by workflow status.
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {expenseClaimReport.statusRows.map((row) => (
+                            <div
+                              key={row.status}
+                              className="flex items-center justify-between gap-4 text-sm"
+                            >
+                              <div>
+                                <Badge variant={expenseClaimStatusVariant(row.status)} dot>
+                                  {row.status}
+                                </Badge>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.count} claims
+                                </div>
+                              </div>
+                              <div className="text-right font-mono">
+                                {formatCurrency(row.totalAmount, "AED", locale)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[880px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Claim</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Created</TableHead>
+                              <TableHead>Submitted</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {expenseClaimReport.claims.slice(0, 12).map((claim) => (
+                              <TableRow key={claim.id}>
+                                <TableCell>
+                                  <div className="font-medium">{claim.title}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {claim.claim_number}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={expenseClaimStatusVariant(claim.status)} dot>
+                                    {claim.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {formatReportDate(claim.created_at)}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {formatReportDate(claim.submitted_at)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-medium">
+                                  {formatCurrency(
+                                    expenseClaimAmount(claim),
+                                    claim.currency || "AED",
+                                    locale
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No expense claims found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Posting automation</CardTitle>
+                    <CardDescription>
+                      Receipts ready for review, posting, and autopilot follow-up.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/receipts">Open receipts</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Captured receipts</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {expenseReport.receiptCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Auto-posted</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {expenseReport.autoPostedReceipts}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Needs posting</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {expenseReport.unpostedReceipts}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Claims review</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {expenseClaimReport.reviewCount}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Expense detail</CardTitle>
+                <CardDescription>
+                  {dateRange.from && dateRange.to
+                    ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : "All receipt dates"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {expensesLoading ? (
+                  <Skeleton className="h-96" />
+                ) : reportReceipts.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[900px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Subtotal</TableHead>
+                          <TableHead className="text-right">VAT</TableHead>
+                          <TableHead className="text-right">Total AED</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reportReceipts.slice(0, 25).map((receipt) => {
+                          const subtotalAed = receiptSubtotalAed(receipt);
+                          const vatAed = receiptVatAed(receipt);
+                          return (
+                            <TableRow key={receipt.id}>
+                              <TableCell className="font-medium">
+                                {receipt.merchant || "Unknown Merchant"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(receipt.date)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {receipt.category || "Uncategorized"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {receipt.autoPosted ? (
+                                  <Badge variant="success" dot>
+                                    Auto-posted
+                                  </Badge>
+                                ) : receipt.posted ? (
+                                  <Badge variant="info" dot>
+                                    Posted
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="warning" dot>
+                                    Needs posting
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(subtotalAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {formatCurrency(vatAed, "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-medium">
+                                {formatCurrency(subtotalAed + vatAed, "AED", locale)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No receipts found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="payroll" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {payrollLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {formatCurrency(payrollReport.totalNet, "AED", locale)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Payroll runs</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {payrollLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{payrollReport.runCount}</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Needs approval</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {payrollLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {payrollReport.approvalQueueCount}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Needs SIF</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {payrollLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {payrollReport.wpsMissingCount}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Payroll Summary</CardTitle>
+                    <CardDescription>
+                      Pay-period totals, approval state, and WPS/SIF readiness.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/payroll">Open payroll</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {payrollLoading ? (
+                  <Skeleton className="h-80" />
+                ) : payrollReport.runCount ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+                      <div className="rounded-md border p-4">
+                        <div className="mb-3">
+                          <div className="font-medium">Payroll status mix</div>
+                          <div className="text-xs text-muted-foreground">
+                            Current date-range payroll by workflow status.
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {payrollReport.statusRows.map((row) => (
+                            <div
+                              key={row.status}
+                              className="flex items-center justify-between gap-4 text-sm"
+                            >
+                              <div>
+                                <Badge variant={payrollStatusVariant(row.status)} dot>
+                                  {row.status}
+                                </Badge>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {row.count} runs / {row.employeeCount} employees
+                                </div>
+                              </div>
+                              <div className="text-right font-mono">
+                                {formatCurrency(row.totalNet, "AED", locale)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[920px]">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Period</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right">Employees</TableHead>
+                              <TableHead className="text-right">Basic</TableHead>
+                              <TableHead className="text-right">Allowances</TableHead>
+                              <TableHead className="text-right">Deductions</TableHead>
+                              <TableHead className="text-right">Net</TableHead>
+                              <TableHead>SIF</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {payrollReport.runs.slice(0, 12).map((run) => (
+                              <TableRow key={run.id}>
+                                <TableCell className="font-medium">
+                                  {payrollPeriodLabel(run)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={payrollStatusVariant(run.status)} dot>
+                                    {run.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {run.employee_count}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(payrollAmount(run.total_basic), "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(
+                                    payrollAmount(run.total_allowances),
+                                    "AED",
+                                    locale
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(
+                                    payrollAmount(run.total_deductions),
+                                    "AED",
+                                    locale
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-medium">
+                                  {formatCurrency(payrollAmount(run.total_net), "AED", locale)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={run.sif_file_content ? "success" : "warning"} dot>
+                                    {run.sif_file_content ? "Generated" : "Needed"}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No payroll runs found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>WPS / SIF readiness</CardTitle>
+                <CardDescription>
+                  Generated SIF files and approved payroll runs ready for UAE WPS processing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">SIF generated</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {payrollReport.sifGeneratedCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">WPS ready</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {payrollReport.wpsReadyCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Approved runs</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {payrollReport.approvedCount}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Latest period</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {payrollPeriodLabel(payrollReport.latestRun)}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {formatReportDate(payrollReport.latestRun?.approved_at)}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="trial" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    {trialBalanceSummary.isBalanced ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {trialBalanceLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div
+                        className="font-mono text-2xl font-bold"
+                        data-testid="text-trial-balance-difference"
+                      >
+                        {formatCurrency(
+                          trialBalance?.totals.difference ?? 0,
+                          trialBalance?.reportCurrency ?? "AED",
+                          locale
+                        )}
+                      </div>
+                      <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
+                        {trialBalanceSummary.isBalanced ? "Balanced" : "Needs review"}
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <Scale className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {trialBalanceLoading ? (
+                    <Skeleton className="h-8 w-24" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {trialBalanceSummary.activeAccounts}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">FX Accounts</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {trialBalanceLoading ? (
+                    <Skeleton className="h-8 w-24" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">
+                      {trialBalanceSummary.foreignCurrencyAccounts}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>{t.trialBalance}</CardTitle>
+                    <CardDescription>
+                      {dateRange.from && dateRange.to
+                        ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                        : "Posted account balances through today"}
+                    </CardDescription>
+                  </div>
+                  {!trialBalanceLoading && (
+                    <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
+                      {trialBalanceSummary.isBalanced ? "Ready for close" : "Difference flagged"}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {trialBalanceLoading ? (
+                  <Skeleton className="h-96" />
+                ) : trialBalance?.rows?.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[900px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                          <TableHead className="text-right">Balance</TableHead>
+                          <TableHead>Flags</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {trialBalance.rows.map((row) => (
+                          <TableRow key={row.accountId}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {row.accountCode || "-"}
+                            </TableCell>
                             <TableCell className="font-medium">
-                              {receipt.merchant || "Unknown Merchant"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatReportDate(receipt.date)}
+                              {row.accountName || "Unknown Account"}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">{receipt.category || "Uncategorized"}</Badge>
+                              <Badge variant="outline" className="capitalize">
+                                {row.accountType}
+                              </Badge>
                             </TableCell>
-                            <TableCell>
-                              {receipt.autoPosted ? (
-                                <Badge variant="success" dot>
-                                  Auto-posted
-                                </Badge>
-                              ) : receipt.posted ? (
-                                <Badge variant="info" dot>
-                                  Posted
-                                </Badge>
-                              ) : (
-                                <Badge variant="warning" dot>
-                                  Needs posting
-                                </Badge>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(
+                                row.totalDebit ?? 0,
+                                trialBalance.reportCurrency,
+                                locale
                               )}
                             </TableCell>
                             <TableCell className="text-right font-mono">
-                              {formatCurrency(subtotalAed, "AED", locale)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatCurrency(vatAed, "AED", locale)}
+                              {formatCurrency(
+                                row.totalCredit ?? 0,
+                                trialBalance.reportCurrency,
+                                locale
+                              )}
                             </TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(subtotalAed + vatAed, "AED", locale)}
+                              {formatCurrency(
+                                row.balance ?? 0,
+                                trialBalance.reportCurrency,
+                                locale
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {row.hasForeignLines ? (
+                                <Badge variant="info">FX</Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No receipts found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="payroll" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {payrollLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(payrollReport.totalNet, "AED", locale)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Payroll runs</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {payrollLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">{payrollReport.runCount}</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Needs approval</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {payrollLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {payrollReport.approvalQueueCount}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Needs SIF</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {payrollLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {payrollReport.wpsMissingCount}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Payroll Summary</CardTitle>
-                  <CardDescription>
-                    Pay-period totals, approval state, and WPS/SIF readiness.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/payroll">Open payroll</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {payrollLoading ? (
-                <Skeleton className="h-80" />
-              ) : payrollReport.runCount ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-                    <div className="rounded-md border p-4">
-                      <div className="mb-3">
-                        <div className="font-medium">Payroll status mix</div>
-                        <div className="text-xs text-muted-foreground">
-                          Current date-range payroll by workflow status.
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {payrollReport.statusRows.map((row) => (
-                          <div
-                            key={row.status}
-                            className="flex items-center justify-between gap-4 text-sm"
-                          >
-                            <div>
-                              <Badge variant={payrollStatusVariant(row.status)} dot>
-                                {row.status}
-                              </Badge>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {row.count} runs / {row.employeeCount} employees
-                              </div>
-                            </div>
-                            <div className="text-right font-mono">
-                              {formatCurrency(row.totalNet, "AED", locale)}
-                            </div>
-                          </div>
                         ))}
+                        <TableRow className="border-t-2">
+                          <TableCell colSpan={3} className="font-semibold">
+                            Totals
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-semibold">
+                            {formatCurrency(
+                              trialBalance.totals.sumDebits,
+                              trialBalance.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-semibold">
+                            {formatCurrency(
+                              trialBalance.totals.sumCredits,
+                              trialBalance.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-semibold">
+                            {formatCurrency(
+                              trialBalance.totals.difference,
+                              trialBalance.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell />
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No posted accounts found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="ledger" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Posted Entries</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{ledgerReport.entryCount}</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Debit / Credit Difference</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    {ledgerReport.difference < 0.005 ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {formatCurrency(ledgerReport.difference, "AED", locale)}
+                      </div>
+                      <Badge variant={ledgerReport.difference < 0.005 ? "success" : "warning"} dot>
+                        {ledgerReport.difference < 0.005 ? "Balanced" : "Needs review"}
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Accounts Touched</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <Scale className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{ledgerReport.accountCount}</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Review Queue</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {ledgerReport.reviewEntries}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {ledgerReport.foreignCurrencyLines} FX lines
                       </div>
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-[920px]">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Period</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Employees</TableHead>
-                            <TableHead className="text-right">Basic</TableHead>
-                            <TableHead className="text-right">Allowances</TableHead>
-                            <TableHead className="text-right">Deductions</TableHead>
-                            <TableHead className="text-right">Net</TableHead>
-                            <TableHead>SIF</TableHead>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Account transactions</CardTitle>
+                  <CardDescription>
+                    Account-level debit, credit, and activity totals.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : accountActivity.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Account</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead className="text-right">Lines</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {accountActivity.slice(0, 10).map((row) => (
+                          <TableRow key={row.accountId}>
+                            <TableCell>
+                              <div className="font-medium">{row.accountName}</div>
+                              <div className="font-mono text-xs text-muted-foreground">
+                                {row.accountCode || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize">
+                                {row.accountType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.debit, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.credit, "AED", locale)}
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {payrollReport.runs.slice(0, 12).map((run) => (
-                            <TableRow key={run.id}>
-                              <TableCell className="font-medium">
-                                {payrollPeriodLabel(run)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={payrollStatusVariant(run.status)} dot>
-                                  {run.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {run.employee_count}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(payrollAmount(run.total_basic), "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(payrollAmount(run.total_allowances), "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(payrollAmount(run.total_deductions), "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(payrollAmount(run.total_net), "AED", locale)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={run.sif_file_content ? "success" : "warning"} dot>
-                                  {run.sif_file_content ? "Generated" : "Needed"}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No payroll runs found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>WPS / SIF readiness</CardTitle>
-              <CardDescription>
-                Generated SIF files and approved payroll runs ready for UAE WPS processing.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">SIF generated</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {payrollReport.sifGeneratedCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">WPS ready</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {payrollReport.wpsReadyCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Approved runs</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {payrollReport.approvedCount}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Latest period</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {payrollPeriodLabel(payrollReport.latestRun)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {formatReportDate(payrollReport.latestRun?.approved_at)}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="trial" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  {trialBalanceSummary.isBalanced ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        ))}
+                      </TableBody>
+                    </Table>
                   ) : (
-                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {trialBalanceLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="space-y-1">
-                    <div
-                      className="font-mono text-2xl font-bold"
-                      data-testid="text-trial-balance-difference"
-                    >
-                      {formatCurrency(
-                        trialBalance?.totals.difference ?? 0,
-                        trialBalance?.reportCurrency ?? "AED",
-                        locale
-                      )}
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No posted account activity found for this period.
                     </div>
-                    <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                      {trialBalanceSummary.isBalanced ? "Balanced" : "Needs review"}
-                    </Badge>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <Scale className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {trialBalanceLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {trialBalanceSummary.activeAccounts}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">FX Accounts</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {trialBalanceLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {trialBalanceSummary.foreignCurrencyAccounts}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>{t.trialBalance}</CardTitle>
-                  <CardDescription>
-                    {dateRange.from && dateRange.to
-                      ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "Posted account balances through today"}
-                  </CardDescription>
-                </div>
-                {!trialBalanceLoading && (
-                  <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                    {trialBalanceSummary.isBalanced ? "Ready for close" : "Difference flagged"}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {trialBalanceLoading ? (
-                <Skeleton className="h-96" />
-              ) : trialBalance?.rows?.length ? (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[900px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Code</TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Credit</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                        <TableHead>Flags</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {trialBalance.rows.map((row) => (
-                        <TableRow key={row.accountId}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {row.accountCode || "-"}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {row.accountName || "Unknown Account"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {row.accountType}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(
-                              row.totalDebit ?? 0,
-                              trialBalance.reportCurrency,
-                              locale
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(
-                              row.totalCredit ?? 0,
-                              trialBalance.reportCurrency,
-                              locale
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.balance ?? 0, trialBalance.reportCurrency, locale)}
-                          </TableCell>
-                          <TableCell>
-                            {row.hasForeignLines ? (
-                              <Badge variant="info">FX</Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Source review</CardTitle>
+                  <CardDescription>Automation routing by journal entry source.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {ledgerLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : ledgerSourceRows.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Source</TableHead>
+                          <TableHead className="text-right">Entries</TableHead>
+                          <TableHead className="text-right">Lines</TableHead>
+                          <TableHead className="text-right">Activity</TableHead>
+                          <TableHead className="text-right">Status</TableHead>
                         </TableRow>
-                      ))}
-                      <TableRow className="border-t-2">
-                        <TableCell colSpan={3} className="font-semibold">
-                          Totals
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-semibold">
-                          {formatCurrency(
-                            trialBalance.totals.sumDebits,
-                            trialBalance.reportCurrency,
-                            locale
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-semibold">
-                          {formatCurrency(
-                            trialBalance.totals.sumCredits,
-                            trialBalance.reportCurrency,
-                            locale
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-semibold">
-                          {formatCurrency(
-                            trialBalance.totals.difference,
-                            trialBalance.reportCurrency,
-                            locale
-                          )}
-                        </TableCell>
-                        <TableCell />
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No posted accounts found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="ledger" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Posted Entries</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {ledgerLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">{ledgerReport.entryCount}</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Debit / Credit Difference</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  {ledgerReport.difference < 0.005 ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      </TableHeader>
+                      <TableBody>
+                        {ledgerSourceRows.map((row) => (
+                          <TableRow key={row.source}>
+                            <TableCell className="capitalize">{row.source}</TableCell>
+                            <TableCell className="text-right font-mono">{row.entryCount}</TableCell>
+                            <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.amountAed, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={row.needsReview ? "warning" : "success"} dot>
+                                {row.needsReview ? "Review" : "Linked"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   ) : (
-                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No journal sources found for this period.
+                    </div>
                   )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {ledgerLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="space-y-1">
-                    <div className="font-mono text-2xl font-bold">
-                      {formatCurrency(ledgerReport.difference, "AED", locale)}
-                    </div>
-                    <Badge variant={ledgerReport.difference < 0.005 ? "success" : "warning"} dot>
-                      {ledgerReport.difference < 0.005 ? "Balanced" : "Needs review"}
-                    </Badge>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Accounts Touched</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <Scale className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {ledgerLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">{ledgerReport.accountCount}</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Review Queue</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {ledgerLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="space-y-1">
-                    <div className="font-mono text-2xl font-bold">{ledgerReport.reviewEntries}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {ledgerReport.foreignCurrencyLines} FX lines
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Account transactions</CardTitle>
-                <CardDescription>Account-level debit, credit, and activity totals.</CardDescription>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>General ledger detail</CardTitle>
+                    <CardDescription>
+                      {dateRange.from && dateRange.to
+                        ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                        : "All posted journal entry dates"}
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/journal">Open journal</Link>
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {ledgerLoading ? (
-                  <Skeleton className="h-64" />
-                ) : accountActivity.length ? (
+                  <Skeleton className="h-96" />
+                ) : ledgerLines.length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[980px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Entry</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead>Memo</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                          <TableHead>Flags</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {ledgerLines.slice(0, 50).map((line) => (
+                          <TableRow key={line.id}>
+                            <TableCell className="font-mono font-medium">
+                              {line.entryNumber}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatReportDate(line.date)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">{line.accountName}</div>
+                              <div className="font-mono text-xs text-muted-foreground">
+                                {line.accountCode || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="capitalize">{line.source}</TableCell>
+                            <TableCell className="max-w-[240px] truncate text-muted-foreground">
+                              {line.memo || "-"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {line.credit > 0 ? formatCurrency(line.credit, "AED", locale) : "-"}
+                            </TableCell>
+                            <TableCell>
+                              {line.hasForeignCurrency ? (
+                                <Badge variant="info">FX</Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No posted journal lines found for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="close" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {monthEndCloseLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{monthEndReadinessPercent}%</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {monthEndCloseLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{monthEndCompletedChecks}</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {monthEndCloseLoading ? (
+                    <Skeleton className="h-8 w-20" />
+                  ) : (
+                    <div className="font-mono text-2xl font-bold">{monthEndReviewChecks}</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Close Period</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="font-mono text-2xl font-bold">{monthEndPeriod}</div>
+                  <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Month-End Close Status</CardTitle>
+                    <CardDescription>
+                      {monthEndCloseStatus
+                        ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
+                        : monthEndPeriodLabel}
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/month-end">Open month-end</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {monthEndCloseLoading ? (
+                  <Skeleton className="h-80" />
+                ) : monthEndChecklist.length ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Account</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead className="text-right">Lines</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Credit</TableHead>
+                        <TableHead>Check</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Details</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {accountActivity.slice(0, 10).map((row) => (
-                        <TableRow key={row.accountId}>
+                      {monthEndChecklist.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">{item.title}</TableCell>
                           <TableCell>
-                            <div className="font-medium">{row.accountName}</div>
-                            <div className="font-mono text-xs text-muted-foreground">
-                              {row.accountCode || "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {row.accountType}
+                            <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
+                              {item.status === "complete" ? "Complete" : "Needs review"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.debit, "AED", locale)}
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.description}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.credit, "AED", locale)}
-                          </TableCell>
+                          <TableCell className="text-sm">{item.details}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No posted account activity found for this period.
+                    No month-end close checks found for this period.
                   </div>
                 )}
               </CardContent>
             </Card>
-
             <Card>
               <CardHeader>
-                <CardTitle>Source review</CardTitle>
-                <CardDescription>Automation routing by journal entry source.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {ledgerLoading ? (
-                  <Skeleton className="h-64" />
-                ) : ledgerSourceRows.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Source</TableHead>
-                        <TableHead className="text-right">Entries</TableHead>
-                        <TableHead className="text-right">Lines</TableHead>
-                        <TableHead className="text-right">Activity</TableHead>
-                        <TableHead className="text-right">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ledgerSourceRows.map((row) => (
-                        <TableRow key={row.source}>
-                          <TableCell className="capitalize">{row.source}</TableCell>
-                          <TableCell className="text-right font-mono">{row.entryCount}</TableCell>
-                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.amountAed, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={row.needsReview ? "warning" : "success"} dot>
-                              {row.needsReview ? "Review" : "Linked"}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No journal sources found for this period.
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle id="audit-trail-title">Audit Trail</CardTitle>
+                    <CardDescription>{auditTrailPeriodLabel}</CardDescription>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>General ledger detail</CardTitle>
-                  <CardDescription>
-                    {dateRange.from && dateRange.to
-                      ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "All posted journal entry dates"}
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/journal">Open journal</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {ledgerLoading ? (
-                <Skeleton className="h-96" />
-              ) : ledgerLines.length ? (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[980px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Entry</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Memo</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Credit</TableHead>
-                        <TableHead>Flags</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ledgerLines.slice(0, 50).map((line) => (
-                        <TableRow key={line.id}>
-                          <TableCell className="font-mono font-medium">
-                            {line.entryNumber}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatReportDate(line.date)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{line.accountName}</div>
-                            <div className="font-mono text-xs text-muted-foreground">
-                              {line.accountCode || "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="capitalize">{line.source}</TableCell>
-                          <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                            {line.memo || "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {line.credit > 0 ? formatCurrency(line.credit, "AED", locale) : "-"}
-                          </TableCell>
-                          <TableCell>
-                            {line.hasForeignCurrency ? (
-                              <Badge variant="info">FX</Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No posted journal lines found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="close" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/history">Open history</Link>
+                  </Button>
                 </div>
               </CardHeader>
-              <CardContent>
-                {monthEndCloseLoading ? (
-                  <Skeleton className="h-8 w-20" />
+              <CardContent className="space-y-6">
+                {auditTrailLoading ? (
+                  <Skeleton className="h-80" />
                 ) : (
-                  <div className="font-mono text-2xl font-bold">{monthEndReadinessPercent}%</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Completed</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {monthEndCloseLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">{monthEndCompletedChecks}</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {monthEndCloseLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">{monthEndReviewChecks}</div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Close Period</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="font-mono text-2xl font-bold">{monthEndPeriod}</div>
-                <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Month-End Close Status</CardTitle>
-                  <CardDescription>
-                    {monthEndCloseStatus
-                      ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
-                      : monthEndPeriodLabel}
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/month-end">Open month-end</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {monthEndCloseLoading ? (
-                <Skeleton className="h-80" />
-              ) : monthEndChecklist.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Check</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {monthEndChecklist.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.title}</TableCell>
-                        <TableCell>
-                          <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
-                            {item.status === "complete" ? "Complete" : "Needs review"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {item.description}
-                        </TableCell>
-                        <TableCell className="text-sm">{item.details}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  No month-end close checks found for this period.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle id="audit-trail-title">Audit Trail</CardTitle>
-                  <CardDescription>{auditTrailPeriodLabel}</CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/history">Open history</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {auditTrailLoading ? (
-                <Skeleton className="h-80" />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Events</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {auditTrailReport.logCount}
+                  <>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Events</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {auditTrailReport.logCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">High risk</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {auditTrailReport.highRiskCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Posting actions</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {auditTrailReport.postingActionCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Users</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {auditTrailReport.userCount}
+                        </div>
                       </div>
                     </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">High risk</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {auditTrailReport.highRiskCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Posting actions</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {auditTrailReport.postingActionCount}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Users</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {auditTrailReport.userCount}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                    <div className="space-y-3">
-                      <div className="text-sm font-medium">Activity by action</div>
-                      {auditTrailReport.actionRows.slice(0, 6).length ? (
-                        <Table>
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium">Activity by action</div>
+                        {auditTrailReport.actionRows.slice(0, 6).length ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Action</TableHead>
+                                <TableHead className="text-right">Events</TableHead>
+                                <TableHead>Latest</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {auditTrailReport.actionRows.slice(0, 6).map((row) => (
+                                <TableRow key={row.key}>
+                                  <TableCell className="capitalize">{row.label}</TableCell>
+                                  <TableCell className="text-right font-mono">
+                                    {row.count}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {formatReportDate(row.latestAt)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                            No activity actions found for this period.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium">Activity by record type</div>
+                        {auditTrailReport.entityRows.slice(0, 6).length ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Record type</TableHead>
+                                <TableHead className="text-right">Events</TableHead>
+                                <TableHead>Latest</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {auditTrailReport.entityRows.slice(0, 6).map((row) => (
+                                <TableRow key={row.key}>
+                                  <TableCell className="capitalize">{row.label}</TableCell>
+                                  <TableCell className="text-right font-mono">
+                                    {row.count}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {formatReportDate(row.latestAt)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                            No audited record types found for this period.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {auditTrailReport.rows.length ? (
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[920px]">
                           <TableHeader>
                             <TableRow>
+                              <TableHead>Date</TableHead>
                               <TableHead>Action</TableHead>
-                              <TableHead className="text-right">Events</TableHead>
-                              <TableHead>Latest</TableHead>
+                              <TableHead>Record</TableHead>
+                              <TableHead>Risk</TableHead>
+                              <TableHead>Description</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {auditTrailReport.actionRows.slice(0, 6).map((row) => (
-                              <TableRow key={row.key}>
-                                <TableCell className="capitalize">{row.label}</TableCell>
-                                <TableCell className="text-right font-mono">{row.count}</TableCell>
+                            {auditTrailReport.rows.slice(0, 20).map((row) => (
+                              <TableRow key={row.id}>
                                 <TableCell className="text-muted-foreground">
-                                  {formatReportDate(row.latestAt)}
+                                  {formatReportDate(row.createdAt)}
+                                </TableCell>
+                                <TableCell className="capitalize">{row.actionLabel}</TableCell>
+                                <TableCell>
+                                  <div className="capitalize">{row.entityLabel}</div>
+                                  <div className="font-mono text-xs text-muted-foreground">
+                                    {row.entityId || "-"}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={activityLogRiskVariant(row.riskLevel)} dot>
+                                    {row.riskLevel}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="max-w-[360px] truncate">
+                                  {row.description}
                                 </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
-                      ) : (
-                        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                          No activity actions found for this period.
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                        No activity logs found for this period.
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Consolidated statements</CardTitle>
+                    <CardDescription>
+                      {consolidatedStatementsReport.periodLabel}. Multi-entity roll-up; no
+                      eliminations applied.
+                    </CardDescription>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/financial-statements">Open statements</Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {consolidatedStatementsLoading ? (
+                  <Skeleton className="h-80" />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Entities</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {consolidatedStatementsReport.loadedEntityCount}/
+                          {consolidatedStatementsReport.entityCount}
                         </div>
-                      )}
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Revenue</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {formatCurrency(consolidatedStatementsReport.totalRevenue, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Net profit</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Assets</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {formatCurrency(consolidatedStatementsReport.totalAssets, "AED", locale)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">Review items</div>
+                        <div className="font-mono text-xl font-semibold">
+                          {consolidatedStatementsReport.reviewCount}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="text-sm font-medium">Activity by record type</div>
-                      {auditTrailReport.entityRows.slice(0, 6).length ? (
-                        <Table>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant={
+                          consolidatedStatementsReport.reviewCount > 0 ? "warning" : "success"
+                        }
+                        dot
+                      >
+                        {consolidatedStatementsReport.statusLabel}
+                      </Badge>
+                      <Badge variant="outline">
+                        {consolidatedStatementsReport.consolidationBasis}
+                      </Badge>
+                    </div>
+
+                    {consolidatedStatementsReport.rows.length ? (
+                      <div className="overflow-x-auto">
+                        <Table className="min-w-[980px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Record type</TableHead>
-                              <TableHead className="text-right">Events</TableHead>
-                              <TableHead>Latest</TableHead>
+                              <TableHead>Company</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead className="text-right">Revenue</TableHead>
+                              <TableHead className="text-right">Net profit</TableHead>
+                              <TableHead className="text-right">Assets</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Review</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {auditTrailReport.entityRows.slice(0, 6).map((row) => (
-                              <TableRow key={row.key}>
-                                <TableCell className="capitalize">{row.label}</TableCell>
-                                <TableCell className="text-right font-mono">{row.count}</TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  {formatReportDate(row.latestAt)}
+                            {consolidatedStatementsReport.rows.map((row) => (
+                              <TableRow key={row.companyId}>
+                                <TableCell>
+                                  <div className="font-medium">{row.companyName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {row.baseCurrency}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="capitalize">{row.companyType}</TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(row.revenue, "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(row.netProfit, "AED", locale)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatCurrency(row.assets, "AED", locale)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={consolidatedStatusVariant(row.status)} dot>
+                                    {row.statusLabel}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="max-w-[360px] text-sm text-muted-foreground">
+                                  {row.reviewReason || "Ready for accountant pack."}
                                 </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
-                      ) : (
-                        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                          No audited record types found for this period.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {auditTrailReport.rows.length ? (
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-[920px]">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Action</TableHead>
-                            <TableHead>Record</TableHead>
-                            <TableHead>Risk</TableHead>
-                            <TableHead>Description</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {auditTrailReport.rows.slice(0, 20).map((row) => (
-                            <TableRow key={row.id}>
-                              <TableCell className="text-muted-foreground">
-                                {formatReportDate(row.createdAt)}
-                              </TableCell>
-                              <TableCell className="capitalize">{row.actionLabel}</TableCell>
-                              <TableCell>
-                                <div className="capitalize">{row.entityLabel}</div>
-                                <div className="font-mono text-xs text-muted-foreground">
-                                  {row.entityId || "-"}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={activityLogRiskVariant(row.riskLevel)} dot>
-                                  {row.riskLevel}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="max-w-[360px] truncate">
-                                {row.description}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No activity logs found for this period.
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Consolidated statements</CardTitle>
-                  <CardDescription>
-                    {consolidatedStatementsReport.periodLabel}. Multi-entity roll-up; no
-                    eliminations applied.
-                  </CardDescription>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/financial-statements">Open statements</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {consolidatedStatementsLoading ? (
-                <Skeleton className="h-80" />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Entities</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {consolidatedStatementsReport.loadedEntityCount}/
-                        {consolidatedStatementsReport.entityCount}
                       </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Revenue</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {formatCurrency(consolidatedStatementsReport.totalRevenue, "AED", locale)}
+                    ) : (
+                      <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                        No accessible companies found for consolidation.
                       </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Net profit</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Assets</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {formatCurrency(consolidatedStatementsReport.totalAssets, "AED", locale)}
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Review items</div>
-                      <div className="font-mono text-xl font-semibold">
-                        {consolidatedStatementsReport.reviewCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={consolidatedStatementsReport.reviewCount > 0 ? "warning" : "success"}
-                      dot
-                    >
-                      {consolidatedStatementsReport.statusLabel}
-                    </Badge>
-                    <Badge variant="outline">
-                      {consolidatedStatementsReport.consolidationBasis}
-                    </Badge>
-                  </div>
-
-                  {consolidatedStatementsReport.rows.length ? (
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-[980px]">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Company</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Revenue</TableHead>
-                            <TableHead className="text-right">Net profit</TableHead>
-                            <TableHead className="text-right">Assets</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Review</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {consolidatedStatementsReport.rows.map((row) => (
-                            <TableRow key={row.companyId}>
-                              <TableCell>
-                                <div className="font-medium">{row.companyName}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {row.baseCurrency}
-                                </div>
-                              </TableCell>
-                              <TableCell className="capitalize">{row.companyType}</TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(row.revenue, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(row.netProfit, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(row.assets, "AED", locale)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={consolidatedStatusVariant(row.status)} dot>
-                                  {row.statusLabel}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="max-w-[360px] text-sm text-muted-foreground">
-                                {row.reviewReason || "Ready for accountant pack."}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No accessible companies found for consolidation.
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="planning" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Budget</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(planningReport.budgetTotal, "AED", locale)}
-                  </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Actual</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="font-mono text-2xl font-bold">
-                    {formatCurrency(planningReport.actualTotal, "AED", locale)}
+          <TabsContent value="planning" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Budget</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Variance</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  {planningReport.variance >= 0 ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-8 w-32" />
                   ) : (
-                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="space-y-1">
                     <div className="font-mono text-2xl font-bold">
-                      {formatCurrency(planningReport.variance, "AED", locale)}
+                      {formatCurrency(planningReport.budgetTotal, "AED", locale)}
                     </div>
-                    <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
-                      {planningReport.variance >= 0 ? "Under budget" : "Over budget"}
-                    </Badge>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Projected Cash</CardTitle>
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-8 w-32" />
-                ) : (
-                  <div className="space-y-1">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Actual</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
                     <div className="font-mono text-2xl font-bold">
-                      {formatCurrency(planningReport.projectedEndingBalance, "AED", locale)}
+                      {formatCurrency(planningReport.actualTotal, "AED", locale)}
                     </div>
-                    <Badge
-                      variant={
-                        planningReport.cashWarning === "On track"
-                          ? "success"
-                          : planningReport.cashWarning === "Low cash warning"
-                            ? "warning"
-                            : "danger"
-                      }
-                      dot
-                    >
-                      {planningReport.cashWarning}
-                    </Badge>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                  )}
+                </CardContent>
+              </Card>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <CardTitle>Budget vs actual</CardTitle>
-                    <CardDescription>
-                      {planningReport.budget
-                        ? `${planningReport.budget.name} (${planningReport.budget.fiscalYear})`
-                        : "Create a budget to compare actuals."}
-                    </CardDescription>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Variance</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    {planningReport.variance >= 0 ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    )}
                   </div>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/budgets">Open budgets</Link>
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-64" />
-                ) : planningReport.largestVarianceLines.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Budget</TableHead>
-                        <TableHead className="text-right">Actual</TableHead>
-                        <TableHead className="text-right">Variance</TableHead>
-                        <TableHead className="text-right">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {planningReport.largestVarianceLines.map((line) => (
-                        <TableRow key={line.id}>
-                          <TableCell className="font-medium">{line.category}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(line.totals.budget, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(line.totals.actual, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(line.totals.variance, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={line.totals.variance >= 0 ? "success" : "warning"} dot>
-                              {line.totals.variance >= 0 ? "Under" : "Over"}
-                            </Badge>
-                          </TableCell>
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {formatCurrency(planningReport.variance, "AED", locale)}
+                      </div>
+                      <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
+                        {planningReport.variance >= 0 ? "Under budget" : "Over budget"}
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <CardTitle className="text-sm font-medium">Projected Cash</CardTitle>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-mono text-2xl font-bold">
+                        {formatCurrency(planningReport.projectedEndingBalance, "AED", locale)}
+                      </div>
+                      <Badge
+                        variant={
+                          planningReport.cashWarning === "On track"
+                            ? "success"
+                            : planningReport.cashWarning === "Low cash warning"
+                              ? "warning"
+                              : "danger"
+                        }
+                        dot
+                      >
+                        {planningReport.cashWarning}
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle>Budget vs actual</CardTitle>
+                      <CardDescription>
+                        {planningReport.budget
+                          ? `${planningReport.budget.name} (${planningReport.budget.fiscalYear})`
+                          : "Create a budget to compare actuals."}
+                      </CardDescription>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/budgets">Open budgets</Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : planningReport.largestVarianceLines.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Budget</TableHead>
+                          <TableHead className="text-right">Actual</TableHead>
+                          <TableHead className="text-right">Variance</TableHead>
+                          <TableHead className="text-right">Status</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No budget variance data available.
+                      </TableHeader>
+                      <TableBody>
+                        {planningReport.largestVarianceLines.map((line) => (
+                          <TableRow key={line.id}>
+                            <TableCell className="font-medium">{line.category}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(line.totals.budget, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(line.totals.actual, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(line.totals.variance, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge
+                                variant={line.totals.variance >= 0 ? "success" : "warning"}
+                                dot
+                              >
+                                {line.totals.variance >= 0 ? "Under" : "Over"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No budget variance data available.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle>Cash flow forecast</CardTitle>
+                      <CardDescription>
+                        90-day projected inflows, outflows, and balance.
+                      </CardDescription>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/cashflow-forecast">Open forecast</Link>
+                    </Button>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </CardHeader>
+                <CardContent>
+                  {planningLoading ? (
+                    <Skeleton className="h-64" />
+                  ) : planningReport.projections.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Week</TableHead>
+                          <TableHead>Period</TableHead>
+                          <TableHead className="text-right">In</TableHead>
+                          <TableHead className="text-right">Out</TableHead>
+                          <TableHead className="text-right">Balance</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {planningReport.projections.slice(0, 8).map((row) => (
+                          <TableRow key={row.week}>
+                            <TableCell className="font-medium">Week {row.week}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {row.weekStart} - {row.weekEnd}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.expectedInflows, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.expectedOutflows, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(row.projectedBalance, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No cash flow projection data available.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
             <Card>
               <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <CardTitle>Cash flow forecast</CardTitle>
-                    <CardDescription>
-                      90-day projected inflows, outflows, and balance.
-                    </CardDescription>
-                  </div>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/cashflow-forecast">Open forecast</Link>
-                  </Button>
-                </div>
+                <CardTitle>Planning automation</CardTitle>
+                <CardDescription>
+                  Signals that should drive alerts and follow-up workflows.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {planningLoading ? (
-                  <Skeleton className="h-64" />
-                ) : planningReport.projections.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Week</TableHead>
-                        <TableHead>Period</TableHead>
-                        <TableHead className="text-right">In</TableHead>
-                        <TableHead className="text-right">Out</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {planningReport.projections.slice(0, 8).map((row) => (
-                        <TableRow key={row.week}>
-                          <TableCell className="font-medium">Week {row.week}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {row.weekStart} - {row.weekEnd}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.expectedInflows, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.expectedOutflows, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
-                            {formatCurrency(row.projectedBalance, "AED", locale)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No cash flow projection data available.
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Over-budget lines</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {planningReport.overBudgetLines}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Cash movement</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {formatCurrency(planningReport.cashMovement, "AED", locale)}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <div className="text-xs text-muted-foreground">Forecast insights</div>
+                    <div className="font-mono text-2xl font-semibold">
+                      {planningReport.insights.length}
+                    </div>
+                  </div>
+                </div>
+                {planningReport.insights.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {planningReport.insights.slice(0, 3).map((insight) => (
+                      <div key={insight} className="rounded-md border p-3 text-sm">
+                        {insight}
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Planning automation</CardTitle>
-              <CardDescription>
-                Signals that should drive alerts and follow-up workflows.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Over-budget lines</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {planningReport.overBudgetLines}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Cash movement</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {formatCurrency(planningReport.cashMovement, "AED", locale)}
-                  </div>
-                </div>
-                <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Forecast insights</div>
-                  <div className="font-mono text-2xl font-semibold">
-                    {planningReport.insights.length}
-                  </div>
-                </div>
-              </div>
-              {planningReport.insights.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {planningReport.insights.slice(0, 3).map((insight) => (
-                    <div key={insight} className="rounded-md border p-3 text-sm">
-                      {insight}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }
