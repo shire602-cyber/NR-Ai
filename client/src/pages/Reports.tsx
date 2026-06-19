@@ -3945,7 +3945,7 @@ export default function Reports() {
     const rows = trialBalance?.rows ?? [];
     const activeAccounts = rows.filter((row) => Math.abs(row.balance) > 0.005).length;
     const foreignCurrencyAccounts = rows.filter((row) => row.hasForeignLines).length;
-    const isBalanced = (trialBalance?.totals.difference ?? 0) < 0.005;
+    const isBalanced = (trialBalance?.totals?.difference ?? 0) < 0.005;
     return { activeAccounts, foreignCurrencyAccounts, isBalanced };
   }, [trialBalance]);
 
@@ -3990,7 +3990,7 @@ export default function Reports() {
     [salesProductServiceReport?.rows]
   );
   const topProductServiceSalesRow = productServiceSalesRows[0];
-  const productServiceTopShare = salesProductServiceReport?.totals.topProductServiceShare ?? 0;
+  const productServiceTopShare = salesProductServiceReport?.totals?.topProductServiceShare ?? 0;
 
   const overdueCustomerRows = useMemo<OverdueCustomerRow[]>(() => {
     const summaries = new Map<string, OverdueCustomerRow>();
@@ -6328,8 +6328,8 @@ export default function Reports() {
       makeComparisonMetric({
         id: "top-product-service-share",
         label: "Top product/service share",
-        current: comparisonCurrentSalesProductService?.totals.topProductServiceShare ?? 0,
-        previous: comparisonPreviousSalesProductService?.totals.topProductServiceShare ?? 0,
+        current: comparisonCurrentSalesProductService?.totals?.topProductServiceShare ?? 0,
+        previous: comparisonPreviousSalesProductService?.totals?.topProductServiceShare ?? 0,
         currency: "%",
         signal: "Sales mix concentration",
         favorable: "decrease",
@@ -6724,8 +6724,8 @@ export default function Reports() {
       makeComparisonMetric({
         id: "cost-center-net-income",
         label: "Cost center net income",
-        current: comparisonCurrentCostCenterProfitability?.totals.netIncome ?? 0,
-        previous: comparisonPreviousCostCenterProfitability?.totals.netIncome ?? 0,
+        current: comparisonCurrentCostCenterProfitability?.totals?.netIncome ?? 0,
+        previous: comparisonPreviousCostCenterProfitability?.totals?.netIncome ?? 0,
         currency: "AED",
         signal: "Department profitability",
         favorable: "increase",
@@ -6735,8 +6735,8 @@ export default function Reports() {
       makeComparisonMetric({
         id: "cost-center-expenses",
         label: "Cost center expenses",
-        current: comparisonCurrentCostCenterProfitability?.totals.totalExpenses ?? 0,
-        previous: comparisonPreviousCostCenterProfitability?.totals.totalExpenses ?? 0,
+        current: comparisonCurrentCostCenterProfitability?.totals?.totalExpenses ?? 0,
+        previous: comparisonPreviousCostCenterProfitability?.totals?.totalExpenses ?? 0,
         currency: "AED",
         signal: "Department cost pressure",
         favorable: "decrease",
@@ -7311,13 +7311,13 @@ export default function Reports() {
     comparisonCurrentBalanceSheet?.totalAssets,
     comparisonCurrentBalanceSheet?.totalEquity,
     comparisonCurrentBalanceSheet?.totalLiabilities,
-    comparisonCurrentCostCenterProfitability?.totals.netIncome,
-    comparisonCurrentCostCenterProfitability?.totals.totalExpenses,
+    comparisonCurrentCostCenterProfitability?.totals?.netIncome,
+    comparisonCurrentCostCenterProfitability?.totals?.totalExpenses,
     comparisonCurrentRange,
-    comparisonCurrentSalesProductService?.totals.topProductServiceShare,
+    comparisonCurrentSalesProductService?.totals?.topProductServiceShare,
     comparisonCurrentVat?.netVATPayable,
-    comparisonPreviousCostCenterProfitability?.totals.netIncome,
-    comparisonPreviousCostCenterProfitability?.totals.totalExpenses,
+    comparisonPreviousCostCenterProfitability?.totals?.netIncome,
+    comparisonPreviousCostCenterProfitability?.totals?.totalExpenses,
     comparisonPreviousCorporateTaxEstimate?.taxPayable,
     comparisonPreviousProfitLoss?.netProfit,
     comparisonPreviousProfitLoss?.totalExpenses,
@@ -7326,7 +7326,7 @@ export default function Reports() {
     comparisonPreviousBalanceSheet?.totalEquity,
     comparisonPreviousBalanceSheet?.totalLiabilities,
     comparisonPreviousRange,
-    comparisonPreviousSalesProductService?.totals.topProductServiceShare,
+    comparisonPreviousSalesProductService?.totals?.topProductServiceShare,
     comparisonPreviousVat?.netVATPayable,
     consolidatedStatementsReport.currentComparisonExpenses,
     consolidatedStatementsReport.currentComparisonNetProfit,
@@ -11299,7 +11299,12 @@ export default function Reports() {
             </h2>
             <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
           </div>
-          <Badge variant={personaFilter === "all" ? "outline" : "info"}>{personaFilterLabel}</Badge>
+          <Badge
+            variant={personaFilter === "all" ? "outline" : "info"}
+            className="hidden sm:inline-flex"
+          >
+            {personaFilterLabel}
+          </Badge>
         </div>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
           {personaFilters.map((filter) => (
@@ -11380,12 +11385,12 @@ export default function Reports() {
           value={activeReportWorkspaceTab}
           onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
         >
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-7">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
             {reportWorkspaceTabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
-                className="h-auto flex-col items-start gap-0.5 whitespace-normal px-3 py-2 text-left sm:items-center sm:text-center"
+                className="h-10 min-w-[7.25rem] flex-none px-3 py-2 text-center lg:min-w-0 lg:flex-1 xl:h-auto xl:flex-col xl:gap-0.5"
                 data-testid={`reports-workspace-tab-${tab.id}`}
               >
                 <span className="text-sm font-semibold">{tab.label}</span>
@@ -19554,7 +19559,7 @@ export default function Reports() {
                         data-testid="text-trial-balance-difference"
                       >
                         {formatCurrency(
-                          trialBalance?.totals.difference ?? 0,
+                          trialBalance?.totals?.difference ?? 0,
                           trialBalance?.reportCurrency ?? "AED",
                           locale
                         )}
@@ -19689,22 +19694,22 @@ export default function Reports() {
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold">
                             {formatCurrency(
-                              trialBalance.totals.sumDebits,
-                              trialBalance.reportCurrency,
+                              trialBalance.totals?.sumDebits ?? 0,
+                              trialBalance.reportCurrency ?? "AED",
                               locale
                             )}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold">
                             {formatCurrency(
-                              trialBalance.totals.sumCredits,
-                              trialBalance.reportCurrency,
+                              trialBalance.totals?.sumCredits ?? 0,
+                              trialBalance.reportCurrency ?? "AED",
                               locale
                             )}
                           </TableCell>
                           <TableCell className="text-right font-mono font-semibold">
                             {formatCurrency(
-                              trialBalance.totals.difference,
-                              trialBalance.reportCurrency,
+                              trialBalance.totals?.difference ?? 0,
+                              trialBalance.reportCurrency ?? "AED",
                               locale
                             )}
                           </TableCell>
