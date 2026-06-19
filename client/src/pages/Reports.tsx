@@ -1215,27 +1215,50 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
 
 const reportViewerCategoryLabels: Record<string, string> = {
   "Financial Statements": "Financial Statements",
+  "Customers & Receivables": "Customers & Receivables",
   Sales: "Sales",
-  Purchases: "Expenses",
-  Payroll: "Payroll",
-  Tax: "Tax",
-  "Accountant Tools": "Accounting & Close",
+  "Vendors & Payables": "Vendors & Payables",
+  Purchases: "Purchases & Expenses",
+  Payroll: "Employees & Payroll",
+  "Accountant & Taxes": "Accountant & Taxes",
+  "Budgets & Forecasts": "Budgets & Forecasts",
   Management: "Management",
   Inventory: "Inventory",
-  Assets: "Assets",
+  Assets: "Fixed Assets",
 };
 
 const reportViewerCategoryOrder = [
   "Financial Statements",
+  "Customers & Receivables",
   "Sales",
+  "Vendors & Payables",
   "Purchases",
   "Payroll",
-  "Tax",
-  "Accountant Tools",
+  "Accountant & Taxes",
+  "Budgets & Forecasts",
   "Management",
   "Inventory",
   "Assets",
 ] as const;
+
+const reportViewerCategoryByReportId: Record<string, string> = {
+  "ar-aging": "Customers & Receivables",
+  "customer-balances": "Customers & Receivables",
+  "invoice-status": "Customers & Receivables",
+  "ap-aging": "Vendors & Payables",
+  "vendor-balances": "Vendors & Payables",
+  "vat-summary": "Accountant & Taxes",
+  "vat-return": "Accountant & Taxes",
+  "corporate-tax-estimate": "Accountant & Taxes",
+  "trial-balance": "Accountant & Taxes",
+  "general-ledger": "Accountant & Taxes",
+  "account-transactions": "Accountant & Taxes",
+  "month-end-close-status": "Accountant & Taxes",
+  "audit-trail": "Accountant & Taxes",
+  "consolidated-statements": "Accountant & Taxes",
+  "budget-actual": "Budgets & Forecasts",
+  "cash-flow-forecast": "Budgets & Forecasts",
+};
 
 const reportViewerPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
 
@@ -1262,6 +1285,10 @@ interface ReportViewerGroup {
 
 function reportViewerCategoryLabel(category: string): string {
   return reportViewerCategoryLabels[category] ?? category;
+}
+
+function reportViewerCategoryForReport(report: ReportCatalogItem): string {
+  return reportViewerCategoryByReportId[report.id] ?? report.category;
 }
 
 function reportViewerCategoryRank(category: string): number {
@@ -2542,6 +2569,7 @@ export default function Reports() {
 
     const catalogOptions = readyReportCatalog.map((report, index): ReportViewerOption => {
       const persona = reportViewerPersonaForReport(report, effectiveReportPersona);
+      const category = reportViewerCategoryForReport(report);
       const href =
         report.href ??
         (report.tab && persona
@@ -2558,8 +2586,8 @@ export default function Reports() {
         reportId: report.id,
         label: report.name,
         description: report.decisionQuestion,
-        category: report.category,
-        categoryLabel: reportViewerCategoryLabel(report.category),
+        category,
+        categoryLabel: reportViewerCategoryLabel(category),
         status: report.status,
         order: index,
         tab: report.tab,
