@@ -44,12 +44,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import {
-  readyReportCatalog,
-  reportsHref,
-  type ReportPersona,
-  type ReportTab,
-} from "@/lib/reportCatalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -67,63 +61,10 @@ interface NavGroup {
   titleKey: string;
   icon: LucideIcon;
   items: SubItem[];
+  url?: string;
 }
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
-
-const reportSidebarTabs: Array<{ key: string; title: string; tab: ReportTab }> = [
-  { key: "profit-loss", title: "Profit & Loss", tab: "pl" },
-  { key: "balance-sheet", title: "Balance Sheet", tab: "bs" },
-  { key: "vat-summary", title: "VAT Summary", tab: "vat" },
-  { key: "sales", title: "Sales", tab: "sales" },
-  { key: "expenses", title: "Expenses", tab: "expenses" },
-  { key: "payroll", title: "Payroll", tab: "payroll" },
-  { key: "trial-balance", title: "Trial Balance", tab: "trial" },
-  { key: "general-ledger", title: "General Ledger", tab: "ledger" },
-  { key: "balances", title: "Balances", tab: "balances" },
-  { key: "close", title: "Month-End Close", tab: "close" },
-  { key: "planning", title: "Planning", tab: "planning" },
-  { key: "corporate-tax-report", title: "Corporate Tax", tab: "tax" },
-];
-
-const reportSidebarPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
-
-function reportSidebarPersonaForTab(
-  tab: ReportTab,
-  currentPersona?: ReportPersona
-): ReportPersona | undefined {
-  if (
-    currentPersona &&
-    readyReportCatalog.some(
-      (report) => report.tab === tab && report.personas.includes(currentPersona)
-    )
-  ) {
-    return currentPersona;
-  }
-
-  return reportSidebarPersonaPriority.find((persona) =>
-    readyReportCatalog.some((report) => report.tab === tab && report.personas.includes(persona))
-  );
-}
-
-function reportNavItems(persona?: ReportPersona): SubItem[] {
-  return [
-    { key: "reports-home", titleKey: "reports", title: "Reports", url: "/reports" },
-    ...reportSidebarTabs.map((report) => ({
-      key: `report-${report.key}`,
-      titleKey: `report-${report.key}`,
-      title: report.title,
-      url: reportsHref({
-        tab: report.tab,
-        persona: reportSidebarPersonaForTab(report.tab, persona),
-      }),
-      testId: `report-${report.key}`,
-    })),
-    { key: "financial-statements", titleKey: "financialStatements", url: "/financial-statements" },
-    { key: "vat-filing", titleKey: "vatFiling", url: "/vat-filing" },
-    { key: "corporate-tax", titleKey: "corporateTax", url: "/corporate-tax" },
-  ];
-}
 
 const CUSTOMER_GROUPS: NavGroup[] = [
   {
@@ -172,7 +113,8 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     key: "reports",
     titleKey: "reportsSection",
     icon: BarChart3,
-    items: reportNavItems(),
+    url: "/reports",
+    items: [],
   },
   {
     key: "payroll",
@@ -251,18 +193,6 @@ const CLIENT_PORTAL_ITEMS = [
 
 const SIDEBAR_LS_KEY = "sidebar-expanded-group";
 
-function reportPersonaFromLocation(location: string): ReportPersona | undefined {
-  const [, search] = location.split("?");
-  if (!search) return undefined;
-
-  const persona = new URLSearchParams(search).get("persona");
-  if (persona === "owner" || persona === "freelancer" || persona === "accountant") {
-    return persona;
-  }
-
-  return undefined;
-}
-
 function routeMatchesItem(location: string, itemUrl: string): boolean {
   if (location === itemUrl || location.startsWith(itemUrl + "/")) return true;
   if (itemUrl.includes("?")) return location.startsWith(itemUrl + "&");
@@ -271,6 +201,10 @@ function routeMatchesItem(location: string, itemUrl: string): boolean {
 
 function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
   for (const group of groups) {
+    if (group.url && routeMatchesItem(location, group.url)) {
+      return group.key;
+    }
+
     for (const item of group.items) {
       if (routeMatchesItem(location, item.url)) {
         return group.key;
@@ -294,28 +228,20 @@ export function AppSidebar() {
   const userType = currentUser?.userType || "customer";
 
   const showNraCenter = canAccessNraCenter(currentUser);
-  const reportPersona = useMemo(() => reportPersonaFromLocation(location), [location]);
-  const customerGroups = useMemo<NavGroup[]>(
-    () =>
-      CUSTOMER_GROUPS.map((group) =>
-        group.key === "reports" ? { ...group, items: reportNavItems(reportPersona) } : group
-      ),
-    [reportPersona]
-  );
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
-      ...customerGroups,
+      ...CUSTOMER_GROUPS,
       ...(showNraCenter ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
     ],
-    [customerGroups, showNraCenter, isAdmin]
+    [showNraCenter, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [...customerGroups, NRA_GROUP, ADMIN_GROUP]);
+    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);
@@ -370,8 +296,27 @@ export function AppSidebar() {
   const renderNavGroup = (group: NavGroup) => {
     const Icon = group.icon;
     const isExpanded = expandedGroup === group.key;
-    const hasActive = group.items.some((item) => routeMatchesItem(location, item.url));
+    const hasActive = group.url
+      ? routeMatchesItem(location, group.url)
+      : group.items.some((item) => routeMatchesItem(location, item.url));
     const groupTitle = (t as Record<string, string>)[group.titleKey] ?? group.titleKey;
+
+    const groupUrl = group.url;
+
+    if (groupUrl) {
+      return (
+        <SidebarMenuItem key={group.key}>
+          <SidebarMenuButton
+            isActive={hasActive}
+            onClick={() => setLocation(groupUrl)}
+            data-testid={`group-${group.key}`}
+          >
+            <Icon className="w-4 h-4" />
+            <span>{groupTitle}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    }
 
     return (
       <SidebarMenuItem key={group.key}>

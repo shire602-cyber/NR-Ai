@@ -10,13 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -29,6 +22,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
@@ -40,6 +38,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
   type ExportData,
@@ -151,6 +150,7 @@ import {
   Briefcase,
   Building2,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Download,
   FileSpreadsheet,
@@ -1213,41 +1213,71 @@ const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "accountant", label: "Accountant" },
 ];
 
-const reportViewerTabLabels = {
-  pl: "Profit & Loss",
-  bs: "Balance Sheet",
-  vat: "VAT Summary",
-  tax: "Corporate Tax",
-  trial: "Trial Balance",
-  sales: "Sales",
-  balances: "Balances",
-  expenses: "Expenses",
-  payroll: "Payroll",
-  ledger: "General Ledger",
-  close: "Month-End Close",
-  planning: "Planning",
-} as const satisfies Record<ReportTab, string>;
+const reportViewerCategoryLabels: Record<string, string> = {
+  "Financial Statements": "Financial Statements",
+  Sales: "Sales",
+  Purchases: "Expenses",
+  Payroll: "Payroll",
+  Tax: "Tax",
+  "Accountant Tools": "Accounting & Close",
+  Management: "Management",
+  Inventory: "Inventory",
+  Assets: "Assets",
+};
 
-const reportViewerTabDescriptions = {
-  pl: "Income, expenses, and net profit for the selected period.",
-  bs: "Assets, liabilities, and equity as of the selected date.",
-  vat: "VAT output, input, and payable or reclaimable balance.",
-  tax: "Corporate tax estimate for the selected reporting period.",
-  trial: "Debit and credit balances before financial statement review.",
-  sales: "Invoices, customers, products, receivables, and collections.",
-  balances: "Cash, working capital, aging, and balance summaries.",
-  expenses: "Receipts, claims, spend, and purchase-side reporting.",
-  payroll: "Payroll run, WPS, and approval reporting.",
-  ledger: "General ledger activity and account-level transaction detail.",
-  close: "Month-end close, audit trail, and consolidated review signals.",
-  planning: "Budget, forecast, variance, and planning reports.",
-} as const satisfies Record<ReportTab, string>;
+const reportViewerCategoryOrder = [
+  "Financial Statements",
+  "Sales",
+  "Purchases",
+  "Payroll",
+  "Tax",
+  "Accountant Tools",
+  "Management",
+  "Inventory",
+  "Assets",
+] as const;
 
-const reportViewerPersonaLabels = {
-  owner: "Business reports",
-  freelancer: "Freelancer reports",
-  accountant: "Accountant reports",
-} as const satisfies Record<ReportPersona, string>;
+const reportViewerPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
+
+interface ReportViewerOption {
+  id: string;
+  label: string;
+  description: string;
+  category: string;
+  categoryLabel: string;
+  status: ReportStatus;
+  order: number;
+  reportId?: string;
+  tab?: ReportTab;
+  href?: string;
+  persona?: ReportPersona;
+}
+
+interface ReportViewerGroup {
+  category: string;
+  label: string;
+  rank: number;
+  options: ReportViewerOption[];
+}
+
+function reportViewerCategoryLabel(category: string): string {
+  return reportViewerCategoryLabels[category] ?? category;
+}
+
+function reportViewerCategoryRank(category: string): number {
+  const index = reportViewerCategoryOrder.indexOf(
+    category as (typeof reportViewerCategoryOrder)[number]
+  );
+  return index === -1 ? reportViewerCategoryOrder.length : index;
+}
+
+function reportViewerPersonaForReport(
+  report: ReportCatalogItem,
+  currentPersona: ReportPersona
+): ReportPersona | undefined {
+  if (report.personas.includes(currentPersona)) return currentPersona;
+  return reportViewerPersonaPriority.find((persona) => report.personas.includes(persona));
+}
 
 type ReportWorkspaceTab =
   | "home"
@@ -1379,16 +1409,19 @@ function reportWorkspaceTabFromLocation(search: string, hash: string): ReportWor
 
 function reportsWorkspaceHref({
   persona,
+  reportId,
   tab,
   workspace,
 }: {
   persona?: PersonaFilter;
+  reportId?: string;
   tab?: ReportTab;
   workspace?: ReportWorkspaceTab;
 }): string {
   const params = new URLSearchParams();
 
   if (tab) params.set("tab", tab);
+  if (reportId) params.set("report", reportId);
   if (persona && persona !== "all") params.set("persona", persona);
   if (workspace && workspace !== "home" && workspace !== "reports") {
     params.set("workspace", workspace);
@@ -2046,6 +2079,11 @@ function reportTabFromSearch(search: string): ReportTab {
   return reportTabs.includes(tab as ReportTab) ? (tab as ReportTab) : "pl";
 }
 
+function reportIdFromSearch(search: string): string | null {
+  const reportId = new URLSearchParams(search).get("report");
+  return readyReportCatalog.some((report) => report.id === reportId) ? reportId : null;
+}
+
 function personaFilterFromSearch(
   search: string,
   fallbackPersona: ReportPersona | null = null
@@ -2401,6 +2439,13 @@ export default function Reports() {
       ),
     [locationSearch]
   );
+  const activeReportId = useMemo(
+    () =>
+      reportIdFromSearch(
+        locationSearch || (typeof window === "undefined" ? "" : window.location.search)
+      ),
+    [locationSearch]
+  );
   const [activeReportWorkspaceTab, setActiveReportWorkspaceTabState] = useState<ReportWorkspaceTab>(
     () =>
       reportWorkspaceTabFromLocation(
@@ -2484,43 +2529,163 @@ export default function Reports() {
   const effectiveReportPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const reportViewerOptions = useMemo(() => {
-    const reportByTab = new Map<ReportTab, ReportCatalogItem>();
+    const statementCenterOption: ReportViewerOption = {
+      id: "financial-statements-center",
+      label: "Financial Statements Center",
+      description: "Open the clean statement workspace for P&L, Balance Sheet, and Cash Flow.",
+      category: "Financial Statements",
+      categoryLabel: "Financial Statements",
+      status: "live",
+      order: -1,
+      href: "/financial-statements",
+    };
 
-    readyReportCatalog.forEach((report) => {
-      if (!report.tab || !report.personas.includes(effectiveReportPersona)) return;
-      if (!reportByTab.has(report.tab)) {
-        reportByTab.set(report.tab, report);
-      }
+    const catalogOptions = readyReportCatalog.map((report, index): ReportViewerOption => {
+      const persona = reportViewerPersonaForReport(report, effectiveReportPersona);
+      const href =
+        report.href ??
+        (report.tab && persona
+          ? reportsWorkspaceHref({
+              tab: report.tab,
+              reportId: report.id,
+              persona,
+              workspace: "reports",
+            })
+          : undefined);
+
+      return {
+        id: report.id,
+        reportId: report.id,
+        label: report.name,
+        description: report.decisionQuestion,
+        category: report.category,
+        categoryLabel: reportViewerCategoryLabel(report.category),
+        status: report.status,
+        order: index,
+        tab: report.tab,
+        href,
+        persona,
+      };
     });
 
-    return reportTabs
-      .filter((tab) => reportByTab.has(tab))
-      .map((tab) => {
-        const report = reportByTab.get(tab);
-        return {
-          tab,
-          label: reportViewerTabLabels[tab],
-          description: reportViewerTabDescriptions[tab],
-          category: report?.category,
-          status: report?.status,
-        };
-      });
+    return [statementCenterOption, ...catalogOptions].sort((a, b) => {
+      const categoryDelta =
+        reportViewerCategoryRank(a.category) - reportViewerCategoryRank(b.category);
+      if (categoryDelta !== 0) return categoryDelta;
+      if (a.order !== b.order) return a.order - b.order;
+      return a.label.localeCompare(b.label);
+    });
   }, [effectiveReportPersona]);
+  const reportViewerOptionById = useMemo(
+    () => new Map(reportViewerOptions.map((option) => [option.id, option])),
+    [reportViewerOptions]
+  );
+  const reportViewerGroups = useMemo<ReportViewerGroup[]>(() => {
+    const groups = new Map<string, ReportViewerGroup>();
+
+    reportViewerOptions.forEach((option) => {
+      const group = groups.get(option.category) ?? {
+        category: option.category,
+        label: option.categoryLabel,
+        rank: reportViewerCategoryRank(option.category),
+        options: [],
+      };
+      group.options.push(option);
+      groups.set(option.category, group);
+    });
+
+    return Array.from(groups.values()).sort(
+      (a, b) => a.rank - b.rank || a.label.localeCompare(b.label)
+    );
+  }, [reportViewerOptions]);
   const activeReportViewerOption =
-    reportViewerOptions.find((option) => option.tab === activeTab) ?? reportViewerOptions[0];
+    (activeReportId ? reportViewerOptionById.get(activeReportId) : undefined) ??
+    reportViewerOptions.find(
+      (option) => option.tab === activeTab && option.persona === effectiveReportPersona
+    ) ??
+    reportViewerOptions.find((option) => option.tab === activeTab) ??
+    reportViewerOptions[0];
+  const selectedReportId = activeReportViewerOption?.reportId ?? null;
+  const hasFocusedReportSelection = Boolean(activeReportId && selectedReportId);
+
+  const openReportViewerOption = useCallback(
+    (optionId: string) => {
+      const option = reportViewerOptionById.get(optionId);
+      if (!option) return;
+
+      setActiveReportWorkspaceTabState("reports");
+
+      if (option.href) {
+        navigate(option.href);
+        return;
+      }
+
+      if (option.tab) {
+        navigate(
+          reportsWorkspaceHref({
+            tab: option.tab,
+            reportId: option.reportId,
+            persona: option.persona ?? effectiveReportPersona,
+            workspace: "reports",
+          })
+        );
+      }
+    },
+    [effectiveReportPersona, navigate, reportViewerOptionById]
+  );
+
+  const showReportSection = useCallback(
+    (...reportIds: string[]) =>
+      !hasFocusedReportSelection ||
+      (selectedReportId !== null && reportIds.includes(selectedReportId)),
+    [hasFocusedReportSelection, selectedReportId]
+  );
+  const reportSectionClass = useCallback(
+    (reportIds: string[], className?: string) =>
+      cn(className, !showReportSection(...reportIds) && "hidden"),
+    [showReportSection]
+  );
 
   useEffect(() => {
     if (activeReportWorkspaceTab !== "reports" || reportViewerOptions.length === 0) return;
+    if (
+      activeReportId &&
+      activeReportViewerOption?.tab &&
+      activeReportViewerOption.tab !== activeTab
+    ) {
+      navigate(
+        reportsWorkspaceHref({
+          tab: activeReportViewerOption.tab,
+          reportId: activeReportViewerOption.reportId,
+          persona: activeReportViewerOption.persona ?? effectiveReportPersona,
+          workspace: "reports",
+        })
+      );
+      return;
+    }
+
     if (reportViewerOptions.some((option) => option.tab === activeTab)) return;
+
+    const firstReportOption = reportViewerOptions.find((option) => option.tab);
+    if (!firstReportOption?.tab) return;
 
     navigate(
       reportsWorkspaceHref({
-        tab: reportViewerOptions[0].tab,
-        persona: effectiveReportPersona,
+        tab: firstReportOption.tab,
+        reportId: firstReportOption.reportId,
+        persona: firstReportOption.persona ?? effectiveReportPersona,
         workspace: "reports",
       })
     );
-  }, [activeReportWorkspaceTab, activeTab, effectiveReportPersona, navigate, reportViewerOptions]);
+  }, [
+    activeReportId,
+    activeReportViewerOption,
+    activeReportWorkspaceTab,
+    activeTab,
+    effectiveReportPersona,
+    navigate,
+    reportViewerOptions,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -11391,10 +11556,9 @@ export default function Reports() {
           <div className="flex flex-col gap-4">
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{reportViewerPersonaLabels[effectiveReportPersona]}</Badge>
-                {activeReportViewerOption?.category ? (
+                {activeReportViewerOption?.categoryLabel ? (
                   <span className="text-xs font-medium text-muted-foreground">
-                    {activeReportViewerOption.category}
+                    {activeReportViewerOption.categoryLabel}
                   </span>
                 ) : null}
               </div>
@@ -11412,22 +11576,63 @@ export default function Reports() {
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
-              <Label htmlFor="report-viewer-select">Report</Label>
-              <Select
-                value={activeReportViewerOption?.tab ?? activeTab}
-                onValueChange={(value) => setActiveTab(value as ReportTab, effectiveReportPersona)}
-              >
-                <SelectTrigger id="report-viewer-select" data-testid="select-report-viewer">
-                  <SelectValue placeholder="Choose a report" />
-                </SelectTrigger>
-                <SelectContent>
-                  {reportViewerOptions.map((option) => (
-                    <SelectItem key={option.tab} value={option.tab}>
-                      {option.label}
-                    </SelectItem>
+              <Label>Report Center</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left"
+                    data-testid="button-report-viewer-menu"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {activeReportViewerOption?.label ?? "Choose a report"}
+                      </span>
+                      <span className="block truncate text-xs font-normal text-muted-foreground">
+                        {activeReportViewerOption?.categoryLabel ?? "Grouped by category"}
+                      </span>
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-72"
+                  data-testid="menu-report-viewer"
+                >
+                  <DropdownMenuLabel>Report Center</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {reportViewerGroups.map((group) => (
+                    <DropdownMenuSub key={group.category}>
+                      <DropdownMenuSubTrigger>
+                        <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                        <span className="mr-2 text-xs font-normal text-muted-foreground">
+                          {group.options.length}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto">
+                        {group.options.map((option) => (
+                          <DropdownMenuItem
+                            key={option.id}
+                            disabled={!option.href && !option.tab}
+                            onSelect={() => openReportViewerOption(option.id)}
+                            className="items-start py-2"
+                            data-testid={`menu-report-viewer-${option.id}`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{option.label}</span>
+                              <span className="block line-clamp-2 text-xs leading-snug text-muted-foreground">
+                                {option.description}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <div className="space-y-1.5">
               <Label>Period</Label>
@@ -17871,7 +18076,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="sales" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["invoice-status", "revenue-customer", "sales-product-service"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Invoice Value</CardTitle>
@@ -17951,7 +18161,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["sales-product-service"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18020,7 +18230,7 @@ export default function Reports() {
             </Card>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <Card>
+              <Card className={reportSectionClass(["invoice-status"])}>
                 <CardHeader>
                   <CardTitle>Invoice status</CardTitle>
                   <CardDescription>Status mix and AED-equivalent invoice value.</CardDescription>
@@ -18061,7 +18271,7 @@ export default function Reports() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={reportSectionClass(["revenue-customer"])}>
                 <CardHeader>
                   <CardTitle>Revenue by customer</CardTitle>
                   <CardDescription>Top customers by issued invoice value.</CardDescription>
@@ -18101,7 +18311,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["invoice-status"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18155,7 +18365,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["invoice-status"])}>
               <CardHeader>
                 <CardTitle>Invoice detail</CardTitle>
                 <CardDescription>
@@ -18224,7 +18434,19 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="balances" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                [
+                  "customer-balances",
+                  "vendor-balances",
+                  "inventory-valuation",
+                  "inventory-movement",
+                  "depreciation-schedule",
+                  "fixed-asset-register",
+                ],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
@@ -18304,7 +18526,7 @@ export default function Reports() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <Card>
+              <Card className={reportSectionClass(["customer-balances"])}>
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -18381,7 +18603,7 @@ export default function Reports() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={reportSectionClass(["vendor-balances"])}>
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -18459,7 +18681,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["inventory-valuation"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18582,7 +18804,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["inventory-movement"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18723,7 +18945,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["depreciation-schedule"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18835,7 +19057,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["fixed-asset-register"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -18977,7 +19199,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={cn(hasFocusedReportSelection && "hidden")}>
               <CardHeader>
                 <CardTitle>Balance automation queues</CardTitle>
                 <CardDescription>
@@ -19022,7 +19244,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="expenses" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["expenses-vendor", "expenses-category", "expense-claims"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Total Spend</CardTitle>
@@ -19102,7 +19329,7 @@ export default function Reports() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <Card>
+              <Card className={reportSectionClass(["expenses-vendor"])}>
                 <CardHeader>
                   <CardTitle>Expenses by vendor</CardTitle>
                   <CardDescription>Top merchants by AED-equivalent total spend.</CardDescription>
@@ -19145,7 +19372,7 @@ export default function Reports() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={reportSectionClass(["expenses-category"])}>
                 <CardHeader>
                   <CardTitle>Expenses by category</CardTitle>
                   <CardDescription>Cost groups for spend review and alerting.</CardDescription>
@@ -19193,7 +19420,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["expense-claims"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -19322,7 +19549,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={cn(hasFocusedReportSelection && "hidden")}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -19366,7 +19593,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["expenses-vendor", "expenses-category"])}>
               <CardHeader>
                 <CardTitle>Expense detail</CardTitle>
                 <CardDescription>
@@ -19449,7 +19676,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="payroll" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["payroll-summary", "wps-sif-summary"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
@@ -19521,7 +19753,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["payroll-summary"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -19638,7 +19870,7 @@ export default function Reports() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={reportSectionClass(["wps-sif-summary"])}>
               <CardHeader>
                 <CardTitle>WPS / SIF readiness</CardTitle>
                 <CardDescription>
@@ -19871,7 +20103,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="ledger" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["general-ledger", "account-transactions"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Posted Entries</CardTitle>
@@ -19956,7 +20193,7 @@ export default function Reports() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <Card>
+              <Card className={reportSectionClass(["account-transactions"])}>
                 <CardHeader>
                   <CardTitle>Account transactions</CardTitle>
                   <CardDescription>
@@ -20010,7 +20247,7 @@ export default function Reports() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={reportSectionClass(["general-ledger"])}>
                 <CardHeader>
                   <CardTitle>Source review</CardTitle>
                   <CardDescription>Automation routing by journal entry source.</CardDescription>
@@ -20056,7 +20293,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["general-ledger"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -20137,7 +20374,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="close" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["month-end-close-status", "audit-trail", "consolidated-statements"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
@@ -20200,7 +20442,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={reportSectionClass(["month-end-close-status"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -20253,7 +20495,7 @@ export default function Reports() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className={reportSectionClass(["audit-trail"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -20410,7 +20652,7 @@ export default function Reports() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className={reportSectionClass(["consolidated-statements"])}>
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -20536,7 +20778,12 @@ export default function Reports() {
           </TabsContent>
 
           <TabsContent value="planning" className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div
+              className={reportSectionClass(
+                ["budget-actual", "cash-flow-forecast"],
+                "grid grid-cols-1 gap-6 md:grid-cols-4"
+              )}
+            >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">Budget</CardTitle>
@@ -20634,7 +20881,7 @@ export default function Reports() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <Card>
+              <Card className={reportSectionClass(["budget-actual"])}>
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -20697,7 +20944,7 @@ export default function Reports() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={reportSectionClass(["cash-flow-forecast"])}>
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -20754,7 +21001,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            <Card>
+            <Card className={cn(hasFocusedReportSelection && "hidden")}>
               <CardHeader>
                 <CardTitle>Planning automation</CardTitle>
                 <CardDescription>
