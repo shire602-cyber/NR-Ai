@@ -1104,29 +1104,105 @@ async function seedTaxAndClose(companyId, dates) {
 }
 
 async function seedCostCenters(companyId) {
-  await optional("create cost centers", async () => {
-    const root = await http("create cost center", `/api/companies/${companyId}/cost-centers`, {
-      method: "POST",
-      body: {
-        code: `ADV-${runStamp}`,
-        name: "Advisory",
-        description: "Synthetic advisory cost center",
-        isActive: true,
-      },
-    });
-    count("costCenters");
-    await http("create child cost center", `/api/companies/${companyId}/cost-centers`, {
-      method: "POST",
-      body: {
-        code: `OPS-${runStamp}`,
-        name: "Operations",
-        description: "Synthetic operations cost center",
-        parentId: root.id,
-        isActive: true,
-      },
-    });
-    count("costCenters");
+  return (
+    (await optional("create cost centers", async () => {
+      const root = await http("create cost center", `/api/companies/${companyId}/cost-centers`, {
+        method: "POST",
+        body: {
+          code: `ADV-${runStamp}`,
+          name: "Advisory",
+          description: "Synthetic advisory cost center",
+          isActive: true,
+        },
+      });
+      count("costCenters");
+      const child = await http(
+        "create child cost center",
+        `/api/companies/${companyId}/cost-centers`,
+        {
+          method: "POST",
+          body: {
+            code: `OPS-${runStamp}`,
+            name: "Operations",
+            description: "Synthetic operations cost center",
+            parentId: root.id,
+            isActive: true,
+          },
+        }
+      );
+      count("costCenters");
+      return [root, child].filter(Boolean);
+    })) ?? []
+  );
+}
+
+async function seedCostCenterAllocations(companyId, account, dates, costCenters) {
+  if (!Array.isArray(costCenters) || costCenters.length < 2) return;
+  const [advisory, operations] = costCenters;
+  await http("cost center allocation journal", `/api/companies/${companyId}/journal`, {
+    method: "POST",
+    body: {
+      date: dates.currentMid,
+      status: "posted",
+      memo: "Synthetic cost-center allocation for report audit",
+      source: "report-audit-fixture",
+      lines: [
+        {
+          accountId: account.bank.id,
+          debit: 14000,
+          credit: 0,
+          description: "Advisory receipts clearing",
+        },
+        {
+          accountId: account.revenue.id,
+          costCenterId: advisory.id,
+          debit: 0,
+          credit: 14000,
+          description: "Advisory revenue allocation",
+        },
+        {
+          accountId: account.professionalExpense.id,
+          costCenterId: advisory.id,
+          debit: 4200,
+          credit: 0,
+          description: "Advisory delivery cost allocation",
+        },
+        {
+          accountId: account.bank.id,
+          debit: 0,
+          credit: 4200,
+          description: "Advisory delivery payment clearing",
+        },
+        {
+          accountId: account.bank.id,
+          debit: 9000,
+          credit: 0,
+          description: "Operations receipts clearing",
+        },
+        {
+          accountId: account.productRevenue.id,
+          costCenterId: operations.id,
+          debit: 0,
+          credit: 9000,
+          description: "Operations revenue allocation",
+        },
+        {
+          accountId: account.softwareExpense.id,
+          costCenterId: operations.id,
+          debit: 2900,
+          credit: 0,
+          description: "Operations software allocation",
+        },
+        {
+          accountId: account.bank.id,
+          debit: 0,
+          credit: 2900,
+          description: "Operations software payment clearing",
+        },
+      ],
+    },
   });
+  count("journalEntries");
 }
 
 async function probeReports(companyId, dates, budgetId) {
@@ -1226,8 +1302,20 @@ async function probeReports(companyId, dates, budgetId) {
   await optional("payroll runs", () => http("payroll runs", `/api/companies/${companyId}/payroll-runs`));
   await optional("expense claims summary", () => http("expense claims summary", `/api/companies/${companyId}/expense-claims/summary`));
   await optional("bank statement report", () => http("bank statement report", `/api/companies/${companyId}/bank-statements/report`));
-  await optional("cost-center profitability", () =>
-    http("cost-center profitability", `/api/companies/${companyId}/cost-centers/profitability?startDate=${start}&endDate=${end}`)
+  const costCenterProfitability = await http(
+    "cost-center profitability",
+    `/api/companies/${companyId}/cost-centers/profitability?startDate=${start}&endDate=${end}`
+  );
+  assertProbe(
+    "Cost-center profitability has allocated income and expenses",
+    safeNumber(costCenterProfitability?.totals?.allocatedLineCount) > 0 &&
+      safeNumber(costCenterProfitability?.totals?.totalIncome) > 0 &&
+      safeNumber(costCenterProfitability?.totals?.totalExpenses) > 0,
+    {
+      allocatedLineCount: costCenterProfitability?.totals?.allocatedLineCount || 0,
+      totalIncome: costCenterProfitability?.totals?.totalIncome || 0,
+      totalExpenses: costCenterProfitability?.totals?.totalExpenses || 0,
+    }
   );
   if (budgetId) {
     await optional("budget variance", () => http("budget variance", `/api/budget-plans/${budgetId}/variance`));
@@ -1259,7 +1347,8 @@ async function main() {
   };
 
   await seedOpeningBalances(companyId, account);
-  await seedCostCenters(companyId);
+  const costCenters = await seedCostCenters(companyId);
+  await seedCostCenterAllocations(companyId, account, dates, costCenters);
   const invoices = await seedInvoices(companyId, account, dates);
   const receipts = await seedReceipts(companyId, account, dates);
   await seedBills(companyId, account, dates);

@@ -102,6 +102,8 @@ export function registerJournalRoutes(app: Express) {
       // missing/foreign accountId previously surfaced as a raw DB 500.
       const companyAccounts = await storage.getAccountsByCompanyId(companyId);
       const accountIds = new Set(companyAccounts.map((a) => a.id));
+      const companyCostCenters = await storage.getCostCentersByCompanyId(companyId);
+      const costCenterIds = new Set(companyCostCenters.map((center) => center.id));
       for (const line of lines) {
         if (!line.accountId || !accountIds.has(line.accountId)) {
           return res.status(400).json({
@@ -109,6 +111,12 @@ export function registerJournalRoutes(app: Express) {
               ? `Account ${line.accountId} not found in this company's chart of accounts`
               : "Each journal line requires an accountId",
             code: "INVALID_ACCOUNT",
+          });
+        }
+        if (line.costCenterId && !costCenterIds.has(line.costCenterId)) {
+          return res.status(400).json({
+            message: `Cost center ${line.costCenterId} not found in this company`,
+            code: "INVALID_COST_CENTER",
           });
         }
       }
@@ -164,6 +172,7 @@ export function registerJournalRoutes(app: Express) {
         },
         lines.map((line: any) => ({
           accountId: line.accountId,
+          costCenterId: line.costCenterId || null,
           debit: Number(line.debit) || 0,
           credit: Number(line.credit) || 0,
           description: line.description || null,
@@ -263,6 +272,8 @@ export function registerJournalRoutes(app: Express) {
       // missing/foreign accountId previously surfaced as a raw DB 500.
       const companyAccounts = await storage.getAccountsByCompanyId(entry.companyId);
       const accountIds = new Set(companyAccounts.map((a) => a.id));
+      const companyCostCenters = await storage.getCostCentersByCompanyId(entry.companyId);
+      const costCenterIds = new Set(companyCostCenters.map((center) => center.id));
       for (const line of lines) {
         if (!line.accountId || !accountIds.has(line.accountId)) {
           return res.status(400).json({
@@ -270,6 +281,12 @@ export function registerJournalRoutes(app: Express) {
               ? `Account ${line.accountId} not found in this company's chart of accounts`
               : "Each journal line requires an accountId",
             code: "INVALID_ACCOUNT",
+          });
+        }
+        if (line.costCenterId && !costCenterIds.has(line.costCenterId)) {
+          return res.status(400).json({
+            message: `Cost center ${line.costCenterId} not found in this company`,
+            code: "INVALID_COST_CENTER",
           });
         }
       }
@@ -338,6 +355,7 @@ export function registerJournalRoutes(app: Express) {
         safeUpdate,
         lines.map((line: any) => ({
           accountId: line.accountId,
+          costCenterId: line.costCenterId || null,
           debit: Number(line.debit) || 0,
           credit: Number(line.credit) || 0,
           description: line.description || null,
