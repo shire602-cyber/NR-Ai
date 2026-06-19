@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -2364,6 +2364,7 @@ export default function Reports() {
   const { toast } = useToast();
   const { companyId: selectedCompanyId, companies: accessibleCompanies = [] } = useDefaultCompany();
   const [location, navigate] = useLocation();
+  const search = useSearch();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
   const [reportAutomationHealthHistory, setReportAutomationHealthHistory] = useState(() =>
@@ -2391,9 +2392,7 @@ export default function Reports() {
       deliveryGuardrail: "",
     });
 
-  const locationSearch = useMemo(() => {
-    return location.includes("?") ? location.slice(location.indexOf("?")) : "";
-  }, [location]);
+  const locationSearch = useMemo(() => (search ? `?${search}` : ""), [search]);
 
   const [activeTab, setActiveReportTab] = useState<ReportTab>(() =>
     reportTabFromSearch(typeof window === "undefined" ? "" : window.location.search)
