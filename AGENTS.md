@@ -57,6 +57,10 @@ Scope: this file applies to the whole repository.
   `reportManagementBriefHref` for anchors.
 - Use `readyReportCatalog` for "open from anywhere" report shortcuts; reserve
   `liveReportCatalog` for invariants that require workbook/report-pack coverage.
+- Keep `reportHref` and `reportPersonaHref` opening exact focused reports with stable `report=`
+  IDs when a report has a shared Reports tab; tab-only links should be reserved for broad workspace
+  navigation so `/reports` remains a compact Report Center instead of rendering every report in a
+  tab.
 - Keep report catalog API `reportActionContexts` derived from catalog relationships so each
   live report/persona pair exposes persona-scoped report-open, workflow, quick-access, impact,
   starter, delivery, comparison, and related action links without hard-coded client mappings. Client report-action surfaces should

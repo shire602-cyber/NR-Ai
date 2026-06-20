@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,14 @@ interface CashFlowData {
   investing: { total: number; breakdown: AccountBreakdown[] };
   financing: { total: number; breakdown: AccountBreakdown[] };
   netCashChange: number;
+}
+
+type FinancialStatementTab = "profit-loss" | "balance-sheet" | "cash-flow";
+
+function financialStatementTabFromSearch(search: string): FinancialStatementTab {
+  const tab = new URLSearchParams(search).get("tab");
+  if (tab === "balance-sheet" || tab === "cash-flow") return tab;
+  return "profit-loss";
 }
 
 function getDefaultDateRange() {
@@ -594,6 +603,16 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
 export default function FinancialStatements() {
   const { locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const search = useSearch();
+  const [, navigate] = useLocation();
+  const activeTab = financialStatementTabFromSearch(search ? `?${search}` : "");
+
+  const handleTabChange = (value: string) => {
+    const nextTab = financialStatementTabFromSearch(`?tab=${value}`);
+    navigate(
+      nextTab === "profit-loss" ? "/financial-statements" : `/financial-statements?tab=${nextTab}`
+    );
+  };
 
   if (isLoadingCompany) {
     return (
@@ -620,7 +639,7 @@ export default function FinancialStatements() {
         description="Generate profit & loss, balance sheet, and cash flow statements"
       />
 
-      <Tabs defaultValue="profit-loss" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profit-loss" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />

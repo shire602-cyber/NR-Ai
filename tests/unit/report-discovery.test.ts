@@ -159,7 +159,7 @@ describe("report discoverability", () => {
     "Invoice Status",
     "Month-End Close Status",
     "Audit Trail",
-    "Consolidated Statements",
+    "Management Roll-up",
     "Budget vs Actual",
     "Cash Flow Forecast",
     "Revenue by Customer",
@@ -418,29 +418,25 @@ describe("report discoverability", () => {
     for (const report of liveReportCatalog) {
       expect(reportHref(report)).toBeTruthy();
     }
-    expect(reportPersonaHref({ href: undefined, tab: "pl" }, "freelancer")).toBe(
-      "/reports?tab=pl&persona=freelancer"
+    expect(reportPersonaHref({ href: undefined, id: "profit-loss", tab: "pl" }, "freelancer")).toBe(
+      "/reports?tab=pl&report=profit-loss&persona=freelancer"
     );
-    expect(reportPersonaHref({ href: undefined, tab: "pl" }, "all")).toBe("/reports?tab=pl");
+    expect(reportPersonaHref({ href: undefined, id: "profit-loss", tab: "pl" }, "all")).toBe(
+      "/reports?tab=pl&report=profit-loss"
+    );
     expect(
-      reportPersonaHref({ href: "/advanced-reports?tab=cashflow", tab: undefined }, "owner")
-    ).toBe("/advanced-reports?tab=cashflow");
+      reportPersonaHref(
+        { href: "/financial-statements?tab=cash-flow", id: "cash-flow", tab: undefined },
+        "owner"
+      )
+    ).toBe("/financial-statements?tab=cash-flow");
 
-    for (const href of [
-      "/reports?tab=pl",
-      "/reports?tab=bs",
-      "/reports?tab=vat",
-      "/reports?tab=tax",
-      "/reports?tab=trial",
-      "/reports?tab=sales",
-      "/reports?tab=balances",
-      "/reports?tab=expenses",
-      "/reports?tab=payroll",
-      "/reports?tab=ledger",
-      "/reports?tab=close",
-      "/reports?tab=planning",
-    ]) {
-      expect(liveReportCatalog.map((report) => reportHref(report))).toContain(href);
+    for (const report of liveReportCatalog) {
+      const href = reportHref(report);
+      if (report.tab) {
+        expect(href).toContain(`tab=${report.tab}`);
+        expect(href).toContain(`report=${report.id}`);
+      }
     }
   });
 
@@ -462,6 +458,7 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('key: "reports"');
     expect(sidebarSource).toContain('url: "/reports"');
     expect(sidebarSource).toContain("items: []");
+    expect(sidebarSource).not.toContain("/reports?tab=");
     expect(mobileNavSource).toContain("Role setup - ${workspace.title}");
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
@@ -2932,7 +2929,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("report-library-comparison-${report.id}");
     expect(reportsSource).toContain("const deliveryHref = context?.deliverySubscriptions[0]?.href");
     expect(reportsSource).toContain("report-library-delivery-${report.id}");
-    expect(catalogSource).toContain("/advanced-reports?tab=cashflow");
+    expect(catalogSource).toContain("/financial-statements?tab=cash-flow");
     expect(catalogSource).toContain("/advanced-reports?tab=aging");
     expect(catalogSource).toContain("/advanced-reports?tab=comparison");
     expect(exportSource).toContain("prepareMonthEndCloseStatusForExport");
@@ -2997,13 +2994,13 @@ describe("report discoverability", () => {
     expect(payrollRouteSource).toContain("/api/companies/:companyId/payroll-runs");
     expect(payrollRouteSource).toContain("/api/payroll-runs/:id/generate-sif");
     expect(reportsSource).toContain("consolidatedStatementsReport");
-    expect(reportsSource).toContain("Consolidated statements");
+    expect(reportsSource).toContain("Management roll-up");
     expect(reportsSource).toContain("buildConsolidatedStatementsReport");
     expect(reportsSource).toContain("accessibleReportCompanies");
     expect(reportsSource).toContain("no eliminations applied");
     expect(exportSource).toContain("prepareConsolidatedStatementsForExport");
-    expect(exportSource).toContain("Consolidated Summary");
-    expect(exportSource).toContain("Consolidated Entities");
+    expect(exportSource).toContain("Management Roll-up Summary");
+    expect(exportSource).toContain("Management Roll-up Entities");
     expect(exportSource).toContain("Consolidation Review");
 
     const workbookMappedReportIds = new Set(
@@ -3631,6 +3628,20 @@ describe("report discoverability", () => {
     }
   });
 
+  it("keeps the Reports page as a compact categorized Report Center", () => {
+    expect(reportsSource).toContain('"Financial Statements"');
+    expect(reportsSource).toContain('"Sales & Receivables"');
+    expect(reportsSource).toContain('"Purchases & Payables"');
+    expect(reportsSource).toContain('"Payroll"');
+    expect(reportsSource).toContain('"Accountant & Taxes"');
+    expect(reportsSource).toContain('"Inventory & Assets"');
+    expect(reportsSource).toContain('"Management & Planning"');
+    expect(reportsSource).toContain("Choose one report from a category");
+    expect(reportsSource).toContain("hasFocusedReportSelection ? (");
+    expect(reportsSource).toContain("reportViewerGroups.map");
+    expect(reportsSource).not.toContain("Owner / Solo");
+  });
+
   it("surfaces current-vs-prior comparison snapshots", () => {
     expect(reportsSource).toContain("Comparison snapshots");
     expect(reportsSource).toContain("Current vs prior period");
@@ -3753,7 +3764,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("function matchesReportPersona");
     expect(reportsSource).toContain("Role focus");
     expect(reportsSource).toContain("Reporting role focus");
-    expect(reportsSource).toContain("Owner / Solo");
+    expect(reportsSource).toContain("Owner");
     expect(reportsSource).toContain("solo entrepreneurs");
     expect(reportsSource).toContain("Report coverage map");
     expect(reportsSource).toContain("Category-level view of report depth");

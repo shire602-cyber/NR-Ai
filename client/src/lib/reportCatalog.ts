@@ -1608,7 +1608,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     comparison: "Monthly/quarterly/yearly",
     automation: "Cash pressure",
     decisionQuestion: "Where did cash come from and go during the period?",
-    href: "/advanced-reports?tab=cashflow",
+    href: "/financial-statements?tab=cash-flow",
     commandIcon: "wallet",
     commandKeywords: "reports cash flow operating investing financing",
   },
@@ -1989,16 +1989,16 @@ export const reportCatalog: ReportCatalogItem[] = [
   },
   {
     id: "consolidated-statements",
-    name: "Consolidated Statements",
-    category: "Accountant Tools",
+    name: "Management Roll-up",
+    category: "Management",
     status: "live",
     personas: ["accountant"],
     comparison: "Multi-entity roll-up",
     automation: "Review flags",
-    decisionQuestion: "How do entities roll up into one group view?",
+    decisionQuestion: "How do accessible entities roll up into one management view?",
     tab: "close",
     commandIcon: "fileSpreadsheet",
-    commandKeywords: "reports consolidated statements multi company",
+    commandKeywords: "reports management rollup multi company consolidated statements",
   },
 ];
 
@@ -6028,11 +6028,13 @@ const reportSectionAnchors: Record<ReportSection, string> = {
 export function reportsHref(
   options: {
     tab?: ReportTab;
+    reportId?: string;
     persona?: ReportPersona | "all";
   } = {}
 ): string {
   const params = new URLSearchParams();
   if (options.tab) params.set("tab", options.tab);
+  if (options.reportId) params.set("report", options.reportId);
   if (options.persona && options.persona !== "all") params.set("persona", options.persona);
 
   const query = params.toString();
@@ -6040,16 +6042,16 @@ export function reportsHref(
 }
 
 export function reportHref(
-  report: Pick<ReportCatalogItem, "tab"> & { href?: string | null }
+  report: Pick<ReportCatalogItem, "id" | "tab"> & { href?: string | null }
 ): string | undefined {
-  return report.href ?? (report.tab ? reportsHref({ tab: report.tab }) : undefined);
+  return report.href ?? (report.tab ? reportsHref({ tab: report.tab, reportId: report.id }) : undefined);
 }
 
 export function reportPersonaHref(
-  report: Pick<ReportCatalogItem, "tab"> & { href?: string | null },
+  report: Pick<ReportCatalogItem, "id" | "tab"> & { href?: string | null },
   persona: ReportPersona | "all"
 ): string | undefined {
-  return report.href ?? (report.tab ? reportsHref({ tab: report.tab, persona }) : undefined);
+  return report.href ?? (report.tab ? reportsHref({ tab: report.tab, reportId: report.id, persona }) : undefined);
 }
 
 export function reportWorkspaceHref(

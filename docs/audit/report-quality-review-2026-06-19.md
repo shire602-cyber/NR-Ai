@@ -43,6 +43,28 @@ fixes below are complete.
 | P2 | External report centers | A/R Aging, A/P Aging, VAT Return, FX, Cost Center P&L open separate workspaces with inconsistent report UX. | Bring them into the same report picker shell or add consistent report header, period controls, export, and back navigation. |
 | P2 | Report caveats | Several reports use current-status or proxy semantics. | Show basis/caveat inline: current snapshot, not historical as-of; estimate, not posted; readiness, not submission. |
 
+## Remediation Update - 2026-06-20
+
+Implemented the first P0/P1 report-quality fixes on
+`codex/launch-hardening-main-sync`:
+
+- Plain `/reports` now stays on a compact Report Center and opens one selected
+  report at a time with `report=` deep links.
+- Report categories are simplified into QuickBooks-style groups without
+  persona labels in report names.
+- Cash Flow Statement now deep-links to the clean Financial Statements
+  cash-flow tab.
+- Expenses by Vendor and Expenses by Category now use posted expense-account
+  journal lines, with source-basis text and posted expense-line detail.
+- General Ledger now paginates the visible table, shows row counts, and states
+  that exports include all filtered rows.
+- Consolidated Statements is renamed in user-facing surfaces to Management
+  Roll-up, with the no-eliminations basis preserved.
+
+Remaining polish from this audit: bring A/R Aging, A/P Aging, VAT Return, FX,
+and Cost Center P&L into the same report shell or give each equivalent
+header/back/export/period treatment.
+
 ## Report-by-Report Grade
 
 Grade key: `Pass` means accountant-grade with current caveats; `Polish` means
@@ -54,14 +76,14 @@ current title or layout can mislead a professional user.
 | Profit & Loss | Pass | Revenue, expenses, net profit by account. | Clean statement table with totals. | Good; should stay aligned with Financial Statements page to avoid duplicate experiences. |
 | Balance Sheet | Pass | Assets, liabilities, equity by account. | Clean statement table. | Good; as-of date language is correct. |
 | VAT Summary | Polish | Output VAT, input VAT, net VAT payable/refund. | Clean and concise. | Needs visible tie-out path to VAT Return boxes and filing status. |
-| Cash Flow Statement | Fix | Should be a formal cash-flow statement. | Catalog opens advanced analytics/charts. | Route to clean Financial Statements cash-flow report; do not market analytics as the statement. |
+| Cash Flow Statement | Pass | Formal cash-flow statement via Financial Statements. | Catalog deep-links to the clean statement tab. | Keep analytics/forecast separate from the statement. |
 | A/R Aging | Polish | Open customer invoices after payments by aging bucket. | Advanced page combines AR/AP charts and detail. | Good operational aging; add as-of date and keep current-status caveat. |
 | A/P Aging | Polish | Open vendor bills after payments. | Opens Bill Pay summary, not a dedicated report. | Needs dedicated report shell/export/back flow. |
 | Trial Balance | Pass | Debit/credit totals by account with balance status. | Accountant-grade table. | Good; keep FX flags and balanced status. |
 | VAT Return | Polish | Filing workspace, not just report. | Dedicated VAT page. | Good if draft/submission status remains explicit. |
 | Period Comparison | Polish | Current vs previous metrics. | Advanced report table/charts. | Needs per-metric basis/caveat visible because many metrics are proxies. |
 | FX Gains and Losses | Polish | Current open foreign-currency exposure. | Opens exchange-rate workspace. | Needs dedicated report output and clear unrealized/current-snapshot basis. |
-| General Ledger | Fix | Posted journal lines with debit/credit/source. | Good table, but capped at 50 rows. | Must not silently truncate an accountant report. |
+| General Ledger | Pass | Posted journal lines with debit/credit/source. | Paginated detail table with row counts. | Screen is paginated for readability; exports include all filtered rows. |
 | Account Transactions | Polish | Account-level activity totals. | Good summary table. | Add drill-down filters/account selection for accountant use. |
 | Corporate Tax Estimate | Pass | UAE CT estimate and bridge. | Strong report with clear estimate warning. | Good; not a filed liability or submission proof. |
 | Customer Balance Summary | Pass | Current open receivables after payments. | Focused table is clean. | Add "current" basis/as-of timestamp to avoid historical aging confusion. |
@@ -71,8 +93,8 @@ current title or layout can mislead a professional user.
 | Cash Flow Forecast | Polish | 90-day projected inflows/outflows/balance. | Clean forecast table. | Good forecast, not a cash-flow statement or bank-balance proof. |
 | Revenue by Customer | Polish | Issued invoice value by customer. | Good focused table. | Rename/caveat as invoiced revenue unless revenue-recognition basis is added. |
 | Sales by Product/Service | Pass | Invoice line sales mix, VAT, units, top share. | Good focused table. | Good; do not imply gross margin without COGS allocation. |
-| Expenses by Vendor | Fix | Receipt spend by merchant. | Table is readable. | Misnamed if users expect full accrual expenses by vendor. |
-| Expenses by Category | Fix | Receipt spend by category. | Table is readable. | Misnamed if users expect P&L expense categories from the ledger. |
+| Expenses by Vendor | Polish | Posted expense-account activity by linked bill/receipt vendor. | Clean table plus posted line detail. | Manual entries without source records remain labeled Manual / no vendor. |
+| Expenses by Category | Pass | Posted expense-account activity by chart-of-account category. | Clean table plus posted line detail. | Uses ledger expense accounts; receipt VAT is supporting workflow context. |
 | Cost Center P&L | Polish | Allocation-backed income/expense/profit by cost center. | Opens Cost Centers workspace. | Good after allocation preservation fix; needs report-shell presentation/export. |
 | Inventory Valuation | Polish | Current stock quantity and cost value. | Good table. | Current inventory queue, not historical valuation; add as-of/costing caveat. |
 | Inventory Movement | Pass | Stock movement log and type mix. | Good table. | Good operational inventory report. |
@@ -83,7 +105,7 @@ current title or layout can mislead a professional user.
 | Expense Claims | Polish | Claim workflow, approval, reimbursement queue. | Good operational table. | Not a payable/reimbursed liability report unless tied to ledger/payments. |
 | Month-End Close Status | Pass | Checklist readiness by close item. | Good review table. | Snapshot/checklist report; not historical close trend. |
 | Audit Trail | Polish | Activity logs with keyword risk triage. | Good event table. | Risk labels are triage, not formal audit risk/control findings. |
-| Consolidated Statements | Fix | Accessible-company roll-up. | Good table. | No eliminations, ownership rules, or FX translation; rename or harden before market claim. |
+| Management Roll-up | Polish | Accessible-company roll-up. | Good table. | No eliminations, ownership rules, or FX translation; do not call it statutory consolidation. |
 
 ## Recommended Next Fix Loop
 

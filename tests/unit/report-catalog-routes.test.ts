@@ -310,6 +310,7 @@ describe("report catalog discovery route", () => {
         expect(context?.reportHref).toBeTruthy();
         if (report.tab) {
           expect(context?.reportHref).toContain(`tab=${report.tab}`);
+          expect(context?.reportHref).toContain(`report=${report.id}`);
           expect(context?.reportHref).toContain(`persona=${persona}`);
         }
         expect(context?.workspaceHref).toContain("persona=");
@@ -479,8 +480,10 @@ describe("report catalog discovery route", () => {
     );
     const profitReport = res.body.reports.find((report: any) => report.id === "profit-loss");
     expect(profitReport.href).toContain("tab=pl");
+    expect(profitReport.href).toContain("report=profit-loss");
     expect(profitReport.href).toContain("persona=freelancer");
     expect(profitContext.reportHref).toContain("tab=pl");
+    expect(profitContext.reportHref).toContain("report=profit-loss");
     expect(profitContext.reportHref).toContain("persona=freelancer");
     expect(profitContext.quickAccessHref).toContain("persona=freelancer#report-quick-access-title");
     expect(profitContext.automationImpactHref).toContain(

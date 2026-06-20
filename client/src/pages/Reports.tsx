@@ -657,12 +657,11 @@ interface BankTransactionReportRow {
 
 interface ExpenseSummaryRow {
   label: string;
-  receiptCount: number;
-  subtotalAed: number;
-  vatAed: number;
-  totalAed: number;
-  unpostedCount: number;
-  autoPostedCount: number;
+  entryCount: number;
+  lineCount: number;
+  debitAed: number;
+  creditAed: number;
+  netExpenseAed: number;
 }
 
 interface ExpenseClaimReportRow {
@@ -1209,45 +1208,42 @@ const productDepthEvidenceCheckpointStatusMeta = {
 
 const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "owner", label: "Owner / Solo" },
+  { id: "owner", label: "Owner" },
   { id: "freelancer", label: "Freelancer" },
   { id: "accountant", label: "Accountant" },
 ];
 
 const reportViewerCategoryLabels: Record<string, string> = {
   "Financial Statements": "Financial Statements",
-  "Customers & Receivables": "Customers & Receivables",
-  Sales: "Sales",
-  "Vendors & Payables": "Vendors & Payables",
-  Purchases: "Purchases & Expenses",
-  Payroll: "Employees & Payroll",
+  "Sales & Receivables": "Sales & Receivables",
+  "Purchases & Payables": "Purchases & Payables",
+  Payroll: "Payroll",
   "Accountant & Taxes": "Accountant & Taxes",
-  "Budgets & Forecasts": "Budgets & Forecasts",
-  Management: "Management",
-  Inventory: "Inventory",
-  Assets: "Fixed Assets",
+  "Inventory & Assets": "Inventory & Assets",
+  "Management & Planning": "Management & Planning",
 };
 
 const reportViewerCategoryOrder = [
   "Financial Statements",
-  "Customers & Receivables",
-  "Sales",
-  "Vendors & Payables",
-  "Purchases",
+  "Sales & Receivables",
+  "Purchases & Payables",
   "Payroll",
   "Accountant & Taxes",
-  "Budgets & Forecasts",
-  "Management",
-  "Inventory",
-  "Assets",
+  "Inventory & Assets",
+  "Management & Planning",
 ] as const;
 
 const reportViewerCategoryByReportId: Record<string, string> = {
-  "ar-aging": "Customers & Receivables",
-  "customer-balances": "Customers & Receivables",
-  "invoice-status": "Customers & Receivables",
-  "ap-aging": "Vendors & Payables",
-  "vendor-balances": "Vendors & Payables",
+  "ar-aging": "Sales & Receivables",
+  "customer-balances": "Sales & Receivables",
+  "invoice-status": "Sales & Receivables",
+  "revenue-customer": "Sales & Receivables",
+  "sales-product-service": "Sales & Receivables",
+  "ap-aging": "Purchases & Payables",
+  "vendor-balances": "Purchases & Payables",
+  "expenses-vendor": "Purchases & Payables",
+  "expenses-category": "Purchases & Payables",
+  "expense-claims": "Purchases & Payables",
   "vat-summary": "Accountant & Taxes",
   "vat-return": "Accountant & Taxes",
   "corporate-tax-estimate": "Accountant & Taxes",
@@ -1256,12 +1252,19 @@ const reportViewerCategoryByReportId: Record<string, string> = {
   "account-transactions": "Accountant & Taxes",
   "month-end-close-status": "Accountant & Taxes",
   "audit-trail": "Accountant & Taxes",
-  "consolidated-statements": "Accountant & Taxes",
-  "budget-actual": "Budgets & Forecasts",
-  "cash-flow-forecast": "Budgets & Forecasts",
+  "inventory-valuation": "Inventory & Assets",
+  "inventory-movement": "Inventory & Assets",
+  "fixed-asset-register": "Inventory & Assets",
+  "depreciation-schedule": "Inventory & Assets",
+  "budget-actual": "Management & Planning",
+  "cash-flow-forecast": "Management & Planning",
+  "cost-center-profitability": "Management & Planning",
+  "period-comparison": "Management & Planning",
+  "consolidated-statements": "Management & Planning",
 };
 
 const reportViewerPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
+const ledgerDetailPageSize = 50;
 
 interface ReportViewerOption {
   id: string;
@@ -1941,7 +1944,7 @@ function buildConsolidatedStatementsReport(
   return {
     periodLabel,
     currency,
-    consolidationBasis: "Accessible company roll-up; no eliminations applied.",
+    consolidationBasis: "Management roll-up of accessible companies; no eliminations applied.",
     rows,
     entityCount: rows.length,
     loadedEntityCount: loadedRows.length,
@@ -2433,6 +2436,7 @@ export default function Reports() {
   const search = useSearch();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [ledgerDetailPage, setLedgerDetailPage] = useState(1);
   const [reportAutomationHealthHistory, setReportAutomationHealthHistory] = useState(() =>
     getReportAutomationHealthHistory()
   );
@@ -2636,6 +2640,18 @@ export default function Reports() {
     reportViewerOptions[0];
   const selectedReportId = activeReportViewerOption?.reportId ?? null;
   const hasFocusedReportSelection = Boolean(activeReportId && selectedReportId);
+  const reportViewerTitle = hasFocusedReportSelection
+    ? (activeReportViewerOption?.label ?? "Reports")
+    : "Report Center";
+  const reportViewerDescription = hasFocusedReportSelection
+    ? (activeReportViewerOption?.description ?? "Review this report for the selected period.")
+    : "Choose one report from a category. Reports open one at a time with the right period, export, and review context.";
+  const reportViewerMenuLabel = hasFocusedReportSelection
+    ? (activeReportViewerOption?.label ?? "Choose a report")
+    : "Choose a report";
+  const reportViewerMenuDescription = hasFocusedReportSelection
+    ? (activeReportViewerOption?.categoryLabel ?? "Grouped by category")
+    : "Grouped by category";
 
   const openReportViewerOption = useCallback(
     (optionId: string) => {
@@ -2694,18 +2710,6 @@ export default function Reports() {
     }
 
     if (reportViewerOptions.some((option) => option.tab === activeTab)) return;
-
-    const firstReportOption = reportViewerOptions.find((option) => option.tab);
-    if (!firstReportOption?.tab) return;
-
-    navigate(
-      reportsWorkspaceHref({
-        tab: firstReportOption.tab,
-        reportId: firstReportOption.reportId,
-        persona: firstReportOption.persona ?? effectiveReportPersona,
-        workspace: "reports",
-      })
-    );
   }, [
     activeReportId,
     activeReportViewerOption,
@@ -2735,6 +2739,10 @@ export default function Reports() {
       window.removeEventListener("hashchange", syncWorkspaceTabFromLocation);
     };
   }, [locationSearch]);
+
+  useEffect(() => {
+    setLedgerDetailPage(1);
+  }, [activeReportId, dateRange.from, dateRange.to, selectedCompanyId]);
 
   useEffect(() => {
     const currentSearch = locationSearch || window.location.search;
@@ -4596,42 +4604,82 @@ export default function Reports() {
     return receipts.filter((receipt) => receiptInDateRange(receipt, dateRange));
   }, [dateRange, receipts]);
 
+  const receiptVendorById = useMemo(() => {
+    return new Map(
+      receipts.map((receipt) => [receipt.id, receipt.merchant || "Unknown receipt vendor"])
+    );
+  }, [receipts]);
+
+  const vendorBillVendorById = useMemo(() => {
+    return new Map(
+      vendorBills.map((bill) => [bill.id, bill.vendor_name || "Unknown bill vendor"])
+    );
+  }, [vendorBills]);
+
+  const reportExpenseJournalEntries = useMemo(() => {
+    return journalEntries.filter(
+      (entry) => entry.status === "posted" && journalEntryInDateRange(entry, dateRange)
+    );
+  }, [dateRange, journalEntries]);
+
+  const expenseVendorLabel = useCallback(
+    (entry: JournalEntryReportRow) => {
+      const source = (entry.source || "").toLowerCase();
+      if (source === "bill" && entry.sourceId) {
+        return vendorBillVendorById.get(entry.sourceId) ?? "Unknown bill vendor";
+      }
+      if (source === "receipt" && entry.sourceId) {
+        return receiptVendorById.get(entry.sourceId) ?? "Unknown receipt vendor";
+      }
+      return "Manual / no vendor";
+    },
+    [receiptVendorById, vendorBillVendorById]
+  );
+
   const buildExpenseSummary = useCallback(
-    (getLabel: (receipt: ReceiptReportRow) => string) => {
-      const summaries = new Map<string, ExpenseSummaryRow>();
-      for (const receipt of reportReceipts) {
-        const label = getLabel(receipt);
+    (getLabel: (entry: JournalEntryReportRow, line: JournalLineReportRow) => string) => {
+      const summaries = new Map<string, ExpenseSummaryRow & { entryIds: Set<string> }>();
+      for (const entry of reportExpenseJournalEntries) {
+        for (const line of entry.lines ?? []) {
+          if (line.account?.type !== "expense") continue;
+          const debitAed = Number(line.debit) || 0;
+          const creditAed = Number(line.credit) || 0;
+          if (Math.abs(debitAed) < 0.005 && Math.abs(creditAed) < 0.005) continue;
+          const label = getLabel(entry, line);
         const summary = summaries.get(label) ?? {
           label,
-          receiptCount: 0,
-          subtotalAed: 0,
-          vatAed: 0,
-          totalAed: 0,
-          unpostedCount: 0,
-          autoPostedCount: 0,
+            entryCount: 0,
+            lineCount: 0,
+            debitAed: 0,
+            creditAed: 0,
+            netExpenseAed: 0,
+            entryIds: new Set<string>(),
         };
-        const subtotalAed = receiptSubtotalAed(receipt);
-        const vatAed = receiptVatAed(receipt);
-        summary.receiptCount += 1;
-        summary.subtotalAed += subtotalAed;
-        summary.vatAed += vatAed;
-        summary.totalAed += subtotalAed + vatAed;
-        if (!receipt.posted) summary.unpostedCount += 1;
-        if (receipt.autoPosted) summary.autoPostedCount += 1;
+          summary.entryIds.add(entry.id);
+          summary.lineCount += 1;
+          summary.debitAed += debitAed;
+          summary.creditAed += creditAed;
+          summary.netExpenseAed += debitAed - creditAed;
         summaries.set(label, summary);
+        }
       }
-      return Array.from(summaries.values()).sort((a, b) => b.totalAed - a.totalAed);
+      return Array.from(summaries.values())
+        .map(({ entryIds, ...summary }) => ({
+          ...summary,
+          entryCount: entryIds.size,
+        }))
+        .sort((a, b) => Math.abs(b.netExpenseAed) - Math.abs(a.netExpenseAed));
     },
-    [reportReceipts]
+    [reportExpenseJournalEntries]
   );
 
   const expenseByVendor = useMemo(
-    () => buildExpenseSummary((receipt) => receipt.merchant || "Unknown Merchant"),
-    [buildExpenseSummary]
+    () => buildExpenseSummary((entry) => expenseVendorLabel(entry)),
+    [buildExpenseSummary, expenseVendorLabel]
   );
 
   const expenseByCategory = useMemo(
-    () => buildExpenseSummary((receipt) => receipt.category || "Uncategorized"),
+    () => buildExpenseSummary((_entry, line) => journalAccountName(line.account)),
     [buildExpenseSummary]
   );
 
@@ -4688,28 +4736,79 @@ export default function Reports() {
   }, [expenseClaimSummary, reportExpenseClaims]);
 
   const expenseReport = useMemo(() => {
-    const subtotalAed = reportReceipts.reduce(
+    const capturedReceiptSubtotalAed = reportReceipts.reduce(
       (sum, receipt) => sum + receiptSubtotalAed(receipt),
       0
     );
-    const vatAed = reportReceipts.reduce((sum, receipt) => sum + receiptVatAed(receipt), 0);
+    const capturedReceiptVatAed = reportReceipts.reduce(
+      (sum, receipt) => sum + receiptVatAed(receipt),
+      0
+    );
     const unpostedReceipts = reportReceipts.filter((receipt) => !receipt.posted).length;
     const autoPostedReceipts = reportReceipts.filter((receipt) => receipt.autoPosted).length;
+    const debitAed = expenseByCategory.reduce((sum, row) => sum + row.debitAed, 0);
+    const creditAed = expenseByCategory.reduce((sum, row) => sum + row.creditAed, 0);
+    const totalAed = expenseByCategory.reduce((sum, row) => sum + row.netExpenseAed, 0);
+    const expenseEntryIds = new Set<string>();
+    for (const entry of reportExpenseJournalEntries) {
+      if ((entry.lines ?? []).some((line) => line.account?.type === "expense")) {
+        expenseEntryIds.add(entry.id);
+      }
+    }
+    const expenseLines = reportExpenseJournalEntries
+      .flatMap((entry) =>
+        (entry.lines ?? [])
+          .filter((line) => line.account?.type === "expense")
+          .map((line) => {
+            const debitAed = Number(line.debit) || 0;
+            const creditAed = Number(line.credit) || 0;
+            return {
+              id: line.id,
+              date: entry.date,
+              entryNumber: entry.entryNumber,
+              vendor: expenseVendorLabel(entry),
+              accountName: journalAccountName(line.account),
+              accountCode: line.account?.code || "",
+              source: journalSourceLabel(entry.source),
+              memo: line.memo || entry.memo || "",
+              debitAed,
+              creditAed,
+              netExpenseAed: debitAed - creditAed,
+            };
+          })
+      )
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return {
+      basis:
+        "Posted journal lines where the linked chart-of-account type is expense. Input VAT and unposted receipts are shown separately as source-workflow context.",
+      entryCount: expenseEntryIds.size,
+      lineCount: expenseByCategory.reduce((sum, row) => sum + row.lineCount, 0),
       receiptCount: reportReceipts.length,
-      subtotalAed,
-      vatAed,
-      totalAed: subtotalAed + vatAed,
+      subtotalAed: debitAed,
+      vatAed: capturedReceiptVatAed,
+      totalAed,
+      debitAed,
+      creditAed,
+      receiptSpendAed: capturedReceiptSubtotalAed + capturedReceiptVatAed,
       unpostedReceipts,
       autoPostedReceipts,
       byVendor: expenseByVendor,
       byCategory: expenseByCategory,
+      lines: expenseLines,
       receipts: reportReceipts,
       claims: expenseClaimReport,
     };
-  }, [expenseByCategory, expenseByVendor, expenseClaimReport, reportReceipts]);
+  }, [
+    expenseByCategory,
+    expenseByVendor,
+    expenseVendorLabel,
+    expenseClaimReport,
+    reportExpenseJournalEntries,
+    reportReceipts,
+  ]);
 
-  const expensesLoading = receiptsLoading || expenseClaimsLoading || expenseClaimSummaryLoading;
+  const expensesLoading =
+    receiptsLoading || expenseClaimsLoading || expenseClaimSummaryLoading || journalLoading;
 
   const reportPayrollRuns = useMemo(() => {
     return payrollRuns.filter((run) => payrollRunInDateRange(run, dateRange));
@@ -7424,7 +7523,7 @@ export default function Reports() {
       }),
       makeComparisonMetric({
         id: "consolidated-revenue",
-        label: "Consolidated revenue",
+        label: "Roll-up revenue",
         current: consolidatedStatementsReport.currentComparisonRevenue,
         previous: consolidatedStatementsReport.previousRevenue,
         currency: "AED",
@@ -7435,7 +7534,7 @@ export default function Reports() {
       }),
       makeComparisonMetric({
         id: "consolidated-expenses",
-        label: "Consolidated expenses",
+        label: "Roll-up expenses",
         current: consolidatedStatementsReport.currentComparisonExpenses,
         previous: consolidatedStatementsReport.previousExpenses,
         currency: "AED",
@@ -7446,7 +7545,7 @@ export default function Reports() {
       }),
       makeComparisonMetric({
         id: "consolidated-net-profit",
-        label: "Consolidated net profit",
+        label: "Roll-up net profit",
         current: consolidatedStatementsReport.currentComparisonNetProfit,
         previous: consolidatedStatementsReport.previousNetProfit,
         currency: "AED",
@@ -7457,7 +7556,7 @@ export default function Reports() {
       }),
       makeComparisonMetric({
         id: "consolidated-margin",
-        label: "Consolidated margin",
+        label: "Roll-up margin",
         current: currentConsolidatedMargin,
         previous: previousConsolidatedMargin,
         currency: "%",
@@ -7829,6 +7928,13 @@ export default function Reports() {
   }, [accountActivity, ledgerLines, ledgerSourceRows, reportJournalEntries]);
 
   const ledgerLoading = journalLoading;
+  const ledgerDetailPageCount = Math.max(1, Math.ceil(ledgerLines.length / ledgerDetailPageSize));
+  const ledgerDetailCurrentPage = Math.min(ledgerDetailPage, ledgerDetailPageCount);
+  const ledgerDetailStartIndex = (ledgerDetailCurrentPage - 1) * ledgerDetailPageSize;
+  const ledgerDetailPageLines = ledgerLines.slice(
+    ledgerDetailStartIndex,
+    ledgerDetailStartIndex + ledgerDetailPageSize
+  );
 
   const reportActivityLogs = useMemo(() => {
     return activityLogs.filter((log) => activityLogInDateRange(log, dateRange));
@@ -8257,7 +8363,7 @@ export default function Reports() {
       },
       {
         id: "consolidated-statements-review",
-        title: "Consolidated statements",
+        title: "Management roll-up",
         signal:
           consolidatedStatementsReport.reviewCount > 0
             ? "Consolidation review"
@@ -8271,7 +8377,7 @@ export default function Reports() {
         currency: "AED",
         personas: ["accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open consolidation",
+        actionLabel: "Open roll-up",
         tab: "close",
       },
       {
@@ -11545,7 +11651,6 @@ export default function Reports() {
     activeReportWorkspaceTab === tab ? className : `${className} hidden`;
   const reportDiscoveryPanelClass = (className: string) => `${className} hidden`;
   const backToReportsHref = reportsWorkspaceHref({
-    tab: activeReportViewerOption?.tab ?? activeTab,
     persona: activeReportViewerOption?.persona ?? effectiveReportPersona,
     workspace: "reports",
   });
@@ -11600,17 +11705,16 @@ export default function Reports() {
                     </Link>
                   </Button>
                 ) : null}
-                {activeReportViewerOption?.categoryLabel ? (
+                {hasFocusedReportSelection && activeReportViewerOption?.categoryLabel ? (
                   <span>{activeReportViewerOption.categoryLabel}</span>
                 ) : null}
               </div>
               <div>
                 <h2 id="report-viewer-title" className="text-2xl font-semibold tracking-tight">
-                  {activeReportViewerOption?.label ?? "Reports"}
+                  {reportViewerTitle}
                 </h2>
                 <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                  {activeReportViewerOption?.description ??
-                    "Choose a report and review it for the selected period."}
+                  {reportViewerDescription}
                 </p>
               </div>
             </div>
@@ -11627,14 +11731,14 @@ export default function Reports() {
                     className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left"
                     data-testid="button-report-viewer-menu"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {activeReportViewerOption?.label ?? "Choose a report"}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {reportViewerMenuLabel}
+                        </span>
+                        <span className="block truncate text-xs font-normal text-muted-foreground">
+                          {reportViewerMenuDescription}
+                        </span>
                       </span>
-                      <span className="block truncate text-xs font-normal text-muted-foreground">
-                        {activeReportViewerOption?.categoryLabel ?? "Grouped by category"}
-                      </span>
-                    </span>
                     <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -17595,11 +17699,49 @@ export default function Reports() {
       </section>
 
       <div className={reportWorkspacePanelClass("reports", "space-y-6")}>
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as ReportTab, effectiveReportPersona)}
-          className="space-y-6"
-        >
+        {!hasFocusedReportSelection ? (
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Report Center">
+            {reportViewerGroups.map((group) => (
+              <Card key={group.category} className="overflow-hidden">
+                <CardHeader className="border-b bg-muted/20 pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-base">{group.label}</CardTitle>
+                    <Badge variant="outline">{group.options.length}</Badge>
+                  </div>
+                  <CardDescription className="line-clamp-2">
+                    Open a report from this category. Persona ranking changes recommendations, not
+                    report names.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="divide-y p-0">
+                  {group.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      disabled={!option.href && !option.tab}
+                      onClick={() => openReportViewerOption(option.id)}
+                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid={`button-report-center-${option.id}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{option.label}</span>
+                        <span className="mt-1 block line-clamp-2 text-xs leading-snug text-muted-foreground">
+                          {option.description}
+                        </span>
+                      </span>
+                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        ) : (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as ReportTab, effectiveReportPersona)}
+            className="space-y-6"
+          >
           <TabsList className="sr-only">
             <TabsTrigger value="pl" data-testid="tab-profit-loss">
               {t.profitLoss}
@@ -19298,13 +19440,22 @@ export default function Reports() {
           <TabsContent value="expenses" className="space-y-6">
             <div
               className={reportSectionClass(
+                ["expenses-vendor", "expenses-category"],
+                "rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
+              )}
+            >
+              <span className="font-medium text-foreground">Source basis:</span>{" "}
+              {expenseReport.basis}
+            </div>
+            <div
+              className={reportSectionClass(
                 ["expenses-vendor", "expenses-category", "expense-claims"],
                 "grid grid-cols-1 gap-6 md:grid-cols-4"
               )}
             >
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                  <CardTitle className="text-sm font-medium">Total Spend</CardTitle>
+                  <CardTitle className="text-sm font-medium">Posted Expenses</CardTitle>
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                     <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                   </div>
@@ -19322,7 +19473,7 @@ export default function Reports() {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                  <CardTitle className="text-sm font-medium">Expense Subtotal</CardTitle>
+                  <CardTitle className="text-sm font-medium">Gross Expense Debits</CardTitle>
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                     <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -19340,7 +19491,7 @@ export default function Reports() {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                  <CardTitle className="text-sm font-medium">Input VAT</CardTitle>
+                  <CardTitle className="text-sm font-medium">Receipt VAT Captured</CardTitle>
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -19384,7 +19535,9 @@ export default function Reports() {
               <Card className={reportSectionClass(["expenses-vendor"])}>
                 <CardHeader>
                   <CardTitle>Expenses by vendor</CardTitle>
-                  <CardDescription>Merchant spend by receipt total, shown in AED.</CardDescription>
+                  <CardDescription>
+                    Posted expense-account activity grouped by linked bill or receipt vendor.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {expensesLoading ? (
@@ -19395,9 +19548,9 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Vendor</TableHead>
-                            <TableHead className="text-right">Receipts</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
-                            <TableHead className="text-right">Unposted</TableHead>
+                            <TableHead className="text-right">Entries</TableHead>
+                            <TableHead className="text-right">Lines</TableHead>
+                            <TableHead className="text-right">Net expense</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -19405,13 +19558,13 @@ export default function Reports() {
                             <TableRow key={row.label}>
                               <TableCell className="font-medium">{row.label}</TableCell>
                               <TableCell className="text-right font-mono">
-                                {row.receiptCount}
+                                {row.entryCount}
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(row.totalAed, "AED", locale)}
+                                {row.lineCount}
                               </TableCell>
                               <TableCell className="text-right font-mono">
-                                {row.unpostedCount}
+                                {formatCurrency(row.netExpenseAed, "AED", locale)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -19429,7 +19582,9 @@ export default function Reports() {
               <Card className={reportSectionClass(["expenses-category"])}>
                 <CardHeader>
                   <CardTitle>Expenses by category</CardTitle>
-                  <CardDescription>Cost groups for spend review and alerting.</CardDescription>
+                  <CardDescription>
+                    Posted expense-account activity grouped by chart-of-account category.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {expensesLoading ? (
@@ -19440,10 +19595,10 @@ export default function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Receipts</TableHead>
-                            <TableHead className="text-right">Subtotal</TableHead>
-                            <TableHead className="text-right">VAT</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right">Lines</TableHead>
+                            <TableHead className="text-right">Debit</TableHead>
+                            <TableHead className="text-right">Credit</TableHead>
+                            <TableHead className="text-right">Net expense</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -19451,16 +19606,16 @@ export default function Reports() {
                             <TableRow key={row.label}>
                               <TableCell className="font-medium">{row.label}</TableCell>
                               <TableCell className="text-right font-mono">
-                                {row.receiptCount}
+                                {row.lineCount}
                               </TableCell>
                               <TableCell className="text-right font-mono">
-                                {formatCurrency(row.subtotalAed, "AED", locale)}
+                                {formatCurrency(row.debitAed, "AED", locale)}
                               </TableCell>
                               <TableCell className="text-right font-mono">
-                                {formatCurrency(row.vatAed, "AED", locale)}
+                                {formatCurrency(row.creditAed, "AED", locale)}
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(row.totalAed, "AED", locale)}
+                                {formatCurrency(row.netExpenseAed, "AED", locale)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -19651,80 +19806,69 @@ export default function Reports() {
 
             <Card className={reportSectionClass(["expenses-vendor", "expenses-category"])}>
               <CardHeader>
-                <CardTitle>Expense detail</CardTitle>
+                <CardTitle>Posted expense detail</CardTitle>
                 <CardDescription>
                   {dateRange.from && dateRange.to
                     ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                    : "All receipt dates"}
+                    : "All posted journal entry dates"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {expensesLoading ? (
                   <Skeleton className="h-96" />
-                ) : reportReceipts.length ? (
+                ) : expenseReport.lines.length ? (
                   <div className="max-h-[520px] overflow-auto rounded-md border">
-                    <Table className="min-w-[900px]">
+                    <Table className="min-w-[980px]">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Vendor</TableHead>
+                          <TableHead>Entry</TableHead>
                           <TableHead>Date</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Subtotal</TableHead>
-                          <TableHead className="text-right">VAT</TableHead>
-                          <TableHead className="text-right">Total AED</TableHead>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead>Expense account</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                          <TableHead className="text-right">Net expense</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reportReceipts.map((receipt) => {
-                          const subtotalAed = receiptSubtotalAed(receipt);
-                          const vatAed = receiptVatAed(receipt);
-                          return (
-                            <TableRow key={receipt.id}>
-                              <TableCell className="font-medium">
-                                {receipt.merchant || "Unknown Merchant"}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatReportDate(receipt.date)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {receipt.category || "Uncategorized"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {receipt.autoPosted ? (
-                                  <Badge variant="success" dot>
-                                    Auto-posted
-                                  </Badge>
-                                ) : receipt.posted ? (
-                                  <Badge variant="info" dot>
-                                    Posted
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="warning" dot>
-                                    Needs posting
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(subtotalAed, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {formatCurrency(vatAed, "AED", locale)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
-                                {formatCurrency(subtotalAed + vatAed, "AED", locale)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                        {expenseReport.lines.map((line) => (
+                          <TableRow key={line.id}>
+                            <TableCell className="font-mono font-medium">
+                              {line.entryNumber}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatReportDate(line.date)}
+                            </TableCell>
+                            <TableCell className="font-medium">{line.vendor}</TableCell>
+                            <TableCell>
+                              <div className="font-medium">{line.accountName}</div>
+                              <div className="font-mono text-xs text-muted-foreground">
+                                {line.accountCode || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="capitalize">{line.source}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {line.debitAed > 0
+                                ? formatCurrency(line.debitAed, "AED", locale)
+                                : "-"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {line.creditAed > 0
+                                ? formatCurrency(line.creditAed, "AED", locale)
+                                : "-"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium">
+                              {formatCurrency(line.netExpenseAed, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No receipts found for this period.
+                    No posted expense-account journal lines found for this period.
                   </div>
                 )}
               </CardContent>
@@ -20364,65 +20508,112 @@ export default function Reports() {
                         : "All posted journal entry dates"}
                     </CardDescription>
                   </div>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/journal">Open journal</Link>
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">
+                      {ledgerLines.length} rows · page {ledgerDetailCurrentPage} of{" "}
+                      {ledgerDetailPageCount}
+                    </Badge>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/journal">Open journal</Link>
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {ledgerLoading ? (
                   <Skeleton className="h-96" />
                 ) : ledgerLines.length ? (
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[980px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Entry</TableHead>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Account</TableHead>
-                          <TableHead>Source</TableHead>
-                          <TableHead>Memo</TableHead>
-                          <TableHead className="text-right">Debit</TableHead>
-                          <TableHead className="text-right">Credit</TableHead>
-                          <TableHead>Flags</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {ledgerLines.slice(0, 50).map((line) => (
-                          <TableRow key={line.id}>
-                            <TableCell className="font-mono font-medium">
-                              {line.entryNumber}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatReportDate(line.date)}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium">{line.accountName}</div>
-                              <div className="font-mono text-xs text-muted-foreground">
-                                {line.accountCode || "-"}
-                              </div>
-                            </TableCell>
-                            <TableCell className="capitalize">{line.source}</TableCell>
-                            <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                              {line.memo || "-"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {line.credit > 0 ? formatCurrency(line.credit, "AED", locale) : "-"}
-                            </TableCell>
-                            <TableCell>
-                              {line.hasForeignCurrency ? (
-                                <Badge variant="info">FX</Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
+                  <div className="space-y-3">
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+                      Showing rows {ledgerDetailStartIndex + 1}-
+                      {Math.min(ledgerDetailStartIndex + ledgerDetailPageSize, ledgerLines.length)}{" "}
+                      of {ledgerLines.length}. Excel and Google Sheets exports include every
+                      filtered ledger line.
+                    </div>
+                    <div className="overflow-x-auto rounded-md border">
+                      <Table className="min-w-[980px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Entry</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Account</TableHead>
+                            <TableHead>Source</TableHead>
+                            <TableHead>Memo</TableHead>
+                            <TableHead className="text-right">Debit</TableHead>
+                            <TableHead className="text-right">Credit</TableHead>
+                            <TableHead>Flags</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {ledgerDetailPageLines.map((line) => (
+                            <TableRow key={line.id}>
+                              <TableCell className="font-mono font-medium">
+                                {line.entryNumber}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatReportDate(line.date)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{line.accountName}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {line.accountCode || "-"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="capitalize">{line.source}</TableCell>
+                              <TableCell className="max-w-[240px] truncate text-muted-foreground">
+                                {line.memo || "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {line.credit > 0
+                                  ? formatCurrency(line.credit, "AED", locale)
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>
+                                {line.hasForeignCurrency ? (
+                                  <Badge variant="info">FX</Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        Table is paginated for readability; exports are not truncated.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={ledgerDetailCurrentPage <= 1}
+                          onClick={() => setLedgerDetailPage((page) => Math.max(1, page - 1))}
+                        >
+                          <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                          Previous
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={ledgerDetailCurrentPage >= ledgerDetailPageCount}
+                          onClick={() =>
+                            setLedgerDetailPage((page) =>
+                              Math.min(ledgerDetailPageCount, page + 1)
+                            )
+                          }
+                        >
+                          Next
+                          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -20716,10 +20907,10 @@ export default function Reports() {
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <CardTitle>Consolidated statements</CardTitle>
+                    <CardTitle>Management roll-up</CardTitle>
                     <CardDescription>
-                      {consolidatedStatementsReport.periodLabel}. Multi-entity roll-up; no
-                      eliminations applied.
+                      {consolidatedStatementsReport.periodLabel}. Accessible-company management
+                      view; no eliminations applied.
                     </CardDescription>
                   </div>
                   <Button asChild size="sm" variant="outline">
@@ -20828,7 +21019,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No accessible companies found for consolidation.
+                        No accessible companies found for this management roll-up.
                       </div>
                     )}
                   </>
@@ -21103,7 +21294,8 @@ export default function Reports() {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        )}
       </div>
     </div>
   );

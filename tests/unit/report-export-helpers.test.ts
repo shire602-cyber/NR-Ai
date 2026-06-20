@@ -269,8 +269,8 @@ describe("report export helpers", () => {
     });
 
     expect(sheets.map((sheet) => sheet.sheetName)).toEqual([
-      "Consolidated Summary",
-      "Consolidated Entities",
+      "Management Roll-up Summary",
+      "Management Roll-up Entities",
       "Consolidation Review",
     ]);
     expect(sheets[0].rows).toContainEqual({ metric: "Net profit (AED)", value: "48000.00" });
@@ -450,26 +450,30 @@ describe("report export helpers", () => {
       subtotalAed: 1900,
       vatAed: 95,
       totalAed: 1995,
+      debitAed: 1900,
+      creditAed: 0,
+      lineCount: 2,
+      entryCount: 1,
+      basis: "Posted journal lines where the linked chart-of-account type is expense.",
+      receiptSpendAed: 1995,
       byVendor: [
         {
           label: "Travel Desk LLC",
-          receiptCount: 2,
-          subtotalAed: 1900,
-          vatAed: 95,
-          totalAed: 1995,
-          unpostedCount: 1,
-          autoPostedCount: 1,
+          entryCount: 1,
+          lineCount: 2,
+          debitAed: 1900,
+          creditAed: 0,
+          netExpenseAed: 1900,
         },
       ],
       byCategory: [
         {
           label: "Travel",
-          receiptCount: 2,
-          subtotalAed: 1900,
-          vatAed: 95,
-          totalAed: 1995,
-          unpostedCount: 1,
-          autoPostedCount: 1,
+          entryCount: 1,
+          lineCount: 2,
+          debitAed: 1900,
+          creditAed: 0,
+          netExpenseAed: 1900,
         },
       ],
       claims: {
@@ -496,17 +500,17 @@ describe("report export helpers", () => {
           },
         ],
       },
-      receipts: [
+      lines: [
         {
-          merchant: "Travel Desk LLC",
+          entryNumber: "JE-2026-0007",
           date: "2026-06-15",
-          category: "Travel",
-          currency: "AED",
-          amount: "1900",
-          vatAmount: "95",
-          exchangeRate: "1",
-          posted: false,
-          autoPosted: false,
+          vendor: "Travel Desk LLC",
+          accountName: "Travel",
+          accountCode: "6100",
+          source: "Bill",
+          debitAed: 1900,
+          creditAed: 0,
+          netExpenseAed: 1900,
         },
       ],
     });
@@ -517,7 +521,7 @@ describe("report export helpers", () => {
       "Posting Automation",
       "Expense Claims Summary",
       "Expense Claims Detail",
-      "Expense Detail",
+      "Posted Expense Detail",
     ]);
     expect(sheets[3].rows).toContainEqual({ metric: "Claim value (AED)", value: "3150.00" });
     expect(sheets[3].rows).toContainEqual({ metric: "Needs approval", value: 1 });
@@ -530,8 +534,8 @@ describe("report export helpers", () => {
     });
     expect(sheets[5].rows[0]).toMatchObject({
       merchant: "Travel Desk LLC",
-      totalAed: "1995.00",
-      status: "Needs posting",
+      category: "Travel",
+      netExpenseAed: "1900.00",
     });
   });
 

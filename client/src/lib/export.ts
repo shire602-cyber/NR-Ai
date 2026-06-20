@@ -916,12 +916,11 @@ function receiptVatExportAed(receipt: any): number {
 function expenseSummaryRows(rows: any[] = []) {
   return rows.map((row: any) => ({
     label: row.label,
-    receiptCount: row.receiptCount,
-    subtotalAed: formatExportAmount(row.subtotalAed),
-    vatAed: formatExportAmount(row.vatAed),
-    totalAed: formatExportAmount(row.totalAed),
-    unpostedCount: row.unpostedCount,
-    autoPostedCount: row.autoPostedCount,
+    entryCount: row.entryCount,
+    lineCount: row.lineCount,
+    debitAed: formatExportAmount(row.debitAed),
+    creditAed: formatExportAmount(row.creditAed),
+    netExpenseAed: formatExportAmount(row.netExpenseAed),
   }));
 }
 
@@ -931,12 +930,11 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
       sheetName: "Expenses by Vendor",
       columns: [
         { header: "Vendor", key: "label", width: 30 },
-        { header: "Receipts", key: "receiptCount", width: 12 },
-        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
-        { header: "VAT (AED)", key: "vatAed", width: 16 },
-        { header: "Total (AED)", key: "totalAed", width: 18 },
-        { header: "Unposted", key: "unpostedCount", width: 12 },
-        { header: "Auto-posted", key: "autoPostedCount", width: 14 },
+        { header: "Posted Entries", key: "entryCount", width: 16 },
+        { header: "Expense Lines", key: "lineCount", width: 16 },
+        { header: "Debit (AED)", key: "debitAed", width: 18 },
+        { header: "Credit (AED)", key: "creditAed", width: 18 },
+        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byVendor),
     },
@@ -944,12 +942,11 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
       sheetName: "Expenses by Category",
       columns: [
         { header: "Category", key: "label", width: 28 },
-        { header: "Receipts", key: "receiptCount", width: 12 },
-        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
-        { header: "VAT (AED)", key: "vatAed", width: 16 },
-        { header: "Total (AED)", key: "totalAed", width: 18 },
-        { header: "Unposted", key: "unpostedCount", width: 12 },
-        { header: "Auto-posted", key: "autoPostedCount", width: 14 },
+        { header: "Posted Entries", key: "entryCount", width: 16 },
+        { header: "Expense Lines", key: "lineCount", width: 16 },
+        { header: "Debit (AED)", key: "debitAed", width: 18 },
+        { header: "Credit (AED)", key: "creditAed", width: 18 },
+        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byCategory),
     },
@@ -963,9 +960,14 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { metric: "Captured receipts", value: report?.receiptCount ?? 0 },
         { metric: "Auto-posted receipts", value: report?.autoPostedReceipts ?? 0 },
         { metric: "Needs posting", value: report?.unpostedReceipts ?? 0 },
-        { metric: "Subtotal (AED)", value: formatExportAmount(report?.subtotalAed) },
-        { metric: "VAT (AED)", value: formatExportAmount(report?.vatAed) },
-        { metric: "Total spend (AED)", value: formatExportAmount(report?.totalAed) },
+        { metric: "Posted expense entries", value: report?.entryCount ?? 0 },
+        { metric: "Posted expense lines", value: report?.lineCount ?? 0 },
+        { metric: "Posted expense debits (AED)", value: formatExportAmount(report?.debitAed) },
+        { metric: "Posted expense credits (AED)", value: formatExportAmount(report?.creditAed) },
+        { metric: "Net posted expenses (AED)", value: formatExportAmount(report?.totalAed) },
+        { metric: "Receipt VAT captured (AED)", value: formatExportAmount(report?.vatAed) },
+        { metric: "Receipt spend captured (AED)", value: formatExportAmount(report?.receiptSpendAed) },
+        { metric: "Basis", value: report?.basis ?? "" },
       ],
     },
     {
@@ -1023,36 +1025,30 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         })) ?? [],
     },
     {
-      sheetName: "Expense Detail",
+      sheetName: "Posted Expense Detail",
       columns: [
-        { header: "Vendor", key: "merchant", width: 30 },
+        { header: "Entry", key: "entryNumber", width: 18 },
         { header: "Date", key: "date", width: 14 },
-        { header: "Category", key: "category", width: 22 },
-        { header: "Status", key: "status", width: 16 },
-        { header: "Currency", key: "currency", width: 10 },
-        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
-        { header: "VAT (AED)", key: "vatAed", width: 16 },
-        { header: "Total (AED)", key: "totalAed", width: 18 },
+        { header: "Vendor", key: "merchant", width: 30 },
+        { header: "Expense Account", key: "category", width: 28 },
+        { header: "Account Code", key: "accountCode", width: 16 },
+        { header: "Source", key: "source", width: 18 },
+        { header: "Debit (AED)", key: "debitAed", width: 18 },
+        { header: "Credit (AED)", key: "creditAed", width: 18 },
+        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
       ],
       rows:
-        report?.receipts?.map((receipt: any) => {
-          const subtotalAed = receiptSubtotalExportAed(receipt);
-          const vatAed = receiptVatExportAed(receipt);
-          return {
-            merchant: receipt.merchant || "Unknown Merchant",
-            date: formatDateForExport(receipt.date),
-            category: receipt.category || "Uncategorized",
-            status: receipt.autoPosted
-              ? "Auto-posted"
-              : receipt.posted
-                ? "Posted"
-                : "Needs posting",
-            currency: receipt.currency || "AED",
-            subtotalAed: formatExportAmount(subtotalAed),
-            vatAed: formatExportAmount(vatAed),
-            totalAed: formatExportAmount(subtotalAed + vatAed),
-          };
-        }) ?? [],
+        report?.lines?.map((line: any) => ({
+          entryNumber: line.entryNumber || "",
+          date: formatDateForExport(line.date),
+          merchant: line.vendor || "Manual / no vendor",
+          category: line.accountName || "",
+          accountCode: line.accountCode || "",
+          source: line.source || "",
+          debitAed: formatExportAmount(line.debitAed),
+          creditAed: formatExportAmount(line.creditAed),
+          netExpenseAed: formatExportAmount(line.netExpenseAed),
+        })) ?? [],
     },
   ];
 }
@@ -1357,7 +1353,7 @@ export function prepareConsolidatedStatementsForExport(report: any): ExportData[
 
   return [
     {
-      sheetName: "Consolidated Summary",
+      sheetName: "Management Roll-up Summary",
       columns: [
         { header: "Metric", key: "metric", width: 34 },
         { header: "Value", key: "value", width: 28 },
@@ -1388,7 +1384,7 @@ export function prepareConsolidatedStatementsForExport(report: any): ExportData[
       ],
     },
     {
-      sheetName: "Consolidated Entities",
+      sheetName: "Management Roll-up Entities",
       columns: [
         { header: "Company", key: "companyName", width: 30 },
         { header: "Type", key: "companyType", width: 18 },
@@ -1431,7 +1427,7 @@ export function prepareConsolidatedStatementsForExport(report: any): ExportData[
       rows: reviewRows.map((row: any) => ({
         companyName: row.companyName || "Unknown company",
         statusLabel: row.statusLabel || "Review",
-        reviewReason: row.reviewReason || "Review consolidation inputs.",
+        reviewReason: row.reviewReason || "Review roll-up inputs.",
         workflow: row.workflow || "/financial-statements",
       })),
     },
