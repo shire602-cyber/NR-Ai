@@ -3,7 +3,7 @@
 ## Scope
 
 Reviewed the current report catalog and report rendering code on
-`codex/launch-hardening-main-sync` at `572e2f7`, with the synthetic production
+`codex/launch-hardening-main-sync` through `e30aa8a`, with the synthetic production
 report-audit fixture evidence from 2026-06-19. This is a qualitative
 accountant/bookkeeper/CFO review of meaning, layout, and precision, not a
 third-party accounting certification.
@@ -27,8 +27,8 @@ centers, and a few reports whose title implies accountant-grade output but whose
 source is currently an operational proxy.
 
 Launch posture: controlled pilot-ready after latest deployment is verified; not
-market-ready against QuickBooks/Wafeq until the P0/P1 report UX and semantic
-fixes below are complete.
+market-ready against QuickBooks/Wafeq until the remaining report-shell polish
+items below are complete.
 
 ## Priority Fixes
 
