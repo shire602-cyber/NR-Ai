@@ -41,3 +41,9 @@ coverage
 replit.md
 *.nix
 tests/e2e/.artifacts/
+
+# E2E bootstrap runtime files (scripts/qa/bootstrap-e2e.sh)
+.e2e-token
+.e2e-company-id
+.e2e-server.log
+.e2e-server.pid

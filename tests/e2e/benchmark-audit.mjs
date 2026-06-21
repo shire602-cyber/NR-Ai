@@ -45,7 +45,9 @@ const FULL_PROD_REPORT_CRAWL = process.env.BENCHMARK_FULL_PROD_REPORT_CRAWL === 
 const PAGE_DELAY_MS = Number(
   process.env.BENCHMARK_PAGE_DELAY_MS || (IS_PRODUCTION ? "2500" : "800")
 );
-const RETRY_429_MS = Number(process.env.BENCHMARK_RETRY_429_MS || (IS_PRODUCTION ? "10000" : "5000"));
+const RETRY_429_MS = Number(
+  process.env.BENCHMARK_RETRY_429_MS || (IS_PRODUCTION ? "10000" : "5000")
+);
 const MAX_RATE_LIMIT_RETRIES = Number(process.env.BENCHMARK_MAX_429_RETRIES || "3");
 const MOBILE_COOLDOWN_MS = Number(
   process.env.BENCHMARK_MOBILE_COOLDOWN_MS || (IS_PRODUCTION ? "15000" : "0")
@@ -55,41 +57,77 @@ const competitorAnchors = [
   {
     name: "QuickBooks",
     url: "https://quickbooks.intuit.com/accounting/reporting/",
-    benchmark: "Report center, reusable report views, exports, and accounting workflow depth.",
+    signal:
+      "Customizable reports, P&L, balance sheet, cash flow, A/R aging, drilldown, Excel sync, workflows, and backup/restore.",
+    benchmark:
+      "Clean report center, reusable views, exports, drilldown, accounting workflow depth, and administrative trust controls.",
   },
   {
     name: "Wafeq",
     url: "https://www.wafeq.com/en",
-    benchmark: "UAE/GCC accounting, VAT, e-invoicing, and regional compliance workflow.",
+    signal:
+      "Business-owner/accountant workflows with invoices, purchase orders, inventory, payroll, e-invoicing, and 40+ financial reports.",
+    benchmark:
+      "UAE/GCC accounting, VAT, e-invoicing, payroll, inventory, and regional compliance workflow.",
   },
   {
     name: "Zoho Books UAE",
     url: "https://www.zoho.com/ae/books/",
-    benchmark: "SME breadth, tax workflows, automation, invoicing, and bank reconciliation.",
+    signal:
+      "UAE VAT and corporate-tax readiness plus quotes, invoicing, bills, banking, inventory, expenses, documents, reporting, payments, and automation.",
+    benchmark:
+      "SME breadth, UAE VAT/corporate-tax workflows, automation, invoicing, banking, inventory, and reporting.",
   },
   {
     name: "Xero",
     url: "https://www.xero.com/us/accounting-software/",
-    benchmark: "Clean UX, bank reconciliation, reporting, integrations, inventory, and projects.",
+    signal:
+      "Invoices, bills, bank reconciliation, smart document capture, real-time reports, sales tax, dashboards, analytics, and advanced tools.",
+    benchmark:
+      "Clean UX, bank reconciliation, reporting, automation, integrations, inventory/projects-adjacent workflows, and mobile usability.",
   },
   {
     name: "Digits",
     url: "https://digits.com/",
-    benchmark: "AI-native finance workflows, anomaly review, and automation-first analysis.",
+    signal:
+      "Live dashboards/financials, AI-assisted close, bank statement collection, anomaly/error flags, custom checklists, and management reporting.",
+    benchmark:
+      "AI-native finance workflows, anomaly review, automated close, and stakeholder-ready management reporting.",
   },
 ];
 
 const benchmarkAreas = [
   ["Accounting integrity", "GL balances, subledger tie-outs, period lock, audit trail."],
   ["UAE tax and compliance", "VAT 201, corporate tax, WPS, e-invoice readiness, Arabic/RTL."],
-  ["Report center and precision", "Catalog discovery, one-report view, source basis, export, drilldown."],
-  ["Receivables and payables", "Invoices, credit notes, customer/vendor balances, bills, payments."],
+  [
+    "Report center and precision",
+    "Catalog discovery, one-report view, source basis, export, drilldown.",
+  ],
+  [
+    "Receivables and payables",
+    "Invoices, credit notes, customer/vendor balances, bills, payments.",
+  ],
   ["Banking and reconciliation", "Statement import, match rules, unreconciled queue, cash proof."],
-  ["Payroll, inventory, and assets", "Payroll/WPS, inventory valuation/movement, fixed assets, depreciation."],
-  ["Automation and AI close", "Receipt autopost, anomaly review, AI GL, reminders, delivery handoffs."],
-  ["UX, mobile, and accessibility", "Density, hierarchy, keyboard flow, mobile 375px, no overflow."],
-  ["Trust and administration", "Security page, backup/restore, incident process, privacy/DPA posture."],
-  ["Reliability and release gates", "Checks, E2E, smoke, production commit verification, dependency audit."],
+  [
+    "Payroll, inventory, and assets",
+    "Payroll/WPS, inventory valuation/movement, fixed assets, depreciation.",
+  ],
+  [
+    "Automation and AI close",
+    "Receipt autopost, anomaly review, AI GL, reminders, delivery handoffs.",
+  ],
+  [
+    "UX, mobile, and accessibility",
+    "Density, hierarchy, keyboard flow, mobile 375px, no overflow.",
+  ],
+  [
+    "Trust and administration",
+    "Security page, backup/restore, incident process, privacy/DPA posture.",
+  ],
+  [
+    "Reliability and release gates",
+    "Checks, E2E, smoke, production commit verification, dependency audit.",
+  ],
 ];
 
 const customerRoutes = [
@@ -152,6 +190,11 @@ const state = {
   created: {},
   fixtureProbes: [],
   fixtureWarnings: [],
+  fixtureMode: {
+    runFixture: RUN_FIXTURE,
+    allowProductionWrites: ALLOW_PROD_WRITES,
+    productionTarget: IS_PRODUCTION,
+  },
   routeChecks: [],
   reportChecks: [],
   reportScope: null,
@@ -162,11 +205,16 @@ const state = {
 };
 
 function slug(value) {
-  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function mdEscape(value) {
-  return String(value ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  return String(value ?? "")
+    .replace(/\|/g, "\\|")
+    .replace(/\n/g, " ");
 }
 
 function addBlocker(scope, message, detail = null) {
@@ -228,7 +276,10 @@ async function loadFixtureArtifact() {
   try {
     artifact = await readJsonFile(FIXTURE_ARTIFACT);
   } catch {
-    addBlocker("fixture", `Missing fixture artifact at ${path.relative(REPO_ROOT, FIXTURE_ARTIFACT)}.`);
+    addBlocker(
+      "fixture",
+      `Missing fixture artifact at ${path.relative(REPO_ROOT, FIXTURE_ARTIFACT)}.`
+    );
     return null;
   }
 
@@ -261,7 +312,10 @@ async function resolveExecutablePath() {
 
 async function runBrowserAudit(credentials) {
   if (!credentials?.email || !credentials?.password) {
-    addBlocker("auth", "No benchmark credentials available. Run fixture or set BENCHMARK_EMAIL/BENCHMARK_PASSWORD.");
+    addBlocker(
+      "auth",
+      "No benchmark credentials available. Run fixture or set BENCHMARK_EMAIL/BENCHMARK_PASSWORD."
+    );
     return;
   }
 
@@ -303,12 +357,11 @@ async function runBrowserAudit(credentials) {
       return true;
     });
     state.reportScope = {
-      mode:
-        requestedReportIds
-          ? "explicit"
-          : IS_PRODUCTION && !FULL_PROD_REPORT_CRAWL
-            ? "production-representative-sample"
-            : "all-ready-reports",
+      mode: requestedReportIds
+        ? "explicit"
+        : IS_PRODUCTION && !FULL_PROD_REPORT_CRAWL
+          ? "production-representative-sample"
+          : "all-ready-reports",
       checked: reportsToCheck.length,
       totalReadyReports: readyReportCatalog.length,
     };
@@ -403,11 +456,15 @@ async function checkPageOnce(page, href, targetList, screenshotBase) {
   try {
     await page.goto(`${BASE}${href}`, { timeout: 45000, waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
-    const bodyText = await page.locator("body").innerText().catch(() => "");
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
     const currentPath = new URL(page.url()).pathname;
     const blank = bodyText.trim().length < 40;
     const failureText = bodyText.match(failText)?.[0] || null;
-    const redirectedToAuth = currentPath.startsWith("/login") || currentPath.startsWith("/register");
+    const redirectedToAuth =
+      currentPath.startsWith("/login") || currentPath.startsWith("/register");
     const screenshotPath = path.join(SCREENSHOT_DIR, `${screenshotBase}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const relativeScreenshotPath = path.relative(OUTPUT_DIR, screenshotPath);
@@ -443,14 +500,17 @@ function score(areaName) {
   const fixturePassed =
     state.fixtureProbes.length > 0 && state.fixtureProbes.every((probe) => probe.passed === true);
   const routesPassed = state.routeChecks.length > 0 && state.routeChecks.every((route) => route.ok);
-  const reportsPassed = state.reportChecks.length > 0 && state.reportChecks.every((report) => report.ok);
-  const mobilePassed = state.mobileChecks.length > 0 && state.mobileChecks.every((route) => route.ok);
+  const reportsPassed =
+    state.reportChecks.length > 0 && state.reportChecks.every((report) => report.ok);
+  const mobilePassed =
+    state.mobileChecks.length > 0 && state.mobileChecks.every((route) => route.ok);
   if (["Accounting integrity", "UAE tax and compliance"].includes(areaName)) {
     return fixturePassed ? 4 : 2;
   }
   if (areaName === "Report center and precision") {
     const shellGaps = state.reportChecks.filter(
-      (report) => report.ok && (!report.hasBackToReports || !report.hasExport || !report.hasPeriodControl)
+      (report) =>
+        report.ok && (!report.hasBackToReports || !report.hasExport || !report.hasPeriodControl)
     ).length;
     if (!reportsPassed) return 2;
     return shellGaps ? 3 : 4;
@@ -465,21 +525,36 @@ function isRateLimitOnly(issue) {
   const lowered = issue.toLowerCase();
   return (
     lowered.includes("apiFailures".toLowerCase()) &&
-    !lowered.includes("pageerrors\":[\"") &&
-    !lowered.includes("failuretext\":\"something") &&
-    !lowered.includes("failuretext\":\"an error") &&
-    !lowered.includes("redirectedtoauth\":true")
+    !lowered.includes('pageerrors":["') &&
+    !lowered.includes('failuretext":"something') &&
+    !lowered.includes('failuretext":"an error') &&
+    !lowered.includes('redirectedtoauth":true')
   );
 }
 
 function topGaps() {
   const gaps = [];
+  const hasFixtureBlocker = state.blockers.some((blocker) => blocker.scope === "fixture");
+  if (!state.fixtureProbes.length && !hasFixtureBlocker) {
+    gaps.push({
+      priority: IS_PRODUCTION && !ALLOW_PROD_WRITES ? "P1" : "P0",
+      area: "Synthetic accounting coverage",
+      finding:
+        "No synthetic accounting fixture probes ran, so accountant-grade correctness remains unscored.",
+      evidence: IS_PRODUCTION
+        ? "Production run was intentionally read-only; route/report rendering evidence is valid, but trial balance, VAT/CT tie-outs, and subledger probes require a local synthetic run."
+        : "Run the report-audit fixture against a local Postgres-backed app before scoring accounting/tax parity.",
+      fix: "Run `bash scripts/qa/bootstrap-e2e.sh`, then `BASE_URL=http://localhost:5000 npm run e2e:benchmark-audit` and review the generated probes.",
+    });
+  }
   for (const blocker of state.blockers) {
     gaps.push({
       priority: "P0",
       area: blocker.scope,
       finding: blocker.message,
-      evidence: blocker.detail ? JSON.stringify(blocker.detail).slice(0, 240) : "Benchmark blocked.",
+      evidence: blocker.detail
+        ? JSON.stringify(blocker.detail).slice(0, 240)
+        : "Benchmark blocked.",
       fix: "Resolve this before claiming benchmark coverage.",
     });
   }
@@ -550,7 +625,10 @@ async function writeDocs() {
     report.screenshot || "",
   ]);
 
-  await fs.writeFile(path.join(OUTPUT_DIR, "benchmark-run.json"), `${JSON.stringify(state, null, 2)}\n`);
+  await fs.writeFile(
+    path.join(OUTPUT_DIR, "benchmark-run.json"),
+    `${JSON.stringify(state, null, 2)}\n`
+  );
 
   await fs.writeFile(
     path.join(OUTPUT_DIR, "competitor-scorecard.md"),
@@ -560,7 +638,17 @@ Target: ${BASE || "not provided"}
 
 ## Competitor Anchors
 
-${table(["Competitor", "Official source", "Benchmark bar"], competitorAnchors.map((item) => [item.name, item.url, item.benchmark]))}
+${table(
+  ["Competitor", "Official source", "Benchmark bar"],
+  competitorAnchors.map((item) => [item.name, item.url, item.benchmark])
+)}
+
+## Source Signals
+
+${table(
+  ["Competitor", "Official signal used for scoring"],
+  competitorAnchors.map((item) => [item.name, item.signal])
+)}
 
 ## Scorecard
 
@@ -572,6 +660,7 @@ ${table(
 ## Evidence Summary
 
 - Fixture probes: ${state.fixtureProbes.filter((probe) => probe.passed).length}/${state.fixtureProbes.length} passed.
+- Fixture mode: ${RUN_FIXTURE ? "write fixture requested" : "fixture skipped"}${IS_PRODUCTION && !ALLOW_PROD_WRITES ? " (production write guard active)" : ""}.
 - Route crawl: ${state.routeChecks.filter((route) => route.ok).length}/${state.routeChecks.length} passed.
 - Report views: ${state.reportChecks.filter((report) => report.ok).length}/${state.reportChecks.length} passed (${state.reportScope?.mode || "not-run"}).
 - Mobile views: ${state.mobileChecks.filter((route) => route.ok).length}/${state.mobileChecks.length} passed.
@@ -594,7 +683,18 @@ ${Object.keys(state.created).length ? table(["Record type", "Count"], Object.ent
 
 ## Fixture Probes
 
-${state.fixtureProbes.length ? table(["Probe", "Result", "Detail"], state.fixtureProbes.map((probe) => [probe.name, probe.passed ? "Pass" : "Fail", JSON.stringify(probe.detail || {})])) : "No fixture probes ran."}
+${
+  state.fixtureProbes.length
+    ? table(
+        ["Probe", "Result", "Detail"],
+        state.fixtureProbes.map((probe) => [
+          probe.name,
+          probe.passed ? "Pass" : "Fail",
+          JSON.stringify(probe.detail || {}),
+        ])
+      )
+    : "No fixture probes ran."
+}
 `
   );
 
@@ -604,11 +704,26 @@ ${state.fixtureProbes.length ? table(["Probe", "Result", "Detail"], state.fixtur
 
 ## Route And Report Review
 
-${table(["Surface", "Passed", "Failed"], [
-  ["Authenticated routes", String(state.routeChecks.filter((item) => item.ok).length), String(state.routeChecks.filter((item) => !item.ok).length)],
-  ["Report views", String(state.reportChecks.filter((item) => item.ok).length), String(state.reportChecks.filter((item) => !item.ok).length)],
-  ["Mobile routes", String(state.mobileChecks.filter((item) => item.ok).length), String(state.mobileChecks.filter((item) => !item.ok).length)],
-])}
+${table(
+  ["Surface", "Passed", "Failed"],
+  [
+    [
+      "Authenticated routes",
+      String(state.routeChecks.filter((item) => item.ok).length),
+      String(state.routeChecks.filter((item) => !item.ok).length),
+    ],
+    [
+      "Report views",
+      String(state.reportChecks.filter((item) => item.ok).length),
+      String(state.reportChecks.filter((item) => !item.ok).length),
+    ],
+    [
+      "Mobile routes",
+      String(state.mobileChecks.filter((item) => item.ok).length),
+      String(state.mobileChecks.filter((item) => !item.ok).length),
+    ],
+  ]
+)}
 
 ## Report Shell Grid
 
@@ -616,7 +731,7 @@ ${reportRows.length ? table(["Report", "Category", "Render", "Back", "Export", "
 
 ## Reviewer Verdict
 
-${state.blockers.length ? "Blocked. The benchmark run cannot support an adoption verdict until the P0 blockers are cleared." : gaps.some((gap) => gap.priority === "P0") ? "Not benchmark-ready. P0 route or rendering defects remain." : "Pilot benchmark evidence captured. P1/P2 gaps should be ranked before feature expansion."}
+${state.blockers.length ? "Blocked. The benchmark run cannot support an adoption verdict until the P0 blockers are cleared." : gaps.some((gap) => gap.priority === "P0") ? "Not benchmark-ready. P0 route, rendering, or local fixture coverage defects remain." : gaps.some((gap) => gap.priority === "P1") ? "Deployment evidence captured, but P1 benchmark gaps remain before market-readiness claims." : "Pilot benchmark evidence captured. P2 gaps should be ranked before feature expansion."}
 `
   );
 
@@ -626,27 +741,62 @@ ${state.blockers.length ? "Blocked. The benchmark run cannot support an adoption
 
 ## Executive Verdict
 
-${state.blockers.length ? "No market-readiness verdict can be issued because the benchmark was blocked before full evidence collection." : "Muhasib.ai has enough benchmark evidence to rank gaps, but any score below 5 means the product should not claim full parity for that area."}
+${state.blockers.length ? "No market-readiness verdict can be issued because the benchmark was blocked before full evidence collection." : state.fixtureProbes.length === 0 ? "Production read-only evidence is useful for deployment confidence, but the full accountant-grade benchmark is not complete until the local synthetic fixture probes pass." : "Muhasib.ai has enough benchmark evidence to rank gaps, but any score below 5 means the product should not claim full parity for that area."}
 
 ## QuickBooks-Parity Matrix
 
 ${table(
   ["Capability", "Rating", "Evidence"],
   [
-    ["Memorized/saved reports", "Review", "Report catalog and saved-view behavior require manual verification."],
-    ["Class/location/project tracking", "Review", "Cost center P&L exists; multi-dimensional drilldown depth must be scored from screenshots."],
-    ["Customer/vendor centers", "Review", "Balances and contacts routes are crawled; single-pane depth must be reviewed."],
-    ["Bank feeds and rules", "Review", "Manual import/reconciliation is tested; live provider credentials are outside this audit."],
-    ["Multi-currency revaluation", "Review", "Fixture probes FX exposure; historical revaluation depth needs reviewer scoring."],
-    ["UAE tax reporting", "Review", "VAT/CT fixture and route evidence are captured when local DB is available."],
+    [
+      "Memorized/saved reports",
+      "Review",
+      "Report catalog and saved-view behavior require manual verification.",
+    ],
+    [
+      "Class/location/project tracking",
+      "Review",
+      "Cost center P&L exists; multi-dimensional drilldown depth must be scored from screenshots.",
+    ],
+    [
+      "Customer/vendor centers",
+      "Review",
+      "Balances and contacts routes are crawled; single-pane depth must be reviewed.",
+    ],
+    [
+      "Bank feeds and rules",
+      "Review",
+      "Manual import/reconciliation is tested; live provider credentials are outside this audit.",
+    ],
+    [
+      "Multi-currency revaluation",
+      "Review",
+      "Fixture probes FX exposure; historical revaluation depth needs reviewer scoring.",
+    ],
+    [
+      "UAE tax reporting",
+      "Review",
+      "VAT/CT fixture and route evidence are captured when local DB is available.",
+    ],
     ["Report drilldown/export", "Review", "Report shell grid marks missing controls explicitly."],
-    ["Audit trail and permissions", "Review", "Route crawl plus fixture probes are evidence; role matrix needs dedicated scoring."],
+    [
+      "Audit trail and permissions",
+      "Review",
+      "Route crawl plus fixture probes are evidence; role matrix needs dedicated scoring.",
+    ],
   ]
 )}
 
 ## Top 10 Gap Queue
 
-${gaps.length ? table(["Priority", "Area", "Finding", "Evidence", "Required fix"], gaps.map((gap) => [gap.priority, gap.area, gap.finding, gap.evidence, gap.fix])) : "No P0/P1/P2 gaps detected by the automated benchmark harness."}
+${
+  gaps.length
+    ? table(
+        ["Priority", "Area", "Finding", "Evidence", "Required fix"],
+        gaps.map((gap) => [gap.priority, gap.area, gap.finding, gap.evidence, gap.fix])
+      )
+    : "No P0/P1/P2 gaps detected by the automated benchmark harness."
+}
 `
   );
 
@@ -666,6 +816,7 @@ Files:
 - \`screenshots/\`
 
 This evidence pack is synthetic-audit output. It is not third-party certification and should not be used as a parity claim without reviewer sign-off.
+If the fixture probes are empty, treat this as a deployment/read-only crawl only, not a full accounting correctness audit.
 `
   );
 }
@@ -681,7 +832,10 @@ async function main() {
   try {
     state.version = await fetchJson("/api/version");
   } catch (error) {
-    addBlocker("environment", `Target app is not reachable or did not return /api/version: ${error.message}`);
+    addBlocker(
+      "environment",
+      `Target app is not reachable or did not return /api/version: ${error.message}`
+    );
     await writeDocs();
     process.exit(1);
   }
@@ -689,7 +843,7 @@ async function main() {
   runFixture();
   const envCredentialsProvided = Boolean(
     (process.env.BENCHMARK_EMAIL || process.env.REPORT_AUDIT_EMAIL) &&
-      (process.env.BENCHMARK_PASSWORD || process.env.REPORT_AUDIT_PASSWORD)
+    (process.env.BENCHMARK_PASSWORD || process.env.REPORT_AUDIT_PASSWORD)
   );
   const artifact = RUN_FIXTURE || !envCredentialsProvided ? await loadFixtureArtifact() : null;
   const credentials = {
@@ -714,7 +868,9 @@ async function main() {
   await writeDocs();
 
   if (state.blockers.length || topGaps().some((gap) => gap.priority === "P0")) {
-    console.error(`Benchmark audit completed with blockers. Evidence: ${path.relative(REPO_ROOT, OUTPUT_DIR)}`);
+    console.error(
+      `Benchmark audit completed with blockers. Evidence: ${path.relative(REPO_ROOT, OUTPUT_DIR)}`
+    );
     process.exit(1);
   }
   console.log(`Benchmark audit completed. Evidence: ${path.relative(REPO_ROOT, OUTPUT_DIR)}`);

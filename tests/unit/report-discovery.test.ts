@@ -2930,7 +2930,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("const deliveryHref = context?.deliverySubscriptions[0]?.href");
     expect(reportsSource).toContain("report-library-delivery-${report.id}");
     expect(catalogSource).toContain("/financial-statements?tab=cash-flow");
-    expect(catalogSource).toContain("/advanced-reports?tab=aging");
+    expect(catalogSource).toContain('id: "ar-aging"');
+    expect(catalogSource).toContain('id: "ap-aging"');
+    expect(catalogSource).toContain('tab: "sales"');
+    expect(catalogSource).toContain('tab: "balances"');
     expect(catalogSource).toContain("/advanced-reports?tab=comparison");
     expect(exportSource).toContain("prepareMonthEndCloseStatusForExport");
     expect(exportSource).toContain("Month-End Checklist");

@@ -398,6 +398,9 @@ Scope: this file applies to the whole repository.
   e2e:benchmark-audit`; it uses the report fixture by default, refuses production writes unless
   `BENCHMARK_ALLOW_PROD_WRITES=true` is explicitly set, and writes review evidence under
   `docs/qa/<date>-benchmark-audit/`.
+- Treat `BENCHMARK_RUN_FIXTURE=false` production runs as read-only deployment crawls only. They can
+  verify Railway routes and report shells, but accountant-grade scorecard evidence needs local
+  Postgres fixture probes from `scripts/qa/bootstrap-e2e.sh` plus `npm run e2e:benchmark-audit`.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.

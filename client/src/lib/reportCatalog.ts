@@ -1621,7 +1621,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     comparison: "Aging buckets",
     automation: "Payment chasing",
     decisionQuestion: "Which customers owe money and how overdue are they?",
-    href: "/advanced-reports?tab=aging",
+    tab: "sales",
     commandIcon: "users",
     commandKeywords: "reports receivables aging customers overdue collections",
   },
@@ -1634,7 +1634,7 @@ export const reportCatalog: ReportCatalogItem[] = [
     comparison: "Aging buckets",
     automation: "Payment timing",
     decisionQuestion: "Which supplier bills are due and when should they be paid?",
-    href: "/bill-pay?tab=summary",
+    tab: "balances",
     commandIcon: "creditCard",
     commandKeywords: "reports payables aging vendors bills due",
   },
@@ -6044,14 +6044,19 @@ export function reportsHref(
 export function reportHref(
   report: Pick<ReportCatalogItem, "id" | "tab"> & { href?: string | null }
 ): string | undefined {
-  return report.href ?? (report.tab ? reportsHref({ tab: report.tab, reportId: report.id }) : undefined);
+  return (
+    report.href ?? (report.tab ? reportsHref({ tab: report.tab, reportId: report.id }) : undefined)
+  );
 }
 
 export function reportPersonaHref(
   report: Pick<ReportCatalogItem, "id" | "tab"> & { href?: string | null },
   persona: ReportPersona | "all"
 ): string | undefined {
-  return report.href ?? (report.tab ? reportsHref({ tab: report.tab, reportId: report.id, persona }) : undefined);
+  return (
+    report.href ??
+    (report.tab ? reportsHref({ tab: report.tab, reportId: report.id, persona }) : undefined)
+  );
 }
 
 export function reportWorkspaceHref(

@@ -2,7 +2,7 @@
 
 ## Executive Verdict
 
-Muhasib.ai has enough benchmark evidence to rank gaps, but any score below 5 means the product should not claim full parity for that area.
+Production read-only evidence is useful for deployment confidence, but the full accountant-grade benchmark is not complete until the local synthetic fixture probes pass.
 
 ## QuickBooks-Parity Matrix
 
@@ -21,4 +21,6 @@ Muhasib.ai has enough benchmark evidence to rank gaps, but any score below 5 mea
 
 | Priority |Area |Finding |Evidence |Required fix |
 | --- |--- |--- |--- |--- |
-| P1 |Rate-limit pressure |/reports hit API 429 during benchmark crawl. |{"blank":true,"failureText":null,"pageErrors":[],"apiFailures":["GET 429 https://nr-ai-production.up.railway.app/api/companies","GET 429 https://nr-ai-production.up.railway.app/api/auth/me"]} |Tune audit pacing or production read-rate limits; confirm normal manual usage is unaffected. |
+| P1 |Synthetic accounting coverage |No synthetic accounting fixture probes ran, so accountant-grade correctness remains unscored. |Production run was intentionally read-only; route/report rendering evidence is valid, but trial balance, VAT/CT tie-outs, and subledger probes require a local synthetic run. |Run `bash scripts/qa/bootstrap-e2e.sh`, then `BASE_URL=http://localhost:5000 npm run e2e:benchmark-audit` and review the generated probes. |
+| P1 |Report shell |A/R Aging is missing benchmark shell controls. |back=false, export=true, period=true |Bring report into shared shell or add equivalent back/export/period controls. |
+| P1 |Report shell |A/P Aging is missing benchmark shell controls. |back=false, export=false, period=true |Bring report into shared shell or add equivalent back/export/period controls. |

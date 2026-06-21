@@ -12,3 +12,4 @@ Files:
 - `screenshots/`
 
 This evidence pack is synthetic-audit output. It is not third-party certification and should not be used as a parity claim without reviewer sign-off.
+If the fixture probes are empty, treat this as a deployment/read-only crawl only, not a full accounting correctness audit.
