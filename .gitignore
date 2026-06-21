@@ -41,6 +41,7 @@ coverage
 replit.md
 *.nix
 tests/e2e/.artifacts/
+docs/qa/*-benchmark-audit-local/
 
 # E2E bootstrap runtime files (scripts/qa/bootstrap-e2e.sh)
 .e2e-token
