@@ -200,6 +200,7 @@ const state = {
   reportScope: null,
   mobileChecks: [],
   blockers: [],
+  topGaps: [],
   screenshots: [],
   rateLimitRetries: [],
 };
@@ -615,6 +616,7 @@ function table(headers, rows) {
 async function writeDocs() {
   state.finishedAt = new Date().toISOString();
   const gaps = topGaps();
+  state.topGaps = gaps;
   const reportRows = state.reportChecks.map((report) => [
     report.name,
     report.category,

@@ -5,7 +5,8 @@
 # (docs/qa/2026-06-09-e2e-accountant-cfo-prompt.md).
 #
 # What it does (idempotent — safe to re-run):
-#   1. Starts a containerised Postgres 16 on port 5499.
+#   1. Starts a containerised Postgres 16 on port 5499, unless E2E_DATABASE_URL
+#      or DATABASE_URL points at an existing disposable Postgres database.
 #   2. Writes a fresh .env (only if one doesn't already exist) with random
 #      SESSION_SECRET / JWT_SECRET, BCRYPT_COST=12, AUTO_MIGRATE_ON_BOOT=true.
 #   3. Runs `npm ci` if node_modules is missing.
@@ -19,10 +20,13 @@
 #
 # Exit codes:
 #   0  ready to run E2E
-#   1  prerequisite missing (docker / npm / curl / jq / openssl)
+#   1  prerequisite missing (docker if no existing DB / npm / curl / jq / openssl)
 #   2  Postgres failed to start
 #   3  app failed to come up healthy
 #   4  registration & login both failed
+#
+# To use an existing disposable Postgres instead of Docker:
+#   E2E_DATABASE_URL=postgresql://... bash scripts/qa/bootstrap-e2e.sh
 #
 # To reset everything:
 #   bash scripts/qa/bootstrap-e2e.sh --clean
@@ -40,6 +44,13 @@ APP_PORT=5000
 E2E_EMAIL="sara@e2e.test"
 E2E_PASSWORD="E2eTestPassword!2026"
 E2E_NAME="Sara Accountant"
+EXTERNAL_DB_URL="${E2E_DATABASE_URL:-${DATABASE_URL:-}}"
+USE_EXTERNAL_DB=0
+if [ -n "${EXTERNAL_DB_URL}" ]; then
+  DB_URL="${EXTERNAL_DB_URL}"
+  USE_EXTERNAL_DB=1
+fi
+export DATABASE_URL="${DB_URL}"
 
 log()  { printf '[bootstrap-e2e] %s\n' "$*"; }
 die()  { printf '[bootstrap-e2e ERROR] %s\n' "$*" >&2; exit "${2:-1}"; }
@@ -49,47 +60,60 @@ if [ "${1:-}" = "--clean" ]; then
   if [ -f .e2e-server.pid ]; then
     kill "$(cat .e2e-server.pid)" 2>/dev/null || true
   fi
-  docker rm -f "${PG_CONTAINER}" 2>/dev/null || true
+  if command -v docker >/dev/null 2>&1; then
+    docker rm -f "${PG_CONTAINER}" 2>/dev/null || true
+  fi
   rm -f .env .e2e-token .e2e-company-id .e2e-server.log .e2e-server.pid
   log "Reset complete. Re-run without --clean to bootstrap fresh."
   exit 0
 fi
 
 # 1. Prereqs
-for cmd in docker npm curl jq openssl; do
+for cmd in npm curl jq openssl; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing prerequisite: $cmd"
 done
-
-# 2. Postgres container
-log "Checking Postgres container..."
-if ! docker ps -a --format '{{.Names}}' | grep -q "^${PG_CONTAINER}$"; then
-  log "Creating fresh Postgres container on port ${PG_PORT}..."
-  docker run -d \
-    --name "${PG_CONTAINER}" \
-    -e "POSTGRES_PASSWORD=${PG_PASS}" \
-    -e "POSTGRES_USER=${PG_USER}" \
-    -e "POSTGRES_DB=${PG_DB}" \
-    -p "${PG_PORT}:5432" \
-    postgres:16-alpine >/dev/null
-elif ! docker ps --format '{{.Names}}' | grep -q "^${PG_CONTAINER}$"; then
-  log "Restarting existing Postgres container..."
-  docker start "${PG_CONTAINER}" >/dev/null
+if [ "${USE_EXTERNAL_DB}" -ne 1 ]; then
+  command -v docker >/dev/null 2>&1 || die "Missing prerequisite: docker (or set E2E_DATABASE_URL to an existing disposable Postgres database)"
 fi
 
-log "Waiting for Postgres to accept connections..."
-for _ in $(seq 1 30); do
-  if docker exec "${PG_CONTAINER}" pg_isready -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1; then
-    log "Postgres ready on localhost:${PG_PORT}."
-    break
+# 2. Postgres container
+if [ "${USE_EXTERNAL_DB}" -eq 1 ]; then
+  log "Using existing Postgres from E2E_DATABASE_URL/DATABASE_URL."
+else
+  log "Checking Postgres container..."
+  if ! docker ps -a --format '{{.Names}}' | grep -q "^${PG_CONTAINER}$"; then
+    log "Creating fresh Postgres container on port ${PG_PORT}..."
+    docker run -d \
+      --name "${PG_CONTAINER}" \
+      -e "POSTGRES_PASSWORD=${PG_PASS}" \
+      -e "POSTGRES_USER=${PG_USER}" \
+      -e "POSTGRES_DB=${PG_DB}" \
+      -p "${PG_PORT}:5432" \
+      postgres:16-alpine >/dev/null
+  elif ! docker ps --format '{{.Names}}' | grep -q "^${PG_CONTAINER}$"; then
+    log "Restarting existing Postgres container..."
+    docker start "${PG_CONTAINER}" >/dev/null
   fi
-  sleep 1
-done
-docker exec "${PG_CONTAINER}" pg_isready -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1 \
-  || die "Postgres failed to start within 30 s." 2
+
+  log "Waiting for Postgres to accept connections..."
+  for _ in $(seq 1 30); do
+    if docker exec "${PG_CONTAINER}" pg_isready -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1; then
+      log "Postgres ready on localhost:${PG_PORT}."
+      break
+    fi
+    sleep 1
+  done
+  docker exec "${PG_CONTAINER}" pg_isready -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1 \
+    || die "Postgres failed to start within 30 s." 2
+fi
 
 # 3. .env
 if [ -f .env ]; then
-  log ".env already exists — leaving it. (Verify it points at port ${PG_PORT}.)"
+  if [ "${USE_EXTERNAL_DB}" -eq 1 ]; then
+    log ".env already exists — leaving it. Exported DATABASE_URL will point this run at the supplied DB."
+  else
+    log ".env already exists — leaving it. (Verify it points at port ${PG_PORT}.)"
+  fi
 else
   log "Writing .env with fresh secrets..."
   cat > .env <<EOF
@@ -197,6 +221,7 @@ Use the JWT for every API call:
 
 To stop the dev server:    kill \$(cat .e2e-server.pid)
 To wipe everything:        bash scripts/qa/bootstrap-e2e.sh --clean
+To skip Docker:            E2E_DATABASE_URL=postgresql://... bash scripts/qa/bootstrap-e2e.sh
 
 Next: proceed with Phase 1 of
   docs/qa/2026-06-09-e2e-accountant-cfo-prompt.md

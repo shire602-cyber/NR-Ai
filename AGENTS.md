@@ -401,6 +401,8 @@ Scope: this file applies to the whole repository.
 - Treat `BENCHMARK_RUN_FIXTURE=false` production runs as read-only deployment crawls only. They can
   verify Railway routes and report shells, but accountant-grade scorecard evidence needs local
   Postgres fixture probes from `scripts/qa/bootstrap-e2e.sh` plus `npm run e2e:benchmark-audit`.
+  The bootstrap starts Docker Postgres by default, or uses `E2E_DATABASE_URL`/`DATABASE_URL` when
+  pointed at an existing disposable Postgres database.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.
