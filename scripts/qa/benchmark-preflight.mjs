@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 
 import pg from "pg";
@@ -14,6 +16,8 @@ const dbUrl = process.env.E2E_DATABASE_URL || process.env.DATABASE_URL || "";
 const hasExplicitE2EDb = Boolean(process.env.E2E_DATABASE_URL);
 const productionHost = "nr-ai-production.up.railway.app";
 const isProductionTarget = target.includes(productionHost);
+const localBinSuffix = process.platform === "win32" ? ".cmd" : "";
+const localPgliteBin = path.resolve("node_modules", ".bin", `pglite-server${localBinSuffix}`);
 
 const checks = [];
 
@@ -21,7 +25,7 @@ function commandExists(command) {
   const probe =
     process.platform === "win32"
       ? spawnSync("where", [command], { encoding: "utf8" })
-      : spawnSync("command", ["-v", command], { encoding: "utf8", shell: true });
+      : spawnSync("/bin/sh", ["-c", `command -v ${command}`], { encoding: "utf8" });
   return probe.status === 0;
 }
 
@@ -73,15 +77,18 @@ check(
 );
 
 const dockerAvailable = commandExists("docker");
+const pgliteAvailable = commandExists("pglite-server") || fs.existsSync(localPgliteBin);
 check(
   "disposable-postgres-source",
-  Boolean(dbUrl) || dockerAvailable,
+  Boolean(dbUrl) || dockerAvailable || pgliteAvailable,
   dbUrl
     ? `Will use ${hasExplicitE2EDb ? "E2E_DATABASE_URL" : "DATABASE_URL"} (${safeDbSummary(dbUrl)}).`
     : dockerAvailable
       ? "Docker is available; bootstrap can start postgres:16-alpine."
-      : "No Docker and no E2E_DATABASE_URL/DATABASE_URL were found.",
-  "Install Docker or set E2E_DATABASE_URL to a disposable Postgres database."
+      : pgliteAvailable
+        ? "PGlite socket server is available; npm run e2e:benchmark-local can start a disposable Postgres-compatible database."
+        : "No Docker, PGlite socket server, or E2E_DATABASE_URL/DATABASE_URL were found.",
+  "Install Docker, install the PGlite QA dependency, or set E2E_DATABASE_URL to a disposable Postgres database."
 );
 
 if (dbUrl && !hasExplicitE2EDb) {

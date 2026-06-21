@@ -442,6 +442,18 @@ async function checkPage(page, href, targetList, screenshotBase) {
   return first;
 }
 
+async function dismissOnboardingIfVisible(page) {
+  const skipButton = page.locator('[data-testid="button-skip-onboarding"]').first();
+  const count = await skipButton.count().catch(() => 0);
+  if (!count) return;
+
+  const visible = await skipButton.isVisible().catch(() => false);
+  if (!visible) return;
+
+  await skipButton.click({ timeout: 1500 }).catch(() => null);
+  await page.waitForTimeout(500);
+}
+
 async function checkPageOnce(page, href, targetList, screenshotBase) {
   const result = { href, ok: false, issue: null, screenshot: null, bodyText: "" };
   const pageErrors = [];
@@ -457,6 +469,7 @@ async function checkPageOnce(page, href, targetList, screenshotBase) {
   try {
     await page.goto(`${BASE}${href}`, { timeout: 45000, waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
+    await dismissOnboardingIfVisible(page);
     const bodyText = await page
       .locator("body")
       .innerText()

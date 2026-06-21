@@ -307,6 +307,8 @@ export default function AdvancedReports() {
             ? "تحليلات مالية متقدمة ومقارنات الفترات"
             : "Advanced analytics, cash flow analysis, and period comparisons"
         }
+        backHref="/reports"
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
           <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
             <SelectTrigger className="w-32" data-testid="select-period">

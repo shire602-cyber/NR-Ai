@@ -35,8 +35,9 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatDate, formatNumber } from "@/lib/format";
-import { Plus, ArrowRightLeft, RefreshCw } from "lucide-react";
+import { exportToExcel, prepareFxGainsLossesForExport } from "@/lib/export";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
+import { Plus, ArrowRightLeft, RefreshCw, Download } from "lucide-react";
 
 const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "PKR", "EGP", "BHD", "QAR"];
 
@@ -58,6 +59,30 @@ interface ConvertResult {
   convertedAmount: number;
   rate: number;
   effectiveDate?: string;
+}
+
+interface FxExposureRow {
+  entityType: string;
+  entityId: string;
+  entityNumber: string;
+  counterparty: string;
+  currency: string;
+  foreignAmount: number;
+  transactionRate: number;
+  currentRate: number;
+  bookValueAed: number;
+  currentValueAed: number;
+  unrealizedGainLoss: number;
+}
+
+interface FxGainsLossesReport {
+  asOf: string;
+  baseCurrency: string;
+  receivables: FxExposureRow[];
+  payables: FxExposureRow[];
+  totalUnrealizedGain: number;
+  totalUnrealizedLoss: number;
+  netUnrealizedGainLoss: number;
 }
 
 export default function ExchangeRates() {
@@ -85,6 +110,11 @@ export default function ExchangeRates() {
     enabled: !!companyId,
   });
 
+  const { data: fxReport, isLoading: isLoadingFxReport } = useQuery<FxGainsLossesReport>({
+    queryKey: [`/api/companies/${companyId}/reports/fx-gains-losses`],
+    enabled: !!companyId,
+  });
+
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: {
@@ -97,6 +127,9 @@ export default function ExchangeRates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/exchange-rates`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/reports/fx-gains-losses`],
+      });
       setShowAddDialog(false);
       setFormRate("");
       toast({ title: "Exchange rate added successfully" });
@@ -152,6 +185,34 @@ export default function ExchangeRates() {
     convertMutation.mutate();
   };
 
+  const handleExportFxReport = async () => {
+    if (!fxReport) {
+      toast({
+        title: "No report data",
+        description: "FX Gains and Losses is still loading or has no rows to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await exportToExcel(
+        prepareFxGainsLossesForExport(fxReport),
+        `fx_gains_losses_${new Date().toISOString().slice(0, 10)}`
+      );
+      toast({
+        title: "Report exported",
+        description: "FX Gains and Losses has been downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unable to export FX report.",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (!canAccess("multiCurrency")) {
     return (
       <UpgradePrompt feature="multiCurrency" requiredTier={getRequiredTier("multiCurrency")} />
@@ -181,13 +242,144 @@ export default function ExchangeRates() {
         eyebrow="Accounting"
         title="Exchange Rates"
         description="Manage currency exchange rates and convert amounts"
+        backHref="/reports"
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
-          <Button onClick={() => setShowAddDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Rate
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={handleExportFxReport}
+              disabled={isLoadingFxReport || !fxReport}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button onClick={() => setShowAddDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Rate
+            </Button>
+          </>
         }
       />
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>FX Gains and Losses</CardTitle>
+            <CardDescription>
+              As of {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : "today"} · Source
+              basis: unpaid foreign-currency invoices and unposted foreign-currency receipt
+              expenses remeasured using saved exchange rates. Values are shown in{" "}
+              {fxReport?.baseCurrency || "AED"}.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingFxReport ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Open exposures
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {(fxReport?.receivables?.length ?? 0) + (fxReport?.payables?.length ?? 0)}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Unrealized gains
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold text-green-700">
+                    {formatCurrency(fxReport?.totalUnrealizedGain ?? 0, "AED", locale)}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Unrealized losses
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold text-red-700">
+                    {formatCurrency(fxReport?.totalUnrealizedLoss ?? 0, "AED", locale)}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Net gain / loss
+                  </p>
+                  <p
+                    className={`mt-1 text-2xl font-semibold ${
+                      (fxReport?.netUnrealizedGainLoss ?? 0) >= 0
+                        ? "text-green-700"
+                        : "text-red-700"
+                    }`}
+                  >
+                    {formatCurrency(fxReport?.netUnrealizedGainLoss ?? 0, "AED", locale)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead>Counterparty</TableHead>
+                      <TableHead>Currency</TableHead>
+                      <TableHead className="text-right">Foreign amount</TableHead>
+                      <TableHead className="text-right">Transaction rate</TableHead>
+                      <TableHead className="text-right">Current rate</TableHead>
+                      <TableHead className="text-right">Gain / loss</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...(fxReport?.receivables ?? []), ...(fxReport?.payables ?? [])].length ===
+                    0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                          No open foreign-currency exposures for the selected as-of date.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      [...(fxReport?.receivables ?? []), ...(fxReport?.payables ?? [])].map(
+                        (row) => (
+                          <TableRow key={`${row.entityType}-${row.entityId}`}>
+                            <TableCell className="capitalize">{row.entityType}</TableCell>
+                            <TableCell className="font-mono text-sm">{row.entityNumber}</TableCell>
+                            <TableCell>{row.counterparty}</TableCell>
+                            <TableCell className="font-medium">{row.currency}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatNumber(row.foreignAmount, locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatNumber(row.transactionRate, locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatNumber(row.currentRate, locale)}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-mono ${
+                                row.unrealizedGainLoss >= 0 ? "text-green-700" : "text-red-700"
+                              }`}
+                            >
+                              {formatCurrency(row.unrealizedGainLoss, "AED", locale)}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      )
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Currency Converter Widget */}
       <Card>

@@ -13,14 +13,16 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
+  Download,
 } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -56,6 +58,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
 import { formatCurrency } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────
@@ -74,6 +77,31 @@ interface CostCenterReport {
   totalIncome: number;
   totalExpenses: number;
   netIncome: number;
+}
+
+interface CostCenterProfitabilityRow {
+  costCenterId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  totalIncome: number;
+  totalExpenses: number;
+  netIncome: number;
+  lineCount: number;
+}
+
+interface CostCenterProfitabilityReport {
+  periodStart: string | null;
+  periodEnd: string | null;
+  costCenters: CostCenterProfitabilityRow[];
+  totals: {
+    costCenterCount: number;
+    activeCostCenterCount: number;
+    allocatedLineCount: number;
+    totalIncome: number;
+    totalExpenses: number;
+    netIncome: number;
+  };
 }
 
 // ─── Schemas ─────────────────────────────────────────────
@@ -107,6 +135,12 @@ export default function CostCenters() {
     queryKey: [`/api/companies/${companyId}/cost-centers`],
     enabled: !!companyId,
   });
+
+  const { data: profitabilityReport, isLoading: isLoadingProfitability } =
+    useQuery<CostCenterProfitabilityReport>({
+      queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
+      enabled: !!companyId,
+    });
 
   const { data: report } = useQuery<CostCenterReport>({
     queryKey: [`/api/companies/${companyId}/cost-centers/${selectedCostCenterId}/report`],
@@ -217,6 +251,35 @@ export default function CostCenters() {
     }
   };
 
+  const handleExportCostCenterProfitability = async () => {
+    if (!profitabilityReport) {
+      toast({
+        title: "No report data",
+        description: "Cost Center P&L is still loading or has no rows to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await exportToExcel(
+        [prepareCostCenterProfitabilityForExport(profitabilityReport)],
+        `cost_center_pnl_${new Date().toISOString().slice(0, 10)}`
+      );
+      toast({
+        title: "Report exported",
+        description: "Cost Center P&L has been downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description:
+          error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // ─── Helpers ──────────────────────────────────────────
 
   const getParentName = (parentId: string | null | undefined): string => {
@@ -243,6 +306,21 @@ export default function CostCenters() {
   const activeCount = costCenters.filter((cc) => cc.isActive).length;
   const inactiveCount = costCenters.filter((cc) => !cc.isActive).length;
   const selectedCostCenter = costCenters.find((cc) => cc.id === selectedCostCenterId);
+  const profitabilityRows = profitabilityReport?.costCenters ?? [];
+  const profitabilityTotals = profitabilityReport?.totals ?? {
+    costCenterCount: 0,
+    activeCostCenterCount: 0,
+    allocatedLineCount: 0,
+    totalIncome: 0,
+    totalExpenses: 0,
+    netIncome: 0,
+  };
+  const profitabilityPeriodLabel =
+    profitabilityReport?.periodStart || profitabilityReport?.periodEnd
+      ? `${profitabilityReport.periodStart ?? "Beginning"} to ${
+          profitabilityReport.periodEnd ?? "today"
+        }`
+      : "All posted periods";
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
@@ -264,13 +342,140 @@ export default function CostCenters() {
         eyebrow="Accounting"
         title="Cost Centers"
         description="Manage cost centers for departmental accounting and P&L tracking"
+        backHref="/reports"
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
-          <Button onClick={handleOpenCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Cost Center
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={handleExportCostCenterProfitability}
+              disabled={isLoadingProfitability || !profitabilityReport}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </Button>
+            <Button onClick={handleOpenCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Cost Center
+            </Button>
+          </>
         }
       />
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>Cost Center P&L</CardTitle>
+            <CardDescription>
+              Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
+              cost centers, grouped by income and expense accounts.
+            </CardDescription>
+          </div>
+          <Badge variant="secondary" className="w-fit">
+            Accrual basis
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          {isLoadingProfitability ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Active centers
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Income
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold text-green-700">
+                    {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Expenses
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold text-red-700">
+                    {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Net income
+                  </p>
+                  <p
+                    className={`mt-1 text-2xl font-semibold ${
+                      profitabilityTotals.netIncome >= 0 ? "text-green-700" : "text-red-700"
+                    }`}
+                  >
+                    {formatCurrency(profitabilityTotals.netIncome, "AED", locale)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Code</TableHead>
+                      <TableHead>Cost Center</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Income</TableHead>
+                      <TableHead className="text-right">Expenses</TableHead>
+                      <TableHead className="text-right">Net Income</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {profitabilityRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                          No cost center allocations have been posted yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      profitabilityRows.map((row) => (
+                        <TableRow key={row.costCenterId}>
+                          <TableCell className="font-mono text-sm">{row.code}</TableCell>
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell>
+                            <Badge variant={row.isActive ? "default" : "secondary"}>
+                              {row.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.totalIncome, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.totalExpenses, "AED", locale)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono ${
+                              row.netIncome >= 0 ? "text-green-700" : "text-red-700"
+                            }`}
+                          >
+                            {formatCurrency(row.netIncome, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
