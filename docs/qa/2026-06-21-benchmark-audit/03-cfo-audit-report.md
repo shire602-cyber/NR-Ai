@@ -22,5 +22,3 @@ Production read-only evidence is useful for deployment confidence, but the full 
 | Priority |Area |Finding |Evidence |Required fix |
 | --- |--- |--- |--- |--- |
 | P1 |Synthetic accounting coverage |No synthetic accounting fixture probes ran, so accountant-grade correctness remains unscored. |Production run was intentionally read-only; route/report rendering evidence is valid, but trial balance, VAT/CT tie-outs, and subledger probes require a local synthetic run. |Run `bash scripts/qa/bootstrap-e2e.sh`, then `BASE_URL=http://localhost:5000 npm run e2e:benchmark-audit` and review the generated probes. |
-| P1 |Report shell |A/R Aging is missing benchmark shell controls. |back=false, export=true, period=true |Bring report into shared shell or add equivalent back/export/period controls. |
-| P1 |Report shell |A/P Aging is missing benchmark shell controls. |back=false, export=false, period=true |Bring report into shared shell or add equivalent back/export/period controls. |
