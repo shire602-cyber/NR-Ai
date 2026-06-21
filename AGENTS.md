@@ -394,6 +394,9 @@ Scope: this file applies to the whole repository.
 - Populate a dedicated synthetic report-audit company with `BASE_URL=... npm run
   e2e:report-fixture`; it writes ignored evidence to `tests/e2e/.artifacts/` and should not be
   pointed at real client books.
+- For high-volume report behavior checks, run `BASE_URL=... REPORT_STRESS_EMAIL=...
+  REPORT_STRESS_PASSWORD=... node tests/e2e/report-stress-fixture.mjs`; use a dedicated synthetic
+  company only, and keep `REPORT_STRESS_WRITE_DELAY_MS` high enough to avoid production rate limits.
 - Run the competitor-grade benchmark audit with `BASE_URL=http://localhost:5000 npm run
   e2e:benchmark-audit`; it uses the report fixture by default, refuses production writes unless
   `BENCHMARK_ALLOW_PROD_WRITES=true` is explicitly set, and writes review evidence under
