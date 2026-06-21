@@ -47,6 +47,9 @@ const PAGE_DELAY_MS = Number(
 );
 const RETRY_429_MS = Number(process.env.BENCHMARK_RETRY_429_MS || (IS_PRODUCTION ? "10000" : "5000"));
 const MAX_RATE_LIMIT_RETRIES = Number(process.env.BENCHMARK_MAX_429_RETRIES || "3");
+const MOBILE_COOLDOWN_MS = Number(
+  process.env.BENCHMARK_MOBILE_COOLDOWN_MS || (IS_PRODUCTION ? "15000" : "0")
+);
 
 const competitorAnchors = [
   {
@@ -339,9 +342,30 @@ async function runBrowserAudit(credentials) {
       });
     }
 
-    await page.setViewportSize({ width: 390, height: 844 });
-    for (const route of mobileRoutes) {
-      await checkPage(page, route, state.mobileChecks, `mobile-${slug(route)}`);
+    if (MOBILE_COOLDOWN_MS > 0) {
+      await page.waitForTimeout(MOBILE_COOLDOWN_MS);
+    }
+    const mobileCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    try {
+      const mobilePage = await mobileCtx.newPage();
+      const mobileLogin = await mobilePage.request.post(`${BASE}/api/auth/login`, {
+        data: { email: credentials.email, password: credentials.password },
+      });
+      if (mobileLogin.status() >= 300) {
+        state.mobileChecks.push({
+          href: "/login",
+          ok: false,
+          issue: `Mobile benchmark login failed with HTTP ${mobileLogin.status()}.`,
+          screenshot: null,
+          bodyText: "",
+        });
+      } else {
+        for (const route of mobileRoutes) {
+          await checkPage(mobilePage, route, state.mobileChecks, `mobile-${slug(route)}`);
+        }
+      }
+    } finally {
+      await mobileCtx.close();
     }
   } finally {
     await browser.close();

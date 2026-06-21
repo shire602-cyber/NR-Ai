@@ -22,5 +22,3 @@ Muhasib.ai has enough benchmark evidence to rank gaps, but any score below 5 mea
 | Priority |Area |Finding |Evidence |Required fix |
 | --- |--- |--- |--- |--- |
 | P1 |Rate-limit pressure |/reports hit API 429 during benchmark crawl. |{"blank":true,"failureText":null,"pageErrors":[],"apiFailures":["GET 429 https://nr-ai-production.up.railway.app/api/companies","GET 429 https://nr-ai-production.up.railway.app/api/auth/me"]} |Tune audit pacing or production read-rate limits; confirm normal manual usage is unaffected. |
-| P1 |Report shell |Cash Flow Statement is missing benchmark shell controls. |back=false, export=false, period=true |Bring report into shared shell or add equivalent back/export/period controls. |
-| P1 |Report shell |VAT Return is missing benchmark shell controls. |back=false, export=true, period=true |Bring report into shared shell or add equivalent back/export/period controls. |

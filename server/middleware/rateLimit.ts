@@ -171,9 +171,9 @@ export const limiterProfiles = {
   read: {
     // Relaxed for GET-heavy dashboards: each page view fires 8-15 GETs and
     // shared office IPs multiply that, so the ceiling must stay far above
-    // legitimate navigation while still capping abuse.
+    // legitimate navigation/report review crawls while still capping abuse.
     windowMs: envInt("RL_READ_WINDOW_MS", 60_000),
-    max: envInt("RL_READ_MAX", 1200),
+    max: envInt("RL_READ_MAX", 3000),
     message: "Too many requests. Please try again later.",
   } as RouteLimit,
 };

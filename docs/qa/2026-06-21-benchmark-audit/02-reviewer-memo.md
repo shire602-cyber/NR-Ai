@@ -14,8 +14,8 @@
 | --- |--- |--- |--- |--- |--- |--- |
 | Profit & Loss |Financial Statements |Pass |yes |yes |yes |screenshots/report-profit-loss.png |
 | Balance Sheet |Financial Statements |Pass |yes |yes |yes |screenshots/report-balance-sheet.png |
-| Cash Flow Statement |Financial Statements |Pass |no |no |yes |screenshots/report-cash-flow.png |
-| VAT Return |Tax |Pass |no |yes |yes |screenshots/report-vat-return.png |
+| Cash Flow Statement |Financial Statements |Pass |yes |yes |yes |screenshots/report-cash-flow.png |
+| VAT Return |Tax |Pass |yes |yes |yes |screenshots/report-vat-return.png |
 | General Ledger |Accountant Tools |Pass |yes |yes |yes |screenshots/report-general-ledger.png |
 
 ## Reviewer Verdict

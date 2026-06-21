@@ -18,7 +18,7 @@ Target: https://nr-ai-production.up.railway.app
 | --- |--- |--- |
 | Accounting integrity |2 |GL balances, subledger tie-outs, period lock, audit trail. |
 | UAE tax and compliance |2 |VAT 201, corporate tax, WPS, e-invoice readiness, Arabic/RTL. |
-| Report center and precision |3 |Catalog discovery, one-report view, source basis, export, drilldown. |
+| Report center and precision |4 |Catalog discovery, one-report view, source basis, export, drilldown. |
 | Receivables and payables |3 |Invoices, credit notes, customer/vendor balances, bills, payments. |
 | Banking and reconciliation |3 |Statement import, match rules, unreconciled queue, cash proof. |
 | Payroll, inventory, and assets |3 |Payroll/WPS, inventory valuation/movement, fixed assets, depreciation. |
