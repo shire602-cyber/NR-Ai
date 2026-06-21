@@ -846,8 +846,25 @@ export function registerReportRoutes(app: Express) {
         return s + (r.vatAmount ?? 0) * rate;
       }, 0);
 
+      const billVatRes = await pool.query(
+        `SELECT
+           COALESCE(SUM(subtotal * COALESCE(exchange_rate, 1)), 0) AS subtotal,
+           COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
+         FROM vendor_bills
+         WHERE company_id = $1
+           AND bill_date >= $2::date
+           AND bill_date <= $3::date
+           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
+           AND COALESCE(reverse_charge, false) = false`,
+        [companyId, from, to]
+      );
+      const approvedBillExpenses = Number(billVatRes.rows[0]?.subtotal || 0);
+      const approvedBillInputVat = Number(billVatRes.rows[0]?.vat || 0);
+
       const totalSupplies = standardRatedSupplies + zeroRatedSupplies + exemptSupplies;
-      const netVatDue = outputVat - inputVat;
+      const totalStandardRatedExpenses = standardRatedExpenses + approvedBillExpenses;
+      const totalInputVat = inputVat + approvedBillInputVat;
+      const netVatDue = outputVat - totalInputVat;
 
       res.json({
         period: { from, to },
@@ -856,8 +873,8 @@ export function registerReportRoutes(app: Express) {
         box3_exemptSupplies: exemptSupplies,
         box4_totalSupplies: totalSupplies,
         box5_outputVat: outputVat,
-        box6_standardRatedExpenses: standardRatedExpenses,
-        box7_inputVatRecoverable: inputVat,
+        box6_standardRatedExpenses: totalStandardRatedExpenses,
+        box7_inputVatRecoverable: totalInputVat,
         box8_netVatDue: netVatDue,
       });
     })

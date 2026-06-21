@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { pool } from "../db";
 import { uaeDayStart, uaeDayEnd, uaeMonthStart, uaeMonthEnd, uaeYmdParts } from "../utils/date";
 
 // Identifies a "real cash" account — bank, cash on hand, or petty cash.
@@ -580,6 +581,30 @@ export function registerDashboardRoutes(app: Express) {
           purchasesVAT += (receipt.vatAmount || 0) * rate;
         }
       }
+
+      const billVatParams: string[] = [companyId];
+      const billVatFilters: string[] = [];
+      if (startDate) {
+        billVatParams.push(startDate as string);
+        billVatFilters.push(`bill_date >= $${billVatParams.length}::date`);
+      }
+      if (endDate) {
+        billVatParams.push(endDate as string);
+        billVatFilters.push(`bill_date <= $${billVatParams.length}::date`);
+      }
+      const billVatRes = await pool.query(
+        `SELECT
+           COALESCE(SUM(subtotal * COALESCE(exchange_rate, 1)), 0) AS subtotal,
+           COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
+         FROM vendor_bills
+         WHERE company_id = $1
+           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
+           AND COALESCE(reverse_charge, false) = false
+           ${billVatFilters.length ? `AND ${billVatFilters.join(" AND ")}` : ""}`,
+        billVatParams
+      );
+      purchasesSubtotal += Number(billVatRes.rows[0]?.subtotal || 0);
+      purchasesVAT += Number(billVatRes.rows[0]?.vat || 0);
 
       res.json({
         reportCurrency: "AED",
