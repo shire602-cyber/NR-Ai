@@ -1107,6 +1107,144 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: "whatsapp_bridge_jobs source index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_whatsapp_bridge_jobs_source" ON "whatsapp_bridge_jobs" ("source_type", "source_id")`,
     },
+    // ── 0075-0079: report delivery and automation preference tables ─────
+    // Some production databases had the migration files present but the
+    // Drizzle journal stopped before these report-delivery migrations. Keep
+    // these guards idempotent so scheduler/report APIs do not fail while the
+    // normal migration ledger catches up on the next successful deploy.
+    {
+      name: "company_report_delivery_subscriptions table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS "company_report_delivery_subscriptions" (
+          "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+          "subscription_id" text NOT NULL,
+          "enabled" boolean NOT NULL DEFAULT true,
+          "cadence_override" text,
+          "channel_override" text,
+          "format_override" text,
+          "recipients_override" text,
+          "delivery_guardrail_override" text,
+          "created_by" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+          "updated_by" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL,
+          CONSTRAINT "company_report_delivery_subscriptions_unique"
+            UNIQUE ("company_id", "subscription_id")
+        )
+      `,
+    },
+    {
+      name: "company_report_delivery_subscriptions company index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_subscriptions_company_id" ON "company_report_delivery_subscriptions" ("company_id")`,
+    },
+    {
+      name: "company_report_delivery_subscriptions subscription index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_subscriptions_subscription_id" ON "company_report_delivery_subscriptions" ("subscription_id")`,
+    },
+    {
+      name: "company_report_delivery_runs table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS "company_report_delivery_runs" (
+          "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+          "subscription_id" text NOT NULL,
+          "status" text NOT NULL DEFAULT 'queued',
+          "readiness_status" text NOT NULL,
+          "notification_id" uuid,
+          "scheduled_for" timestamp NOT NULL,
+          "queued_by" uuid REFERENCES "users"("id") ON DELETE SET NULL,
+          "channel" text NOT NULL,
+          "format" text NOT NULL,
+          "recipients" text NOT NULL,
+          "delivery_guardrail" text NOT NULL,
+          "report_count" integer NOT NULL DEFAULT 0,
+          "ready_report_count" integer NOT NULL DEFAULT 0,
+          "trigger_rule_count" integer NOT NULL DEFAULT 0,
+          "snapshot" jsonb NOT NULL DEFAULT '{}'::jsonb,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL
+        )
+      `,
+    },
+    {
+      name: "company_report_delivery_runs retry columns",
+      sql: sql`
+        ALTER TABLE "company_report_delivery_runs"
+          ADD COLUMN IF NOT EXISTS "retried_from_run_id" uuid,
+          ADD COLUMN IF NOT EXISTS "error_message" text
+      `,
+    },
+    {
+      name: "company_report_delivery_runs company index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_runs_company_id" ON "company_report_delivery_runs" ("company_id")`,
+    },
+    {
+      name: "company_report_delivery_runs subscription index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_runs_subscription_id" ON "company_report_delivery_runs" ("subscription_id")`,
+    },
+    {
+      name: "company_report_delivery_runs company subscription index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_runs_company_subscription" ON "company_report_delivery_runs" ("company_id", "subscription_id")`,
+    },
+    {
+      name: "company_report_delivery_runs scheduled index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_runs_scheduled_for" ON "company_report_delivery_runs" ("scheduled_for")`,
+    },
+    {
+      name: "company_report_delivery_scheduler_scans table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS "company_report_delivery_scheduler_scans" (
+          "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+          "status" text NOT NULL DEFAULT 'success',
+          "started_at" timestamp NOT NULL,
+          "finished_at" timestamp NOT NULL,
+          "scanned_subscriptions" integer NOT NULL DEFAULT 0,
+          "queued_runs" integer NOT NULL DEFAULT 0,
+          "skipped_paused" integer NOT NULL DEFAULT 0,
+          "skipped_setup" integer NOT NULL DEFAULT 0,
+          "skipped_not_due" integer NOT NULL DEFAULT 0,
+          "skipped_no_actor" integer NOT NULL DEFAULT 0,
+          "errors" integer NOT NULL DEFAULT 0,
+          "message" text,
+          "snapshot" jsonb NOT NULL DEFAULT '{}'::jsonb,
+          "created_at" timestamp DEFAULT now() NOT NULL
+        )
+      `,
+    },
+    {
+      name: "company_report_delivery_scheduler_scans company index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_scheduler_scans_company_id" ON "company_report_delivery_scheduler_scans" ("company_id")`,
+    },
+    {
+      name: "company_report_delivery_scheduler_scans finished index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_delivery_scheduler_scans_finished_at" ON "company_report_delivery_scheduler_scans" ("finished_at")`,
+    },
+    {
+      name: "company_report_automation_preferences table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS "company_report_automation_preferences" (
+          "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+          "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+          "persona" text NOT NULL,
+          "preferred_delivery_automation_command" text,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL,
+          CONSTRAINT "company_report_automation_preferences_unique"
+            UNIQUE ("company_id", "user_id", "persona")
+        )
+      `,
+    },
+    {
+      name: "company_report_automation_preferences company index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_automation_preferences_company_id" ON "company_report_automation_preferences" ("company_id")`,
+    },
+    {
+      name: "company_report_automation_preferences user index",
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_company_report_automation_preferences_user_id" ON "company_report_automation_preferences" ("user_id")`,
+    },
     // ── 0057: corporate tax manual workpaper support ───────────────────
     // Production can contain drifted databases where the migration ledger is
     // ahead of a specific table. Keep this guard non-fatal when the table is
