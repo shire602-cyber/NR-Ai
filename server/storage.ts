@@ -973,6 +973,95 @@ export interface IStorage {
   upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig>;
 }
 
+function parseAuditDetails(details: string | null): Record<string, unknown> {
+  if (!details) return {};
+  try {
+    const parsed = JSON.parse(details);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function sentenceCase(value: string): string {
+  const cleaned = value.replace(/[._-]+/g, " ").trim();
+  if (!cleaned) return "Activity recorded";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function describeAuditLog(row: AuditLog): string {
+  const details = parseAuditDetails(row.details ?? null);
+  const after =
+    details.after && typeof details.after === "object"
+      ? (details.after as Record<string, unknown>)
+      : {};
+  const before =
+    details.before && typeof details.before === "object"
+      ? (details.before as Record<string, unknown>)
+      : {};
+  const documentNumber =
+    after.number ||
+    after.entryNumber ||
+    after.code ||
+    before.number ||
+    before.entryNumber ||
+    row.resourceId;
+  const entityLabel = row.resourceType.replace(/_/g, " ");
+
+  switch (row.action) {
+    case "invoice.create":
+      return `Invoice ${documentNumber || row.resourceId || ""} created`.trim();
+    case "invoice.status_change":
+      return `Invoice ${documentNumber || row.resourceId || ""} status changed`.trim();
+    case "journal.create_posted":
+      return `Journal entry ${documentNumber || row.resourceId || ""} posted`.trim();
+    case "journal.create_draft":
+      return `Journal entry ${documentNumber || row.resourceId || ""} saved as draft`.trim();
+    case "journal.reverse":
+      return `Journal entry ${documentNumber || row.resourceId || ""} reversed`.trim();
+    case "account.create":
+      return `Account ${documentNumber || row.resourceId || ""} created`.trim();
+    case "account.update":
+      return `Account ${documentNumber || row.resourceId || ""} updated`.trim();
+    case "account.type_change":
+      return `Account ${documentNumber || row.resourceId || ""} type changed`.trim();
+    case "receipt.create":
+      return `Receipt ${documentNumber || row.resourceId || ""} created`.trim();
+    case "receipt.update":
+      return `Receipt ${documentNumber || row.resourceId || ""} updated`.trim();
+    case "receipt.post":
+      return `Receipt ${documentNumber || row.resourceId || ""} posted to ledger`.trim();
+    case "bank_statement.match_confirmed":
+      return `Bank transaction ${documentNumber || row.resourceId || ""} match confirmed`.trim();
+    case "payroll.run_approved":
+      return `Payroll run ${documentNumber || row.resourceId || ""} approved`.trim();
+    default:
+      return `${sentenceCase(row.action)} on ${entityLabel}${row.resourceId ? ` ${row.resourceId}` : ""}`;
+  }
+}
+
+function auditLogToActivityLog(row: AuditLog, companyId: string | null): ActivityLog {
+  const details = parseAuditDetails(row.details ?? null);
+  const rowCompanyId =
+    companyId || (typeof details.companyId === "string" ? details.companyId : null);
+
+  return {
+    id: row.id,
+    userId: row.userId,
+    companyId: rowCompanyId,
+    action: row.action,
+    entityType: row.resourceType,
+    entityId: row.resourceId,
+    description: describeAuditLog(row),
+    metadata: row.details,
+    ipAddress: row.ipAddress,
+    userAgent: row.userAgent,
+    createdAt: row.createdAt,
+  };
+}
+
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
@@ -4101,16 +4190,39 @@ export class DatabaseStorage implements IStorage {
 
   // Activity Logs (Admin)
   async getActivityLogs(limit: number = 100): Promise<ActivityLog[]> {
-    return await db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt)).limit(limit);
+    const [activityRows, auditRows] = await Promise.all([
+      db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt)).limit(limit),
+      db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit),
+    ]);
+
+    return [...activityRows, ...auditRows.map((row: AuditLog) => auditLogToActivityLog(row, null))]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
   }
 
   async getActivityLogsByCompany(companyId: string, limit: number = 100): Promise<ActivityLog[]> {
-    return await db
-      .select()
-      .from(activityLogs)
-      .where(eq(activityLogs.companyId, companyId))
-      .orderBy(desc(activityLogs.createdAt))
-      .limit(limit);
+    const auditCompanyPattern = `%"companyId":"${companyId}"%`;
+    const [activityRows, auditRows] = await Promise.all([
+      db
+        .select()
+        .from(activityLogs)
+        .where(eq(activityLogs.companyId, companyId))
+        .orderBy(desc(activityLogs.createdAt))
+        .limit(limit),
+      db
+        .select()
+        .from(auditLogs)
+        .where(sql`${auditLogs.details} LIKE ${auditCompanyPattern}`)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit),
+    ]);
+
+    return [
+      ...activityRows,
+      ...auditRows.map((row: AuditLog) => auditLogToActivityLog(row, companyId)),
+    ]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
   }
 
   async getActivityLogsByUser(userId: string, limit: number = 100): Promise<ActivityLog[]> {
