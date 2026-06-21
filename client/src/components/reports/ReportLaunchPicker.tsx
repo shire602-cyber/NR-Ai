@@ -95,6 +95,7 @@ interface ReportLaunchPickerProps {
   deliveryRetryDisabled?: boolean;
   deliverySubscriptionPreviewById?: Record<string, ReportLaunchDeliveryPreview | undefined>;
   preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
+  loadDeliveryAutomationPreferences?: boolean;
   companyId?: string | null;
   className?: string;
 }
@@ -340,6 +341,7 @@ export function ReportLaunchPicker({
   deliveryRetryDisabled = false,
   deliverySubscriptionPreviewById = {},
   preferredDeliveryAutomationCommand,
+  loadDeliveryAutomationPreferences = true,
   companyId = null,
   className,
 }: ReportLaunchPickerProps) {
@@ -385,7 +387,7 @@ export function ReportLaunchPicker({
   }>({
     queryKey: ["/api/companies", companyId, "report-delivery", "preferences"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/report-delivery/preferences`),
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && loadDeliveryAutomationPreferences,
     staleTime: 5 * 60_000,
     retry: 1,
   });

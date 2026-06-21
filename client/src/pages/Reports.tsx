@@ -3652,10 +3652,27 @@ export default function Reports() {
     [accessibleReportCompanies]
   );
   const advancedReportPeriod = "quarter";
+  const reportQueryOptions = {
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  } as const;
+  const shouldLoadReportData = (...reportIds: string[]) =>
+    Boolean(selectedCompanyId) &&
+    (activeReportWorkspaceTab !== "reports" ||
+      (hasFocusedReportSelection &&
+        selectedReportId !== null &&
+        reportIds.includes(selectedReportId)));
+  const shouldLoadWorkflowData = Boolean(selectedCompanyId) && activeReportWorkspaceTab !== "reports";
+  const shouldLoadReportDeliveryData =
+    Boolean(selectedCompanyId) &&
+    ["home", "automation", "delivery", "suites"].includes(activeReportWorkspaceTab);
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("profit-loss"),
   });
 
   const { data: costCenterProfitability, isLoading: costCenterProfitabilityLoading } =
@@ -3666,57 +3683,72 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/cost-centers/profitability${dateParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("cost-center-profitability"),
     });
 
   const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("balance-sheet"),
   });
 
   const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("vat-summary"),
   });
 
   const { data: cashFlowStatement = [], isLoading: cashFlowStatementLoading } = useQuery<
     CashFlowStatementRow[]
   >({
     queryKey: ["/api/reports", selectedCompanyId, "cash-flow", advancedReportPeriod],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const { data: agingReport = [], isLoading: agingReportLoading } = useQuery<AgingReportItem[]>({
     queryKey: ["/api/reports", selectedCompanyId, "aging"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("ar-aging"),
   });
 
   const { data: billAgingReport, isLoading: billAgingLoading } = useQuery<BillAgingReport>({
     queryKey: ["/api/companies", selectedCompanyId, "bills", "aging"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("ap-aging"),
   });
 
   const { data: vendorBills = [], isLoading: vendorBillsLoading } = useQuery<VendorBillReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "bills"],
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData(
+        "ap-aging",
+        "vendor-balances",
+        "expenses-vendor",
+        "expenses-category"
+      ),
     }
   );
 
   const { data: advancedPeriodComparison = [], isLoading: advancedPeriodComparisonLoading } =
     useQuery<AdvancedPeriodComparisonRow[]>({
       queryKey: ["/api/reports", selectedCompanyId, "comparison", advancedReportPeriod],
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: fxGainsLosses, isLoading: fxGainsLossesLoading } = useQuery<FxGainsLossesReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "fx-gains-losses"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const { data: vatReturns = [], isLoading: vatReturnsLoading } = useQuery<VATReturnReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "vat-returns"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const { data: corporateTaxEstimate, isLoading: corporateTaxLoading } =
@@ -3734,7 +3766,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/corporate-tax/calculate${corporateTaxParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("corporate-tax-estimate"),
     });
 
   const corporateTaxStatus = useMemo(
@@ -3760,7 +3793,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/corporate-tax/calculate${corporateTaxPreviousParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const corporateTaxBridgeRows = useMemo(
@@ -3824,7 +3858,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/pl${comparisonCurrentParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: comparisonPreviousProfitLoss, isLoading: comparisonPreviousPlLoading } =
@@ -3842,7 +3877,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/pl${comparisonPreviousParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: comparisonCurrentBalanceSheet, isLoading: comparisonCurrentBalanceSheetLoading } =
@@ -3860,7 +3896,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/balance-sheet${comparisonCurrentParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: comparisonPreviousBalanceSheet, isLoading: comparisonPreviousBalanceSheetLoading } =
@@ -3878,7 +3915,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/balance-sheet${comparisonPreviousParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const {
@@ -3898,7 +3936,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/reports/sales-product-service${comparisonCurrentParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const {
@@ -3918,7 +3957,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/reports/sales-product-service${comparisonPreviousParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const {
@@ -3938,7 +3978,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/cost-centers/profitability${comparisonCurrentParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const {
@@ -3958,7 +3999,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/cost-centers/profitability${comparisonPreviousParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const { data: comparisonCurrentVat, isLoading: comparisonCurrentVatLoading } =
@@ -3976,7 +4018,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/vat-summary${comparisonCurrentParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: comparisonPreviousVat, isLoading: comparisonPreviousVatLoading } =
@@ -3994,7 +4037,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/vat-summary${comparisonPreviousParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadWorkflowData,
     });
 
   const { data: consolidatedStatementSources = [], isLoading: consolidatedStatementsLoading } =
@@ -4060,7 +4104,10 @@ export default function Reports() {
             }
           })
         ),
-      enabled: accessibleReportCompanies.length > 0,
+      ...reportQueryOptions,
+      enabled:
+        accessibleReportCompanies.length > 0 &&
+        (shouldLoadWorkflowData || shouldLoadReportData("consolidated-statements")),
     });
 
   const { data: trialBalance, isLoading: trialBalanceLoading } = useQuery<TrialBalanceReport>({
@@ -4070,12 +4117,20 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/reports/trial-balance${trialBalanceParams}`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("trial-balance"),
   });
 
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery<InvoiceReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData(
+      "ar-aging",
+      "customer-balances",
+      "invoice-status",
+      "revenue-customer",
+      "sales-product-service"
+    ),
   });
 
   const { data: salesProductServiceReport, isLoading: salesProductServiceLoading } =
@@ -4092,25 +4147,29 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/reports/sales-product-service${salesProductServiceParams}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("sales-product-service"),
     });
 
   const { data: overdueReport, isLoading: overdueLoading } = useQuery<OverdueResponse>({
     queryKey: ["/api/chasing/overdue", selectedCompanyId],
     queryFn: () => apiRequest("GET", `/api/chasing/overdue/${selectedCompanyId}`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("ar-aging", "invoice-status"),
   });
 
   const { data: receipts = [], isLoading: receiptsLoading } = useQuery<ReceiptReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "receipts"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("expenses-vendor", "expenses-category"),
   });
 
   const { data: bankTransactions = [], isLoading: bankTransactionsLoading } = useQuery<
     BankTransactionReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "bank-statements", "transactions"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadWorkflowData,
   });
 
   const { data: expenseClaims = [], isLoading: expenseClaimsLoading } = useQuery<
@@ -4118,7 +4177,8 @@ export default function Reports() {
   >({
     queryKey: ["/api/companies", selectedCompanyId, "expense-claims"],
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/expense-claims`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("expense-claims"),
   });
 
   const { data: expenseClaimSummary, isLoading: expenseClaimSummaryLoading } =
@@ -4126,14 +4186,16 @@ export default function Reports() {
       queryKey: ["/api/companies", selectedCompanyId, "expense-claims", "summary"],
       queryFn: () =>
         apiRequest("GET", `/api/companies/${selectedCompanyId}/expense-claims/summary`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("expense-claims"),
     });
 
   const { data: payrollRuns = [], isLoading: payrollRunsLoading } = useQuery<PayrollRunReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "payroll-runs"],
       queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/payroll-runs`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("payroll-summary", "wps-sif-summary"),
     }
   );
 
@@ -4141,7 +4203,15 @@ export default function Reports() {
     JournalEntryReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData(
+      "general-ledger",
+      "account-transactions",
+      "expenses-vendor",
+      "expenses-category",
+      "month-end-close-status",
+      "audit-trail"
+    ),
   });
 
   const { data: monthEndCloseStatus, isLoading: monthEndCloseLoading } =
@@ -4152,7 +4222,8 @@ export default function Reports() {
           "GET",
           `/api/companies/${selectedCompanyId}/month-end/checklist?period=${monthEndPeriod}`
         ),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("month-end-close-status"),
     });
 
   const { data: activityLogs = [], isLoading: activityLogsLoading } = useQuery<
@@ -4160,13 +4231,15 @@ export default function Reports() {
   >({
     queryKey: ["/api/companies", selectedCompanyId, "activity-logs"],
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/activity-logs?limit=200`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("audit-trail"),
   });
 
   const { data: budgetPlans = [], isLoading: budgetPlansLoading } = useQuery<BudgetPlanReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "budget-plans"],
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("budget-actual", "cash-flow-forecast"),
     }
   );
 
@@ -4177,7 +4250,8 @@ export default function Reports() {
   const { data: varianceReport, isLoading: varianceLoading } = useQuery<VarianceReport>({
     queryKey: ["/api/budget-plans", selectedBudgetPlan?.id, "variance"],
     queryFn: () => apiRequest("GET", `/api/budget-plans/${selectedBudgetPlan?.id}/variance`),
-    enabled: !!selectedBudgetPlan?.id,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("budget-actual") && !!selectedBudgetPlan?.id,
   });
 
   const { data: cashFlowForecast, isLoading: cashFlowForecastLoading } =
@@ -4185,7 +4259,8 @@ export default function Reports() {
       queryKey: ["/api/companies", selectedCompanyId, "cashflow", "forecast", 90],
       queryFn: () =>
         apiRequest("GET", `/api/companies/${selectedCompanyId}/cashflow/forecast?days=90`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("cash-flow-forecast"),
     });
 
   const { data: balanceSummaries, isLoading: balanceSummariesLoading } =
@@ -4193,14 +4268,16 @@ export default function Reports() {
       queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-summaries"],
       queryFn: () =>
         apiRequest("GET", `/api/companies/${selectedCompanyId}/reports/balance-summaries`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("customer-balances", "vendor-balances"),
     });
 
   const { data: fixedAssets = [], isLoading: fixedAssetsLoading } = useQuery<FixedAssetReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "fixed-assets"],
       queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/fixed-assets`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("fixed-asset-register", "depreciation-schedule"),
     }
   );
 
@@ -4208,7 +4285,8 @@ export default function Reports() {
     useQuery<FixedAssetSummaryReport>({
       queryKey: ["/api/companies", selectedCompanyId, "fixed-assets", "summary"],
       queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/fixed-assets/summary`),
-      enabled: !!selectedCompanyId,
+      ...reportQueryOptions,
+      enabled: shouldLoadReportData("fixed-asset-register", "depreciation-schedule"),
     });
 
   const { data: inventoryProducts = [], isLoading: inventoryProductsLoading } = useQuery<
@@ -4216,7 +4294,8 @@ export default function Reports() {
   >({
     queryKey: ["/api/companies", selectedCompanyId, "products"],
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/products`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("inventory-valuation", "inventory-movement"),
   });
 
   const { data: inventoryMovements = [], isLoading: inventoryMovementsLoading } = useQuery<
@@ -4224,7 +4303,8 @@ export default function Reports() {
   >({
     queryKey: ["/api/companies", selectedCompanyId, "inventory-movements"],
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/inventory-movements`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportData("inventory-movement"),
   });
 
   const balancesLoading =
@@ -8649,7 +8729,8 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "subscriptions"],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/subscriptions`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportDeliveryData,
   });
 
   const reportDeliveryAutomationPreferencesQuery = useQuery<{
@@ -8658,7 +8739,8 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "preferences"],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/preferences`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportDeliveryData,
   });
 
   useEffect(() => {
@@ -8682,7 +8764,8 @@ export default function Reports() {
     queryKey: ["/api/companies", selectedCompanyId, "report-delivery", "runs"],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${selectedCompanyId}/report-delivery/runs?limit=30`),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportDeliveryData,
   });
 
   const reportDeliverySchedulerHealthQuery = useQuery<{
@@ -8695,7 +8778,8 @@ export default function Reports() {
         "GET",
         `/api/companies/${selectedCompanyId}/report-delivery/scheduler-health?limit=5`
       ),
-    enabled: !!selectedCompanyId,
+    ...reportQueryOptions,
+    enabled: shouldLoadReportDeliveryData,
   });
 
   const latestReportDeliverySchedulerScan =
@@ -14478,6 +14562,7 @@ export default function Reports() {
           deliveryRetryDisabled={!selectedCompanyId || retryReportDeliveryRun.isPending}
           deliverySubscriptionPreviewById={reportDeliveryLauncherPreviewById}
           preferredDeliveryAutomationCommand={pinnedReportDeliveryAutomationCommand}
+          loadDeliveryAutomationPreferences={activeReportWorkspaceTab === "delivery"}
           companyId={selectedCompanyId}
           className="shadow-none"
         />
