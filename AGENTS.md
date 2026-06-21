@@ -406,7 +406,7 @@ Scope: this file applies to the whole repository.
 - Run `npm run e2e:benchmark-preflight -- <base-url>` before local synthetic benchmark work; it
   checks Docker or `E2E_DATABASE_URL`, production write guards, bootstrap shell prerequisites, and
   Chromium availability before the write fixture runs.
-- Use `npm run e2e:benchmark-local` for the no-Docker full local benchmark path; it starts a
+- Use `node scripts/qa/run-local-benchmark.mjs` for the no-Docker full local benchmark path; it starts a
   disposable PGlite socket database through an existing `pglite-server`, `PGLITE_SERVER_BIN`, or
   the script's on-demand `npx -p @electric-sql/pglite-socket` fallback, runs migrations, starts the
   app, runs the fixture-backed benchmark audit, and writes evidence to

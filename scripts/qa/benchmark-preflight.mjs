@@ -88,9 +88,9 @@ check(
     : dockerAvailable
       ? "Docker is available; bootstrap can start postgres:16-alpine."
       : pgliteAvailable
-        ? "PGlite socket server is available; npm run e2e:benchmark-local can start a disposable Postgres-compatible database."
+        ? "PGlite socket server is available; node scripts/qa/run-local-benchmark.mjs can start a disposable Postgres-compatible database."
         : npxAvailable
-          ? "npx is available; npm run e2e:benchmark-local can fetch PGlite socket server on demand."
+          ? "npx is available; node scripts/qa/run-local-benchmark.mjs can fetch PGlite socket server on demand."
           : "No Docker, PGlite socket server, npx, or E2E_DATABASE_URL/DATABASE_URL were found.",
   "Install Docker, preinstall pglite-server, keep npx/network access available, or set E2E_DATABASE_URL to a disposable Postgres database."
 );
