@@ -394,6 +394,10 @@ Scope: this file applies to the whole repository.
 - Populate a dedicated synthetic report-audit company with `BASE_URL=... npm run
   e2e:report-fixture`; it writes ignored evidence to `tests/e2e/.artifacts/` and should not be
   pointed at real client books.
+- Run the competitor-grade benchmark audit with `BASE_URL=http://localhost:5000 npm run
+  e2e:benchmark-audit`; it uses the report fixture by default, refuses production writes unless
+  `BENCHMARK_ALLOW_PROD_WRITES=true` is explicitly set, and writes review evidence under
+  `docs/qa/<date>-benchmark-audit/`.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.

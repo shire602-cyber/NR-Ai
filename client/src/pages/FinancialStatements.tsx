@@ -20,6 +20,8 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useToast } from "@/hooks/use-toast";
+import { exportToExcel, type ExportData } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   TrendingUp,
@@ -30,6 +32,7 @@ import {
   CheckCircle2,
   XCircle,
   Search,
+  Download,
 } from "lucide-react";
 
 // Types matching server response shapes
@@ -86,6 +89,47 @@ function getDefaultDateRange() {
     startDate: startOfYear.toISOString().slice(0, 10),
     endDate: now.toISOString().slice(0, 10),
   };
+}
+
+function prepareCashFlowExport(data: CashFlowData): ExportData[] {
+  const detailRows = [
+    ...data.operating.breakdown.map((item) => ({ activity: "Operating", ...item })),
+    ...data.investing.breakdown.map((item) => ({ activity: "Investing", ...item })),
+    ...data.financing.breakdown.map((item) => ({ activity: "Financing", ...item })),
+  ];
+
+  return [
+    {
+      sheetName: "Cash Flow Statement",
+      columns: [
+        { header: "Metric", key: "metric", width: 34 },
+        { header: "Amount (AED)", key: "amount", width: 18 },
+      ],
+      rows: [
+        { metric: "Period start", amount: data.startDate },
+        { metric: "Period end", amount: data.endDate },
+        { metric: "Net operating cash flow", amount: data.operating.total.toFixed(2) },
+        { metric: "Net investing cash flow", amount: data.investing.total.toFixed(2) },
+        { metric: "Net financing cash flow", amount: data.financing.total.toFixed(2) },
+        { metric: "Net cash change", amount: data.netCashChange.toFixed(2) },
+      ],
+    },
+    {
+      sheetName: "Cash Flow Detail",
+      columns: [
+        { header: "Activity", key: "activity", width: 16 },
+        { header: "Code", key: "accountCode", width: 12 },
+        { header: "Account", key: "accountName", width: 34 },
+        { header: "Amount (AED)", key: "amount", width: 18 },
+      ],
+      rows: detailRows.map((row) => ({
+        activity: row.activity,
+        accountCode: row.accountCode || "",
+        accountName: row.accountName || "",
+        amount: row.amount.toFixed(2),
+      })),
+    },
+  ];
 }
 
 function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: string }) {
@@ -426,6 +470,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
 // ================================
 
 function CashFlowTab({ companyId, locale }: { companyId: string; locale: string }) {
+  const { toast } = useToast();
   const defaults = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
@@ -442,11 +487,32 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
     setQueryDates({ startDate, endDate });
   };
 
+  const handleExport = async () => {
+    if (!data) return;
+
+    try {
+      await exportToExcel(
+        prepareCashFlowExport(data),
+        `cash-flow-statement-${data.startDate}-to-${data.endDate}`
+      );
+      toast({
+        title: "Cash flow exported",
+        description: "The statement workbook has been downloaded for review.",
+      });
+    } catch (exportError: any) {
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: exportError?.message || "Could not export the cash flow statement.",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-4 items-end">
             <div className="space-y-2">
               <Label>Start Date</Label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -458,6 +524,10 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 mr-2" />
               Generate
+            </Button>
+            <Button variant="outline" onClick={() => void handleExport()} disabled={!data}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
             </Button>
           </div>
         </CardContent>
@@ -637,6 +707,8 @@ export default function FinancialStatements() {
         eyebrow="Accounting"
         title="Financial Statements"
         description="Generate profit & loss, balance sheet, and cash flow statements"
+        backHref="/reports"
+        backLabel="Back to reports"
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">

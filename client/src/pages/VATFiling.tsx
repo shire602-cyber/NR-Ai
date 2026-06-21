@@ -742,6 +742,8 @@ export default function VATFiling() {
             ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
             : "Prepare, review, and export VAT 201 figures for filing through the official channel"
         }
+        backHref="/reports"
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
           <Button onClick={handleCreateReturn} data-testid="button-create-return">
             <Calculator className="w-4 h-4 mr-2" />
