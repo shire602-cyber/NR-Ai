@@ -77,18 +77,22 @@ check(
 );
 
 const dockerAvailable = commandExists("docker");
+const npxAvailable = commandExists("npx");
 const pgliteAvailable = commandExists("pglite-server") || fs.existsSync(localPgliteBin);
+const pgliteOnDemandAvailable = pgliteAvailable || npxAvailable;
 check(
   "disposable-postgres-source",
-  Boolean(dbUrl) || dockerAvailable || pgliteAvailable,
+  Boolean(dbUrl) || dockerAvailable || pgliteOnDemandAvailable,
   dbUrl
     ? `Will use ${hasExplicitE2EDb ? "E2E_DATABASE_URL" : "DATABASE_URL"} (${safeDbSummary(dbUrl)}).`
     : dockerAvailable
       ? "Docker is available; bootstrap can start postgres:16-alpine."
       : pgliteAvailable
         ? "PGlite socket server is available; npm run e2e:benchmark-local can start a disposable Postgres-compatible database."
-        : "No Docker, PGlite socket server, or E2E_DATABASE_URL/DATABASE_URL were found.",
-  "Install Docker, install the PGlite QA dependency, or set E2E_DATABASE_URL to a disposable Postgres database."
+        : npxAvailable
+          ? "npx is available; npm run e2e:benchmark-local can fetch PGlite socket server on demand."
+          : "No Docker, PGlite socket server, npx, or E2E_DATABASE_URL/DATABASE_URL were found.",
+  "Install Docker, preinstall pglite-server, keep npx/network access available, or set E2E_DATABASE_URL to a disposable Postgres database."
 );
 
 if (dbUrl && !hasExplicitE2EDb) {

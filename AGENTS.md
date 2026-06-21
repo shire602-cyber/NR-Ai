@@ -407,9 +407,10 @@ Scope: this file applies to the whole repository.
   checks Docker or `E2E_DATABASE_URL`, production write guards, bootstrap shell prerequisites, and
   Chromium availability before the write fixture runs.
 - Use `npm run e2e:benchmark-local` for the no-Docker full local benchmark path; it starts a
-  disposable PGlite socket database, runs migrations, starts the app, runs the fixture-backed
-  benchmark audit, and writes evidence to `docs/qa/<date>-benchmark-audit-local/` unless
-  `BENCHMARK_OUTPUT_DIR` is set.
+  disposable PGlite socket database through an existing `pglite-server`, `PGLITE_SERVER_BIN`, or
+  the script's on-demand `npx -p @electric-sql/pglite-socket` fallback, runs migrations, starts the
+  app, runs the fixture-backed benchmark audit, and writes evidence to
+  `docs/qa/<date>-benchmark-audit-local/` unless `BENCHMARK_OUTPUT_DIR` is set.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.

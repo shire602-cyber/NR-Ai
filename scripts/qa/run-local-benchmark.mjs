@@ -23,6 +23,9 @@ let databaseUrl = "";
 const outputDir = process.env.BENCHMARK_OUTPUT_DIR || `docs/qa/${today}-benchmark-audit-local`;
 const binSuffix = process.platform === "win32" ? ".cmd" : "";
 const pgliteBin = path.join(repoRoot, "node_modules", ".bin", `pglite-server${binSuffix}`);
+const npxBin = process.platform === "win32" ? "npx.cmd" : "npx";
+const pgliteSocketPackage =
+  process.env.PGLITE_SOCKET_PACKAGE || "@electric-sql/pglite-socket@0.2.4";
 
 const runtimeSecret = randomBytes(32).toString("hex");
 const children = new Set();
@@ -81,6 +84,35 @@ function runCommand(label, command, args, options = {}) {
       }
     });
   });
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePgliteServer() {
+  if (process.env.PGLITE_SERVER_BIN) {
+    return {
+      command: process.env.PGLITE_SERVER_BIN,
+      args: [],
+      label: process.env.PGLITE_SERVER_BIN,
+    };
+  }
+
+  if (await fileExists(pgliteBin)) {
+    return { command: pgliteBin, args: [], label: pgliteBin };
+  }
+
+  return {
+    command: npxBin,
+    args: ["--yes", "-p", pgliteSocketPackage, "pglite-server"],
+    label: `${pgliteSocketPackage} via npx`,
+  };
 }
 
 async function waitForDatabase(timeoutMs = 30000) {
@@ -211,8 +243,10 @@ try {
     log(`Port ${requestedDbPort} is busy; using database port ${dbPort}.`);
   }
 
-  log(`Starting PGlite socket database on ${dbHost}:${dbPort}...`);
-  dbServer = spawnLogged("pglite", pgliteBin, [
+  const pgliteServer = await resolvePgliteServer();
+  log(`Starting PGlite socket database on ${dbHost}:${dbPort} using ${pgliteServer.label}...`);
+  dbServer = spawnLogged("pglite", pgliteServer.command, [
+    ...pgliteServer.args,
     "--db=memory://",
     `--port=${dbPort}`,
     `--host=${dbHost}`,
