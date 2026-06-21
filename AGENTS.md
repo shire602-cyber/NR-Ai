@@ -403,6 +403,9 @@ Scope: this file applies to the whole repository.
   Postgres fixture probes from `scripts/qa/bootstrap-e2e.sh` plus `npm run e2e:benchmark-audit`.
   The bootstrap starts Docker Postgres by default, or uses `E2E_DATABASE_URL`/`DATABASE_URL` when
   pointed at an existing disposable Postgres database.
+- Run `npm run e2e:benchmark-preflight -- <base-url>` before local synthetic benchmark work; it
+  checks Docker or `E2E_DATABASE_URL`, production write guards, bootstrap shell prerequisites, and
+  Chromium availability before the write fixture runs.
 - For a focused API contract gate, run `npm run check:api-contract`; `npm run check` and
   `npm run audit:campaign` already include it.
 - Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.

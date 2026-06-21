@@ -26,6 +26,7 @@
     "smoke:prod": "node scripts/production-smoke.mjs",
     "smoke:prod:routes": "node tests/e2e/authenticated-smoke-crawl.mjs",
     "e2e:report-fixture": "node tests/e2e/report-audit-fixture.mjs",
+    "e2e:benchmark-preflight": "node scripts/qa/benchmark-preflight.mjs",
     "e2e:benchmark-audit": "tsx tests/e2e/benchmark-audit.mjs",
     "security:verify-prod": "node scripts/verify-production-security.mjs",
     "check:api-contract": "node scripts/check-api-contract.mjs",
