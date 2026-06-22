@@ -1,7 +1,9 @@
 # Credit-Note Consolidation Plan (A-B11)
 
-> Design/plan only — implementation needs a data migration and real-DB testing,
-> so it's deliberately not done blind. Companion to `FIX_PLAN.md`.
+> Implemented on `fix/p0-correctness-and-security` via migration
+> `0081_credit_note_consolidation.sql` plus the guarded real-DB regression
+> `RUN_DB_INTEGRATION=1 INTEGRATION_DATABASE_URL=... npm run
+> test:credit-note-consolidation`.
 
 ## The problem
 
@@ -63,3 +65,18 @@ Make the **invoice-embedded** path canonical; deprecate standalone
 - A real-DB integration test: create a standalone CN, run the backfill, assert
   the VAT return total is unchanged (no double/under count) before vs after, and
   that the trial balance still ties.
+
+## Implementation notes
+
+- `invoices.legacy_credit_note_id` is the durable idempotency marker for migrated
+  standalone rows.
+- Existing standalone CN journal entries are repointed from
+  `source='credit_note'` to `source='invoice'` with the canonical credit-note
+  invoice ID. The journal lines are not rewritten, so posted balances stay
+  unchanged.
+- Issued standalone rows without a source journal are posted only when the
+  company has the default AR, revenue, VAT-output accounts and a company user to
+  satisfy journal audit fields.
+- The legacy `credit_notes` / `credit_note_lines` tables remain for retention,
+  but live reads/PDFs now adapt canonical invoice credit notes and standalone
+  writes return HTTP 410.

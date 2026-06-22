@@ -2083,6 +2083,7 @@ export class DatabaseStorage implements IStorage {
         lastReminderSentAt: invoices.lastReminderSentAt,
         invoiceType: invoices.invoiceType,
         originalInvoiceId: invoices.originalInvoiceId,
+        legacyCreditNoteId: invoices.legacyCreditNoteId,
         isRecurring: invoices.isRecurring,
         recurringInterval: invoices.recurringInterval,
         nextRecurringDate: invoices.nextRecurringDate,

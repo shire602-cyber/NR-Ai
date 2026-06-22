@@ -99,11 +99,12 @@
   don't match, so a preparer can't silently over/under-declare. Chose validation over auto-mirroring because
   Box 10 is a manual category and auto-mirroring would double-count the recovery (→ under-declaration/penalty).
   Tested. Files: `firm-vat-workspace.service.ts`. (UI surfacing of the warning is a small follow-up.)
-- [~] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** CLARIFIED: the PRIMARY
+- [x] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** DONE: the PRIMARY
   (invoice-embedded, invoiceType='credit_note') path is already FX-correct — those rows flow through the
-  invoice line query which multiplies by `i.exchange_rate`. The gap is only the SEPARATE standalone
-  `credit_notes` table query (`vat-autopilot.service.ts:679-689`), and that table has NO exchange_rate column,
-  so fixing it is part of the A-B11 standalone-CN consolidation (add+capture a rate there). Tracked under A-B11.
+  invoice line query which multiplies by `i.exchange_rate`. The standalone path is now consolidated into
+  canonical invoice credit notes before the standalone VAT subtraction is removed, so VAT picks up credit notes
+  exactly once through the FX-aware invoice-line query. Files: `0081_credit_note_consolidation.sql`,
+  `credit-note-consolidation.service.ts`, `vat-autopilot.service.ts`, `vat.routes.ts`.
 - [~] **A-B14 NULL line VAT rate silently defaults to 5%.** REVIEWED: current logic is FTA-conservative and
   correct — explicit `vatSupplyType` (zero/exempt/out-of-scope) always wins over rate, and only a line with
   BOTH null supply type and null rate defaults to standard 5% (the safe default). No code change; behavior is
@@ -131,11 +132,15 @@
 ### A7 · Precision, dedup & dead code
 - [ ] **A-B17 Money read/aggregation is float-based.** Fix: money custom type returns string/Decimal;
   aggregate reports/trial-balance/month-end with decimal.js. Files: `schema.ts:22-32` + report routes.
-- [~] **A-B11 Two divergent credit-note systems.** PLAN PROVIDED: `docs/CREDIT_NOTE_CONSOLIDATION_PLAN.md`
-  (make invoice-embedded canonical, backfill standalone rows, remove the divergent VAT-return subtraction in
-  the same release, retire the table). Implementation deliberately deferred — it's a data migration whose
-  step ordering directly affects the FTA VAT return, so it must be validated against a real DB, not the
-  mocked-DB suite. The primary CN path already works, so no correctness emergency. Resolves A-B15 too.
+- [x] **A-B11 Two divergent credit-note systems.** DONE: `0081_credit_note_consolidation.sql` adds
+  `invoices.legacy_credit_note_id`, backfills standalone `credit_notes` into canonical invoice credit notes
+  with negative invoice lines, repoints existing standalone CN journal entries to the canonical invoice source,
+  posts missing issued-CN journals when the default accounts/user exist, and keeps old tables for retention.
+  The standalone VAT-return subtraction was removed in the same release, and the legacy credit-note API now
+  reads/PDFs canonical credit notes while retiring standalone writes with HTTP 410. Added a real-DB integration
+  regression (`RUN_DB_INTEGRATION=1 INTEGRATION_DATABASE_URL=... npm run test:credit-note-consolidation`) that
+  seeds a standalone CN, runs the backfill, and asserts VAT-201 sales totals plus trial balance are unchanged.
+  Resolves A-B15 too.
 - [ ] **A7.x Remove dead code** revealed during the above (e.g. unwired Stripe path) once A-B1 resolved.
 
 ---

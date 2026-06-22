@@ -362,7 +362,7 @@ export default function CreditNotes() {
       <PageHeader
         eyebrow="Sales"
         title="Credit Notes"
-        description="Manage credit notes for refunds and adjustments"
+        description="View credit notes created from invoices"
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -374,9 +374,9 @@ export default function CreditNotes() {
           }}
         >
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled title="Create credit notes from the original invoice actions.">
               <Plus className="w-4 h-4 mr-2" />
-              New Credit Note
+              Create from invoice
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -734,14 +734,14 @@ export default function CreditNotes() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               onClick={() => handleEditCreditNote(creditNote)}
-                              disabled={creditNote.status !== "draft"}
+                              disabled
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => issueMutation.mutate(creditNote.id)}
-                              disabled={creditNote.status !== "draft"}
+                              disabled
                             >
                               <CheckCircle className="w-4 h-4 mr-2" />
                               Issue
@@ -754,7 +754,7 @@ export default function CreditNotes() {
                                   voidMutation.mutate(creditNote.id);
                                 }
                               }}
-                              disabled={creditNote.status === "void"}
+                              disabled
                             >
                               <XCircle className="w-4 h-4 mr-2" />
                               Void
@@ -778,7 +778,7 @@ export default function CreditNotes() {
                                   deleteMutation.mutate(creditNote.id);
                                 }
                               }}
-                              disabled={creditNote.status !== "draft"}
+                              disabled
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
                               Delete
