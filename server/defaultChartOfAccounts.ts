@@ -421,6 +421,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     vatType: null,
     isSystemAccount: true,
   },
+  {
+    code: "4090",
+    nameEn: "Foreign Exchange Gain",
+    nameAr: "أرباح صرف العملات الأجنبية",
+    description: "Realised and unrealised gains on foreign-currency balances",
+    type: "income",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
 
   // ===========================
   // EXPENSES (5000-5199)
@@ -584,6 +595,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     nameEn: "Loss on Asset Disposal",
     nameAr: "خسارة من بيع الأصول",
     description: "Loss recognized on disposal of fixed assets below net book value",
+    type: "expense",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
+  {
+    code: "5140",
+    nameEn: "Foreign Exchange Loss",
+    nameAr: "خسائر صرف العملات الأجنبية",
+    description: "Realised and unrealised losses on foreign-currency balances",
     type: "expense",
     subType: null,
     isVatAccount: false,

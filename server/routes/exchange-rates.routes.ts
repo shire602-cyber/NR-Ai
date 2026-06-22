@@ -1,10 +1,12 @@
 import type { Express, Request, Response } from "express";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, desc, lte } from "drizzle-orm";
 import { exchangeRates, invoices, receipts } from "../../shared/schema";
-import { revalueForeignBalance } from "../services/financial-statements";
+import { revalueForeignBalance, buildFxRevaluationLines } from "../services/financial-statements";
+import { ACCOUNT_CODES } from "../constants";
+import { assertPeriodNotLocked } from "../services/period-lock.service";
 import type {
   UnrealizedFxGainLoss,
   FxGainsLossesReport,
@@ -541,6 +543,141 @@ export function registerExchangeRateRoutes(app: Express) {
       };
 
       res.json(report);
+    })
+  );
+
+  // A-B8: post an unrealised FX revaluation of open foreign A/R and A/P as of a
+  // date, with an automatic reversing entry the next day (standard period-end
+  // practice — the realised result is recognised on settlement instead).
+  app.post(
+    "/api/companies/:companyId/exchange-rates/revalue",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const asOf = req.body?.asOf ? new Date(req.body.asOf) : new Date();
+      if (Number.isNaN(asOf.getTime())) {
+        return res.status(400).json({ message: "Invalid asOf date" });
+      }
+
+      // Net AED revaluation across open foreign receivables (unpaid invoices)…
+      let receivableRevalAed = 0;
+      const openInvoices = await db.select().from(invoices).where(eq(invoices.companyId, companyId));
+      for (const inv of openInvoices) {
+        if (inv.currency === "AED" || inv.status === "paid" || inv.status === "void") continue;
+        const currentRate = await getLatestRate(inv.currency, "AED", asOf);
+        if (currentRate === null) continue;
+        receivableRevalAed += revalueForeignBalance({
+          foreignAmount: inv.total,
+          bookRateAedPerUnit: inv.exchangeRate > 0 ? inv.exchangeRate : 1,
+          currentRateAedPerUnit: currentRate,
+          kind: "receivable",
+        }).unrealizedGainLoss;
+      }
+      // …and open foreign payables (unposted receipts).
+      let payableRevalAed = 0;
+      const openReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
+      for (const rec of openReceipts) {
+        if (!rec.currency || rec.currency === "AED" || rec.posted) continue;
+        const currentRate = await getLatestRate(rec.currency, "AED", asOf);
+        if (currentRate === null) continue;
+        payableRevalAed += revalueForeignBalance({
+          foreignAmount: rec.amount ?? 0,
+          bookRateAedPerUnit: rec.exchangeRate > 0 ? rec.exchangeRate : 1,
+          currentRateAedPerUnit: currentRate,
+          kind: "payable",
+        }).unrealizedGainLoss;
+      }
+
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      const byCode = (code: string) => accounts.find((a) => a.code === code)?.id ?? null;
+      const built = buildFxRevaluationLines({
+        receivableRevalAed,
+        payableRevalAed,
+        accounts: {
+          arId: byCode(ACCOUNT_CODES.AR),
+          apId: byCode(ACCOUNT_CODES.AP),
+          fxGainId: byCode(ACCOUNT_CODES.FX_GAIN),
+          fxLossId: byCode(ACCOUNT_CODES.FX_LOSS),
+        },
+      });
+      if (!built.ok) {
+        if (built.code === "NO_REVALUATION") {
+          return res.json({ posted: false, message: "No open foreign-currency balances to revalue." });
+        }
+        return res.status(422).json({ message: built.message, code: built.code });
+      }
+
+      await assertPeriodNotLocked(companyId, asOf);
+      const sourceId = asOf.toISOString().slice(0, 10); // one revaluation per as-of date
+      const existing = await storage.getJournalEntriesBySource(companyId, "fx_revaluation", sourceId);
+      if (existing.some((e) => e.status === "posted")) {
+        return res.json({ posted: false, message: `Revaluation already posted for ${sourceId}.` });
+      }
+
+      const revNumber = await storage.generateEntryNumber(companyId, asOf);
+      await storage.createJournalEntry(
+        {
+          companyId,
+          date: asOf,
+          memo: `Unrealised FX revaluation ${sourceId}`,
+          entryNumber: revNumber,
+          status: "posted",
+          source: "fx_revaluation",
+          sourceId,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: asOf,
+        } as any,
+        built.lines
+      );
+
+      const reversalDate = new Date(asOf.getTime() + 24 * 60 * 60 * 1000);
+      await assertPeriodNotLocked(companyId, reversalDate);
+      const reversalNumber = await storage.generateEntryNumber(companyId, reversalDate);
+      await storage.createJournalEntry(
+        {
+          companyId,
+          date: reversalDate,
+          memo: `Reversal of unrealised FX revaluation ${sourceId}`,
+          entryNumber: reversalNumber,
+          status: "posted",
+          source: "fx_revaluation_reversal",
+          sourceId,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: reversalDate,
+        } as any,
+        built.lines.map((l) => ({
+          accountId: l.accountId,
+          debit: l.credit,
+          credit: l.debit,
+          description: `Reversal — ${l.description}`,
+        }))
+      );
+
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId,
+        companyId,
+        action: "fx.revaluation",
+        entityType: "journal_entry",
+        entityId: sourceId,
+        after: { receivableRevalAed, payableRevalAed },
+        req,
+      });
+
+      res.json({
+        posted: true,
+        asOf: sourceId,
+        receivableRevalAed: Math.round(receivableRevalAed * 100) / 100,
+        payableRevalAed: Math.round(payableRevalAed * 100) / 100,
+        netGainLoss: Math.round((receivableRevalAed + payableRevalAed) * 100) / 100,
+      });
     })
   );
 }

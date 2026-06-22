@@ -102,6 +102,75 @@ export function revalueForeignBalance(args: {
   return { bookValueAed, currentValueAed, unrealizedGainLoss };
 }
 
+/**
+ * A-B8: Build the balanced legs for an unrealised FX revaluation of open
+ * foreign-currency receivables/payables at period end. Inputs are the NET
+ * AED revaluation amounts (positive = gain, negative = loss; payable figures
+ * already signed so a gain means the AED cost fell). The offset goes to the
+ * AR/AP control accounts and the net to FX gain/loss (P&L). The caller posts
+ * these dated period-end and posts the reverse next period.
+ */
+export function buildFxRevaluationLines(args: {
+  receivableRevalAed: number;
+  payableRevalAed: number;
+  accounts: {
+    arId?: string | null;
+    apId?: string | null;
+    fxGainId?: string | null;
+    fxLossId?: string | null;
+  };
+}):
+  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string }> }
+  | { ok: false; code: string; message: string } {
+  const ar = round2(args.receivableRevalAed || 0);
+  const ap = round2(args.payableRevalAed || 0);
+  const net = round2(ar + ap);
+  if (Math.abs(ar) < 0.01 && Math.abs(ap) < 0.01) {
+    return { ok: false, code: "NO_REVALUATION", message: "No open foreign-currency balances to revalue." };
+  }
+  const { accounts } = args;
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+
+  if (Math.abs(ar) >= 0.01) {
+    if (!accounts.arId)
+      return { ok: false, code: "AR_ACCOUNT_MISSING", message: "Accounts Receivable account is missing." };
+    lines.push({
+      accountId: accounts.arId,
+      debit: ar > 0 ? ar : 0,
+      credit: ar < 0 ? -ar : 0,
+      description: "Unrealised FX revaluation — A/R",
+    });
+  }
+  if (Math.abs(ap) >= 0.01) {
+    if (!accounts.apId)
+      return { ok: false, code: "AP_ACCOUNT_MISSING", message: "Accounts Payable account is missing." };
+    lines.push({
+      accountId: accounts.apId,
+      debit: ap > 0 ? ap : 0,
+      credit: ap < 0 ? -ap : 0,
+      description: "Unrealised FX revaluation — A/P",
+    });
+  }
+  if (Math.abs(net) >= 0.01) {
+    if (net > 0) {
+      if (!accounts.fxGainId)
+        return { ok: false, code: "FX_GAIN_ACCOUNT_MISSING", message: "FX Gain account is missing." };
+      lines.push({ accountId: accounts.fxGainId, debit: 0, credit: net, description: "Unrealised FX gain" });
+    } else {
+      if (!accounts.fxLossId)
+        return { ok: false, code: "FX_LOSS_ACCOUNT_MISSING", message: "FX Loss account is missing." };
+      lines.push({ accountId: accounts.fxLossId, debit: -net, credit: 0, description: "Unrealised FX loss" });
+    }
+  }
+
+  const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
+  const cr = round2(lines.reduce((s, l) => s + l.credit, 0));
+  if (Math.abs(dr - cr) > 0.01) {
+    return { ok: false, code: "UNBALANCED_REVALUATION", message: `Revaluation unbalanced (${dr} vs ${cr}).` };
+  }
+  return { ok: true, lines };
+}
+
 export type CashFlowBreakdownLine = {
   accountId: string;
   accountCode: string;

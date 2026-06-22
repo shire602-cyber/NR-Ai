@@ -75,8 +75,12 @@
   requires capturing a payment-date rate (schema/UX) and posting the realised difference to a Realised FX P&L
   account, plus allowing cross-currency settlement. Touches the critical `recordInvoicePayment` money path —
   do with integration tests in an environment where the DB-backed suite runs. Files: `storage.ts:4700,4767-4789`.
-- [ ] **A-B8 No unrealised FX revaluation POSTED.** PARTIAL/DEFERRED: the revaluation report is now correct
-  (A-B4); posting period-end revaluation JEs to the GL is a new feature — do with the DB-backed harness.
+- [x] **A-B8 No unrealised FX revaluation POSTED.** DONE: new `POST /api/companies/:id/exchange-rates/revalue`
+  endpoint sums the unrealised AED revaluation of open foreign A/R + A/P (via `revalueForeignBalance`), posts a
+  balanced period-end JE (Dr/Cr A/R, A/P, FX gain/loss) through the tested `buildFxRevaluationLines`, and posts
+  an automatic next-day reversal (standard practice; realised result recognised on settlement). Added FX Gain
+  (4090) / FX Loss (5140) accounts; idempotent per as-of date; period-lock + audit-logged. Files:
+  `financial-statements.ts`, `exchange-rates.routes.ts`, `defaultChartOfAccounts.ts`, `constants.ts`.
 
 ### A5 · VAT
 - [x] **A-B6 Import VAT taxed as output but never recovered as input.** DONE: `calculateVatWorkpaperTotals`
@@ -134,9 +138,9 @@
 - [x] **S-H1 Portal-token cross-tenant IDOR.** DONE: `generate-access` now resolves the contact then
   enforces `hasCompanyAccess(userId, contact.companyId)` (403) before minting the portal token, closing the
   live cross-tenant data-exposure hole. Files: `portal.public.routes.ts`.
-- [~] **S-H2 Seeded backdoor firm_owner accounts.** Code side already mitigated by revoke migration 0051
-  (verified present). REMAINING = OPERATIONAL ONLY: rotate `JWT_SECRET` in any env that ran 0023/0028 and set
-  `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true`. Can't be done in code — owner/ops action.
+- [x] **S-H2 Seeded backdoor firm_owner accounts.** CLOSED: code side mitigated by revoke migration 0051;
+  owner rotated `JWT_SECRET` and set `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` in Railway (2026-06-22). The
+  production-security verifier (`scripts/verify-production-security.mjs`) now passes that gate.
 - [~] **S-H3 Hard-coded personal admin promotion (`migrations/0054`, shire602@gmail.com).** DRAFT PROVIDED
   (not applied): `docs/proposed-migrations/revoke-shire602-admin.sql` — a non-auto-running revoke for
   non-owner-production environments, with lock-out warning and the recommended long-term fix. Still an OWNER
