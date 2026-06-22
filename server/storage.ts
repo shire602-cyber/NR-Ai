@@ -514,8 +514,12 @@ export interface IStorage {
   getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
   createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;
   createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
-  updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
-  deleteCustomerContact(id: string): Promise<void>;
+  updateCustomerContact(
+    id: string,
+    data: Partial<InsertCustomerContact>,
+    companyId?: string
+  ): Promise<CustomerContact>;
+  deleteCustomerContact(id: string, companyId?: string): Promise<void>;
   deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countInvoicesWithContactByCompanyId(companyId: string): Promise<number>;
@@ -2262,19 +2266,30 @@ export class DatabaseStorage implements IStorage {
 
   async updateCustomerContact(
     id: string,
-    data: Partial<InsertCustomerContact>
+    data: Partial<InsertCustomerContact>,
+    companyId?: string
   ): Promise<CustomerContact> {
+    // S-L3: when the caller knows the tenant, scope the WHERE to it so the row
+    // can only be mutated within its own company (defence-in-depth even though
+    // routes pre-check access).
+    const where = companyId
+      ? and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId))
+      : eq(customerContacts.id, id);
     const [contact] = await db
       .update(customerContacts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(customerContacts.id, id))
+      .where(where)
       .returning();
     if (!contact) throw new Error("Customer contact not found");
     return contact;
   }
 
-  async deleteCustomerContact(id: string): Promise<void> {
-    await db.delete(customerContacts).where(eq(customerContacts.id, id));
+  async deleteCustomerContact(id: string, companyId?: string): Promise<void> {
+    // S-L3: tenant-scope the delete when the company is known.
+    const where = companyId
+      ? and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId))
+      : eq(customerContacts.id, id);
+    await db.delete(customerContacts).where(where);
   }
 
   async deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number> {

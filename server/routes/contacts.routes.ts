@@ -221,14 +221,18 @@ export function registerContactRoutes(app: Express) {
 
           if (existing) {
             // Update existing contact
-            await storage.updateCustomerContact(existing.id, {
-              name: contact.name,
-              phone: contact.phone || null,
-              trnNumber: contact.trnNumber || contact.trn || null,
-              address: contact.address || null,
-              city: contact.city || null,
-              country: contact.country || "UAE",
-            });
+            await storage.updateCustomerContact(
+              existing.id,
+              {
+                name: contact.name,
+                phone: contact.phone || null,
+                trnNumber: contact.trnNumber || contact.trn || null,
+                address: contact.address || null,
+                city: contact.city || null,
+                country: contact.country || "UAE",
+              },
+              companyId
+            );
             results.updated++;
           } else {
             // Prepare for bulk insert
@@ -343,7 +347,13 @@ export function registerContactRoutes(app: Express) {
         return res.status(404).json({ message: "Contact not found" });
       }
 
-      const contact = await storage.updateCustomerContact(id, req.body);
+      // S-M1: allowlist update fields (tenant scope cannot be changed here).
+      // S-L3: scope the write to the company.
+      const contact = await storage.updateCustomerContact(
+        id,
+        pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]) as any,
+        companyId
+      );
       res.json(contact);
     })
   );
@@ -368,7 +378,7 @@ export function registerContactRoutes(app: Express) {
         return res.status(404).json({ message: "Contact not found" });
       }
 
-      await storage.deleteCustomerContact(id);
+      await storage.deleteCustomerContact(id, companyId); // S-L3: tenant-scoped delete
       res.json({ message: "Contact deleted successfully" });
     })
   );

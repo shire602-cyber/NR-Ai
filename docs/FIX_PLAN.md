@@ -137,10 +137,10 @@
 - [~] **S-H2 Seeded backdoor firm_owner accounts.** Code side already mitigated by revoke migration 0051
   (verified present). REMAINING = OPERATIONAL ONLY: rotate `JWT_SECRET` in any env that ran 0023/0028 and set
   `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true`. Can't be done in code — owner/ops action.
-- [!] **S-H3 Hard-coded personal admin promotion (`migrations/0054`, shire602@gmail.com).** OWNER DECISION:
-  this is the owner's OWN account, so auto-revoking would lock them out of admin. Not changed blindly.
-  Recommended: move the grant out of the committed migration chain (so it doesn't apply in other
-  environments) without stripping the owner's production access. Needs owner confirmation.
+- [~] **S-H3 Hard-coded personal admin promotion (`migrations/0054`, shire602@gmail.com).** DRAFT PROVIDED
+  (not applied): `docs/proposed-migrations/revoke-shire602-admin.sql` — a non-auto-running revoke for
+  non-owner-production environments, with lock-out warning and the recommended long-term fix. Still an OWNER
+  decision to apply per-environment (it's the owner's own account).
 - [~] **S-H4 Money/export endpoints lack audit logging.** DONE for the key money mutations: bill payment,
   bank reconcile-create-entry, credit-note delete, fixed-asset delete, expense-claim approve now call
   `recordAudit`. REMAINING: report-export endpoints (who exported the VAT return / trial balance) — additive,
@@ -159,8 +159,9 @@
   now applied to: `companies` updateCompany (PUT+PATCH) + createBankAccount, `corporate-tax` create+update,
   `contacts` create, `cost-centers` create, `invoice-templates` create, `reconciliation-rules` create, and
   `bank` connection create. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
-  id/createdAt/unknown keys and pins the tenant scope. REMAINING (low): a final sweep of any update-handlers
-  and lower-traffic routes (inventory, receipts, ai) for the same pattern.
+  id/createdAt/unknown keys and pins the tenant scope. Update-handlers also swept: contacts, cost-centers,
+  invoice-templates, reconciliation-rules updates now allowlist too. REMAINING (low): lower-traffic routes
+  (inventory, receipts, ai) for the same pattern.
 - [ ] **S-M2 Wire up the dead sanitization helpers** into PDF/email/CSV write paths. Files: `server/sanitize.ts`.
   (Deferred: apply at render time for non-React surfaces + CSV-formula-injection escaping; broad, do as a
   focused pass to avoid mutating stored content.)
@@ -170,7 +171,9 @@
 - [x] **S-L1** receipt image now served with `X-Content-Type-Options: nosniff` + `Content-Disposition:
   attachment`. Files: `receipts.routes.ts`.
 - [ ] **S-L2** dedicated `TOKEN_ENCRYPTION_KEY` (operational — env var; code already falls back to SESSION_SECRET).
-- [ ] **S-L3** push `companyId` into unscoped mutators (defence-in-depth; callers currently pre-check).
+- [x] **S-L3** `updateCustomerContact` / `deleteCustomerContact` now accept an optional `companyId` and
+  scope the WHERE clause to it; the contacts routes pass it. Defence-in-depth against a future caller
+  forgetting the pre-check. (Other raw-SQL mutators can follow the same pattern as a low-priority follow-up.)
 - [ ] **S-L4** portal invoice match by id not name — needs a stable invoice↔contact id relationship
   (schema change + data migration); deferred. Low impact (already scoped to the contact's company).
 

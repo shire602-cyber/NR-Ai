@@ -115,7 +115,11 @@ export function registerCostCenterRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateCostCenter(id, req.body);
+      // S-M1: allowlist update fields (tenant scope cannot be changed here).
+      const updated = await storage.updateCostCenter(
+        id,
+        pickAllowed(req.body, insertCostCenterSchema, ["companyId"]) as any
+      );
       res.json(updated);
     })
   );
