@@ -92,14 +92,16 @@
   now mirrors import VAT (boxes 6 + 7) into recoverable tax (box 13), so it nets to nil for fully-taxable
   importers. No manual import-recovery category exists, so no double-count. Verified by new
   `vat-import-recovery` tests + existing VAT tests still green. Files: `firm-vat-workspace.service.ts`.
-- [ ] **A-B9 Workpaper doesn't auto-mirror reverse charge.** DEFERRED (needs product decision):
-  `reverse_charge_input` (box 10) is a **manual** row category, so auto-mirroring box 3 → box 10 would
-  double-count whenever the user also enters the manual leg. The safe fix is a model decision (deprecate the
-  manual input category and auto-derive, OR add a validation that flags an unbalanced RCM pair). Changes filed
-  VAT — confirm intended UX first.
-- [ ] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** DEFERRED: lives in the
-  `calculateVatReturn` SQL (FTA 201 figures); needs the exchange_rate joined in and DB-backed verification.
-  Files: `vat-autopilot.service.ts:680-699`.
+- [x] **A-B9 Workpaper doesn't auto-mirror reverse charge.** DONE (safe approach): added
+  `reverseChargeImbalanceWarning` — surfaces a warning when Box 3 (RC output VAT) and Box 10 (RC input VAT)
+  don't match, so a preparer can't silently over/under-declare. Chose validation over auto-mirroring because
+  Box 10 is a manual category and auto-mirroring would double-count the recovery (→ under-declaration/penalty).
+  Tested. Files: `firm-vat-workspace.service.ts`. (UI surfacing of the warning is a small follow-up.)
+- [~] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** CLARIFIED: the PRIMARY
+  (invoice-embedded, invoiceType='credit_note') path is already FX-correct — those rows flow through the
+  invoice line query which multiplies by `i.exchange_rate`. The gap is only the SEPARATE standalone
+  `credit_notes` table query (`vat-autopilot.service.ts:679-689`), and that table has NO exchange_rate column,
+  so fixing it is part of the A-B11 standalone-CN consolidation (add+capture a rate there). Tracked under A-B11.
 - [~] **A-B14 NULL line VAT rate silently defaults to 5%.** REVIEWED: current logic is FTA-conservative and
   correct — explicit `vatSupplyType` (zero/exempt/out-of-scope) always wins over rate, and only a line with
   BOTH null supply type and null rate defaults to standard 5% (the safe default). No code change; behavior is
