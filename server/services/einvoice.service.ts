@@ -48,13 +48,14 @@ export function vatCategoryFor(
   }
 }
 
-// PINT AE profile identifiers. These replace the generic EU EN16931 / Peppol
-// BIS billing IDs that were previously hardcoded inline (which an FTA/ASP
-// validator would reject for a UAE document).
-// IMPORTANT: confirm the EXACT customization/profile URNs against the FTA's
-// published PINT-AE specification and the Peppol PINT-AE package before go-live
-// — the values below are the best-known public identifiers and are the single
-// place to update once verified.
+// PINT AE profile identifiers, confirmed against the UAE MoF PINT-AE
+// specification v1.0 (published 19 Jun 2025) and the Peppol PINT-AE BIS docs:
+//   CustomizationID = urn:peppol:pint:billing-1@ae-1
+//   ProfileID       = urn:peppol:bis:billing
+// These replace the generic EU EN16931 / Peppol-BIS billing IDs that were
+// previously hardcoded inline (an FTA/ASP validates the UAE schema, not the EU
+// one, so the old values would be rejected). Single source of truth — update
+// here if the FTA revises the spec.
 export const EINVOICE_CUSTOMIZATION_ID = "urn:peppol:pint:billing-1@ae-1";
 export const EINVOICE_PROFILE_ID = "urn:peppol:bis:billing";
 // UBL document type codes (UNCL1001): 380 = commercial invoice, 381 = credit note.

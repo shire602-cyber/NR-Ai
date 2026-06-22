@@ -65,8 +65,9 @@ full suite 707 green):
 
 ### Remaining gaps before an FTA/ASP submission (prioritised)
 
-1. **Verify exact PINT-AE CustomizationID/ProfileID** and validate generated XML against the official
-   PINT-AE validation artefacts once published (owner: obtain spec).
+1. ~~Verify exact PINT-AE CustomizationID/ProfileID~~ ✅ CONFIRMED against UAE MoF PINT-AE spec v1.0
+   (published 19 Jun 2025): `urn:peppol:pint:billing-1@ae-1` / `urn:peppol:bis:billing`. Still TODO:
+   validate generated XML against the official PINT-AE validation artefacts / a real ASP sandbox.
 2. **Foreign-currency invoices:** PINT-AE/FTA require the VAT total also expressed in AED (tax currency)
    — depends on the FX work (A-B4 done; settlement-rate items A-B5 deferred). Add `TaxCurrencyCode` +
    AED `TaxTotal`.
