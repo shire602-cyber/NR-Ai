@@ -5,6 +5,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { recordAudit } from "../services/audit.service";
 
 const log = createLogger("fixed-assets");
 
@@ -652,13 +653,40 @@ export function registerFixedAssetRoutes(app: Express) {
         return res.status(404).json({ message: "Fixed asset not found" });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.rows[0].company_id);
+      const asset = existing.rows[0];
+      const hasAccess = await storage.hasCompanyAccess(userId, asset.company_id);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // S-H5: a fixed asset with posted journal entries (capitalization,
+      // depreciation, disposal) is a financial record. Hard-deleting it would
+      // orphan those posted GL entries and bypass FTA 5-year retention. Refuse
+      // and require disposal instead, mirroring the invoice "void, don't delete"
+      // rule. Assets that were never capitalized (no posted JE) stay deletable.
+      const assetEntries = await storage.getJournalEntriesBySource(asset.company_id, "system", id);
+      const postedEntries = assetEntries.filter((e) => e.status === "posted");
+      if (postedEntries.length > 0) {
+        return res.status(409).json({
+          message:
+            "Cannot delete a fixed asset that has posted journal entries (capitalization/depreciation). " +
+            "Dispose of the asset instead so the general ledger stays consistent.",
+          code: "ASSET_HAS_POSTED_JE",
+        });
+      }
+
       await pool.query(`DELETE FROM fixed_assets WHERE id = $1`, [id]);
-      log.info({ assetId: id }, "Fixed asset deleted");
+      log.info({ assetId: id, userId }, "Fixed asset deleted");
+      await recordAudit({
+        userId,
+        companyId: asset.company_id,
+        action: "fixed_asset.delete",
+        entityType: "fixed_asset",
+        entityId: id,
+        before: { assetName: asset.asset_name, assetNumber: asset.asset_number },
+        after: null,
+        req,
+      });
       res.json({ message: "Fixed asset deleted successfully" });
     })
   );

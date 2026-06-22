@@ -3,8 +3,39 @@ import {
   evaluateVoidRequest,
   evaluateCreditNoteRequest,
   buildReversalLines,
+  allocatePayment,
   round2,
 } from "../../server/services/invoice-lifecycle";
+
+describe("allocatePayment (A-B12: overpayment -> customer credit)", () => {
+  it("applies a partial payment entirely to the receivable", () => {
+    expect(allocatePayment({ amount: 400, remaining: 1000 })).toEqual({
+      appliedToReceivable: 400,
+      customerCredit: 0,
+    });
+  });
+
+  it("applies an exact payment entirely to the receivable", () => {
+    expect(allocatePayment({ amount: 1000, remaining: 1000 })).toEqual({
+      appliedToReceivable: 1000,
+      customerCredit: 0,
+    });
+  });
+
+  it("splits an overpayment into receivable + customer credit", () => {
+    expect(allocatePayment({ amount: 1200, remaining: 1000 })).toEqual({
+      appliedToReceivable: 1000,
+      customerCredit: 200,
+    });
+  });
+
+  it("absorbs sub-cent rounding into the receivable", () => {
+    expect(allocatePayment({ amount: 1000.004, remaining: 1000 })).toEqual({
+      appliedToReceivable: 1000,
+      customerCredit: 0,
+    });
+  });
+});
 
 describe("evaluateVoidRequest (A-1: void of a paid invoice)", () => {
   it("allows voiding an unpaid invoice", () => {

@@ -364,6 +364,21 @@ export function registerExpenseClaimRoutes(app: Express) {
       );
 
       log.info({ claimId: id, reviewedBy: userId }, "Expense claim approved");
+      // S-H4: audit the approval (an authorization of company spend).
+      // NOTE (S-H6, deferred): approval should also post the expense to the GL
+      // (Dr expense accounts / Cr employee-reimbursement payable). That posting
+      // needs an account-mapping + reimbursement-liability design decision and
+      // DB-backed tests — tracked in docs/FIX_PLAN.md.
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId,
+        companyId: claim.company_id,
+        action: "expense_claim.approve",
+        entityType: "expense_claim",
+        entityId: id,
+        after: { status: "approved", totalAmount: Number(claim.total_amount) || 0 },
+        req,
+      });
       res.json(updatedResult.rows[0]);
     })
   );

@@ -73,6 +73,29 @@ describe("PINT AE XML generation", () => {
   });
 });
 
+describe("PINT AE profile + document type", () => {
+  it("uses the PINT-AE customization id and type 380 for an invoice", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice(), lines, company);
+    expect(xml).toContain("urn:peppol:pint:billing-1@ae-1");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>");
+    expect(xml).not.toContain("<cac:BillingReference>");
+  });
+
+  it("emits type 381 and a billing reference for a credit note", () => {
+    const cn = makeInvoice({
+      invoiceType: "credit_note",
+      originalInvoiceId: "inv-original-1",
+      subtotal: -1300,
+      vatAmount: -50,
+      total: -1350,
+    });
+    const { xml } = generateEInvoiceXML(cn, lines, company);
+    expect(xml).toContain("<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cac:BillingReference>");
+    expect(xml).toContain("inv-original-1");
+  });
+});
+
 describe("e-invoicing validation gate", () => {
   it("passes a consistent invoice", () => {
     expect(validateForEInvoicing(makeInvoice(), lines, company)).toEqual([]);
@@ -106,6 +129,11 @@ describe("e-invoicing validation gate", () => {
       company
     );
     expect(vatIssues.some((i) => i.field === "invoice.vatAmount")).toBe(true);
+  });
+
+  it("requires a document currency", () => {
+    const issues = validateForEInvoicing(makeInvoice({ currency: null }), lines, company);
+    expect(issues.some((i) => i.field === "invoice.currency")).toBe(true);
   });
 
   it("catches subtotal+VAT vs total drift and empty invoices", () => {

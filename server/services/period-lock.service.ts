@@ -36,3 +36,40 @@ export async function assertPeriodNotLocked(
     403
   );
 }
+
+/**
+ * Pure predicate: is `date` after the end of (now + graceDays) in UTC?
+ * Exposed for unit testing.
+ */
+export function isFutureDate(date: Date, now: Date, graceDays = 0): boolean {
+  const limit = new Date(now);
+  limit.setUTCDate(limit.getUTCDate() + graceDays);
+  limit.setUTCHours(23, 59, 59, 999);
+  return date.getTime() > limit.getTime();
+}
+
+/**
+ * A-4: Future-date guard for financial posting paths. UAE/IFRS practice is
+ * that posted journal entries must not be dated in the future (back-dating to
+ * an open period is allowed; forward-dating is not). Rejects a posting date
+ * after the end of today (UTC) plus an optional grace window.
+ *
+ * Throws a 422 AppError when the date is in the future.
+ */
+export function assertNotFutureDate(
+  date: Date | string | null | undefined,
+  opts?: { graceDays?: number; now?: Date }
+): void {
+  if (!date) return;
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return;
+  const now = opts?.now ?? new Date();
+  if (isFutureDate(d, now, opts?.graceDays ?? 0)) {
+    throw new AppError(
+      `Cannot post an entry dated in the future (${d
+        .toISOString()
+        .slice(0, 10)}). Posting dates must be on or before today.`,
+      422
+    );
+  }
+}

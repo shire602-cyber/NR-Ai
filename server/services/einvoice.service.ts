@@ -48,6 +48,19 @@ export function vatCategoryFor(
   }
 }
 
+// PINT AE profile identifiers. These replace the generic EU EN16931 / Peppol
+// BIS billing IDs that were previously hardcoded inline (which an FTA/ASP
+// validator would reject for a UAE document).
+// IMPORTANT: confirm the EXACT customization/profile URNs against the FTA's
+// published PINT-AE specification and the Peppol PINT-AE package before go-live
+// — the values below are the best-known public identifiers and are the single
+// place to update once verified.
+export const EINVOICE_CUSTOMIZATION_ID = "urn:peppol:pint:billing-1@ae-1";
+export const EINVOICE_PROFILE_ID = "urn:peppol:bis:billing";
+// UBL document type codes (UNCL1001): 380 = commercial invoice, 381 = credit note.
+const INVOICE_TYPE_CODE_INVOICE = "380";
+const INVOICE_TYPE_CODE_CREDIT_NOTE = "381";
+
 export function generateEInvoiceXML(
   invoice: Invoice,
   lines: InvoiceLine[],
@@ -57,6 +70,20 @@ export function generateEInvoiceXML(
   const uuid = crypto.randomUUID();
   const issueDate = formatDate(invoice.date);
   const currency = invoice.currency || "AED";
+  const isCreditNote = (invoice as any).invoiceType === "credit_note";
+  const invoiceTypeCode = isCreditNote
+    ? INVOICE_TYPE_CODE_CREDIT_NOTE
+    : INVOICE_TYPE_CODE_INVOICE;
+  // For a credit note, reference the original invoice it adjusts (EN16931 BG-3).
+  const billingReferenceXml =
+    isCreditNote && (invoice as any).originalInvoiceId
+      ? `
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${escapeXml(String((invoice as any).originalInvoiceId))}</cbc:ID>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>`
+      : "";
 
   // Build invoice lines XML
   const invoiceLinesXml = lines
@@ -134,13 +161,13 @@ export function generateEInvoiceXML(
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
-  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:CustomizationID>${EINVOICE_CUSTOMIZATION_ID}</cbc:CustomizationID>
+  <cbc:ProfileID>${EINVOICE_PROFILE_ID}</cbc:ProfileID>
   <cbc:ID>${escapeXml(invoice.number)}</cbc:ID>
   <cbc:IssueDate>${issueDate}</cbc:IssueDate>
-  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode>${invoiceTypeCode}</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>${escapeXml(currency)}</cbc:DocumentCurrencyCode>
-  <cbc:UUID>${uuid}</cbc:UUID>
+  <cbc:UUID>${uuid}</cbc:UUID>${billingReferenceXml}
 
   <!-- Seller (Supplier) -->
   <cac:AccountingSupplierParty>
@@ -270,6 +297,9 @@ export function validateForEInvoicing(
   }
   if (lines.length === 0) {
     issues.push({ field: "lines", message: "At least one invoice line is required" });
+  }
+  if (!invoice.currency) {
+    issues.push({ field: "invoice.currency", message: "Document currency code is required" });
   }
 
   let lineSum = 0;

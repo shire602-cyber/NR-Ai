@@ -275,7 +275,16 @@ export function calculateVatWorkpaperTotals(
   totals.box11TotalVat = toMoney(INPUT_VAT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box11TotalAdj = toMoney(INPUT_ADJ_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box12TotalDueTax = totals.box8TotalVat;
-  totals.box13RecoverableTax = totals.box11TotalVat;
+  // A-B6: import VAT (boxes 6 and 7) is declared as output/due tax above, but
+  // under the import-VAT mechanism a fully-taxable person also recovers it as
+  // input tax — otherwise net VAT payable is overstated by the full import VAT.
+  // Mirror the import VAT into recoverable so it nets to nil for fully-taxable
+  // importers. (There is no manual import-recovery row category, so this cannot
+  // double-count an existing entry.)
+  const importVatRecoverable = toMoney(
+    (totals.box6ImportsVat ?? 0) + (totals.box7ImportsAdjVat ?? 0)
+  );
+  totals.box13RecoverableTax = toMoney(totals.box11TotalVat + importVatRecoverable);
   totals.box14PayableTax = toMoney(totals.box12TotalDueTax - totals.box13RecoverableTax);
 
   return totals;

@@ -81,3 +81,6 @@ A reason to switch, not just match.
 | Date | Phase | Note |
 |---|---|---|
 | 2026-06-21 | — | Roadmap created from audit. Starting P0 fixes (see FIX_PLAN.md). |
+| 2026-06-21 | P0 | Phase A (accounting correctness) largely complete: A1, A2, A3, A4-B4, A6, A5-B6. Test suite made runnable in-sandbox (704 tests green). Re-audit passed — see REAUDIT_RESULTS.md. Remaining A-items deferred (FX posting, VAT model/SQL, refactors). |
+| 2026-06-21 | P0 | Phase B (security) critical+high landed: portal IDOR (S-H1), atomic bill-pay (S-C1), bank-reconcile double-post guard (S-C2), fixed-asset delete/retention (S-H5), audit logging (S-H4), mass-assignment allowlist (S-M1). Re-audited sound, no regressions. Operational/owner: JWT rotation (S-H2), shire602 admin (S-H3). Deferred: expense GL (S-H6), sanitization (S-M2), M1 sweep. **P0 substantially complete.** |
+| 2026-06-21 | P1 | E-invoicing serializer/validation hardened (provider-independent, deadline-de-risking): PINT-AE profile constants (replacing generic EU IDs), credit notes now type 381 + BillingReference, currency validation. 707 tests green. See EINVOICING_PLAN.md for the prioritised remaining gaps (verify exact PINT-AE URNs, foreign-currency AED tax total, full CreditNote syntax, Peppol endpoint IDs, ASP adapter + sandbox — owner action). |

@@ -175,6 +175,18 @@ export function registerCreditNoteRoutes(app: Express) {
       }
 
       await storage.deleteCreditNote(id);
+      // S-H4: audit credit-note deletion.
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId,
+        companyId: creditNote.companyId,
+        action: "credit_note.delete",
+        entityType: "credit_note",
+        entityId: id,
+        before: { number: (creditNote as any).number, status: creditNote.status },
+        after: null,
+        req,
+      });
       res.json({ message: "Credit note deleted" });
     })
   );

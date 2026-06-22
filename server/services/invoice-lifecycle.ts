@@ -115,6 +115,29 @@ export function evaluateCreditNoteRequest(args: {
 }
 
 /**
+ * A-B12: Split an incoming payment into the portion that settles the
+ * outstanding receivable and any excess that should be parked as a customer
+ * credit (a liability), instead of rejecting overpayments outright.
+ *
+ * `excess` within `tolerance` (legitimate 2dp rounding) is absorbed into the
+ * receivable rather than creating a sub-cent liability.
+ */
+export function allocatePayment(args: {
+  amount: number;
+  remaining: number;
+  tolerance?: number;
+}): { appliedToReceivable: number; customerCredit: number } {
+  const tol = args.tolerance ?? 0.005;
+  const amount = args.amount;
+  const remaining = Math.max(0, args.remaining);
+  const excess = amount - remaining;
+  if (excess <= tol) {
+    return { appliedToReceivable: round2(amount), customerCredit: 0 };
+  }
+  return { appliedToReceivable: round2(remaining), customerCredit: round2(excess) };
+}
+
+/**
  * A-B2: Build the reversal journal legs shared by void and credit-note.
  * Fails hard (422) when a required account is missing instead of silently
  * dropping a leg and posting an unbalanced entry (which previously 500'd deep

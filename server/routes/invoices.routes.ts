@@ -16,7 +16,7 @@ import {
 import { createAndEmitNotification } from "../services/socket.service";
 import { db } from "../db";
 import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from "../../shared/schema";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
 import {
   evaluateVoidRequest,
@@ -709,6 +709,8 @@ export function registerInvoiceRoutes(app: Express) {
         // created before drafts stopped auto-posting is skipped.
         if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
+          // A-4: do not recognise revenue with a future invoice date.
+          assertNotFutureDate(invoice.date);
           const posted = await postInvoiceRevenueJournal(invoice as any, userId);
           const existing = await storage.getJournalEntriesBySource(
             invoice.companyId,

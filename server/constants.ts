@@ -40,6 +40,8 @@ export const ACCOUNT_CODES = {
   REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */
   REVENUE_ALT: "4020",
+  /** Deferred Revenue / customer advances (holds invoice overpayments). */
+  DEFERRED_REVENUE: "2050",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];

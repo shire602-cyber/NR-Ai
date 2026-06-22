@@ -4,7 +4,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { insertJournalEntrySchema, type JournalEntry } from "../../shared/schema";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
@@ -149,6 +149,8 @@ export function registerJournalRoutes(app: Express) {
       // Block posting into a locked period. Drafts are also blocked because
       // their existence implies they will eventually be posted on this date.
       await assertPeriodNotLocked(companyId, entryDate);
+      // A-4: reject future-dated entries.
+      assertNotFutureDate(entryDate);
 
       // Generate entry number atomically via storage helper
       const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
@@ -321,6 +323,8 @@ export function registerJournalRoutes(app: Express) {
       await assertPeriodNotLocked(entry.companyId, entry.date);
       if (entryDate) {
         await assertPeriodNotLocked(entry.companyId, entryDate);
+        // A-4: a re-dated entry must not move into the future.
+        assertNotFutureDate(entryDate);
       }
 
       // Whitelist: only safe fields can be edited via this endpoint.
@@ -422,6 +426,8 @@ export function registerJournalRoutes(app: Express) {
 
       // Cannot post into a locked period.
       await assertPeriodNotLocked(entry.companyId, entry.date);
+      // A-4: cannot post a draft that is dated in the future.
+      assertNotFutureDate(entry.date);
 
       const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
         status: "posted",

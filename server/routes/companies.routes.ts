@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertCompanySchema, companyPreferencesSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
@@ -242,7 +243,10 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updateData = { ...req.body };
+      // S-M1: allowlist columns (strips id/createdAt/unknown) so a client can't
+      // set arbitrary real columns (firmId, isActive, subscription/tax fields)
+      // beyond what the form exposes.
+      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
       if (updateData.taxRegistrationDate) {
         if (typeof updateData.taxRegistrationDate === "string") {
           updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
@@ -281,8 +285,9 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Prepare update data with proper type conversions
-      const updateData = { ...req.body };
+      // Prepare update data with proper type conversions.
+      // S-M1: allowlist columns before the spread (see PUT handler above).
+      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
 
       // Convert taxRegistrationDate to Date if it exists and is not already a Date
       if (updateData.taxRegistrationDate) {
