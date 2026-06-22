@@ -76,5 +76,11 @@ full suite 707 green):
    serializer.
 4. **Peppol routing identifiers:** seller/buyer `cbc:EndpointID schemeID="…"` (e.g. TRN/Peppol ID) —
    needed at the ASP hand-off (item 4).
-5. **ASP adapter + status lifecycle (items 4–5):** deferred until a certified-ASP sandbox account exists
-   (owner action). Build behind an adapter interface like `open-banking.service.ts`.
+5. **ASP adapter + status lifecycle (items 4–5):** SEAM BUILT (decision: Option A — adapter now, lean
+   aggregator for go-live). `server/services/einvoice-provider.ts` defines the provider-agnostic
+   `EInvoiceProvider` interface + a deterministic `MockEInvoiceProvider` + `getEInvoiceProvider()` env
+   selector; `server/services/einvoice-status.ts` is the submission lifecycle state machine
+   (not_generated → generated → submitted → accepted/rejected/failed, with correct-and-resubmit). Tested in
+   `tests/unit/einvoice-lifecycle.test.ts` (9 cases). REMAINING for live: submit/refresh-status routes +
+   provider-message-id schema columns; one real ASP adapter against the chosen aggregator's REST API (owner
+   picks the ASP); and the XML gaps (EndpointID, AED tax total on foreign invoices, `<CreditNote>` syntax).
