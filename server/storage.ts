@@ -261,7 +261,7 @@ import {
   type InvoiceStatus,
 } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
-import { allocatePayment } from "./services/invoice-lifecycle";
+import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-lifecycle";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 
@@ -514,8 +514,12 @@ export interface IStorage {
   getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
   createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;
   createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
-  updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
-  deleteCustomerContact(id: string): Promise<void>;
+  updateCustomerContact(
+    id: string,
+    data: Partial<InsertCustomerContact>,
+    companyId?: string
+  ): Promise<CustomerContact>;
+  deleteCustomerContact(id: string, companyId?: string): Promise<void>;
   deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countInvoicesWithContactByCompanyId(companyId: string): Promise<number>;
@@ -2079,6 +2083,7 @@ export class DatabaseStorage implements IStorage {
         lastReminderSentAt: invoices.lastReminderSentAt,
         invoiceType: invoices.invoiceType,
         originalInvoiceId: invoices.originalInvoiceId,
+        legacyCreditNoteId: invoices.legacyCreditNoteId,
         isRecurring: invoices.isRecurring,
         recurringInterval: invoices.recurringInterval,
         nextRecurringDate: invoices.nextRecurringDate,
@@ -2262,19 +2267,30 @@ export class DatabaseStorage implements IStorage {
 
   async updateCustomerContact(
     id: string,
-    data: Partial<InsertCustomerContact>
+    data: Partial<InsertCustomerContact>,
+    companyId?: string
   ): Promise<CustomerContact> {
+    // S-L3: when the caller knows the tenant, scope the WHERE to it so the row
+    // can only be mutated within its own company (defence-in-depth even though
+    // routes pre-check access).
+    const where = companyId
+      ? and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId))
+      : eq(customerContacts.id, id);
     const [contact] = await db
       .update(customerContacts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(customerContacts.id, id))
+      .where(where)
       .returning();
     if (!contact) throw new Error("Customer contact not found");
     return contact;
   }
 
-  async deleteCustomerContact(id: string): Promise<void> {
-    await db.delete(customerContacts).where(eq(customerContacts.id, id));
+  async deleteCustomerContact(id: string, companyId?: string): Promise<void> {
+    // S-L3: tenant-scope the delete when the company is known.
+    const where = companyId
+      ? and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId))
+      : eq(customerContacts.id, id);
+    await db.delete(customerContacts).where(where);
   }
 
   async deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number> {
@@ -4688,6 +4704,9 @@ export class DatabaseStorage implements IStorage {
     notes: string | null;
     paymentAccountId: string;
     paymentAccountCurrency?: string | null;
+    /** A-B5: AED-per-unit rate on the payment date; enables realised FX and
+     *  cross-currency settlement. Null = settle at the invoice rate (no FX). */
+    paymentExchangeRate?: number | null;
     receivableAccountId: string;
     createdBy: string;
   }): Promise<{
@@ -4729,7 +4748,16 @@ export class DatabaseStorage implements IStorage {
         e.code = "INVOICE_TERMINAL";
         throw e;
       }
-      if (input.paymentAccountCurrency && input.paymentAccountCurrency !== lockedInvoice.currency) {
+      // A-B5: a currency mismatch is allowed when an explicit payment-date rate
+      // is supplied (cross-currency settlement, e.g. paying a USD invoice from
+      // an AED bank account) — the rate converts the cash and realised FX is
+      // posted. Without a rate we keep the strict guard.
+      const hasPaymentRate = !!(input.paymentExchangeRate && input.paymentExchangeRate > 0);
+      if (
+        input.paymentAccountCurrency &&
+        input.paymentAccountCurrency !== lockedInvoice.currency &&
+        !hasPaymentRate
+      ) {
         const e: any = new Error(
           `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`
         );
@@ -4823,36 +4851,47 @@ export class DatabaseStorage implements IStorage {
           postedAt: input.date,
         })
         .returning();
-      const fxRate =
-        Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
-      const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-      const arCreditAed = round2(allocation.appliedToReceivable * fxRate);
-      const creditAed = round2(allocation.customerCredit * fxRate);
-      // Debit cash for exactly the sum of the credit legs so the entry is
-      // always balanced even if independent rounding would drift by a fil.
-      const bankDebitAed = round2(arCreditAed + creditAed);
-      await tx.insert(journalLines).values({
-        entryId: entry.id,
-        accountId: input.paymentAccountId,
-        debit: bankDebitAed,
-        credit: 0,
-        description: `Payment received - Invoice ${lockedInvoice.number || input.invoiceId}`,
+      // A-B5/A-B12: compute the balanced legs via the tested pure builder. AR
+      // clears at the invoice rate; cash at the payment-date rate (when one is
+      // supplied — else the invoice rate, i.e. no FX, identical to before).
+      const invRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
+      const payRate = hasPaymentRate ? Number(input.paymentExchangeRate) : invRate;
+      // Resolve FX gain/loss accounts only when a differing payment rate could
+      // produce realised FX (avoids a lookup on the common same-rate path).
+      let fxGainAccountId: string | null = null;
+      let fxLossAccountId: string | null = null;
+      if (hasPaymentRate && Math.abs(payRate - invRate) > 1e-9) {
+        const fxRows = await tx
+          .select()
+          .from(accounts)
+          .where(
+            and(
+              eq(accounts.companyId, input.companyId),
+              inArray(accounts.code, [ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])
+            )
+          );
+        fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
+        fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
+      }
+      const built = buildPaymentJournalLines({
+        appliedToReceivable: allocation.appliedToReceivable,
+        customerCredit: allocation.customerCredit,
+        invoiceRate: invRate,
+        paymentRate: payRate,
+        paymentAccountId: input.paymentAccountId,
+        receivableAccountId: input.receivableAccountId,
+        customerCreditAccountId,
+        fxGainAccountId,
+        fxLossAccountId,
+        label: `Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
-      await tx.insert(journalLines).values({
-        entryId: entry.id,
-        accountId: input.receivableAccountId,
-        debit: 0,
-        credit: arCreditAed,
-        description: `Clear A/R - Invoice ${lockedInvoice.number || input.invoiceId}`,
-      });
-      if (creditAed > 0 && customerCreditAccountId) {
-        await tx.insert(journalLines).values({
-          entryId: entry.id,
-          accountId: customerCreditAccountId,
-          debit: 0,
-          credit: creditAed,
-          description: `Customer credit (overpayment) - Invoice ${lockedInvoice.number || input.invoiceId}`,
-        });
+      if (!built.ok) {
+        const e: any = new Error(built.message);
+        e.code = built.code;
+        throw e;
+      }
+      for (const line of built.lines) {
+        await tx.insert(journalLines).values({ entryId: entry.id, ...line });
       }
 
       // Record the payment row.
@@ -4867,6 +4906,7 @@ export class DatabaseStorage implements IStorage {
           reference: input.reference,
           notes: input.notes,
           paymentAccountId: input.paymentAccountId,
+          exchangeRate: hasPaymentRate ? String(payRate) : null,
           journalEntryId: entry.id,
           createdBy: input.createdBy,
         })

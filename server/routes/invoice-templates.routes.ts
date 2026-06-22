@@ -103,7 +103,11 @@ export function registerInvoiceTemplateRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateInvoiceTemplate(id, req.body);
+      // S-M1: allowlist update fields (tenant scope cannot be changed here).
+      const updated = await storage.updateInvoiceTemplate(
+        id,
+        pickAllowed(req.body, insertInvoiceTemplateSchema, ["companyId"]) as any
+      );
       res.json(updated);
     })
   );

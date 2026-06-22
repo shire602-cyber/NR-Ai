@@ -290,6 +290,27 @@ export function calculateVatWorkpaperTotals(
   return totals;
 }
 
+/**
+ * A-B9: Reverse charge is self-accounting — the output VAT declared in Box 3
+ * should normally be matched by a recoverable input entry in Box 10 (a
+ * fully-taxable person nets to nil). The workpaper keeps these as two manual
+ * rows, so entering only one silently over- or under-declares VAT. Rather than
+ * auto-mirroring (which would double-count when both legs ARE entered), surface
+ * the imbalance as a warning the preparer can resolve. Returns null when the
+ * legs match (within a fil) or there is no reverse-charge activity.
+ */
+export function reverseChargeImbalanceWarning(totals: Vat201Totals): string | null {
+  const output = toMoney(totals.box3ReverseChargeVat ?? 0);
+  const input = toMoney(totals.box10ReverseChargeVat ?? 0);
+  if (output === 0 && input === 0) return null;
+  if (Math.abs(output - input) <= 0.01) return null;
+  return (
+    `Reverse-charge output VAT (Box 3 = ${output.toFixed(2)}) does not match the recoverable ` +
+    `input VAT (Box 10 = ${input.toFixed(2)}). Confirm both legs are entered — a fully-taxable ` +
+    `person normally records the reverse charge on both sides so it nets to nil.`
+  );
+}
+
 export function defaultVatDueDate(periodEnd: Date | string): Date {
   const dueDate = new Date(periodEnd);
   dueDate.setDate(dueDate.getDate() + 28);

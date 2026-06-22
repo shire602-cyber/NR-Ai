@@ -4,17 +4,73 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { generateCreditNotePDF } from "../services/pdf-credit-note.service";
-import { ACCOUNT_CODES } from "../constants";
-import { createLogger } from "../config/logger";
-import { calculateDocumentTotals } from "../services/document-totals.service";
 
-const logger = createLogger("credit-notes-routes");
+function canonicalCreditNoteStatus(status: string): string {
+  if (status === "draft") return "draft";
+  if (status === "void" || status === "cancelled") return "void";
+  return "issued";
+}
 
-// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
-function normalizeCreditNoteDates<T extends { date?: unknown }>(data: T): T {
-  const out: any = { ...data };
-  if (out.date) out.date = new Date(out.date);
-  return out;
+function toCanonicalCreditNote(invoice: any, originalInvoice?: any) {
+  return {
+    id: invoice.id,
+    companyId: invoice.companyId,
+    number: invoice.number,
+    customerName: invoice.customerName,
+    customerTrn: invoice.customerTrn,
+    invoiceId: invoice.originalInvoiceId,
+    invoiceNumber: originalInvoice?.number ?? null,
+    date: invoice.date,
+    currency: invoice.currency,
+    subtotal: Math.abs(Number(invoice.subtotal) || 0),
+    vatAmount: Math.abs(Number(invoice.vatAmount) || 0),
+    total: Math.abs(Number(invoice.total) || 0),
+    status: canonicalCreditNoteStatus(invoice.status),
+    reason: "Invoice credit note",
+    journalEntryId: null,
+    createdAt: invoice.createdAt,
+    updatedAt: invoice.createdAt,
+  };
+}
+
+function toCanonicalCreditNoteLine(line: any) {
+  return {
+    id: line.id,
+    creditNoteId: line.invoiceId,
+    description: String(line.description || "").replace(/^\[Credit\]\s*/u, ""),
+    quantity: Math.abs(Number(line.quantity) || 0),
+    unitPrice: Math.abs(Number(line.unitPrice) || 0),
+    vatRate: line.vatRate,
+    vatSupplyType: line.vatSupplyType,
+  };
+}
+
+async function getCanonicalCreditNote(id: string) {
+  const invoice = await storage.getInvoiceById(id);
+  if (!invoice || (invoice as any).invoiceType !== "credit_note") return null;
+  const originalInvoice = invoice.originalInvoiceId
+    ? await storage.getInvoiceById(invoice.originalInvoiceId)
+    : undefined;
+  return toCanonicalCreditNote(invoice, originalInvoice);
+}
+
+async function getCanonicalCreditNoteWithLines(id: string) {
+  const creditNote = await getCanonicalCreditNote(id);
+  if (!creditNote) return null;
+  const invoiceLines = await storage.getInvoiceLinesByInvoiceId(id);
+  return {
+    ...creditNote,
+    lines: invoiceLines.map(toCanonicalCreditNoteLine),
+  };
+}
+
+function sendLegacyWriteDisabled(res: Response) {
+  return res.status(410).json({
+    message:
+      "Standalone credit-note writes are retired. Create credit notes from the original invoice so VAT, FX, caps, and journal entries stay unified.",
+    code: "STANDALONE_CREDIT_NOTES_RETIRED",
+    replacement: "POST /api/companies/:companyId/invoices/:invoiceId/credit-note",
+  });
 }
 
 export function registerCreditNoteRoutes(app: Express) {
@@ -37,7 +93,12 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const creditNotes = await storage.getCreditNotesByCompanyId(companyId);
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const byId = new Map(invoices.map((invoice: any) => [invoice.id, invoice]));
+      const creditNotes = invoices
+        .filter((invoice: any) => invoice.invoiceType === "credit_note")
+        .map((invoice: any) => toCanonicalCreditNote(invoice, byId.get(invoice.originalInvoiceId)))
+        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       res.json(creditNotes);
     })
   );
@@ -52,7 +113,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNoteWithLines(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -62,8 +123,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const lines = await storage.getCreditNoteLinesByCreditNoteId(id);
-      res.json({ ...creditNote, lines });
+      res.json(creditNote);
     })
   );
 
@@ -74,32 +134,15 @@ export function registerCreditNoteRoutes(app: Express) {
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...creditNoteData } = req.body;
+      const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const creditNote = await storage.createCreditNote(
-        normalizeCreditNoteDates({
-          ...creditNoteData,
-          ...calculateDocumentTotals(lines),
-          companyId,
-        })
-      );
-
-      if (lines && Array.isArray(lines)) {
-        for (const line of lines) {
-          await storage.createCreditNoteLine({ ...line, creditNoteId: creditNote.id });
-        }
-      }
-
-      const creditNoteLines = await storage.getCreditNoteLinesByCreditNoteId(creditNote.id);
-      logger.info({ creditNoteId: creditNote.id, companyId }, "Credit note created");
-      res.status(201).json({ ...creditNote, lines: creditNoteLines });
+      return sendLegacyWriteDisabled(res);
     })
   );
 
@@ -112,9 +155,7 @@ export function registerCreditNoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...updateData } = req.body;
-
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNote(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -124,28 +165,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (creditNote.status === "issued" || creditNote.status === "void") {
-        return res.status(400).json({ message: "Cannot update an issued or voided credit note" });
-      }
-
-      const updated = await storage.updateCreditNote(
-        id,
-        normalizeCreditNoteDates(
-          lines && Array.isArray(lines)
-            ? { ...updateData, ...calculateDocumentTotals(lines) }
-            : updateData
-        )
-      );
-
-      if (lines && Array.isArray(lines)) {
-        await storage.deleteCreditNoteLinesByCreditNoteId(id);
-        for (const line of lines) {
-          await storage.createCreditNoteLine({ ...line, creditNoteId: id });
-        }
-      }
-
-      const creditNoteLines = await storage.getCreditNoteLinesByCreditNoteId(id);
-      res.json({ ...updated, lines: creditNoteLines });
+      return sendLegacyWriteDisabled(res);
     })
   );
 
@@ -158,7 +178,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNote(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -168,26 +188,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (creditNote.status === "issued") {
-        return res
-          .status(400)
-          .json({ message: "Cannot delete an issued credit note. Void it instead." });
-      }
-
-      await storage.deleteCreditNote(id);
-      // S-H4: audit credit-note deletion.
-      const { recordAudit } = await import("../services/audit.service");
-      await recordAudit({
-        userId,
-        companyId: creditNote.companyId,
-        action: "credit_note.delete",
-        entityType: "credit_note",
-        entityId: id,
-        before: { number: (creditNote as any).number, status: creditNote.status },
-        after: null,
-        req,
-      });
-      res.json({ message: "Credit note deleted" });
+      return sendLegacyWriteDisabled(res);
     })
   );
 
@@ -201,7 +202,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNote(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -211,110 +212,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (creditNote.status === "issued") {
-        return res.status(400).json({ message: "Credit note already issued" });
-      }
-
-      // A zero-total credit note posts a meaningless empty reversal — refuse.
-      // (Totals are computed server-side from lines; zero means no lines or
-      // data created before totals were computed.)
-      if (!(Number(creditNote.total) > 0)) {
-        return res.status(422).json({
-          message:
-            "Credit note total is zero — re-save the credit note with line items before issuing.",
-          code: "CREDIT_NOTE_ZERO_TOTAL",
-        });
-      }
-
-      if (creditNote.status === "void") {
-        return res.status(400).json({ message: "Cannot issue a voided credit note" });
-      }
-
-      // Create reversing journal entry
-      // Look up by stable account CODE first (see server/constants.ts); the
-      // default UAE chart has no account literally named 'Sales Revenue', so
-      // name-only lookups would 500 for every company on the seeded chart.
-      const accounts = await storage.getAccountsByCompanyId(creditNote.companyId);
-      const byCode = (code: string) => accounts.find((a) => (a as any).code === code);
-      const accountsReceivable =
-        byCode(ACCOUNT_CODES.AR) ?? accounts.find((a) => a.nameEn === "Accounts Receivable");
-      const salesRevenue =
-        byCode(ACCOUNT_CODES.REVENUE) ??
-        byCode(ACCOUNT_CODES.REVENUE_ALT) ??
-        accounts.find((a) =>
-          ["Sales Revenue", "Product Sales", "Service Revenue"].includes(a.nameEn)
-        );
-      const vatPayable =
-        byCode(ACCOUNT_CODES.VAT_OUTPUT) ??
-        accounts.find((a) => a.nameEn === "VAT Payable" || a.nameEn === "VAT Payable (Output VAT)");
-
-      if (!accountsReceivable || !salesRevenue) {
-        return res
-          .status(500)
-          .json({ message: "Required accounts not found (Accounts Receivable, Sales Revenue)" });
-      }
-
-      const now = new Date();
-
-      // Build lines array conditionally
-      const lines: Array<{
-        accountId: string;
-        debit: number;
-        credit: number;
-        description: string;
-      }> = [
-        {
-          accountId: salesRevenue.id,
-          debit: creditNote.subtotal,
-          credit: 0,
-          description: `Credit note ${creditNote.number} - reverse sales revenue`,
-        },
-        {
-          accountId: accountsReceivable.id,
-          debit: 0,
-          credit: creditNote.total,
-          description: `Credit note ${creditNote.number} - reduce A/R`,
-        },
-      ];
-
-      if (creditNote.vatAmount > 0 && vatPayable) {
-        lines.push({
-          accountId: vatPayable.id,
-          debit: creditNote.vatAmount,
-          credit: 0,
-          description: `Credit note ${creditNote.number} - reverse VAT output`,
-        });
-      }
-
-      const { entry } = await storage.createJournalEntryWithLines(
-        creditNote.companyId,
-        now,
-        {
-          memo: `Credit Note ${creditNote.number} - ${creditNote.customerName}`,
-          status: "posted",
-          source: "credit_note",
-          sourceId: creditNote.id,
-          createdBy: userId,
-          postedBy: userId,
-        },
-        lines
-      );
-
-      // Mark credit note as issued and link journal entry
-      const updated = await storage.updateCreditNote(id, {
-        status: "issued",
-        journalEntryId: entry.id,
-      });
-
-      logger.info(
-        { creditNoteId: id, journalEntryNumber: entry.entryNumber },
-        "Credit note issued"
-      );
-      res.json({
-        ...updated,
-        journalEntryId: entry.id,
-        message: "Credit note issued with reversing journal entry",
-      });
+      return sendLegacyWriteDisabled(res);
     })
   );
 
@@ -328,7 +226,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNote(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -338,16 +236,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (creditNote.status === "void") {
-        return res.status(400).json({ message: "Credit note already voided" });
-      }
-
-      const updated = await storage.updateCreditNote(id, {
-        status: "void",
-      });
-
-      logger.info({ creditNoteId: id }, "Credit note voided");
-      res.json({ ...updated, message: "Credit note voided" });
+      return sendLegacyWriteDisabled(res);
     })
   );
 
@@ -361,7 +250,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const creditNote = await storage.getCreditNote(id);
+      const creditNote = await getCanonicalCreditNoteWithLines(id);
       if (!creditNote) {
         return res.status(404).json({ message: "Credit note not found" });
       }
@@ -371,13 +260,12 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const lines = await storage.getCreditNoteLinesByCreditNoteId(id);
       const company = await storage.getCompany(creditNote.companyId);
       if (!company) {
         return res.status(404).json({ message: "Company not found" });
       }
 
-      const pdfBuffer = await generateCreditNotePDF(creditNote, lines, company);
+      const pdfBuffer = await generateCreditNotePDF(creditNote as any, creditNote.lines as any, company);
 
       res.set({
         "Content-Type": "application/pdf",

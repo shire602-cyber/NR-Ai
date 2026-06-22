@@ -42,6 +42,12 @@ export const ACCOUNT_CODES = {
   REVENUE_ALT: "4020",
   /** Deferred Revenue / customer advances (holds invoice overpayments). */
   DEFERRED_REVENUE: "2050",
+  /** Employee Reimbursements Payable (owed to staff for approved expense claims). */
+  EMP_REIMBURSEMENT_PAYABLE: "2045",
+  /** Foreign-exchange gain (income) — realised + unrealised FX differences. */
+  FX_GAIN: "4090",
+  /** Foreign-exchange loss (expense) — realised + unrealised FX differences. */
+  FX_LOSS: "5140",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];

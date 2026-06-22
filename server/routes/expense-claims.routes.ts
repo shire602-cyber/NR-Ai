@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { buildExpenseClaimJournalLines } from "../services/expense-claim-posting";
 
 const log = createLogger("expense-claims");
 
@@ -355,6 +356,36 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const { review_notes } = req.body;
 
+      // S-H6: approval recognises the expense in the GL. Build the balanced
+      // entry (Dr expense accounts per category + Dr recoverable input VAT,
+      // Cr Employee Reimbursements Payable) and validate it BEFORE flipping the
+      // status, so we never approve a claim we can't post.
+      const itemsRes = await pool.query(
+        `SELECT category, amount, vat_amount FROM expense_claim_items WHERE claim_id = $1`,
+        [id]
+      );
+      const accountsList = await storage.getAccountsByCompanyId(claim.company_id);
+      const codeToId = new Map<string, string>(accountsList.map((a) => [a.code, a.id]));
+      const built = buildExpenseClaimJournalLines({
+        items: itemsRes.rows.map((r: any) => ({
+          category: r.category,
+          amount: r.amount,
+          vatAmount: r.vat_amount,
+        })),
+        resolveByCode: (code) => codeToId.get(code) ?? null,
+      });
+      if (!built.ok) {
+        return res.status(built.status).json({ message: built.message, code: built.code });
+      }
+
+      // Idempotency: skip if a JE was already posted for this claim.
+      const existingEntries = await storage.getJournalEntriesBySource(
+        claim.company_id,
+        "expense_claim",
+        id
+      );
+      const alreadyPosted = existingEntries.some((e) => e.status === "posted");
+
       const updatedResult = await pool.query(
         `UPDATE expense_claims
        SET status = 'approved', reviewed_by = $1, reviewed_at = NOW(), review_notes = $2
@@ -363,12 +394,28 @@ export function registerExpenseClaimRoutes(app: Express) {
         [userId, review_notes || null, id]
       );
 
-      log.info({ claimId: id, reviewedBy: userId }, "Expense claim approved");
+      if (!alreadyPosted) {
+        const postingDate = latestExpenseDate ? new Date(latestExpenseDate) : new Date();
+        const entryNumber = await storage.generateEntryNumber(claim.company_id, postingDate);
+        await storage.createJournalEntry(
+          {
+            companyId: claim.company_id,
+            date: postingDate,
+            memo: `Expense claim ${claim.claim_number || id} approved`,
+            entryNumber,
+            status: "posted",
+            source: "expense_claim",
+            sourceId: id,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: postingDate,
+          } as any,
+          built.lines
+        );
+      }
+
+      log.info({ claimId: id, reviewedBy: userId }, "Expense claim approved and posted to GL");
       // S-H4: audit the approval (an authorization of company spend).
-      // NOTE (S-H6, deferred): approval should also post the expense to the GL
-      // (Dr expense accounts / Cr employee-reimbursement payable). That posting
-      // needs an account-mapping + reimbursement-liability design decision and
-      // DB-backed tests — tracked in docs/FIX_PLAN.md.
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
         userId,

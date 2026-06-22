@@ -342,55 +342,46 @@ async function main() {
     await fail("quote-flow", { crash: e.message.slice(0, 150) });
   }
 
-  // ── 6. Credit note lifecycle: create → renders → issue posts a reversing
-  //       journal entry against the seeded chart of accounts ────────────────
+  // ── 6. Credit note lifecycle: create from invoice → renders as canonical
+  //       invoice-embedded credit note ─────────────────────────────────────
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const cnNumber = `CN-${Date.now()}`;
-    const cnRes = await page.request.post(`${BASE}/api/companies/${companyId}/credit-notes`, {
-      headers: { "x-csrf-token": csrfToken ?? "" },
-      data: {
-        number: cnNumber,
-        customerName: "Credit Customer LLC",
-        date: new Date().toISOString(),
-        currency: "AED",
-        subtotal: 200,
-        vatAmount: 10,
-        total: 210,
-        reason: "Returned goods",
-        lines: [{ description: "Returned item", quantity: 1, unitPrice: 200, vatRate: 0.05 }],
-      },
-    });
-    if (cnRes.status() !== 201) {
-      await fail("credit-note-flow create", {
-        detail: `status ${cnRes.status()}: ${(await cnRes.text()).slice(0, 200)}`,
-      });
+    const invoices = await (
+      await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
+    ).json();
+    const sourceInvoice = invoices?.find?.((invoice) => invoice?.invoiceType !== "credit_note");
+    if (!sourceInvoice?.id) {
+      await fail("credit-note-flow source", { detail: "no source invoice available" });
     } else {
-      const note = await cnRes.json();
-      routeErrors = [];
-      apiFailures = [];
-      await page.goto(`${BASE}/credit-notes`);
-      await page.waitForTimeout(2500);
-      const cnText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!cnText.includes(cnNumber)) {
-        await fail("credit-note-flow render", { detail: "created credit note not visible in UI" });
-      }
-      const issueRes = await page.request.post(`${BASE}/api/credit-notes/${note.id}/issue`, {
-        headers: { "x-csrf-token": csrfToken ?? "" },
-      });
-      if (issueRes.status() >= 300) {
-        await fail("credit-note-flow issue", {
-          detail: `status ${issueRes.status()}: ${(await issueRes.text()).slice(0, 200)}`,
+      const cnRes = await page.request.post(
+        `${BASE}/api/companies/${companyId}/invoices/${sourceInvoice.id}/credit-note`,
+        {
+          headers: { "x-csrf-token": csrfToken ?? "" },
+        }
+      );
+      if (cnRes.status() !== 201) {
+        await fail("credit-note-flow create", {
+          detail: `status ${cnRes.status()}: ${(await cnRes.text()).slice(0, 200)}`,
         });
       } else {
+        const note = await cnRes.json();
+        const cnNumber = note.number;
+        routeErrors = [];
+        apiFailures = [];
+        await page.goto(`${BASE}/credit-notes`);
+        await page.waitForTimeout(2500);
+        const cnText = await page
+          .locator("main")
+          .innerText()
+          .catch(() => "");
+        if (!cnText.includes(cnNumber)) {
+          await fail("credit-note-flow render", { detail: "created credit note not visible in UI" });
+        }
         const detail = await (await page.request.get(`${BASE}/api/credit-notes/${note.id}`)).json();
-        if (detail?.status !== "issued" || !detail?.journalEntryId) {
+        if (detail?.status !== "issued" || detail?.invoiceId !== sourceInvoice.id) {
           await fail("credit-note-flow status", {
-            detail: `expected issued with journal link, got ${detail?.status}`,
+            detail: `expected canonical issued credit note for ${sourceInvoice.id}, got ${detail?.status}`,
           });
         }
       }

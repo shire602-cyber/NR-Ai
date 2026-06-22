@@ -3,8 +3,50 @@ import {
   classifyBalanceSheetAccount,
   computeCashFlow,
   revalueForeignBalance,
+  buildFxRevaluationLines,
   type CFAccount,
 } from "../../server/services/financial-statements";
+
+describe("buildFxRevaluationLines (A-B8)", () => {
+  const accounts = { arId: "ar", apId: "ap", fxGainId: "gain", fxLossId: "loss" };
+
+  it("posts a net AR gain to FX gain, balanced", () => {
+    const r = buildFxRevaluationLines({ receivableRevalAed: 80, payableRevalAed: 0, accounts });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.lines).toContainEqual(expect.objectContaining({ accountId: "ar", debit: 80, credit: 0 }));
+      expect(r.lines).toContainEqual(expect.objectContaining({ accountId: "gain", debit: 0, credit: 80 }));
+      const dr = r.lines.reduce((s, l) => s + l.debit, 0);
+      const cr = r.lines.reduce((s, l) => s + l.credit, 0);
+      expect(dr).toBe(cr);
+    }
+  });
+
+  it("nets a mixed AR gain + AP loss to the correct P&L side, balanced", () => {
+    // AR gain 100 (Dr AR), AP loss -30 (Cr AP) -> net +70 -> Cr FX gain 70.
+    const r = buildFxRevaluationLines({ receivableRevalAed: 100, payableRevalAed: -30, accounts });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const dr = r.lines.reduce((s, l) => s + l.debit, 0);
+      const cr = r.lines.reduce((s, l) => s + l.credit, 0);
+      expect(dr).toBe(100);
+      expect(cr).toBe(100);
+      expect(r.lines.find((l) => l.accountId === "gain")?.credit).toBe(70);
+    }
+  });
+
+  it("posts a net loss to FX loss", () => {
+    const r = buildFxRevaluationLines({ receivableRevalAed: -50, payableRevalAed: 0, accounts });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.lines.find((l) => l.accountId === "loss")?.debit).toBe(50);
+  });
+
+  it("returns NO_REVALUATION when nothing is open", () => {
+    const r = buildFxRevaluationLines({ receivableRevalAed: 0, payableRevalAed: 0, accounts });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("NO_REVALUATION");
+  });
+});
 
 describe("revalueForeignBalance (A-B4: AED-per-foreign convention)", () => {
   it("values a receivable as foreignAmount * rate (multiply, never divide)", () => {

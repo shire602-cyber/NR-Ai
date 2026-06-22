@@ -4,8 +4,102 @@ import {
   evaluateCreditNoteRequest,
   buildReversalLines,
   allocatePayment,
+  computeRealisedFx,
+  buildPaymentJournalLines,
   round2,
 } from "../../server/services/invoice-lifecycle";
+
+describe("buildPaymentJournalLines (A-B5 + A-B12 wiring)", () => {
+  const acc = {
+    paymentAccountId: "bank",
+    receivableAccountId: "ar",
+    customerCreditAccountId: "adv",
+    fxGainAccountId: "fxg",
+    fxLossAccountId: "fxl",
+  };
+  const sum = (lines: any[], k: string) => round2(lines.reduce((s, l) => s + l[k], 0));
+
+  it("same-rate full payment = simple 2-leg balanced entry (no FX)", () => {
+    const r = buildPaymentJournalLines({
+      appliedToReceivable: 5250, customerCredit: 0, invoiceRate: 1, paymentRate: 1, ...acc,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.lines).toHaveLength(2);
+      expect(r.realisedFx).toBe(0);
+      expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+      expect(r.lines.find((l) => l.accountId === "bank")?.debit).toBe(5250);
+      expect(r.lines.find((l) => l.accountId === "ar")?.credit).toBe(5250);
+    }
+  });
+
+  it("foreign payment at a higher rate posts a realised gain, balanced", () => {
+    // 1000 USD invoice booked at 3.67, settled at 3.75.
+    const r = buildPaymentJournalLines({
+      appliedToReceivable: 1000, customerCredit: 0, invoiceRate: 3.67, paymentRate: 3.75, ...acc,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.realisedFx).toBe(80);
+      expect(r.lines.find((l) => l.accountId === "bank")?.debit).toBe(3750);
+      expect(r.lines.find((l) => l.accountId === "ar")?.credit).toBe(3670);
+      expect(r.lines.find((l) => l.accountId === "fxg")?.credit).toBe(80);
+      expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+    }
+  });
+
+  it("foreign payment at a lower rate posts a realised loss, balanced", () => {
+    const r = buildPaymentJournalLines({
+      appliedToReceivable: 1000, customerCredit: 0, invoiceRate: 3.67, paymentRate: 3.6, ...acc,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.realisedFx).toBe(-70);
+      expect(r.lines.find((l) => l.accountId === "fxl")?.debit).toBe(70);
+      expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+    }
+  });
+
+  it("overpayment + FX: cash at pay rate, AR at invoice rate, credit parked, balanced", () => {
+    // applied 1000 + overpay 100, invoice 3.67, pay 3.75
+    const r = buildPaymentJournalLines({
+      appliedToReceivable: 1000, customerCredit: 100, invoiceRate: 3.67, paymentRate: 3.75, ...acc,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.lines.find((l) => l.accountId === "adv")?.credit).toBe(375); // 100 * 3.75
+      expect(r.lines.find((l) => l.accountId === "ar")?.credit).toBe(3670);
+      expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+    }
+  });
+
+  it("fails when realised FX needs an account that is missing", () => {
+    const r = buildPaymentJournalLines({
+      appliedToReceivable: 1000, customerCredit: 0, invoiceRate: 3.67, paymentRate: 3.75,
+      paymentAccountId: "bank", receivableAccountId: "ar", fxGainAccountId: null,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("REALISED_FX_ACCOUNT_MISSING");
+  });
+});
+
+describe("computeRealisedFx (A-B5)", () => {
+  it("is zero when the payment rate equals the invoice rate", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.67 });
+    expect(r.realisedGainLoss).toBe(0);
+    expect(r.arClearedAed).toBe(r.cashAed);
+  });
+  it("recognises a gain when the payment rate is higher", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.75 });
+    expect(r.arClearedAed).toBe(3670);
+    expect(r.cashAed).toBe(3750);
+    expect(r.realisedGainLoss).toBe(80);
+  });
+  it("recognises a loss when the payment rate is lower", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.6 });
+    expect(r.realisedGainLoss).toBe(-70);
+  });
+});
 
 describe("allocatePayment (A-B12: overpayment -> customer credit)", () => {
   it("applies a partial payment entirely to the receivable", () => {

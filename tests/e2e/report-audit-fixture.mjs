@@ -672,7 +672,7 @@ async function seedInventory(companyId, dates) {
   return created;
 }
 
-async function seedPayroll(companyId, dates) {
+async function seedPayroll(companyId) {
   const employees = [
     {
       employeeNumber: `RA-E001-${runStamp}`,
@@ -793,7 +793,8 @@ async function seedAssets(companyId, account, dates) {
       })
     );
     if (!asset && payload.paymentAccountId) {
-      const { paymentAccountId: _paymentAccountId, ...fallbackPayload } = payload;
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.paymentAccountId;
       asset = await http("create fixed asset fallback", `/api/companies/${companyId}/fixed-assets`, {
         method: "POST",
         body: fallbackPayload,
@@ -1390,7 +1391,7 @@ async function main() {
   const receipts = await seedReceipts(companyId, account, dates);
   await seedBills(companyId, account, dates);
   await seedInventory(companyId, dates);
-  await seedPayroll(companyId, dates);
+  await seedPayroll(companyId);
   await seedAssets(companyId, account, dates);
   const budget = await seedBudgets(companyId, account, dates);
   await seedExpenseClaims(companyId, dates);

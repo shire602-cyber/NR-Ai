@@ -972,6 +972,9 @@ export const invoices = pgTable(
     invoiceType: text("invoice_type").notNull().default("invoice"),
     reverseCharge: boolean("reverse_charge").notNull().default(false), // FTA reverse-charge: recipient self-assesses VAT
     originalInvoiceId: uuid("original_invoice_id"),
+    legacyCreditNoteId: uuid("legacy_credit_note_id").references((): any => creditNotes.id, {
+      onDelete: "set null",
+    }),
     isRecurring: boolean("is_recurring").notNull().default(false),
     recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
     nextRecurringDate: timestamp("next_recurring_date"),
@@ -987,6 +990,9 @@ export const invoices = pgTable(
     companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
     companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
     contactIdIdx: index("idx_invoices_contact_id").on(table.contactId),
+    legacyCreditNoteUnique: unique("invoices_legacy_credit_note_unique").on(
+      table.legacyCreditNoteId
+    ),
   })
 );
 
@@ -1620,6 +1626,10 @@ export const invoicePayments = pgTable(
     reference: text("reference"),
     notes: text("notes"),
     paymentAccountId: uuid("payment_account_id").references(() => accounts.id),
+    // A-B5: exchange rate on the payment date (AED per unit of the invoice
+    // currency). Null = settle at the invoice rate (no realised FX). When set
+    // and it differs from the invoice rate, the realised FX gain/loss is posted.
+    exchangeRate: rate("exchange_rate"),
     journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
     createdBy: uuid("created_by")
       .notNull()

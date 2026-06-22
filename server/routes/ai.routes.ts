@@ -6,6 +6,8 @@ import { z } from "zod";
 
 import { storage } from "../storage";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
+import { insertBankTransactionSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 import { asyncHandler } from "../middleware/errorHandler";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
@@ -1011,10 +1013,11 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           return res.status(403).json({ message: "Access denied" });
         }
 
+        // S-M1: allowlist body fields, then pin the tenant scope.
         const transaction = await storage.createBankTransaction({
-          ...req.body,
+          ...pickAllowed(req.body, insertBankTransactionSchema, ["companyId"]),
           companyId,
-        });
+        } as any);
         res.json(transaction);
       } catch (error: any) {
         res.status(500).json({ message: error.message });

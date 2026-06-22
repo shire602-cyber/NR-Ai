@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
+    "test:credit-note-consolidation": "RUN_DB_INTEGRATION=1 vitest run tests/integration/credit-note-consolidation.test.ts",
     "audit:campaign": "node scripts/audit-campaign.mjs",
     "audit:inventory": "node scripts/audit-inventory.mjs --markdown",
     "audit:api-coverage": "node scripts/check-frontend-api-coverage.mjs",

@@ -78,7 +78,11 @@ export function registerReconciliationRuleRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateReconciliationRule(id, req.body);
+      // S-M1: allowlist update fields (tenant scope cannot be changed here).
+      const updated = await storage.updateReconciliationRule(
+        id,
+        pickAllowed(req.body, insertReconciliationRuleSchema, ["companyId"]) as any
+      );
       res.json(updated);
     })
   );

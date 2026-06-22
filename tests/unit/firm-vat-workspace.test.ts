@@ -3,7 +3,27 @@ import { describe, expect, it } from "vitest";
 import {
   calculateVatWorkpaperTotals,
   mapVatWorkpaperRowToBox,
+  reverseChargeImbalanceWarning,
 } from "../../server/services/firm-vat-workspace.service";
+
+describe("reverseChargeImbalanceWarning (A-B9)", () => {
+  const base = () =>
+    ({ box3ReverseChargeVat: 0, box10ReverseChargeVat: 0 }) as any;
+  it("returns null when there is no reverse-charge activity", () => {
+    expect(reverseChargeImbalanceWarning(base())).toBeNull();
+  });
+  it("returns null when both legs match", () => {
+    expect(
+      reverseChargeImbalanceWarning({ ...base(), box3ReverseChargeVat: 50, box10ReverseChargeVat: 50 })
+    ).toBeNull();
+  });
+  it("warns when only the output leg is entered", () => {
+    const w = reverseChargeImbalanceWarning({ ...base(), box3ReverseChargeVat: 50, box10ReverseChargeVat: 0 });
+    expect(w).toBeTruthy();
+    expect(w).toContain("Box 3");
+    expect(w).toContain("Box 10");
+  });
+});
 
 describe("firm VAT workspace totals", () => {
   it("maps approved VAT workpaper rows into VAT 201 totals and excludes drafts", () => {

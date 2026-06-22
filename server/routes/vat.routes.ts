@@ -131,27 +131,9 @@ export function registerVATRoutes(app: Express) {
         }
       }
 
-      // Issued credit notes reduce the output side (FTA: adjustments to
-      // supplies). Subtract their lines from the same buckets the invoice
-      // lines fed, so Box 1/Box 4 and the GL stay in agreement.
-      const creditNotes = await storage.getCreditNotesByCompanyId(companyId);
-      const periodCreditNotes = creditNotes.filter((cnote) => {
-        const d = new Date(cnote.date);
-        return d >= startDate && d <= endDate && cnote.status === "issued";
-      });
-      for (const cnote of periodCreditNotes) {
-        const cnLines = await storage.getCreditNoteLinesByCreditNoteId(cnote.id);
-        for (const line of cnLines) {
-          const lineAmount = Number(line.quantity) * Number(line.unitPrice);
-          const rate = line.vatRate ?? UAE_VAT_RATE;
-          if (Number(rate) === 0) {
-            zeroRatedAmount -= lineAmount;
-          } else {
-            standardRatedAmount -= lineAmount;
-            standardRatedVat -= lineAmount * Number(rate);
-          }
-        }
-      }
+      // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
+      // with negative invoice lines after A-B11, so the invoice loop above
+      // captures them exactly once and applies the invoice exchange rate.
 
       // Calculate input tax from receipts — only posted receipts can be
       // claimed for input VAT recovery on a VAT return.

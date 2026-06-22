@@ -71,32 +71,52 @@
   to request foreign→AED and MULTIPLY (was AED→foreign and divide) via the tested `revalueForeignBalance`
   helper. Files: `server/services/financial-statements.ts`, `exchange-rates.routes.ts`. The read side of FX is
   now consistent and correct.
-- [ ] **A-B5 No realised FX gain/loss on settlement; foreign→AED blocked.** DEFERRED (needs DB-backed harness):
-  requires capturing a payment-date rate (schema/UX) and posting the realised difference to a Realised FX P&L
-  account, plus allowing cross-currency settlement. Touches the critical `recordInvoicePayment` money path —
-  do with integration tests in an environment where the DB-backed suite runs. Files: `storage.ts:4700,4767-4789`.
-- [ ] **A-B8 No unrealised FX revaluation POSTED.** PARTIAL/DEFERRED: the revaluation report is now correct
-  (A-B4); posting period-end revaluation JEs to the GL is a new feature — do with the DB-backed harness.
+- [x] **A-B5 No realised FX gain/loss on settlement; foreign→AED blocked.** DONE (conservative, opt-in,
+  backward-compatible): added a nullable `invoice_payments.exchange_rate` column (migration 0080 + schema +
+  journal). `recordInvoicePayment` now accepts an optional `paymentExchangeRate`; when supplied it clears A/R
+  at the invoice rate, takes cash at the payment rate, and posts the realised difference to FX Gain (4090) /
+  Loss (5140) via the tested `computeRealisedFx`. The currency-mismatch guard is relaxed only when a rate is
+  given (enables foreign→AED settlement). With NO rate the legs are byte-for-byte identical to before. Files:
+  `storage.ts`, `invoices.routes.ts`, `invoice-lifecycle.ts`, `shared/schema.ts`, `migrations/0080…`.
+  The leg construction (the risky money math) was extracted into the tested pure `buildPaymentJournalLines`
+  (gain/loss/overpayment/cross-currency cases all asserted balanced); `recordInvoicePayment` now just inserts
+  the returned legs, so the SQL path is a thin mechanical wrapper. (A real-DB smoke of one cross-currency
+  payment is still worth doing in your env, but the logic is now unit-covered.)
+- [x] **A-B8 No unrealised FX revaluation POSTED.** DONE: new `POST /api/companies/:id/exchange-rates/revalue`
+  endpoint sums the unrealised AED revaluation of open foreign A/R + A/P (via `revalueForeignBalance`), posts a
+  balanced period-end JE (Dr/Cr A/R, A/P, FX gain/loss) through the tested `buildFxRevaluationLines`, and posts
+  an automatic next-day reversal (standard practice; realised result recognised on settlement). Added FX Gain
+  (4090) / FX Loss (5140) accounts; idempotent per as-of date; period-lock + audit-logged. Files:
+  `financial-statements.ts`, `exchange-rates.routes.ts`, `defaultChartOfAccounts.ts`, `constants.ts`.
 
 ### A5 · VAT
 - [x] **A-B6 Import VAT taxed as output but never recovered as input.** DONE: `calculateVatWorkpaperTotals`
   now mirrors import VAT (boxes 6 + 7) into recoverable tax (box 13), so it nets to nil for fully-taxable
   importers. No manual import-recovery category exists, so no double-count. Verified by new
   `vat-import-recovery` tests + existing VAT tests still green. Files: `firm-vat-workspace.service.ts`.
-- [ ] **A-B9 Workpaper doesn't auto-mirror reverse charge.** DEFERRED (needs product decision):
-  `reverse_charge_input` (box 10) is a **manual** row category, so auto-mirroring box 3 → box 10 would
-  double-count whenever the user also enters the manual leg. The safe fix is a model decision (deprecate the
-  manual input category and auto-derive, OR add a validation that flags an unbalanced RCM pair). Changes filed
-  VAT — confirm intended UX first.
-- [ ] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** DEFERRED: lives in the
-  `calculateVatReturn` SQL (FTA 201 figures); needs the exchange_rate joined in and DB-backed verification.
-  Files: `vat-autopilot.service.ts:680-699`.
+- [x] **A-B9 Workpaper doesn't auto-mirror reverse charge.** DONE (safe approach): added
+  `reverseChargeImbalanceWarning` — surfaces a warning when Box 3 (RC output VAT) and Box 10 (RC input VAT)
+  don't match, so a preparer can't silently over/under-declare. Chose validation over auto-mirroring because
+  Box 10 is a manual category and auto-mirroring would double-count the recovery (→ under-declaration/penalty).
+  Tested. Files: `firm-vat-workspace.service.ts`. (UI surfacing of the warning is a small follow-up.)
+- [x] **A-B15 Foreign-currency credit notes miss the FX factor in the VAT calc.** DONE: the PRIMARY
+  (invoice-embedded, invoiceType='credit_note') path is already FX-correct — those rows flow through the
+  invoice line query which multiplies by `i.exchange_rate`. The standalone path is now consolidated into
+  canonical invoice credit notes before the standalone VAT subtraction is removed, so VAT picks up credit notes
+  exactly once through the FX-aware invoice-line query. Files: `0081_credit_note_consolidation.sql`,
+  `credit-note-consolidation.service.ts`, `vat-autopilot.service.ts`, `vat.routes.ts`.
 - [~] **A-B14 NULL line VAT rate silently defaults to 5%.** REVIEWED: current logic is FTA-conservative and
   correct — explicit `vatSupplyType` (zero/exempt/out-of-scope) always wins over rate, and only a line with
   BOTH null supply type and null rate defaults to standard 5% (the safe default). No code change; behavior is
   exercised by existing VAT tests. Files: `vat-autopilot.service.ts:305`.
-- [ ] **A-B13 VAT rounded per-invoice only.** Open: decide + document line-vs-invoice rounding; align autopilot
-  reconciliation tolerance. Files: `document-totals.service.ts:32-42`.
+- [x] **A-B13 VAT rounded per-invoice only.** DONE (documented decision): invoice-level VAT rounding is the
+  deliberate, FTA-permitted convention (Exec. Reg. Art. 30); `calculateDocumentTotals` keeps full Decimal
+  precision per line and rounds once at the document level, and the autopilot rounds the same way (per bucket),
+  so totals reconcile. Documented in `document-totals.service.ts`.
+- [x] **A-B17 Float drift in report aggregation.** DONE (contained): added decimal-safe `sumMoney` (sums in
+  fils) and applied it to the cash-flow section totals + net cash change so they tie exactly. (The money custom
+  type still returns a float; converting it repo-wide is a large, low-value change left as optional — the
+  balance-critical sums now use exact integer-fils accumulation.) Files: `financial-statements.ts`.
 
 ### A6 · Corporate tax  ✅ (test-backed)
 - [x] **A-B7 Three different CT calculators give different answers.** DONE: `computeCtLiability` now delegates
@@ -112,8 +132,15 @@
 ### A7 · Precision, dedup & dead code
 - [ ] **A-B17 Money read/aggregation is float-based.** Fix: money custom type returns string/Decimal;
   aggregate reports/trial-balance/month-end with decimal.js. Files: `schema.ts:22-32` + report routes.
-- [ ] **A-B11 Two divergent credit-note systems.** Fix: consolidate to one; link standalone CNs to invoices.
-  Files: `credit-notes.routes.ts` + invoice-embedded path.
+- [x] **A-B11 Two divergent credit-note systems.** DONE: `0081_credit_note_consolidation.sql` adds
+  `invoices.legacy_credit_note_id`, backfills standalone `credit_notes` into canonical invoice credit notes
+  with negative invoice lines, repoints existing standalone CN journal entries to the canonical invoice source,
+  posts missing issued-CN journals when the default accounts/user exist, and keeps old tables for retention.
+  The standalone VAT-return subtraction was removed in the same release, and the legacy credit-note API now
+  reads/PDFs canonical credit notes while retiring standalone writes with HTTP 410. Added a real-DB integration
+  regression (`RUN_DB_INTEGRATION=1 INTEGRATION_DATABASE_URL=... npm run test:credit-note-consolidation`) that
+  seeds a standalone CN, runs the backfill, and asserts VAT-201 sales totals plus trial balance are unchanged.
+  Resolves A-B15 too.
 - [ ] **A7.x Remove dead code** revealed during the above (e.g. unwired Stripe path) once A-B1 resolved.
 
 ---
@@ -134,13 +161,13 @@
 - [x] **S-H1 Portal-token cross-tenant IDOR.** DONE: `generate-access` now resolves the contact then
   enforces `hasCompanyAccess(userId, contact.companyId)` (403) before minting the portal token, closing the
   live cross-tenant data-exposure hole. Files: `portal.public.routes.ts`.
-- [~] **S-H2 Seeded backdoor firm_owner accounts.** Code side already mitigated by revoke migration 0051
-  (verified present). REMAINING = OPERATIONAL ONLY: rotate `JWT_SECRET` in any env that ran 0023/0028 and set
-  `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true`. Can't be done in code — owner/ops action.
-- [!] **S-H3 Hard-coded personal admin promotion (`migrations/0054`, shire602@gmail.com).** OWNER DECISION:
-  this is the owner's OWN account, so auto-revoking would lock them out of admin. Not changed blindly.
-  Recommended: move the grant out of the committed migration chain (so it doesn't apply in other
-  environments) without stripping the owner's production access. Needs owner confirmation.
+- [x] **S-H2 Seeded backdoor firm_owner accounts.** CLOSED: code side mitigated by revoke migration 0051;
+  owner rotated `JWT_SECRET` and set `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` in Railway (2026-06-22). The
+  production-security verifier (`scripts/verify-production-security.mjs`) now passes that gate.
+- [~] **S-H3 Hard-coded personal admin promotion (`migrations/0054`, shire602@gmail.com).** DRAFT PROVIDED
+  (not applied): `docs/proposed-migrations/revoke-shire602-admin.sql` — a non-auto-running revoke for
+  non-owner-production environments, with lock-out warning and the recommended long-term fix. Still an OWNER
+  decision to apply per-environment (it's the owner's own account).
 - [~] **S-H4 Money/export endpoints lack audit logging.** DONE for the key money mutations: bill payment,
   bank reconcile-create-entry, credit-note delete, fixed-asset delete, expense-claim approve now call
   `recordAudit`. REMAINING: report-export endpoints (who exported the VAT return / trial balance) — additive,
@@ -149,18 +176,22 @@
   `ASSET_HAS_POSTED_JE`) when posted JEs reference the asset (capitalization/depreciation) — preventing
   orphaned GL entries — and is audit-logged. (Credit-note delete already blocks *issued* notes; deletable
   drafts have no posted JE so retention does not apply.) Files: `fixed-assets.routes.ts`.
-- [~] **S-H6 Non-atomic posting / missing GL.** Payroll posting already improved (atomic + audited, per
-  re-audit). DEFERRED: posting GL for expense-claim approval (Dr expense / Cr employee-reimbursement payable)
-  needs an account-mapping + liability-account design decision and DB-backed tests. Approval is now at least
-  audit-logged. Files: `expense-claims.routes.ts`.
+- [x] **S-H6 Non-atomic posting / missing GL.** DONE: expense-claim approval now posts a balanced GL entry —
+  Dr expense account per item category (tested `mapExpenseCategoryToCode`) + Dr recoverable input VAT, Cr new
+  **Employee Reimbursements Payable** (2045) liability — via `buildExpenseClaimJournalLines` (pure, tested),
+  validated before the status flip, idempotent by source. Added account 2045 to the default chart. Payroll
+  posting was already atomic+audited. Files: `expense-claim-posting.ts`, `expense-claims.routes.ts`,
+  `defaultChartOfAccounts.ts`, `constants.ts`. (Reimbursement payout Dr 2045 / Cr Bank is a small follow-up.)
 
 ### Medium / Low
 - [x] **S-M1 Mass-assignment** — DONE via the `pickAllowed` allowlist helper (`server/utils/pick-allowed.ts`),
   now applied to: `companies` updateCompany (PUT+PATCH) + createBankAccount, `corporate-tax` create+update,
   `contacts` create, `cost-centers` create, `invoice-templates` create, `reconciliation-rules` create, and
   `bank` connection create. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
-  id/createdAt/unknown keys and pins the tenant scope. REMAINING (low): a final sweep of any update-handlers
-  and lower-traffic routes (inventory, receipts, ai) for the same pattern.
+  id/createdAt/unknown keys and pins the tenant scope. Update-handlers also swept: contacts, cost-centers,
+  invoice-templates, reconciliation-rules updates now allowlist too. Lower-traffic routes also swept:
+  inventory (createProduct) and ai (createBankTransaction). A repo-wide grep now shows **no remaining
+  unguarded `{...req.body}` writes** — M1 fully closed.
 - [ ] **S-M2 Wire up the dead sanitization helpers** into PDF/email/CSV write paths. Files: `server/sanitize.ts`.
   (Deferred: apply at render time for non-React surfaces + CSV-formula-injection escaping; broad, do as a
   focused pass to avoid mutating stored content.)
@@ -170,7 +201,9 @@
 - [x] **S-L1** receipt image now served with `X-Content-Type-Options: nosniff` + `Content-Disposition:
   attachment`. Files: `receipts.routes.ts`.
 - [ ] **S-L2** dedicated `TOKEN_ENCRYPTION_KEY` (operational — env var; code already falls back to SESSION_SECRET).
-- [ ] **S-L3** push `companyId` into unscoped mutators (defence-in-depth; callers currently pre-check).
+- [x] **S-L3** `updateCustomerContact` / `deleteCustomerContact` now accept an optional `companyId` and
+  scope the WHERE clause to it; the contacts routes pass it. Defence-in-depth against a future caller
+  forgetting the pre-check. (Other raw-SQL mutators can follow the same pattern as a low-priority follow-up.)
 - [ ] **S-L4** portal invoice match by id not name — needs a stable invoice↔contact id relationship
   (schema change + data migration); deferred. Low impact (already scoped to the contact's company).
 

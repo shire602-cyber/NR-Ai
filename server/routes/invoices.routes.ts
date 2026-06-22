@@ -1141,6 +1141,11 @@ export function registerInvoiceRoutes(app: Express) {
       const { companyId, invoiceId } = req.params;
       const userId = (req as any).user.id;
       const { amount, date, method, reference, notes, paymentAccountId } = req.body;
+      // A-B5: optional payment-date FX rate (AED per unit of the invoice
+      // currency). Enables realised FX + cross-currency settlement.
+      const rawPaymentRate = Number(req.body.exchangeRate ?? req.body.paymentExchangeRate);
+      const paymentExchangeRate =
+        Number.isFinite(rawPaymentRate) && rawPaymentRate > 0 ? rawPaymentRate : null;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
@@ -1176,9 +1181,11 @@ export function registerInvoiceRoutes(app: Express) {
       }
       // Currency validation: bank-account currency (if present) must match the invoice.
       const acctCurrency = (paymentAccount as any).currency as string | null | undefined;
-      if (acctCurrency && acctCurrency !== invoice.currency) {
+      // A-B5: allow a currency mismatch when a payment-date rate is supplied
+      // (cross-currency settlement with realised FX); otherwise keep the guard.
+      if (acctCurrency && acctCurrency !== invoice.currency && !paymentExchangeRate) {
         return res.status(422).json({
-          message: `Payment account currency (${acctCurrency}) does not match invoice currency (${invoice.currency})`,
+          message: `Payment account currency (${acctCurrency}) does not match invoice currency (${invoice.currency}). Provide a payment-date exchange rate to settle across currencies.`,
           code: "CURRENCY_MISMATCH",
         });
       }
@@ -1208,6 +1215,7 @@ export function registerInvoiceRoutes(app: Express) {
           notes: notes || null,
           paymentAccountId,
           paymentAccountCurrency: acctCurrency ?? null,
+          paymentExchangeRate,
           receivableAccountId: accountsReceivable.id,
           createdBy: userId,
         });

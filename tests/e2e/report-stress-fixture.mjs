@@ -663,7 +663,7 @@ async function seedManualJournals(companyId, account, dates, costCenters) {
   }
 }
 
-async function seedPayroll(companyId, dates) {
+async function seedPayroll(companyId) {
   for (let i = 0; i < config.employees; i += 1) {
     await http("create employee", `/api/companies/${companyId}/employees`, {
       method: "POST",
@@ -1058,7 +1058,7 @@ async function main() {
   log("Seeding manual general journals");
   await seedManualJournals(companyId, account, dates, costCenters);
   log("Seeding payroll");
-  await seedPayroll(companyId, dates);
+  await seedPayroll(companyId);
   log("Seeding inventory, fixed assets, claims, budget, tax, and bank");
   await seedInventoryAndAssets(companyId, account, dates);
   await seedExpenseClaims(companyId, dates);
