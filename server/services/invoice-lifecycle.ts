@@ -138,6 +138,24 @@ export function allocatePayment(args: {
 }
 
 /**
+ * A-B5: Realised FX on settling a foreign-currency invoice. The receivable was
+ * booked (and is cleared) at the invoice rate; the cash is received at the
+ * payment-date rate. The AED difference on the applied portion is a realised
+ * gain (cash worth more than the AR being cleared) or loss. All outputs AED.
+ */
+export function computeRealisedFx(args: {
+  appliedForeign: number; // portion of the payment applied to the receivable, in invoice currency
+  invoiceRate: number; // AED per unit at which AR was booked
+  paymentRate: number; // AED per unit on the payment date
+}): { arClearedAed: number; cashAed: number; realisedGainLoss: number } {
+  const inv = args.invoiceRate > 0 ? args.invoiceRate : 1;
+  const pay = args.paymentRate > 0 ? args.paymentRate : inv;
+  const arClearedAed = round2(args.appliedForeign * inv);
+  const cashAed = round2(args.appliedForeign * pay);
+  return { arClearedAed, cashAed, realisedGainLoss: round2(cashAed - arClearedAed) };
+}
+
+/**
  * A-B2: Build the reversal journal legs shared by void and credit-note.
  * Fails hard (422) when a required account is missing instead of silently
  * dropping a leg and posting an unbalanced entry (which previously 500'd deep

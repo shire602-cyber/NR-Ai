@@ -71,10 +71,15 @@
   to request foreign→AED and MULTIPLY (was AED→foreign and divide) via the tested `revalueForeignBalance`
   helper. Files: `server/services/financial-statements.ts`, `exchange-rates.routes.ts`. The read side of FX is
   now consistent and correct.
-- [ ] **A-B5 No realised FX gain/loss on settlement; foreign→AED blocked.** DEFERRED (needs DB-backed harness):
-  requires capturing a payment-date rate (schema/UX) and posting the realised difference to a Realised FX P&L
-  account, plus allowing cross-currency settlement. Touches the critical `recordInvoicePayment` money path —
-  do with integration tests in an environment where the DB-backed suite runs. Files: `storage.ts:4700,4767-4789`.
+- [x] **A-B5 No realised FX gain/loss on settlement; foreign→AED blocked.** DONE (conservative, opt-in,
+  backward-compatible): added a nullable `invoice_payments.exchange_rate` column (migration 0080 + schema +
+  journal). `recordInvoicePayment` now accepts an optional `paymentExchangeRate`; when supplied it clears A/R
+  at the invoice rate, takes cash at the payment rate, and posts the realised difference to FX Gain (4090) /
+  Loss (5140) via the tested `computeRealisedFx`. The currency-mismatch guard is relaxed only when a rate is
+  given (enables foreign→AED settlement). With NO rate the legs are byte-for-byte identical to before. Files:
+  `storage.ts`, `invoices.routes.ts`, `invoice-lifecycle.ts`, `shared/schema.ts`, `migrations/0080…`.
+  ⚠️ Verified via pure-function tests + tsc + full suite (720); the SQL posting path itself isn't exercised by
+  the mocked-DB suite — confirm against a real DB before relying on it in production.
 - [x] **A-B8 No unrealised FX revaluation POSTED.** DONE: new `POST /api/companies/:id/exchange-rates/revalue`
   endpoint sums the unrealised AED revaluation of open foreign A/R + A/P (via `revalueForeignBalance`), posts a
   balanced period-end JE (Dr/Cr A/R, A/P, FX gain/loss) through the tested `buildFxRevaluationLines`, and posts

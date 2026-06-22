@@ -1620,6 +1620,10 @@ export const invoicePayments = pgTable(
     reference: text("reference"),
     notes: text("notes"),
     paymentAccountId: uuid("payment_account_id").references(() => accounts.id),
+    // A-B5: exchange rate on the payment date (AED per unit of the invoice
+    // currency). Null = settle at the invoice rate (no realised FX). When set
+    // and it differs from the invoice rate, the realised FX gain/loss is posted.
+    exchangeRate: rate("exchange_rate"),
     journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
     createdBy: uuid("created_by")
       .notNull()

@@ -4703,6 +4703,9 @@ export class DatabaseStorage implements IStorage {
     notes: string | null;
     paymentAccountId: string;
     paymentAccountCurrency?: string | null;
+    /** A-B5: AED-per-unit rate on the payment date; enables realised FX and
+     *  cross-currency settlement. Null = settle at the invoice rate (no FX). */
+    paymentExchangeRate?: number | null;
     receivableAccountId: string;
     createdBy: string;
   }): Promise<{
@@ -4744,7 +4747,16 @@ export class DatabaseStorage implements IStorage {
         e.code = "INVOICE_TERMINAL";
         throw e;
       }
-      if (input.paymentAccountCurrency && input.paymentAccountCurrency !== lockedInvoice.currency) {
+      // A-B5: a currency mismatch is allowed when an explicit payment-date rate
+      // is supplied (cross-currency settlement, e.g. paying a USD invoice from
+      // an AED bank account) — the rate converts the cash and realised FX is
+      // posted. Without a rate we keep the strict guard.
+      const hasPaymentRate = !!(input.paymentExchangeRate && input.paymentExchangeRate > 0);
+      if (
+        input.paymentAccountCurrency &&
+        input.paymentAccountCurrency !== lockedInvoice.currency &&
+        !hasPaymentRate
+      ) {
         const e: any = new Error(
           `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`
         );
@@ -4838,14 +4850,39 @@ export class DatabaseStorage implements IStorage {
           postedAt: input.date,
         })
         .returning();
-      const fxRate =
-        Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
       const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-      const arCreditAed = round2(allocation.appliedToReceivable * fxRate);
-      const creditAed = round2(allocation.customerCredit * fxRate);
-      // Debit cash for exactly the sum of the credit legs so the entry is
-      // always balanced even if independent rounding would drift by a fil.
-      const bankDebitAed = round2(arCreditAed + creditAed);
+      // A-B5: AR is cleared at the invoice (booking) rate; cash is received at
+      // the payment-date rate when one is supplied (else the invoice rate, i.e.
+      // no FX — identical to the prior behaviour). The difference on the applied
+      // portion is realised FX gain/loss.
+      const invRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
+      const payRate = hasPaymentRate ? Number(input.paymentExchangeRate) : invRate;
+      const arCreditAed = round2(allocation.appliedToReceivable * invRate);
+      const custCreditAed = round2(allocation.customerCredit * payRate);
+      const bankDebitAed = round2(
+        (allocation.appliedToReceivable + allocation.customerCredit) * payRate
+      );
+      const realisedFx = round2(bankDebitAed - arCreditAed - custCreditAed);
+
+      // Resolve the FX gain/loss account only when realised FX is non-zero.
+      let fxAccountId: string | null = null;
+      if (Math.abs(realisedFx) >= 0.01) {
+        const fxCode = realisedFx > 0 ? ACCOUNT_CODES.FX_GAIN : ACCOUNT_CODES.FX_LOSS;
+        const fxRows = await tx
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.companyId, input.companyId), eq(accounts.code, fxCode)));
+        fxAccountId = fxRows[0]?.id ?? null;
+        if (!fxAccountId) {
+          const e: any = new Error(
+            `Realised FX of ${realisedFx} requires the ${fxCode} (Foreign Exchange ` +
+              `${realisedFx > 0 ? "Gain" : "Loss"}) account, which is missing from the chart of accounts.`
+          );
+          e.code = "REALISED_FX_ACCOUNT_MISSING";
+          throw e;
+        }
+      }
+
       await tx.insert(journalLines).values({
         entryId: entry.id,
         accountId: input.paymentAccountId,
@@ -4860,13 +4897,22 @@ export class DatabaseStorage implements IStorage {
         credit: arCreditAed,
         description: `Clear A/R - Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
-      if (creditAed > 0 && customerCreditAccountId) {
+      if (custCreditAed > 0 && customerCreditAccountId) {
         await tx.insert(journalLines).values({
           entryId: entry.id,
           accountId: customerCreditAccountId,
           debit: 0,
-          credit: creditAed,
+          credit: custCreditAed,
           description: `Customer credit (overpayment) - Invoice ${lockedInvoice.number || input.invoiceId}`,
+        });
+      }
+      if (fxAccountId && Math.abs(realisedFx) >= 0.01) {
+        await tx.insert(journalLines).values({
+          entryId: entry.id,
+          accountId: fxAccountId,
+          debit: realisedFx < 0 ? -realisedFx : 0,
+          credit: realisedFx > 0 ? realisedFx : 0,
+          description: `Realised FX ${realisedFx > 0 ? "gain" : "loss"} - Invoice ${lockedInvoice.number || input.invoiceId}`,
         });
       }
 
@@ -4882,6 +4928,7 @@ export class DatabaseStorage implements IStorage {
           reference: input.reference,
           notes: input.notes,
           paymentAccountId: input.paymentAccountId,
+          exchangeRate: hasPaymentRate ? String(payRate) : null,
           journalEntryId: entry.id,
           createdBy: input.createdBy,
         })

@@ -4,8 +4,27 @@ import {
   evaluateCreditNoteRequest,
   buildReversalLines,
   allocatePayment,
+  computeRealisedFx,
   round2,
 } from "../../server/services/invoice-lifecycle";
+
+describe("computeRealisedFx (A-B5)", () => {
+  it("is zero when the payment rate equals the invoice rate", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.67 });
+    expect(r.realisedGainLoss).toBe(0);
+    expect(r.arClearedAed).toBe(r.cashAed);
+  });
+  it("recognises a gain when the payment rate is higher", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.75 });
+    expect(r.arClearedAed).toBe(3670);
+    expect(r.cashAed).toBe(3750);
+    expect(r.realisedGainLoss).toBe(80);
+  });
+  it("recognises a loss when the payment rate is lower", () => {
+    const r = computeRealisedFx({ appliedForeign: 1000, invoiceRate: 3.67, paymentRate: 3.6 });
+    expect(r.realisedGainLoss).toBe(-70);
+  });
+});
 
 describe("allocatePayment (A-B12: overpayment -> customer credit)", () => {
   it("applies a partial payment entirely to the receivable", () => {
