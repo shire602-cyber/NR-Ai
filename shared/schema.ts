@@ -959,7 +959,12 @@ export const invoices = pgTable(
     einvoiceUuid: text("einvoice_uuid"),
     einvoiceXml: text("einvoice_xml"),
     einvoiceHash: text("einvoice_hash"),
-    einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected
+    einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected | failed
+    // ASP submission tracking (provider-agnostic; see einvoice-provider.ts).
+    einvoiceProvider: text("einvoice_provider"),
+    einvoiceProviderMessageId: text("einvoice_provider_message_id"),
+    einvoiceSubmittedAt: timestamp("einvoice_submitted_at"),
+    einvoiceStatusDetail: text("einvoice_status_detail"),
     reminderCount: integer("reminder_count").notNull().default(0),
     lastReminderSentAt: timestamp("last_reminder_sent_at"),
     // Phase 4: Payment Chasing Autopilot

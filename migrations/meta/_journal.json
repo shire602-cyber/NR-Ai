@@ -568,6 +568,13 @@
       "when": 1781390000000,
       "tag": "0081_credit_note_consolidation",
       "breakpoints": false
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1781400000000,
+      "tag": "0082_einvoice_submission",
+      "breakpoints": false
     }
   ]
 }
