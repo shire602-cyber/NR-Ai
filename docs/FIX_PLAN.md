@@ -160,8 +160,9 @@
   `contacts` create, `cost-centers` create, `invoice-templates` create, `reconciliation-rules` create, and
   `bank` connection create. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
   id/createdAt/unknown keys and pins the tenant scope. Update-handlers also swept: contacts, cost-centers,
-  invoice-templates, reconciliation-rules updates now allowlist too. REMAINING (low): lower-traffic routes
-  (inventory, receipts, ai) for the same pattern.
+  invoice-templates, reconciliation-rules updates now allowlist too. Lower-traffic routes also swept:
+  inventory (createProduct) and ai (createBankTransaction). A repo-wide grep now shows **no remaining
+  unguarded `{...req.body}` writes** — M1 fully closed.
 - [ ] **S-M2 Wire up the dead sanitization helpers** into PDF/email/CSV write paths. Files: `server/sanitize.ts`.
   (Deferred: apply at render time for non-React surfaces + CSV-formula-injection escaping; broad, do as a
   focused pass to avoid mutating stored content.)

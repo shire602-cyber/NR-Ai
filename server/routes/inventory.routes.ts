@@ -6,6 +6,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { insertProductSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 
 const log = createLogger("inventory");
 
@@ -109,10 +111,11 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // S-M1: allowlist body fields, then pin the tenant scope.
       const product = await storage.createProduct({
-        ...req.body,
+        ...pickAllowed(req.body, insertProductSchema, ["companyId"]),
         companyId,
-      });
+      } as any);
 
       log.info({ productId: product.id, companyId }, "Product created");
       res.json(product);
