@@ -16,8 +16,13 @@ import {
 import { createAndEmitNotification } from "../services/socket.service";
 import { db } from "../db";
 import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from "../../shared/schema";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
+import {
+  evaluateVoidRequest,
+  evaluateCreditNoteRequest,
+  buildReversalLines,
+} from "../services/invoice-lifecycle";
 import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
@@ -704,6 +709,8 @@ export function registerInvoiceRoutes(app: Express) {
         // created before drafts stopped auto-posting is skipped.
         if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
+          // A-4: do not recognise revenue with a future invoice date.
+          assertNotFutureDate(invoice.date);
           const posted = await postInvoiceRevenueJournal(invoice as any, userId);
           const existing = await storage.getJournalEntriesBySource(
             invoice.companyId,
@@ -726,6 +733,18 @@ export function registerInvoiceRoutes(app: Express) {
         // normally have no JE (nothing to reverse), but data created before
         // drafts stopped auto-posting can — so cancellation checks too.
         if (status === "void" || status === "cancelled") {
+          // A-1: refuse to void/cancel an invoice that has recorded payments.
+          // The reversal below only unwinds revenue/VAT/AR; the cash already
+          // received would be left orphaned (overstated bank + abnormal credit
+          // AR). The correct path is a credit note plus a refund.
+          const paidTotal = await storage.getInvoicePaidTotal(id);
+          const voidDecision = evaluateVoidRequest({ targetStatus: status, paidTotal });
+          if (!voidDecision.ok) {
+            return res
+              .status(voidDecision.status)
+              .json({ message: voidDecision.message, code: voidDecision.code });
+          }
+
           const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
           const accountsReceivable = accounts.find(
             (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
@@ -747,41 +766,38 @@ export function registerInvoiceRoutes(app: Express) {
           );
           const originalEntry = existingEntries.find((e) => e.status === "posted");
 
-          if (originalEntry && accountsReceivable && salesRevenue) {
+          if (originalEntry) {
             const reversalDate = new Date();
             // Block reversal posting into a locked period — without this we
             // could flip status without writing the offsetting JE.
             await assertPeriodNotLocked(invoice.companyId, reversalDate);
 
-            const entryNumber = await storage.generateEntryNumber(invoice.companyId, reversalDate);
-
-            const reversalLines: Array<{
-              accountId: string;
-              debit: number;
-              credit: number;
-              description: string;
-            }> = [
-              {
-                accountId: salesRevenue.id,
-                debit: Number(invoice.subtotal),
-                credit: 0,
-                description: `Reverse revenue - Void Invoice ${invoice.number}`,
+            // A-B2: build balanced legs and fail hard (422) if a required
+            // account is missing, instead of silently posting an unbalanced
+            // entry that 500s inside the posting engine.
+            const built = buildReversalLines({
+              amounts: {
+                subtotal: Number(invoice.subtotal),
+                vatAmount: Number(invoice.vatAmount),
+                total: Number(invoice.total),
               },
-            ];
-            if (Number(invoice.vatAmount) > 0 && vatPayable) {
-              reversalLines.push({
-                accountId: vatPayable.id,
-                debit: Number(invoice.vatAmount),
-                credit: 0,
-                description: `Reverse VAT - Void Invoice ${invoice.number}`,
-              });
-            }
-            reversalLines.push({
-              accountId: accountsReceivable.id,
-              debit: 0,
-              credit: Number(invoice.total),
-              description: `Reverse A/R - Void Invoice ${invoice.number}`,
+              accounts: {
+                accountsReceivableId: accountsReceivable?.id,
+                salesRevenueId: salesRevenue?.id,
+                vatPayableId: vatPayable?.id,
+              },
+              labels: {
+                revenue: `Reverse revenue - Void Invoice ${invoice.number}`,
+                vat: `Reverse VAT - Void Invoice ${invoice.number}`,
+                ar: `Reverse A/R - Void Invoice ${invoice.number}`,
+              },
             });
+            if (!built.ok) {
+              return res.status(built.status).json({ message: built.message, code: built.code });
+            }
+            const reversalLines = built.lines;
+
+            const entryNumber = await storage.generateEntryNumber(invoice.companyId, reversalDate);
 
             await storage.createJournalEntry(
               {
@@ -1255,13 +1271,65 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (original.invoiceType === "credit_note") {
-        return res.status(400).json({ message: "Cannot create a credit note of a credit note" });
+      // A-B3: de-duplicate and cap credit notes. Without this, issuing two
+      // full credit notes double-reverses AR and drives it negative. We sum the
+      // absolute totals of any existing credit notes for this invoice and
+      // refuse to credit beyond the original total.
+      const companyInvoices = await storage.getInvoicesByCompanyId(companyId);
+      const existingCreditNotes = companyInvoices.filter(
+        (i) => i.originalInvoiceId === invoiceId && i.invoiceType === "credit_note"
+      );
+      const alreadyCreditedTotal = existingCreditNotes.reduce(
+        (sum, i) => sum + Math.abs(Number(i.total)),
+        0
+      );
+      const cnDecision = evaluateCreditNoteRequest({
+        invoiceType: original.invoiceType ?? "invoice",
+        originalTotal: Number(original.total),
+        alreadyCreditedTotal,
+      });
+      if (!cnDecision.ok) {
+        return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
       }
 
       // Block credit note creation if today is in a locked period — the credit
       // note posts a reversing JE on `now`.
       await assertPeriodNotLocked(companyId, new Date());
+
+      // A-B2: validate that the accounts needed for the reversal JE exist
+      // BEFORE inserting the credit-note document, so a missing-account error
+      // cannot leave an orphaned credit note (and a consumed number) behind.
+      const cnAccounts = await storage.getAccountsByCompanyId(companyId);
+      const cnReceivable = cnAccounts.find(
+        (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
+      );
+      const cnRevenue = cnAccounts.find(
+        (a) =>
+          a.isSystemAccount &&
+          a.type === "income" &&
+          (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
+      );
+      const cnVatPayable = cnAccounts.find(
+        (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
+      );
+      const cnPreflight = buildReversalLines({
+        amounts: {
+          subtotal: Number(original.subtotal),
+          vatAmount: Number(original.vatAmount),
+          total: Number(original.total),
+        },
+        accounts: {
+          accountsReceivableId: cnReceivable?.id,
+          salesRevenueId: cnRevenue?.id,
+          vatPayableId: cnVatPayable?.id,
+        },
+        labels: { revenue: "", vat: "", ar: "" },
+      });
+      if (!cnPreflight.ok) {
+        return res
+          .status(cnPreflight.status)
+          .json({ message: cnPreflight.message, code: cnPreflight.code });
+      }
 
       const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
@@ -1303,22 +1371,31 @@ export function registerInvoiceRoutes(app: Express) {
         return { cnNumber: number, creditNote: insertedCreditNote };
       });
 
-      // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts Receivable
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const accountsReceivable = accounts.find(
-        (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-      );
-      const salesRevenue = accounts.find(
-        (a) =>
-          a.isSystemAccount &&
-          a.type === "income" &&
-          (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-      );
-      const vatPayable = accounts.find(
-        (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-      );
-
-      if (accountsReceivable && salesRevenue) {
+      // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts
+      // Receivable. Accounts were already fetched and validated (cnPreflight)
+      // before the credit note was inserted; reuse them and attach the real
+      // credit-note number to the leg descriptions.
+      const cnBuilt = buildReversalLines({
+        amounts: {
+          subtotal: Number(original.subtotal),
+          vatAmount: Number(original.vatAmount),
+          total: Number(original.total),
+        },
+        accounts: {
+          accountsReceivableId: cnReceivable?.id,
+          salesRevenueId: cnRevenue?.id,
+          vatPayableId: cnVatPayable?.id,
+        },
+        labels: {
+          revenue: `Reverse revenue - ${cnNumber}`,
+          vat: `Reverse VAT - ${cnNumber}`,
+          ar: `Reduce A/R - ${cnNumber}`,
+        },
+      });
+      if (!cnBuilt.ok) {
+        return res.status(cnBuilt.status).json({ message: cnBuilt.message, code: cnBuilt.code });
+      }
+      {
         const now = new Date();
         const entryNumber = await storage.generateEntryNumber(companyId, now);
 
@@ -1328,33 +1405,7 @@ export function registerInvoiceRoutes(app: Express) {
           (e) => e.sourceId === invoiceId && e.source === "invoice"
         );
 
-        const cnLines: Array<{
-          accountId: string;
-          debit: number;
-          credit: number;
-          description: string;
-        }> = [
-          {
-            accountId: salesRevenue.id,
-            debit: original.subtotal,
-            credit: 0,
-            description: `Reverse revenue - ${cnNumber}`,
-          },
-        ];
-        if (original.vatAmount > 0 && vatPayable) {
-          cnLines.push({
-            accountId: vatPayable.id,
-            debit: original.vatAmount,
-            credit: 0,
-            description: `Reverse VAT - ${cnNumber}`,
-          });
-        }
-        cnLines.push({
-          accountId: accountsReceivable.id,
-          debit: 0,
-          credit: original.total,
-          description: `Reduce A/R - ${cnNumber}`,
-        });
+        const cnLines = cnBuilt.lines;
 
         await storage.createJournalEntry(
           {

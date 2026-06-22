@@ -3,6 +3,10 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
+import {
+  classifyBalanceSheetAccount,
+  computeCashFlow,
+} from "../services/financial-statements";
 
 interface AccountBreakdown {
   accountId: string;
@@ -211,40 +215,44 @@ export function registerFinancialStatementRoutes(app: Express) {
         const account = accountMap.get(accountId);
         if (!account) continue;
 
-        if (account.type === "asset") {
-          // Assets have normal debit balance
-          const amount = data.debitTotal - data.creditTotal;
-          totalAssets += amount;
+        // A-2: classify with abnormal-balance reclassification — a receivable
+        // carrying a net credit balance is presented as a liability (customer
+        // credit), and a payable carrying a net debit balance as an asset, so
+        // financial position is stated correctly even when accounts are
+        // abnormal. Income/expense roll into retained earnings.
+        const classified = classifyBalanceSheetAccount({
+          type: account.type,
+          debitTotal: data.debitTotal,
+          creditTotal: data.creditTotal,
+        });
+
+        if (classified.section === "asset") {
+          totalAssets += classified.amount;
           assetBreakdown.push({
             accountId,
             accountCode: data.accountCode,
             accountName: data.accountName,
-            amount,
+            amount: classified.amount,
           });
-        } else if (account.type === "liability") {
-          // Liabilities have normal credit balance
-          const amount = data.creditTotal - data.debitTotal;
-          totalLiabilities += amount;
+        } else if (classified.section === "liability") {
+          totalLiabilities += classified.amount;
           liabilityBreakdown.push({
             accountId,
             accountCode: data.accountCode,
             accountName: data.accountName,
-            amount,
+            amount: classified.amount,
           });
-        } else if (account.type === "equity") {
-          // Equity has normal credit balance
-          const amount = data.creditTotal - data.debitTotal;
-          totalEquity += amount;
+        } else if (classified.section === "equity") {
+          totalEquity += classified.amount;
           equityBreakdown.push({
             accountId,
             accountCode: data.accountCode,
             accountName: data.accountName,
-            amount,
+            amount: classified.amount,
           });
-        } else if (account.type === "income") {
-          retainedEarnings += data.creditTotal - data.debitTotal;
-        } else if (account.type === "expense") {
-          retainedEarnings -= data.debitTotal - data.creditTotal;
+        } else {
+          // income or expense — both contribute (credit - debit) to retained earnings
+          retainedEarnings += classified.amount;
         }
       }
 
@@ -254,7 +262,9 @@ export function registerFinancialStatementRoutes(app: Express) {
         equityBreakdown.push({
           accountId: "retained-earnings",
           accountCode: "3900",
-          accountName: "Retained Earnings (Current Period)",
+          // A-B10: this is accumulated earnings since inception (all posted
+          // income/expense up to the as-of date), not a single period.
+          accountName: "Retained Earnings (Accumulated)",
           amount: retainedEarnings,
         });
       }
@@ -317,124 +327,27 @@ export function registerFinancialStatementRoutes(app: Express) {
       const allAccounts = await storage.getAccountsByCompanyId(companyId);
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
-      // Classify cash flows by account sub-type and type
-      const operating: AccountBreakdown[] = [];
-      let operatingTotal = 0;
-
-      const investing: AccountBreakdown[] = [];
-      let investingTotal = 0;
-
-      const financing: AccountBreakdown[] = [];
-      let financingTotal = 0;
-
-      // Group by account
-      const grouped: GroupedAccounts = {};
-
-      for (const entry of filteredEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
-          const account = accountMap.get(line.accountId);
-          if (!account) continue;
-
-          if (!grouped[line.accountId]) {
-            grouped[line.accountId] = {
-              accountCode: account.code,
-              accountName: account.nameEn,
-              debitTotal: 0,
-              creditTotal: 0,
-            };
-          }
-          grouped[line.accountId].debitTotal += line.debit || 0;
-          grouped[line.accountId].creditTotal += line.credit || 0;
-        }
-      }
-
-      for (const [accountId, data] of Object.entries(grouped)) {
-        const account = accountMap.get(accountId);
-        if (!account) continue;
-
-        // Net cash effect (debit = outflow for cash-type, credit = inflow)
-        const netAmount = data.debitTotal - data.creditTotal;
-
-        const item: AccountBreakdown = {
-          accountId,
-          accountCode: data.accountCode,
-          accountName: data.accountName,
-          amount: Math.round(netAmount * 100) / 100,
-        };
-
-        // Classify based on account type and sub-type
-        if (account.type === "income" || account.type === "expense") {
-          // Operating activities: revenue and expenses
-          // For income: credit balance is positive cash flow
-          // For expense: debit balance is negative cash flow
-          if (account.type === "income") {
-            item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          } else {
-            item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          }
-          operatingTotal += item.amount;
-          operating.push(item);
-        } else if (account.type === "asset" && account.subType === "fixed_asset") {
-          // Investing activities: fixed asset changes
-          // Debit to fixed asset = cash outflow (investing)
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          investingTotal += item.amount;
-          investing.push(item);
-        } else if (account.type === "liability" && account.subType === "long_term_liability") {
-          // Financing activities: long-term liability changes
-          // Credit to liability = cash inflow (financing)
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          financingTotal += item.amount;
-          financing.push(item);
-        } else if (account.type === "equity") {
-          // Financing activities: equity changes
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          financingTotal += item.amount;
-          financing.push(item);
-        } else if (account.type === "asset" && account.subType === "current_asset") {
-          // Operating activities: current asset changes (excluding cash)
-          // Increase in current assets = cash outflow
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          operatingTotal += item.amount;
-          operating.push(item);
-        } else if (account.type === "liability" && account.subType === "current_liability") {
-          // Operating activities: current liability changes
-          // Increase in current liabilities = cash inflow
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          operatingTotal += item.amount;
-          operating.push(item);
-        } else {
-          // Default: treat unclassified asset/liability as operating
-          item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
-          operatingTotal += item.amount;
-          operating.push(item);
-        }
-      }
-
-      // Sort each section
-      operating.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
-      investing.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
-      financing.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
-
-      const netCashChange = operatingTotal + investingTotal + financingTotal;
+      // A-3: build the cash-flow statement from ACTUAL cash movements (direct
+      // method). For each entry that touches a cash/bank account we attribute
+      // its net cash movement to the dominant non-cash counterpart and bucket
+      // by activity. Cash accounts are never listed as line items and the net
+      // cash change equals the real change in cash/bank balances — unlike the
+      // previous implementation, which summed every account's delta (including
+      // the cash account itself) and produced a net change that did not tie out.
+      const entriesWithLines = await Promise.all(
+        filteredEntries.map(async (entry) => ({
+          lines: await storage.getJournalLinesByEntryId(entry.id),
+        }))
+      );
+      const cf = computeCashFlow({ entries: entriesWithLines, accounts: allAccounts });
 
       res.json({
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
-        operating: {
-          total: Math.round(operatingTotal * 100) / 100,
-          breakdown: operating,
-        },
-        investing: {
-          total: Math.round(investingTotal * 100) / 100,
-          breakdown: investing,
-        },
-        financing: {
-          total: Math.round(financingTotal * 100) / 100,
-          breakdown: financing,
-        },
-        netCashChange: Math.round(netCashChange * 100) / 100,
+        operating: cf.operating,
+        investing: cf.investing,
+        financing: cf.financing,
+        netCashChange: cf.netCashChange,
       });
     })
   );

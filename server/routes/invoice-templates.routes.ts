@@ -4,6 +4,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { insertInvoiceTemplateSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 
 const logger = createLogger("invoice-templates-routes");
 
@@ -71,7 +73,10 @@ export function registerInvoiceTemplateRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const template = await storage.createInvoiceTemplate({ ...req.body, companyId });
+      const template = await storage.createInvoiceTemplate({
+        ...pickAllowed(req.body, insertInvoiceTemplateSchema, ["companyId"]),
+        companyId,
+      } as any);
 
       logger.info({ templateId: template.id, companyId }, "Invoice template created");
       res.status(201).json(template);

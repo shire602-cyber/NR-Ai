@@ -821,6 +821,18 @@ export function registerBankStatementRoutes(app: Express) {
         return res.status(404).json({ message: "Bank transaction not found" });
       }
 
+      // S-C2: refuse to create a second journal entry for a transaction that is
+      // already matched/reconciled. Without this guard, calling the endpoint
+      // twice posts two balanced JEs against the same bank line, double-counting
+      // the cash movement and breaking reconciliation.
+      if (txn.matchStatus === "matched" || txn.isReconciled || txn.matchedJournalEntryId) {
+        return res.status(409).json({
+          message: "This bank transaction is already reconciled to a journal entry.",
+          code: "ALREADY_RECONCILED",
+          matchedJournalEntryId: txn.matchedJournalEntryId ?? null,
+        });
+      }
+
       const { accountId, memo } = req.body;
 
       // Determine debit/credit based on transaction direction
@@ -877,6 +889,18 @@ export function registerBankStatementRoutes(app: Express) {
       // Mark transaction as matched to this journal entry
       const updated = await storage.reconcileBankTransaction(tid, companyId, entry.id, "journal");
       await storage.updateBankTransaction(tid, companyId, { matchStatus: "matched" });
+
+      // S-H4: audit the GL posting from a bank transaction.
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId,
+        companyId,
+        action: "bank.reconcile_create_entry",
+        entityType: "bank_transaction",
+        entityId: tid,
+        after: { journalEntryId: entry.id, amount: absAmount },
+        req,
+      });
 
       res.status(201).json({
         journalEntry: entry,

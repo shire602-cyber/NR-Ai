@@ -162,17 +162,26 @@ export function computeCtLiability(input: {
   exemptionThreshold: number;
   taxRate: number;
 } {
-  const exemptionThreshold = input.exemptionThreshold ?? 375000;
-  const taxRate = input.taxRate ?? 0.09;
-  const taxableIncome = input.totalRevenue - input.totalExpenses - (input.totalDeductions ?? 0);
-  const taxableAmount = Math.max(0, taxableIncome - exemptionThreshold);
-  const taxPayable = Math.round(taxableAmount * taxRate * 100) / 100;
+  // A-B7: single source of truth. Delegate to the full FTA computation so every
+  // corporate-tax path (preview, xlsx import, export, filing) applies the same
+  // rules — the AED 375,000 zero-rate band and, when supplied, add-backs, small
+  // business relief and the 75% loss-relief cap. For the simple inputs accepted
+  // here the result is identical to the former standalone formula (no
+  // adjustments, no loss, no relief), with taxable income floored at zero in a
+  // loss period (carried forward) rather than reported negative.
+  const r = computeCtComputation({
+    totalRevenue: input.totalRevenue,
+    totalExpenses: input.totalExpenses,
+    totalDeductions: input.totalDeductions,
+    exemptionThreshold: input.exemptionThreshold,
+    taxRate: input.taxRate,
+  });
   return {
-    taxableIncome: Math.round(taxableIncome * 100) / 100,
-    taxableAmount: Math.round(taxableAmount * 100) / 100,
-    taxPayable,
-    exemptionThreshold,
-    taxRate,
+    taxableIncome: r.taxableIncome,
+    taxableAmount: r.taxableAmount,
+    taxPayable: r.taxPayable,
+    exemptionThreshold: r.exemptionThreshold,
+    taxRate: r.taxRate,
   };
 }
 
@@ -240,6 +249,14 @@ export interface CtComputationInput {
   /** Positive pool of unused prior-period tax losses. */
   lossBroughtForward?: number;
   smallBusinessReliefElected?: boolean;
+  /**
+   * A-B16: Small Business Relief (MD 73/2023) requires revenue NOT to exceed
+   * the AED 3M cap in the current period AND in every prior period. The pure
+   * computation cannot see prior periods, so the caller passes this flag (true
+   * if any prior tax period breached the cap). When true, relief is denied
+   * even if current revenue is within the cap.
+   */
+  priorPeriodsExceededRevenueCap?: boolean;
   exemptionThreshold?: number;
   taxRate?: number;
 }
@@ -315,7 +332,11 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
   // having no taxable income for the period. Losses neither relieve nor
   // accrue while the relief is claimed (MD 73/2023 Art. 5).
   const sbrElected = input.smallBusinessReliefElected === true;
-  const sbrEligible = input.totalRevenue <= CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP;
+  // A-B16: eligible only if the cap is met this period AND was never breached
+  // in a prior period.
+  const sbrEligible =
+    input.totalRevenue <= CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP &&
+    input.priorPeriodsExceededRevenueCap !== true;
   const sbrApplied = sbrElected && sbrEligible;
 
   let lossReliefApplied = 0;

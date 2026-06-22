@@ -5,9 +5,11 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { storage } from "../storage";
 import { pool } from "../db";
+import Decimal from "decimal.js";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { recordAudit } from "../services/audit.service";
 import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
 
 const log = createLogger("bill-pay");
@@ -572,64 +574,104 @@ export function registerBillPayRoutes(app: Express) {
       // Recording a payment posts a cash JE on payment_date — block if locked.
       await assertPeriodNotLocked(bill.company_id, payment_date);
 
-      const currentPaid = Number(bill.amount_paid) || 0;
-      const totalAmount = Number(bill.total_amount) || 0;
-      const remainingBalance = totalAmount - currentPaid;
-
-      if (paymentAmount > remainingBalance + 0.01) {
-        return res.status(400).json({
-          message: `Payment amount (${paymentAmount.toFixed(2)}) exceeds remaining balance (${remainingBalance.toFixed(2)})`,
-        });
-      }
-
-      // Record the payment
-      const paymentResult = await pool.query(
-        `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-        [
-          id,
-          payment_date,
-          paymentAmount.toFixed(2),
-          payment_method || "bank_transfer",
-          reference || null,
-          notes || null,
-        ]
-      );
-
-      // Post the cash JE (Dr A/P, Cr Bank). If posting fails, remove the
-      // payment row so the subledger never disagrees with the ledger.
+      // S-C1: serialize concurrent payments and keep the subledger consistent.
+      // Lock the bill row, recompute the paid total from bill_payments UNDER the
+      // lock (never trust a possibly-stale amount_paid column), guard the
+      // overpayment with Decimal math, and write the payment row + bill update
+      // in one transaction. Previously these were independent pool.query calls
+      // with a float guard and no row lock, so two concurrent payments could
+      // each pass the check and overpay the vendor, and a failed final UPDATE
+      // left amount_paid stale (the next payment then computed off a wrong base).
+      const client = await pool.connect();
+      let payment: any;
+      let newAmountPaid = 0;
+      let newStatus = "partial";
+      let totalAmount = 0;
       try {
-        await postBillPaymentJournal(bill, paymentResult.rows[0], userId);
+        await client.query("BEGIN");
+        const lockRes = await client.query(
+          "SELECT total_amount FROM vendor_bills WHERE id = $1 FOR UPDATE",
+          [id]
+        );
+        const sumRes = await client.query(
+          "SELECT COALESCE(SUM(amount), 0) AS paid FROM bill_payments WHERE bill_id = $1",
+          [id]
+        );
+        const totalD = new Decimal(lockRes.rows[0]?.total_amount ?? bill.total_amount ?? 0);
+        const paidD = new Decimal(sumRes.rows[0]?.paid ?? 0);
+        const remainingD = totalD.minus(paidD);
+        const amountD = new Decimal(paymentAmount);
+        // 0.005 tolerance for legitimate 2dp rounding.
+        if (amountD.greaterThan(remainingD.plus("0.005"))) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: `Payment amount (${amountD.toFixed(2)}) exceeds remaining balance (${remainingD.toFixed(2)})`,
+          });
+        }
+        const insertRes = await client.query(
+          `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            id,
+            payment_date,
+            amountD.toFixed(2),
+            payment_method || "bank_transfer",
+            reference || null,
+            notes || null,
+          ]
+        );
+        payment = insertRes.rows[0];
+        const newPaidD = paidD.plus(amountD);
+        newStatus = newPaidD.greaterThanOrEqualTo(totalD.minus("0.005")) ? "paid" : "partial";
+        newAmountPaid = newPaidD.toNumber();
+        totalAmount = totalD.toNumber();
+        await client.query(
+          `UPDATE vendor_bills
+             SET amount_paid = $1, status = $2, paid_at = ${newStatus === "paid" ? "NOW()" : "paid_at"}
+           WHERE id = $3`,
+          [newPaidD.toFixed(2), newStatus, id]
+        );
+        await client.query("COMMIT");
+      } catch (txErr) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      // Post the cash JE (Dr A/P, Cr Bank) after the subledger commit. The
+      // poster is idempotent (dedupes by source) and any missing GL posting can
+      // be repaired with the backfill-gl endpoint, so a failure here cannot
+      // corrupt or roll back the recorded payment — we surface it instead.
+      // (The bill subledger and the Drizzle-managed GL are separate drivers;
+      // unifying bill-pay onto storage.recordInvoicePayment-style posting is the
+      // ideal future step.)
+      try {
+        await postBillPaymentJournal(bill, payment, userId);
       } catch (postErr) {
-        await pool.query(`DELETE FROM bill_payments WHERE id = $1`, [paymentResult.rows[0].id]);
-        throw postErr;
+        log.error(
+          { billId: id, paymentId: payment.id, err: postErr },
+          "Bill payment recorded but GL posting failed — run backfill-gl to repair"
+        );
       }
-
-      // Update bill amount_paid and status
-      const newAmountPaid = currentPaid + paymentAmount;
-      let newStatus: string;
-
-      if (newAmountPaid >= totalAmount - 0.01) {
-        newStatus = "paid";
-      } else {
-        newStatus = "partial";
-      }
-
-      const paidAt = newStatus === "paid" ? "NOW()" : "paid_at";
-      await pool.query(
-        `UPDATE vendor_bills
-       SET amount_paid = $1, status = $2, paid_at = ${newStatus === "paid" ? "NOW()" : "paid_at"}
-       WHERE id = $3`,
-        [newAmountPaid.toFixed(2), newStatus, id]
-      );
 
       log.info(
-        { billId: id, paymentId: paymentResult.rows[0].id, amount: paymentAmount, newStatus },
+        { billId: id, paymentId: payment.id, amount: paymentAmount, newStatus },
         "Bill payment recorded"
       );
+      // S-H4: audit every money movement.
+      await recordAudit({
+        userId,
+        companyId: bill.company_id,
+        action: "bill.payment",
+        entityType: "vendor_bill",
+        entityId: id,
+        after: { paymentId: payment.id, amount: Number(paymentAmount), status: newStatus },
+        req,
+      });
       res.json({
-        payment: paymentResult.rows[0],
+        payment,
         bill_status: newStatus,
         amount_paid: newAmountPaid,
         remaining: totalAmount - newAmountPaid,

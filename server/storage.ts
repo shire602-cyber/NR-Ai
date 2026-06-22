@@ -261,6 +261,8 @@ import {
   type InvoiceStatus,
 } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
+import { allocatePayment } from "./services/invoice-lifecycle";
+import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
@@ -735,6 +737,11 @@ export interface IStorage {
     periodStart: Date,
     excludeReturnId?: string
   ): Promise<number>;
+  getCtPriorPeriodRevenueExceededCap(
+    companyId: string,
+    periodStart: Date,
+    excludeReturnId?: string
+  ): Promise<boolean>;
   createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn>;
   updateCorporateTaxReturn(
     id: string,
@@ -3975,6 +3982,34 @@ export class DatabaseStorage implements IStorage {
     return Number(prior?.lossCarriedForward ?? 0) || 0;
   }
 
+  // A-B16: Small Business Relief (MD 73/2023) requires revenue to stay within
+  // the AED 3M cap in the current AND every prior period. Returns true if any
+  // earlier return for this company breached the cap, so the computation can
+  // deny relief even when the current period is within the cap.
+  async getCtPriorPeriodRevenueExceededCap(
+    companyId: string,
+    periodStart: Date,
+    excludeReturnId?: string
+  ): Promise<boolean> {
+    const rows = await db
+      .select({
+        totalRevenue: corporateTaxReturns.totalRevenue,
+        id: corporateTaxReturns.id,
+      })
+      .from(corporateTaxReturns)
+      .where(
+        and(
+          eq(corporateTaxReturns.companyId, companyId),
+          lt(corporateTaxReturns.taxPeriodEnd, periodStart)
+        )
+      );
+    return rows.some(
+      (r: { id: string; totalRevenue: unknown }) =>
+        r.id !== excludeReturnId &&
+        (Number(r.totalRevenue) || 0) > CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP
+    );
+  }
+
   async createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn> {
     const [taxReturn] = await db.insert(corporateTaxReturns).values(data).returning();
     return taxReturn;
@@ -4717,13 +4752,37 @@ export class DatabaseStorage implements IStorage {
       const amountD = new Decimal(input.amount);
       const remainingD = totalD.minus(previouslyPaidD);
 
-      // 0.005 fils tolerance for legitimate 2dp rounding.
-      if (amountD.greaterThan(remainingD.plus("0.005"))) {
-        const e: any = new Error(
-          `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)}`
-        );
-        e.code = "OVERPAYMENT";
-        throw e;
+      // A-B12: split the payment into the part that clears the receivable and
+      // any excess that becomes a customer credit (a liability), rather than
+      // rejecting overpayments outright. The excess is parked in Deferred
+      // Revenue / Customer Advances (account 2050). If that account is not in
+      // the chart we fall back to the previous hard rejection so we never post
+      // an unbalanced or mis-classified entry.
+      const allocation = allocatePayment({
+        amount: amountD.toNumber(),
+        remaining: remainingD.toNumber(),
+        tolerance: 0.005,
+      });
+      let customerCreditAccountId: string | null = null;
+      if (allocation.customerCredit > 0) {
+        const advanceRows = await tx
+          .select()
+          .from(accounts)
+          .where(
+            and(
+              eq(accounts.companyId, input.companyId),
+              eq(accounts.code, ACCOUNT_CODES.DEFERRED_REVENUE)
+            )
+          );
+        customerCreditAccountId = advanceRows[0]?.id ?? null;
+        if (!customerCreditAccountId) {
+          const e: any = new Error(
+            `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)} ` +
+              `and no customer-advance account (${ACCOUNT_CODES.DEFERRED_REVENUE}) exists to hold the overpayment`
+          );
+          e.code = "OVERPAYMENT";
+          throw e;
+        }
       }
 
       // Generate JE number — uses session advisory lock so concurrent calls
@@ -4766,11 +4825,16 @@ export class DatabaseStorage implements IStorage {
         .returning();
       const fxRate =
         Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
-      const amountAed = Math.round(input.amount * fxRate * 100) / 100;
+      const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+      const arCreditAed = round2(allocation.appliedToReceivable * fxRate);
+      const creditAed = round2(allocation.customerCredit * fxRate);
+      // Debit cash for exactly the sum of the credit legs so the entry is
+      // always balanced even if independent rounding would drift by a fil.
+      const bankDebitAed = round2(arCreditAed + creditAed);
       await tx.insert(journalLines).values({
         entryId: entry.id,
         accountId: input.paymentAccountId,
-        debit: amountAed,
+        debit: bankDebitAed,
         credit: 0,
         description: `Payment received - Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
@@ -4778,9 +4842,18 @@ export class DatabaseStorage implements IStorage {
         entryId: entry.id,
         accountId: input.receivableAccountId,
         debit: 0,
-        credit: amountAed,
+        credit: arCreditAed,
         description: `Clear A/R - Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
+      if (creditAed > 0 && customerCreditAccountId) {
+        await tx.insert(journalLines).values({
+          entryId: entry.id,
+          accountId: customerCreditAccountId,
+          debit: 0,
+          credit: creditAed,
+          description: `Customer credit (overpayment) - Invoice ${lockedInvoice.number || input.invoiceId}`,
+        });
+      }
 
       // Record the payment row.
       const [payment] = await tx

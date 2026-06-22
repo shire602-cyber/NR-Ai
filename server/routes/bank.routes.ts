@@ -3,6 +3,8 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
+import { insertBankConnectionSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 import {
   getBankProvider,
   getAvailableProviders,
@@ -53,7 +55,10 @@ export function registerBankRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const connection = await storage.createBankConnection({ ...req.body, companyId });
+      const connection = await storage.createBankConnection({
+        ...pickAllowed(req.body, insertBankConnectionSchema, ["companyId"]),
+        companyId,
+      } as any);
 
       logger.info({ connectionId: connection.id, companyId }, "Bank connection created");
       res.status(201).json(connection);

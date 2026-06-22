@@ -16,6 +16,8 @@ import {
   computeCtTotals,
   type CtBridgeAdjustment,
 } from "../../shared/ct-workpaper";
+import { insertCorporateTaxReturnSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 
 const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const CT_IMPORT_MAX_ROWS = 2000;
@@ -118,11 +120,13 @@ export function registerCorporateTaxRoutes(app: Express) {
         await assertPeriodNotLocked(companyId, periodEnd);
       }
 
+      // S-M1: allowlist body fields (strips id/createdAt/unknown) before the
+      // spread into the Drizzle write, then force the tenant scope.
       const taxReturn = await storage.createCorporateTaxReturn(
         normalizeCtDates({
-          ...req.body,
+          ...(pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any),
           companyId,
-        })
+        }) as any
       );
 
       res.status(201).json(taxReturn);
@@ -170,6 +174,14 @@ export function registerCorporateTaxRoutes(app: Express) {
         ctReturn.id
       );
 
+      // A-B16: Small Business Relief is denied if any prior period breached the
+      // AED 3M revenue cap, not just the current one.
+      const priorPeriodsExceededRevenueCap = await storage.getCtPriorPeriodRevenueExceededCap(
+        ctReturn.companyId,
+        ctReturn.taxPeriodStart,
+        ctReturn.id
+      );
+
       const computation = computeCtComputation({
         totalRevenue: Number(ctReturn.totalRevenue) || 0,
         totalExpenses: Number(ctReturn.totalExpenses) || 0,
@@ -177,6 +189,7 @@ export function registerCorporateTaxRoutes(app: Express) {
         adjustments,
         lossBroughtForward,
         smallBusinessReliefElected,
+        priorPeriodsExceededRevenueCap,
         exemptionThreshold: Number(ctReturn.exemptionThreshold) || UAE_CT_EXEMPTION_THRESHOLD,
         taxRate: Number(ctReturn.taxRate) || 0.09,
       });
@@ -224,7 +237,13 @@ export function registerCorporateTaxRoutes(app: Express) {
         await assertPeriodNotLocked(existing.companyId, periodEnd);
       }
 
-      const taxReturn = await storage.updateCorporateTaxReturn(id, normalizeCtDates(req.body));
+      // S-M1: allowlist body fields and never let the tenant scope be changed.
+      const taxReturn = await storage.updateCorporateTaxReturn(
+        id,
+        normalizeCtDates(
+          pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any
+        ) as any
+      );
       res.json(taxReturn);
     })
   );
@@ -487,12 +506,16 @@ export function registerCorporateTaxRoutes(app: Express) {
       totalRevenue = Math.max(0, totalRevenue);
       totalExpenses = Math.max(0, totalExpenses);
 
-      const exemptionThreshold = UAE_CT_EXEMPTION_THRESHOLD;
-      const taxRate = 0.09;
+      // A-B7: use the shared calculator instead of an inline formula so the
+      // preview matches the import/export/filing paths exactly.
       const totalDeductions = 0; // User can adjust this on the frontend
-      const taxableIncome = totalRevenue - totalExpenses - totalDeductions;
-      const taxableAmount = Math.max(0, taxableIncome - exemptionThreshold);
-      const taxPayable = taxableAmount * taxRate;
+      const liability = computeCtLiability({
+        totalRevenue,
+        totalExpenses,
+        totalDeductions,
+        exemptionThreshold: UAE_CT_EXEMPTION_THRESHOLD,
+        taxRate: 0.09,
+      });
 
       res.json({
         periodStart: startDate.toISOString(),
@@ -501,11 +524,11 @@ export function registerCorporateTaxRoutes(app: Express) {
         totalExpenses: Math.round(totalExpenses * 100) / 100,
         grossProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         totalDeductions,
-        taxableIncome: Math.round(taxableIncome * 100) / 100,
-        exemptionThreshold,
-        taxableAmount: Math.round(taxableAmount * 100) / 100,
-        taxRate,
-        taxPayable: Math.round(taxPayable * 100) / 100,
+        taxableIncome: liability.taxableIncome,
+        exemptionThreshold: liability.exemptionThreshold,
+        taxableAmount: liability.taxableAmount,
+        taxRate: liability.taxRate,
+        taxPayable: liability.taxPayable,
         journalEntriesProcessed: periodEntries.length,
       });
     })

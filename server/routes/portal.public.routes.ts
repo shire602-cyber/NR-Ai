@@ -19,6 +19,7 @@ export function registerPortalPublicRoutes(app: Express) {
     "/api/portal/generate-access",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
       const { contactId } = req.body;
 
       if (!contactId) {
@@ -28,6 +29,16 @@ export function registerPortalPublicRoutes(app: Express) {
       const contact = await storage.getCustomerContact(contactId);
       if (!contact) {
         return res.status(404).json({ message: "Contact not found" });
+      }
+
+      // S-H1: the contact lookup is not tenant-scoped, so we must verify the
+      // caller has access to the contact's company before minting a portal
+      // token. Without this any authenticated user could enumerate another
+      // tenant's contactId and mint a 1-year link exposing that company's
+      // invoices and PDFs (cross-tenant IDOR).
+      const hasAccess = await storage.hasCompanyAccess(userId, contact.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       // Generate crypto-random token

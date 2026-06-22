@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, desc, lte } from "drizzle-orm";
 import { exchangeRates, invoices, receipts } from "../../shared/schema";
+import { revalueForeignBalance } from "../services/financial-statements";
 import type {
   UnrealizedFxGainLoss,
   FxGainsLossesReport,
@@ -451,18 +452,21 @@ export function registerExchangeRateRoutes(app: Express) {
 
       const receivables: UnrealizedFxGainLoss[] = [];
       for (const inv of foreignInvoices) {
-        const currentRate = await getLatestRate("AED", inv.currency, asOf);
+        // A-B4: canonical convention is AED per 1 unit of foreign currency, so
+        // request foreign->AED (NOT AED->foreign) and MULTIPLY, matching the
+        // invoice booking path (baseCurrencyAmount = total * exchangeRate).
+        const currentRate = await getLatestRate(inv.currency, "AED", asOf);
         if (currentRate === null) continue;
 
-        // inv.exchangeRate is stored as: 1 AED = X foreignCurrency
-        // so AED equivalent = foreignAmount / inv.exchangeRate
         const txRate = inv.exchangeRate > 0 ? inv.exchangeRate : 1;
         const foreignTotal = inv.total;
 
-        // Convert: AED = foreignAmount / rate (rate = foreign per 1 AED)
-        const bookValueAed = txRate > 0 ? foreignTotal / txRate : foreignTotal;
-        const currentValueAed = currentRate > 0 ? foreignTotal / currentRate : foreignTotal;
-        const unrealizedGainLoss = currentValueAed - bookValueAed;
+        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
+          foreignAmount: foreignTotal,
+          bookRateAedPerUnit: txRate,
+          currentRateAedPerUnit: currentRate,
+          kind: "receivable",
+        });
 
         receivables.push({
           entityType: "invoice",
@@ -489,16 +493,19 @@ export function registerExchangeRateRoutes(app: Express) {
       const payables: UnrealizedFxGainLoss[] = [];
       for (const rec of foreignReceipts) {
         const currency = rec.currency!;
-        const currentRate = await getLatestRate("AED", currency, asOf);
+        // A-B4: foreign->AED, MULTIPLY (AED per unit of foreign currency).
+        const currentRate = await getLatestRate(currency, "AED", asOf);
         if (currentRate === null) continue;
 
         const txRate = rec.exchangeRate > 0 ? rec.exchangeRate : 1;
         const foreignAmount = rec.amount ?? 0;
 
-        const bookValueAed = txRate > 0 ? foreignAmount / txRate : foreignAmount;
-        const currentValueAed = currentRate > 0 ? foreignAmount / currentRate : foreignAmount;
-        // For payables: gain when current cost in AED is lower
-        const unrealizedGainLoss = bookValueAed - currentValueAed;
+        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
+          foreignAmount,
+          bookRateAedPerUnit: txRate,
+          currentRateAedPerUnit: currentRate,
+          kind: "payable",
+        });
 
         payables.push({
           entityType: "payable",
