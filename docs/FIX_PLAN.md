@@ -131,8 +131,11 @@
 ### A7 · Precision, dedup & dead code
 - [ ] **A-B17 Money read/aggregation is float-based.** Fix: money custom type returns string/Decimal;
   aggregate reports/trial-balance/month-end with decimal.js. Files: `schema.ts:22-32` + report routes.
-- [ ] **A-B11 Two divergent credit-note systems.** Fix: consolidate to one; link standalone CNs to invoices.
-  Files: `credit-notes.routes.ts` + invoice-embedded path.
+- [~] **A-B11 Two divergent credit-note systems.** PLAN PROVIDED: `docs/CREDIT_NOTE_CONSOLIDATION_PLAN.md`
+  (make invoice-embedded canonical, backfill standalone rows, remove the divergent VAT-return subtraction in
+  the same release, retire the table). Implementation deliberately deferred — it's a data migration whose
+  step ordering directly affects the FTA VAT return, so it must be validated against a real DB, not the
+  mocked-DB suite. The primary CN path already works, so no correctness emergency. Resolves A-B15 too.
 - [ ] **A7.x Remove dead code** revealed during the above (e.g. unwired Stripe path) once A-B1 resolved.
 
 ---
