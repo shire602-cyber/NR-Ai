@@ -108,8 +108,14 @@
   correct — explicit `vatSupplyType` (zero/exempt/out-of-scope) always wins over rate, and only a line with
   BOTH null supply type and null rate defaults to standard 5% (the safe default). No code change; behavior is
   exercised by existing VAT tests. Files: `vat-autopilot.service.ts:305`.
-- [ ] **A-B13 VAT rounded per-invoice only.** Open: decide + document line-vs-invoice rounding; align autopilot
-  reconciliation tolerance. Files: `document-totals.service.ts:32-42`.
+- [x] **A-B13 VAT rounded per-invoice only.** DONE (documented decision): invoice-level VAT rounding is the
+  deliberate, FTA-permitted convention (Exec. Reg. Art. 30); `calculateDocumentTotals` keeps full Decimal
+  precision per line and rounds once at the document level, and the autopilot rounds the same way (per bucket),
+  so totals reconcile. Documented in `document-totals.service.ts`.
+- [x] **A-B17 Float drift in report aggregation.** DONE (contained): added decimal-safe `sumMoney` (sums in
+  fils) and applied it to the cash-flow section totals + net cash change so they tie exactly. (The money custom
+  type still returns a float; converting it repo-wide is a large, low-value change left as optional — the
+  balance-critical sums now use exact integer-fils accumulation.) Files: `financial-statements.ts`.
 
 ### A6 · Corporate tax  ✅ (test-backed)
 - [x] **A-B7 Three different CT calculators give different answers.** DONE: `computeCtLiability` now delegates

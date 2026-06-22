@@ -21,6 +21,15 @@ export function normaliseVatRate(raw: number | string | null | undefined): numbe
   return n === 5 ? UAE_STANDARD_RATE : n;
 }
 
+/**
+ * A-B13 — VAT rounding convention (deliberate, documented):
+ * VAT is computed per line in full precision (Decimal), accumulated, and
+ * rounded ONCE at the document level (FTA Executive Regulation Art. 30 permits
+ * rounding at the line OR the invoice level). We use invoice-level rounding so
+ * the document total always equals subtotal + VAT to the fil, and the VAT
+ * autopilot rounds the same way (per bucket once) so its reconciliation agrees.
+ * Do not switch to per-line rounding without aligning the autopilot tolerance.
+ */
 export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined | null): {
   subtotal: number;
   vatAmount: number;

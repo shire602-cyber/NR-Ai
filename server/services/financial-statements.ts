@@ -12,6 +12,18 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * A-B17: decimal-safe money summation. Accumulating many `money` floats with
+ * `+=` then rounding once lets sub-cent binary-float error creep in (then gets
+ * papered over by 0.01 tolerances). Summing in fixed-point integer fils and
+ * dividing once is exact for 2dp money values.
+ */
+export function sumMoney(values: number[]): number {
+  let fils = 0;
+  for (const v of values) fils += Math.round((v + Number.EPSILON) * 100);
+  return fils / 100;
+}
+
 export type CFAccount = {
   id: string;
   type: string;
@@ -236,10 +248,8 @@ export function computeCashFlow(args: {
 
   const build = (cat: CashFlowCategory) => {
     const breakdown: CashFlowBreakdownLine[] = [];
-    let total = 0;
     for (const [accountId, amount] of buckets[cat].entries()) {
       const acct = accountById.get(accountId);
-      total = round2(total + amount);
       breakdown.push({
         accountId,
         accountCode: acct?.code ?? "",
@@ -248,6 +258,8 @@ export function computeCashFlow(args: {
       });
     }
     breakdown.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+    // A-B17: sum exactly in fils so the section total can't drift.
+    const total = sumMoney(breakdown.map((b) => b.amount));
     return { total, breakdown };
   };
 
@@ -258,6 +270,6 @@ export function computeCashFlow(args: {
     operating,
     investing,
     financing,
-    netCashChange: round2(operating.total + investing.total + financing.total),
+    netCashChange: sumMoney([operating.total, investing.total, financing.total]),
   };
 }
