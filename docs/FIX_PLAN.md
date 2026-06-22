@@ -78,8 +78,10 @@
   Loss (5140) via the tested `computeRealisedFx`. The currency-mismatch guard is relaxed only when a rate is
   given (enables foreign→AED settlement). With NO rate the legs are byte-for-byte identical to before. Files:
   `storage.ts`, `invoices.routes.ts`, `invoice-lifecycle.ts`, `shared/schema.ts`, `migrations/0080…`.
-  ⚠️ Verified via pure-function tests + tsc + full suite (720); the SQL posting path itself isn't exercised by
-  the mocked-DB suite — confirm against a real DB before relying on it in production.
+  The leg construction (the risky money math) was extracted into the tested pure `buildPaymentJournalLines`
+  (gain/loss/overpayment/cross-currency cases all asserted balanced); `recordInvoicePayment` now just inserts
+  the returned legs, so the SQL path is a thin mechanical wrapper. (A real-DB smoke of one cross-currency
+  payment is still worth doing in your env, but the logic is now unit-covered.)
 - [x] **A-B8 No unrealised FX revaluation POSTED.** DONE: new `POST /api/companies/:id/exchange-rates/revalue`
   endpoint sums the unrealised AED revaluation of open foreign A/R + A/P (via `revalueForeignBalance`), posts a
   balanced period-end JE (Dr/Cr A/R, A/P, FX gain/loss) through the tested `buildFxRevaluationLines`, and posts

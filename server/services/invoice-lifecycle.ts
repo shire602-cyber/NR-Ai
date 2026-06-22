@@ -156,6 +156,70 @@ export function computeRealisedFx(args: {
 }
 
 /**
+ * Build the balanced journal legs for an invoice payment, including A-B12
+ * overpayment (customer credit) and A-B5 realised FX. Pure so the money math
+ * is fully unit-tested independently of the SQL insert path:
+ *   Dr  payment account (cash)                 (applied + credit) * paymentRate
+ *   Cr  receivable                             applied * invoiceRate
+ *   Cr  customer credit (overpayment)          credit * paymentRate   [if any]
+ *   Cr/Dr FX gain/loss                          realised FX            [if any]
+ * With paymentRate == invoiceRate (the default, no rate supplied) there is no
+ * FX leg and the result is identical to the original two-leg entry.
+ */
+export function buildPaymentJournalLines(args: {
+  appliedToReceivable: number; // foreign currency
+  customerCredit: number; // foreign currency
+  invoiceRate: number;
+  paymentRate: number;
+  paymentAccountId: string;
+  receivableAccountId: string;
+  customerCreditAccountId?: string | null;
+  fxGainAccountId?: string | null;
+  fxLossAccountId?: string | null;
+  label?: string;
+}):
+  | { ok: true; lines: JournalLine[]; realisedFx: number }
+  | { ok: false; code: string; message: string } {
+  const invRate = args.invoiceRate > 0 ? args.invoiceRate : 1;
+  const payRate = args.paymentRate > 0 ? args.paymentRate : invRate;
+  const label = args.label ?? "Invoice payment";
+  const arCreditAed = round2(args.appliedToReceivable * invRate);
+  const custCreditAed = round2(args.customerCredit * payRate);
+  const bankDebitAed = round2((args.appliedToReceivable + args.customerCredit) * payRate);
+  const realisedFx = round2(bankDebitAed - arCreditAed - custCreditAed);
+
+  if (custCreditAed > 0 && !args.customerCreditAccountId) {
+    return { ok: false, code: "CUSTOMER_CREDIT_ACCOUNT_MISSING", message: "Customer-credit account is required for the overpayment." };
+  }
+  if (realisedFx > 0 && !args.fxGainAccountId) {
+    return { ok: false, code: "REALISED_FX_ACCOUNT_MISSING", message: "FX Gain account is required for realised FX." };
+  }
+  if (realisedFx < 0 && !args.fxLossAccountId) {
+    return { ok: false, code: "REALISED_FX_ACCOUNT_MISSING", message: "FX Loss account is required for realised FX." };
+  }
+
+  const lines: JournalLine[] = [
+    { accountId: args.paymentAccountId, debit: bankDebitAed, credit: 0, description: `${label} — cash received` },
+    { accountId: args.receivableAccountId, debit: 0, credit: arCreditAed, description: `${label} — clear A/R` },
+  ];
+  if (custCreditAed > 0 && args.customerCreditAccountId) {
+    lines.push({ accountId: args.customerCreditAccountId, debit: 0, credit: custCreditAed, description: `${label} — customer credit (overpayment)` });
+  }
+  if (realisedFx > 0 && args.fxGainAccountId) {
+    lines.push({ accountId: args.fxGainAccountId, debit: 0, credit: realisedFx, description: `${label} — realised FX gain` });
+  } else if (realisedFx < 0 && args.fxLossAccountId) {
+    lines.push({ accountId: args.fxLossAccountId, debit: -realisedFx, credit: 0, description: `${label} — realised FX loss` });
+  }
+
+  const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
+  const cr = round2(lines.reduce((s, l) => s + l.credit, 0));
+  if (Math.abs(dr - cr) > 0.01) {
+    return { ok: false, code: "UNBALANCED_PAYMENT", message: `Payment entry unbalanced (${dr} vs ${cr}).` };
+  }
+  return { ok: true, lines, realisedFx };
+}
+
+/**
  * A-B2: Build the reversal journal legs shared by void and credit-note.
  * Fails hard (422) when a required account is missing instead of silently
  * dropping a leg and posting an unbalanced entry (which previously 500'd deep

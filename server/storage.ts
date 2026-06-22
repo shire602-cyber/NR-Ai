@@ -261,7 +261,7 @@ import {
   type InvoiceStatus,
 } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
-import { allocatePayment } from "./services/invoice-lifecycle";
+import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-lifecycle";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 
@@ -4850,70 +4850,47 @@ export class DatabaseStorage implements IStorage {
           postedAt: input.date,
         })
         .returning();
-      const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-      // A-B5: AR is cleared at the invoice (booking) rate; cash is received at
-      // the payment-date rate when one is supplied (else the invoice rate, i.e.
-      // no FX — identical to the prior behaviour). The difference on the applied
-      // portion is realised FX gain/loss.
+      // A-B5/A-B12: compute the balanced legs via the tested pure builder. AR
+      // clears at the invoice rate; cash at the payment-date rate (when one is
+      // supplied — else the invoice rate, i.e. no FX, identical to before).
       const invRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
       const payRate = hasPaymentRate ? Number(input.paymentExchangeRate) : invRate;
-      const arCreditAed = round2(allocation.appliedToReceivable * invRate);
-      const custCreditAed = round2(allocation.customerCredit * payRate);
-      const bankDebitAed = round2(
-        (allocation.appliedToReceivable + allocation.customerCredit) * payRate
-      );
-      const realisedFx = round2(bankDebitAed - arCreditAed - custCreditAed);
-
-      // Resolve the FX gain/loss account only when realised FX is non-zero.
-      let fxAccountId: string | null = null;
-      if (Math.abs(realisedFx) >= 0.01) {
-        const fxCode = realisedFx > 0 ? ACCOUNT_CODES.FX_GAIN : ACCOUNT_CODES.FX_LOSS;
+      // Resolve FX gain/loss accounts only when a differing payment rate could
+      // produce realised FX (avoids a lookup on the common same-rate path).
+      let fxGainAccountId: string | null = null;
+      let fxLossAccountId: string | null = null;
+      if (hasPaymentRate && Math.abs(payRate - invRate) > 1e-9) {
         const fxRows = await tx
           .select()
           .from(accounts)
-          .where(and(eq(accounts.companyId, input.companyId), eq(accounts.code, fxCode)));
-        fxAccountId = fxRows[0]?.id ?? null;
-        if (!fxAccountId) {
-          const e: any = new Error(
-            `Realised FX of ${realisedFx} requires the ${fxCode} (Foreign Exchange ` +
-              `${realisedFx > 0 ? "Gain" : "Loss"}) account, which is missing from the chart of accounts.`
+          .where(
+            and(
+              eq(accounts.companyId, input.companyId),
+              inArray(accounts.code, [ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])
+            )
           );
-          e.code = "REALISED_FX_ACCOUNT_MISSING";
-          throw e;
-        }
+        fxGainAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_GAIN)?.id ?? null;
+        fxLossAccountId = fxRows.find((a: any) => a.code === ACCOUNT_CODES.FX_LOSS)?.id ?? null;
       }
-
-      await tx.insert(journalLines).values({
-        entryId: entry.id,
-        accountId: input.paymentAccountId,
-        debit: bankDebitAed,
-        credit: 0,
-        description: `Payment received - Invoice ${lockedInvoice.number || input.invoiceId}`,
+      const built = buildPaymentJournalLines({
+        appliedToReceivable: allocation.appliedToReceivable,
+        customerCredit: allocation.customerCredit,
+        invoiceRate: invRate,
+        paymentRate: payRate,
+        paymentAccountId: input.paymentAccountId,
+        receivableAccountId: input.receivableAccountId,
+        customerCreditAccountId,
+        fxGainAccountId,
+        fxLossAccountId,
+        label: `Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
-      await tx.insert(journalLines).values({
-        entryId: entry.id,
-        accountId: input.receivableAccountId,
-        debit: 0,
-        credit: arCreditAed,
-        description: `Clear A/R - Invoice ${lockedInvoice.number || input.invoiceId}`,
-      });
-      if (custCreditAed > 0 && customerCreditAccountId) {
-        await tx.insert(journalLines).values({
-          entryId: entry.id,
-          accountId: customerCreditAccountId,
-          debit: 0,
-          credit: custCreditAed,
-          description: `Customer credit (overpayment) - Invoice ${lockedInvoice.number || input.invoiceId}`,
-        });
+      if (!built.ok) {
+        const e: any = new Error(built.message);
+        e.code = built.code;
+        throw e;
       }
-      if (fxAccountId && Math.abs(realisedFx) >= 0.01) {
-        await tx.insert(journalLines).values({
-          entryId: entry.id,
-          accountId: fxAccountId,
-          debit: realisedFx < 0 ? -realisedFx : 0,
-          credit: realisedFx > 0 ? realisedFx : 0,
-          description: `Realised FX ${realisedFx > 0 ? "gain" : "loss"} - Invoice ${lockedInvoice.number || input.invoiceId}`,
-        });
+      for (const line of built.lines) {
+        await tx.insert(journalLines).values({ entryId: entry.id, ...line });
       }
 
       // Record the payment row.
