@@ -166,8 +166,12 @@
 - [x] **S-M3 Atomic invoice void/credit-note** — addressed by the Phase A A-1/A-B3 work (guards + shared
   balanced builder) plus the credit-note preflight ordering.
 - [ ] **S-M4 Upgrade dev/build advisories** (`js-yaml`, `@babel/core`) — build-tooling only, no prod runtime.
-- [ ] **S-L1** receipt image `nosniff` + attachment · **S-L2** dedicated `TOKEN_ENCRYPTION_KEY` ·
-  **S-L3** push `companyId` into unscoped mutators · **S-L4** portal invoice match by id not name.
+- [x] **S-L1** receipt image now served with `X-Content-Type-Options: nosniff` + `Content-Disposition:
+  attachment`. Files: `receipts.routes.ts`.
+- [ ] **S-L2** dedicated `TOKEN_ENCRYPTION_KEY` (operational — env var; code already falls back to SESSION_SECRET).
+- [ ] **S-L3** push `companyId` into unscoped mutators (defence-in-depth; callers currently pre-check).
+- [ ] **S-L4** portal invoice match by id not name — needs a stable invoice↔contact id relationship
+  (schema change + data migration); deferred. Low impact (already scoped to the contact's company).
 
 ---
 

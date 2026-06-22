@@ -911,6 +911,12 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(404).json({ message: "Receipt not found" });
       }
 
+      // S-L1: prevent MIME-sniffing and force the browser to treat receipt
+      // images as downloads rather than rendering them inline (defence against
+      // a malicious upload being served back as active content).
+      res.set("X-Content-Type-Options", "nosniff");
+      res.set("Content-Disposition", `attachment; filename="receipt-${id}.jpg"`);
+
       if (receipt.imagePath) {
         try {
           return res.sendFile(resolveImagePath(receipt.imagePath));
