@@ -149,10 +149,12 @@
   `ASSET_HAS_POSTED_JE`) when posted JEs reference the asset (capitalization/depreciation) — preventing
   orphaned GL entries — and is audit-logged. (Credit-note delete already blocks *issued* notes; deletable
   drafts have no posted JE so retention does not apply.) Files: `fixed-assets.routes.ts`.
-- [~] **S-H6 Non-atomic posting / missing GL.** Payroll posting already improved (atomic + audited, per
-  re-audit). DEFERRED: posting GL for expense-claim approval (Dr expense / Cr employee-reimbursement payable)
-  needs an account-mapping + liability-account design decision and DB-backed tests. Approval is now at least
-  audit-logged. Files: `expense-claims.routes.ts`.
+- [x] **S-H6 Non-atomic posting / missing GL.** DONE: expense-claim approval now posts a balanced GL entry —
+  Dr expense account per item category (tested `mapExpenseCategoryToCode`) + Dr recoverable input VAT, Cr new
+  **Employee Reimbursements Payable** (2045) liability — via `buildExpenseClaimJournalLines` (pure, tested),
+  validated before the status flip, idempotent by source. Added account 2045 to the default chart. Payroll
+  posting was already atomic+audited. Files: `expense-claim-posting.ts`, `expense-claims.routes.ts`,
+  `defaultChartOfAccounts.ts`, `constants.ts`. (Reimbursement payout Dr 2045 / Cr Bank is a small follow-up.)
 
 ### Medium / Low
 - [x] **S-M1 Mass-assignment** — DONE via the `pickAllowed` allowlist helper (`server/utils/pick-allowed.ts`),

@@ -245,6 +245,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isSystemAccount: false,
   },
   {
+    code: "2045",
+    nameEn: "Employee Reimbursements Payable",
+    nameAr: "مستحقات الموظفين",
+    description: "Amounts owed to employees for approved out-of-pocket expense claims",
+    type: "liability",
+    subType: "current_liability",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: false,
+  },
+  {
     code: "2050",
     nameEn: "Deferred Revenue",
     nameAr: "الإيرادات المؤجلة",
