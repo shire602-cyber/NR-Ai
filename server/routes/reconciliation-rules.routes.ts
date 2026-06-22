@@ -4,6 +4,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { insertReconciliationRuleSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 
 const logger = createLogger("reconciliation-rules-routes");
 
@@ -47,7 +49,10 @@ export function registerReconciliationRuleRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const rule = await storage.createReconciliationRule({ ...req.body, companyId });
+      const rule = await storage.createReconciliationRule({
+        ...pickAllowed(req.body, insertReconciliationRuleSchema, ["companyId"]),
+        companyId,
+      } as any);
       logger.info({ ruleId: rule.id, companyId }, "Reconciliation rule created");
       res.status(201).json(rule);
     })

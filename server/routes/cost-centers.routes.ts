@@ -4,7 +4,14 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { db } from "../db";
-import { journalLines, journalEntries, accounts, costCenters } from "../../shared/schema";
+import {
+  journalLines,
+  journalEntries,
+  accounts,
+  costCenters,
+  insertCostCenterSchema,
+} from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 import { eq, and, gte, inArray, lte, sql } from "drizzle-orm";
 import { createLogger } from "../config/logger";
 import { uaeDayEnd, uaeDayStart } from "../utils/date";
@@ -79,7 +86,10 @@ export function registerCostCenterRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const costCenter = await storage.createCostCenter({ ...req.body, companyId });
+      const costCenter = await storage.createCostCenter({
+        ...pickAllowed(req.body, insertCostCenterSchema, ["companyId"]),
+        companyId,
+      } as any);
       logger.info({ costCenterId: costCenter.id, companyId }, "Cost center created");
       res.status(201).json(costCenter);
     })

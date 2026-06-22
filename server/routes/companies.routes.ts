@@ -2,7 +2,11 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertCompanySchema, companyPreferencesSchema } from "../../shared/schema";
+import {
+  insertCompanySchema,
+  companyPreferencesSchema,
+  insertBankAccountSchema,
+} from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
@@ -410,7 +414,10 @@ export function registerCompanyRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const account = await storage.createBankAccount({ ...req.body, companyId: id });
+      const account = await storage.createBankAccount({
+        ...pickAllowed(req.body, insertBankAccountSchema, ["companyId"]),
+        companyId: id,
+      } as any);
       res.status(201).json(account);
     })
   );

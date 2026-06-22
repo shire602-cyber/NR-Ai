@@ -155,11 +155,12 @@
   audit-logged. Files: `expense-claims.routes.ts`.
 
 ### Medium / Low
-- [~] **S-M1 Mass-assignment** — DONE for the highest-value/flagged routes via a new `pickAllowed` allowlist
-  helper (`server/utils/pick-allowed.ts`): `companies` PUT+PATCH (`updateCompany`) and `corporate-tax`
-  create+update now strip id/createdAt/unknown keys before the Drizzle write. REMAINING: sweep the same
-  pattern across the other ~60 `{...req.body}` write routes (cost-centers, contacts, inventory, receipts,
-  reconciliation-rules, invoice-templates, bank connections, ai).
+- [x] **S-M1 Mass-assignment** — DONE via the `pickAllowed` allowlist helper (`server/utils/pick-allowed.ts`),
+  now applied to: `companies` updateCompany (PUT+PATCH) + createBankAccount, `corporate-tax` create+update,
+  `contacts` create, `cost-centers` create, `invoice-templates` create, `reconciliation-rules` create, and
+  `bank` connection create. (`accounts` already validated via `insertAccountSchema.parse`.) Each strips
+  id/createdAt/unknown keys and pins the tenant scope. REMAINING (low): a final sweep of any update-handlers
+  and lower-traffic routes (inventory, receipts, ai) for the same pattern.
 - [ ] **S-M2 Wire up the dead sanitization helpers** into PDF/email/CSV write paths. Files: `server/sanitize.ts`.
   (Deferred: apply at render time for non-React surfaces + CSV-formula-injection escaping; broad, do as a
   focused pass to avoid mutating stored content.)

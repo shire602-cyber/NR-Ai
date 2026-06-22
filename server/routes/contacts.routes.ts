@@ -5,6 +5,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
+import { insertCustomerContactSchema } from "../../shared/schema";
+import { pickAllowed } from "../utils/pick-allowed";
 
 const log = createLogger("contacts");
 
@@ -99,7 +101,11 @@ export function registerContactRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const contactData = { ...req.body, companyId };
+      // S-M1: allowlist body fields, then pin the tenant scope.
+      const contactData: Record<string, any> = {
+        ...pickAllowed(req.body, insertCustomerContactSchema, ["companyId"]),
+        companyId,
+      };
 
       // Check for duplicate email within company
       if (contactData.email) {
@@ -109,7 +115,7 @@ export function registerContactRoutes(app: Express) {
         }
       }
 
-      const contact = await storage.createCustomerContact(contactData);
+      const contact = await storage.createCustomerContact(contactData as any);
       res.json(contact);
     })
   );
