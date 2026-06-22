@@ -85,6 +85,21 @@ export function generateEInvoiceXML(
     </cac:InvoiceDocumentReference>
   </cac:BillingReference>`
       : "";
+  // PINT-AE / EN16931 BT-6: for a foreign-currency invoice the VAT total must
+  // also be stated in the tax accounting currency (AED). exchangeRate is stored
+  // AED-per-foreign-unit (see A-B4), so AED VAT = vatAmount * exchangeRate.
+  const exchangeRate =
+    Number((invoice as any).exchangeRate) > 0 ? Number((invoice as any).exchangeRate) : 1;
+  const vatAmountAed = Math.round(Number(invoice.vatAmount) * exchangeRate * 100) / 100;
+  const taxCurrencyCodeXml = `
+  <cbc:TaxCurrencyCode>AED</cbc:TaxCurrencyCode>`;
+  const aedTaxTotalXml =
+    currency !== "AED"
+      ? `
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="AED">${vatAmountAed.toFixed(2)}</cbc:TaxAmount>
+  </cac:TaxTotal>`
+      : "";
 
   // Build invoice lines XML
   const invoiceLinesXml = lines
@@ -167,7 +182,7 @@ export function generateEInvoiceXML(
   <cbc:ID>${escapeXml(invoice.number)}</cbc:ID>
   <cbc:IssueDate>${issueDate}</cbc:IssueDate>
   <cbc:InvoiceTypeCode>${invoiceTypeCode}</cbc:InvoiceTypeCode>
-  <cbc:DocumentCurrencyCode>${escapeXml(currency)}</cbc:DocumentCurrencyCode>
+  <cbc:DocumentCurrencyCode>${escapeXml(currency)}</cbc:DocumentCurrencyCode>${taxCurrencyCodeXml}
   <cbc:UUID>${uuid}</cbc:UUID>${billingReferenceXml}
 
   <!-- Seller (Supplier) -->
@@ -231,7 +246,7 @@ export function generateEInvoiceXML(
   <!-- Tax Total -->
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${escapeXml(currency)}">${invoice.vatAmount.toFixed(2)}</cbc:TaxAmount>${taxSubtotalsXml}
-  </cac:TaxTotal>
+  </cac:TaxTotal>${aedTaxTotalXml}
 
   <!-- Monetary Totals -->
   <cac:LegalMonetaryTotal>
