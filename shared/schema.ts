@@ -4677,3 +4677,128 @@ export const insertFirmMetricsCacheSchema = createInsertSchema(firmMetricsCache)
 
 export type InsertFirmMetricsCache = z.infer<typeof insertFirmMetricsCacheSchema>;
 export type FirmMetricsCache = typeof firmMetricsCache.$inferSelect;
+
+// ===========================
+// Email document intake (firm-internal pilot) — see docs/EMAIL_INTAKE_PILOT.md
+// ===========================
+
+// The sender→company link: "link a certain email to a certain customer". Only
+// active sources are routed; unknown senders are ignored (never auto-created).
+export const clientEmailSources = pgTable(
+  "client_email_sources",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    // firm_owner user.id that owns this mapping (mirrors firm_alerts.firm_id).
+    firmId: uuid("firm_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    senderEmail: text("sender_email").notNull(), // stored normalised (lowercased)
+    label: text("label"),
+    status: text("status").notNull().default("active"), // active | paused
+    requireDkimPass: boolean("require_dkim_pass").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_client_email_sources_company").on(table.companyId),
+    firmIdx: index("idx_client_email_sources_firm").on(table.firmId),
+    // One sender address maps to at most one company per firm.
+    firmSenderUq: unique("uq_client_email_sources_firm_sender").on(
+      table.firmId,
+      table.senderEmail
+    ),
+  })
+);
+
+export const insertClientEmailSourceSchema = createInsertSchema(clientEmailSources).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertClientEmailSource = z.infer<typeof insertClientEmailSourceSchema>;
+export type ClientEmailSource = typeof clientEmailSources.$inferSelect;
+
+// One row per ingested email; idempotent on provider_message_id.
+export const emailIntakeMessages = pgTable(
+  "email_intake_messages",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => clientEmailSources.id, { onDelete: "cascade" }),
+    providerMessageId: text("provider_message_id").notNull(),
+    fromEmail: text("from_email").notNull(),
+    subject: text("subject"),
+    receivedAt: timestamp("received_at").notNull(),
+    attachmentCount: integer("attachment_count").notNull().default(0),
+    // received | processing | partially_processed | done | ignored | error
+    status: text("status").notNull().default("received"),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_email_intake_messages_company").on(table.companyId),
+    providerMsgUq: unique("uq_email_intake_messages_provider_msg").on(table.providerMessageId),
+  })
+);
+
+export const insertEmailIntakeMessageSchema = createInsertSchema(emailIntakeMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertEmailIntakeMessage = z.infer<typeof insertEmailIntakeMessageSchema>;
+export type EmailIntakeMessage = typeof emailIntakeMessages.$inferSelect;
+
+// One row per attachment; links to the receipt it produced. sha256 is the dedup
+// key (unique per company).
+export const emailIntakeDocuments = pgTable(
+  "email_intake_documents",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => emailIntakeMessages.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    filename: text("filename"),
+    mimeType: text("mime_type"),
+    byteSize: integer("byte_size"),
+    storagePath: text("storage_path"),
+    sha256: text("sha256").notNull(),
+    docKind: text("doc_kind").notNull().default("unknown"), // invoice|receipt|statement|unknown
+    ocrStatus: text("ocr_status").notNull().default("pending"), // pending|processed|skipped|error
+    receiptId: uuid("receipt_id").references(() => receipts.id, { onDelete: "set null" }),
+    isDuplicate: boolean("is_duplicate").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    messageIdx: index("idx_email_intake_documents_message").on(table.messageId),
+    companyIdx: index("idx_email_intake_documents_company").on(table.companyId),
+    // Dedup: a content hash is unique within a company.
+    companyHashUq: unique("uq_email_intake_documents_company_hash").on(
+      table.companyId,
+      table.sha256
+    ),
+  })
+);
+
+export const insertEmailIntakeDocumentSchema = createInsertSchema(emailIntakeDocuments).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertEmailIntakeDocument = z.infer<typeof insertEmailIntakeDocumentSchema>;
+export type EmailIntakeDocument = typeof emailIntakeDocuments.$inferSelect;

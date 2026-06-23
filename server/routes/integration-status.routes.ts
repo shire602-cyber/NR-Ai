@@ -3,6 +3,7 @@ import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
 import { isOpenBankingConfigured } from "../services/open-banking.service";
+import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -25,6 +26,20 @@ export function registerIntegrationStatusRoutes(app: Express) {
             "RESEND_API_KEY (simplest) — or SMTP_HOST + SMTP_USER + SMTP_PASS (+ SMTP_PORT, SMTP_FROM)",
           ],
           unlocks: "Password resets, invoice sending, payment chasing emails",
+        },
+        {
+          key: "email_intake",
+          name: "Email document intake (firm pilot)",
+          configured: isEmailIntakeEnabled() && isEmailIntakeConfigured(),
+          detail: !isEmailIntakeEnabled()
+            ? "feature flag off"
+            : isEmailIntakeConfigured()
+              ? "mailbox connected"
+              : "flag on, no mailbox",
+          requiredEnv: [
+            "EMAIL_INTAKE_ENABLED=true — and EMAIL_INTAKE_PROVIDER=gmail|imap|inbound (+ that provider's mailbox credentials)",
+          ],
+          unlocks: "Clients email documents → OCR → draft entries → VAT 201 (NRA clients only)",
         },
         {
           key: "stripe",

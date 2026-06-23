@@ -582,6 +582,13 @@
       "when": 1781410000000,
       "tag": "0083_journal_entries_source_index",
       "breakpoints": false
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1781420000000,
+      "tag": "0084_email_intake",
+      "breakpoints": false
     }
   ]
 }

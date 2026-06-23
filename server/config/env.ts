@@ -93,6 +93,13 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
 
+  // === Email document intake (firm-internal pilot — OFF by default) ===
+  // Feature flag gating the whole intake feature; only "true" enables it.
+  EMAIL_INTAKE_ENABLED: z.enum(["true", "false"]).optional(),
+  // Which mailbox adapter to use once one is implemented (gmail | imap |
+  // inbound). Unset/"unconfigured" → the no-op source (no mailbox connected).
+  EMAIL_INTAKE_PROVIDER: z.string().optional(),
+
   // === Session store ===
   // When set, Express sessions are persisted in Redis so they survive
   // deploys and can be shared across replicas. When unset, the server
