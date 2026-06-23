@@ -575,6 +575,13 @@
       "when": 1781400000000,
       "tag": "0082_einvoice_submission",
       "breakpoints": false
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1781410000000,
+      "tag": "0083_journal_entries_source_index",
+      "breakpoints": false
     }
   ]
 }

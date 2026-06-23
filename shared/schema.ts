@@ -849,6 +849,13 @@ export const journalEntries = pgTable(
     companyIdIdx: index("idx_journal_entries_company_id").on(table.companyId),
     companyDateIdx: index("idx_journal_entries_company_date").on(table.companyId, table.date),
     companyStatusIdx: index("idx_journal_entries_company_status").on(table.companyId, table.status),
+    // S2: source lookups (getJournalEntriesBySource) run on every void/payment/
+    // credit-note/expense/FX posting and idempotency check.
+    companySourceIdx: index("idx_journal_entries_company_source").on(
+      table.companyId,
+      table.source,
+      table.sourceId
+    ),
   })
 );
 

@@ -13,10 +13,11 @@
   `getJournalLinesByEntryIds` query (then group in memory for cash flow) instead of one query per entry —
   2 queries total instead of N+1. Files: `financial-statements.routes.ts`. (Sweep other report routes for
   the same pattern as S1.x.)
-- [ ] **S2 DB indexes for hot paths.** Confirm/add composite indexes:
-  journal_entries(company_id, date, status), journal_lines(entry_id),
-  invoices(company_id, status, date), invoice_payments(invoice_id),
-  bank_transactions(company_id, match_status). Add a migration for any missing.
+- [x] **S2 DB indexes for hot paths.** DONE: audited — the composite indexes already exist
+  (journal_entries company+date/company+status, journal_lines(entry_id), invoices company+date/status,
+  invoice_payments(invoice_id/company_id), bank_transactions(company+match_status), quotes/CN/PO company+status).
+  Added the one gap: `idx_journal_entries_company_source` (company_id, source, source_id) for
+  `getJournalEntriesBySource` (migration 0083). Files: `shared/schema.ts`, `migrations/0083…`.
 - [ ] **S3 List-endpoint pagination + projections.** Ensure invoices/journal/
   receipts/contacts list endpoints page (limit/offset or cursor) and use the
   trimmed projections (already done for invoices — extend) so large tenants
