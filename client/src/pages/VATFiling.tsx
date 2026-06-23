@@ -740,7 +740,7 @@ export default function VATFiling() {
         description={
           locale === "ar"
             ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
-            : "Prepare, review, and export VAT 201 figures for filing through the official channel"
+            : "Prepare, review, and export VAT 201 figures for filing through the official channel. Generate a draft, then use Edit to open the worksheet-style VAT 201 grid for sales, purchases, imports, reverse charge, exempt, zero-rated, and adjustment fields."
         }
         backHref="/reports"
         backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
@@ -751,6 +751,29 @@ export default function VATFiling() {
           </Button>
         }
       />
+
+      <Card className="border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20">
+        <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold">
+              {locale === "ar" ? "ورقة عمل VAT 201" : "VAT 201 worksheet"}
+            </h2>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              {locale === "ar"
+                ? "أنشئ إقراراً مسوداً ثم اختر تحرير لفتح جدول يشبه Excel لإدخال إجمالي المبيعات والمشتريات والاستيراد والاحتساب العكسي والتعديلات."
+                : "This is the Excel-like area for the VAT return. Generate a draft return, then click Edit on the draft to enter or adjust total sales, purchases, reverse charge, imports, exempt/zero-rated supplies, and adjustment boxes."}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleCreateReturn}
+            data-testid="button-open-vat-worksheet-guide"
+          >
+            <Calculator className="w-4 h-4 mr-2" />
+            {locale === "ar" ? "إنشاء مسودة" : "Create draft"}
+          </Button>
+        </CardContent>
+      </Card>
 
       {!company?.trnVatNumber && (
         <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
