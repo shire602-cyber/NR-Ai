@@ -157,6 +157,17 @@ function moneyFromCell(value: string | undefined) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function dateFromCell(value: string | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const dmy = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return raw;
+}
+
 export function normalizeVatRowCategory(value: string | undefined): VatRowCategory {
   const normalized = keySlug(value);
   const match = vatRowCategories.find(
@@ -193,6 +204,9 @@ const headerAliases: Record<string, string[]> = {
     "bill no",
     "document no",
     "doc no",
+    "sr number",
+    "sr. number",
+    "serial number",
     "reference",
     "ref",
   ],
@@ -269,7 +283,7 @@ export function parseVatPasteRows(text: string, defaultEmirate: string): ParsedV
         rowCategory: normalizeVatRowCategory(pickCell(cells, headerCells, "category", 0)),
         vat201Box: pickCell(cells, headerCells, "vat201Box", 11) || null,
         invoiceNumber: pickCell(cells, headerCells, "invoiceNumber", 1) || null,
-        documentDate: pickCell(cells, headerCells, "documentDate", 2) || null,
+        documentDate: dateFromCell(pickCell(cells, headerCells, "documentDate", 2)),
         counterpartyName: pickCell(cells, headerCells, "counterpartyName", 3) || null,
         counterpartyTrn: pickCell(cells, headerCells, "counterpartyTrn", 4) || null,
         emirate: pickCell(cells, headerCells, "emirate", 5) || defaultEmirate || null,

@@ -1,12 +1,367 @@
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import {
+  addVatWorkpaperRow,
+  addVatWorkpaperRowsBulk,
+  bulkUpdateVatWorkpaperRowStatus,
+  createVatWorkpaper,
+  generateVatReturnFromWorkpaper,
+  getVatWorkpaperDetail,
+  listVatWorkpapers,
+  pullVatWorkpaperRowsFromBooks,
+  recalculateVatWorkpaper,
+  updateVatWorkpaperRow,
+  VAT_WORKPAPER_CATEGORIES,
+} from "../services/firm-vat-workspace.service";
+import {
+  buildVatWorkpaperWorkbook,
+  vatWorkpaperExportFilename,
+} from "../services/vat-workpaper-export.service";
+
+const companyScopedWorkpaperParams = z.object({
+  companyId: z.string().uuid(),
+  workpaperId: z.string().uuid(),
+});
+
+const companyScopedWorkpaperRowParams = companyScopedWorkpaperParams.extend({
+  rowId: z.string().uuid(),
+});
+
+const vatWorkpaperRowSchema = z.object({
+  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES),
+  vat201Box: z.string().trim().optional().nullable(),
+  invoiceNumber: z.string().trim().max(120).optional().nullable(),
+  documentDate: z.string().optional().nullable(),
+  counterpartyName: z.string().trim().max(255).optional().nullable(),
+  counterpartyTrn: z.string().trim().max(32).optional().nullable(),
+  emirate: z.string().trim().max(80).optional().nullable(),
+  taxableAmount: z.coerce.number().optional().nullable(),
+  vatAmount: z.coerce.number().optional().nullable(),
+  adjustmentAmount: z.coerce.number().optional().nullable(),
+  grossAmount: z.coerce.number().optional().nullable(),
+  status: z.enum(["draft", "approved", "excluded"]).optional(),
+  sourceMethod: z.enum(["manual", "ocr", "import", "generated"]).optional(),
+  sourceDocumentType: z.string().trim().max(80).optional().nullable(),
+  sourceDocumentId: z.string().uuid().optional().nullable(),
+  notes: z.string().trim().max(4000).optional().nullable(),
+  auditReason: z.string().trim().max(2000).optional().nullable(),
+});
+
+const partialVatWorkpaperRowSchema = vatWorkpaperRowSchema.partial().extend({
+  rowCategory: z.enum(VAT_WORKPAPER_CATEGORIES).optional(),
+});
+
+const createCompanyWorkpaperSchema = z.object({
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  dueDate: z.string().optional().nullable(),
+  notes: z.string().trim().max(4000).optional().nullable(),
+});
+
+const bulkVatWorkpaperRowsSchema = z.object({
+  rows: z.array(vatWorkpaperRowSchema).min(1).max(2000),
+});
+
+async function requireCompanyAccess(req: Request, res: Response, companyId: string) {
+  const userId = (req as any).user?.id;
+  if (!userId) {
+    res.status(401).json({ message: "Unauthenticated" });
+    return null;
+  }
+  const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+  if (!hasAccess) {
+    res.status(403).json({ message: "Access denied" });
+    return null;
+  }
+  return userId as string;
+}
+
+async function requireCompanyWorkpaperAccess(
+  req: Request,
+  res: Response,
+  companyId: string,
+  workpaperId: string
+) {
+  const userId = await requireCompanyAccess(req, res, companyId);
+  if (!userId) return null;
+  const detail = await getVatWorkpaperDetail(workpaperId);
+  if (detail.workpaper.companyId !== companyId) {
+    res.status(404).json({ message: "VAT workpaper not found" });
+    return null;
+  }
+  return { userId, detail };
+}
 
 export function registerVATRoutes(app: Express) {
+  // =====================================
+  // VAT WORKPAPERS
+  // =====================================
+
+  app.get(
+    "/api/companies/:companyId/vat-workpapers",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+
+      const workpapers = await listVatWorkpapers([companyId], companyId, { clientOnly: false });
+      res.json({ workpapers });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+
+      const parsed = createCompanyWorkpaperSchema.parse(req.body);
+      const workpaper = await createVatWorkpaper({
+        companyId,
+        periodStart: parsed.periodStart,
+        periodEnd: parsed.periodEnd,
+        dueDate: parsed.dueDate ?? null,
+        notes: parsed.notes ?? null,
+        createdBy: userId,
+      });
+      res.status(201).json(workpaper);
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsed.data.companyId,
+        parsed.data.workpaperId
+      );
+      if (!result) return;
+      res.json(result.detail);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/rows",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+
+      const row = vatWorkpaperRowSchema.parse(req.body);
+      const created = await addVatWorkpaperRow(parsedParams.data.workpaperId, result.userId, row);
+      res.status(201).json(created);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/bulk",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+
+      const parsed = bulkVatWorkpaperRowsSchema.parse(req.body);
+      const created = await addVatWorkpaperRowsBulk(
+        parsedParams.data.workpaperId,
+        result.userId,
+        parsed.rows
+      );
+      res.status(201).json({ created: created.length });
+    })
+  );
+
+  app.patch(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/:rowId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+
+      const row = partialVatWorkpaperRowSchema.parse(req.body);
+      const updated = await updateVatWorkpaperRow(
+        parsedParams.data.workpaperId,
+        parsedParams.data.rowId,
+        result.userId,
+        row
+      );
+      res.json(updated);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/bulk-status",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+
+      const body = z
+        .object({
+          to: z.enum(["approved", "excluded"]),
+          rowIds: z.array(z.string().uuid()).max(2000).optional(),
+        })
+        .parse(req.body);
+      const updated = await bulkUpdateVatWorkpaperRowStatus(
+        parsedParams.data.workpaperId,
+        result.userId,
+        body
+      );
+      res.json(updated);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/pull-from-books",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsed.data.companyId,
+        parsed.data.workpaperId
+      );
+      if (!result) return;
+
+      const pulled = await pullVatWorkpaperRowsFromBooks(parsed.data.workpaperId, result.userId);
+      res.json(pulled);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/recalculate",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsed.data.companyId,
+        parsed.data.workpaperId
+      );
+      if (!result) return;
+
+      const recalculated = await recalculateVatWorkpaper(parsed.data.workpaperId);
+      res.json(recalculated);
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/export",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsed.data.companyId,
+        parsed.data.workpaperId
+      );
+      if (!result) return;
+
+      const buffer = await buildVatWorkpaperWorkbook(result.detail);
+      const filename = vatWorkpaperExportFilename(result.detail);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buffer);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/generate-return",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = companyScopedWorkpaperParams.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsed.data.companyId,
+        parsed.data.workpaperId
+      );
+      if (!result) return;
+
+      const company = await storage.getCompany(parsed.data.companyId);
+      if (!company?.trnVatNumber) {
+        return res.status(400).json({
+          message:
+            "Company must have a TRN/VAT number to generate VAT returns. Please update your company profile.",
+          code: "NO_TRN",
+        });
+      }
+
+      const generated = await generateVatReturnFromWorkpaper(
+        parsed.data.workpaperId,
+        result.userId
+      );
+      res.json({
+        ...generated,
+        message: "VAT return generated from approved workpaper rows. No FTA submission was made.",
+      });
+    })
+  );
+
   // =====================================
   // VAT RETURNS
   // =====================================

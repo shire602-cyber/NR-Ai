@@ -51,6 +51,25 @@ describe("VAT workpaper grid helpers", () => {
     });
   });
 
+  it("parses refund-support sheets with Date, Vendor, Sr. Number, and Amount columns", () => {
+    const rows = parseVatPasteRows(
+      [
+        "Date\tVendor\tSr. Number\tAmount",
+        "06/12/2025\tABDUL LATIF BROTHERS STORE\t23319\t31030",
+      ].join("\n"),
+      "dubai"
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      invoiceNumber: "23319",
+      documentDate: "2025-12-06",
+      counterpartyName: "ABDUL LATIF BROTHERS STORE",
+      taxableAmount: 31030,
+      emirate: "dubai",
+    });
+  });
+
   it("normalizes real VAT workflow labels into supported row categories", () => {
     expect(normalizeVatRowCategory("Reverse charge input")).toBe("reverse_charge_input");
     expect(normalizeVatRowCategory("Import adjustment")).toBe("import_adjustment");

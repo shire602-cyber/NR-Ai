@@ -103,8 +103,10 @@ describe("report discoverability", () => {
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
   const vatFilingSource = read("client/src/pages/VATFiling.tsx");
+  const vatWorkpaperPanelSource = read("client/src/components/vat/VatWorkpaperPanel.tsx");
   const vatAutopilotSource = read("client/src/pages/VATAutopilot.tsx");
   const vatAutopilotRouteSource = read("server/routes/vat-autopilot.routes.ts");
+  const vatRoutesSource = read("server/routes/vat.routes.ts");
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
   const reportCatalogServiceSource = read("server/services/report-catalog.service.ts");
@@ -1057,15 +1059,20 @@ describe("report discoverability", () => {
     );
     expect(sidebarSource).toContain("{CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}");
     expect(sidebarSource).toContain('{t.compliance ?? "Compliance"}');
-    expect(vatFilingSource).toContain("VAT 201 worksheet");
-    expect(vatFilingSource).toContain("Excel-like area for the VAT return");
+    expect(vatFilingSource).toContain("VatWorkpaperPanel");
+    expect(vatWorkpaperPanelSource).toContain("VAT evidence workpaper");
+    expect(vatWorkpaperPanelSource).toContain("Excel-like area for the VAT return");
     expect(vatFilingSource).toContain("canGenerateVatReturn");
     expect(vatFilingSource).toContain('href="/company-profile"');
-    expect(vatFilingSource).toContain('data-testid="vat-worksheet-grid"');
-    expect(vatFilingSource).toContain('"input-standard-sales"');
-    expect(vatFilingSource).toContain('"input-standard-purchases"');
-    expect(vatFilingSource).toContain("Create official draft");
-    expect(vatFilingSource).toContain('data-testid="button-open-vat-worksheet-guide"');
+    expect(vatWorkpaperPanelSource).toContain('data-testid="vat-workpaper-panel"');
+    expect(vatWorkpaperPanelSource).toContain('data-testid="input-vat-row-document-date"');
+    expect(vatWorkpaperPanelSource).toContain('data-testid="input-vat-row-counterparty"');
+    expect(vatWorkpaperPanelSource).toContain('data-testid="input-vat-row-invoice-number"');
+    expect(vatWorkpaperPanelSource).toContain(
+      'data-testid="button-generate-return-from-workpaper"'
+    );
+    expect(vatRoutesSource).toContain("/api/companies/:companyId/vat-workpapers");
+    expect(vatRoutesSource).toContain("generateVatReturnFromWorkpaper");
     expect(vatAutopilotSource).toContain("due-dates?companyId=");
     expect(vatAutopilotSource).toContain("d.companyId === companyId");
     expect(vatAutopilotSource).toContain("VAT 201 due dates for the active company file");

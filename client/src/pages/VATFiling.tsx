@@ -33,6 +33,7 @@ import { formatCurrency } from "@/lib/format";
 import { exportToExcel } from "@/lib/export";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
+import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   FileText,
@@ -123,6 +124,7 @@ interface Company {
   nameAr: string | null;
   trnVatNumber: string | null;
   vatFilingFrequency: string | null;
+  emirate: string | null;
   address: string | null;
   phone: string | null;
 }
@@ -167,51 +169,6 @@ const DEFAULT_VAT_DATA = {
 };
 
 type VatWorksheetData = typeof DEFAULT_VAT_DATA;
-type VatWorksheetField = keyof VatWorksheetData;
-
-const VAT_AUTO_FIELDS: Partial<Record<VatWorksheetField, VatWorksheetField>> = {
-  box1bDubaiAmount: "box1bDubaiVat",
-  box3ReverseChargeAmount: "box3ReverseChargeVat",
-  box6ImportsAmount: "box6ImportsVat",
-  box9ExpensesAmount: "box9ExpensesVat",
-  box10ReverseChargeAmount: "box10ReverseChargeVat",
-};
-
-const OUTPUT_AMOUNT_FIELDS: VatWorksheetField[] = [
-  "box1aAbuDhabiAmount",
-  "box1bDubaiAmount",
-  "box1cSharjahAmount",
-  "box1dAjmanAmount",
-  "box1eUmmAlQuwainAmount",
-  "box1fRasAlKhaimahAmount",
-  "box1gFujairahAmount",
-  "box2TouristRefundAmount",
-  "box3ReverseChargeAmount",
-  "box4ZeroRatedAmount",
-  "box5ExemptAmount",
-  "box6ImportsAmount",
-  "box7ImportsAdjAmount",
-];
-
-const OUTPUT_VAT_FIELDS: VatWorksheetField[] = [
-  "box1aAbuDhabiVat",
-  "box1bDubaiVat",
-  "box1cSharjahVat",
-  "box1dAjmanVat",
-  "box1eUmmAlQuwainVat",
-  "box1fRasAlKhaimahVat",
-  "box1gFujairahVat",
-  "box2TouristRefundVat",
-  "box3ReverseChargeVat",
-  "box6ImportsVat",
-  "box7ImportsAdjVat",
-];
-
-const INPUT_AMOUNT_FIELDS: VatWorksheetField[] = ["box9ExpensesAmount", "box10ReverseChargeAmount"];
-
-const INPUT_VAT_FIELDS: VatWorksheetField[] = ["box9ExpensesVat", "box10ReverseChargeVat"];
-
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 export default function VATFiling() {
   const { locale } = useTranslation();
@@ -322,26 +279,6 @@ export default function VATFiling() {
   }, []);
   const canGenerateVatReturn = Boolean(company?.trnVatNumber);
   const hasVatReturns = (vatReturns?.length ?? 0) > 0;
-  const worksheetTotals = useMemo(() => {
-    const total = (fields: VatWorksheetField[]) =>
-      roundMoney(fields.reduce((sum, field) => sum + (Number(vatFormData[field]) || 0), 0));
-    const outputAmount = total(OUTPUT_AMOUNT_FIELDS);
-    const outputVat = total(OUTPUT_VAT_FIELDS);
-    const inputAmount = total(INPUT_AMOUNT_FIELDS);
-    const directInputVat = total(INPUT_VAT_FIELDS);
-    const importVatRecoverable = roundMoney(
-      (vatFormData.box6ImportsVat || 0) + (vatFormData.box7ImportsAdjVat || 0)
-    );
-    const recoverableVat = roundMoney(directInputVat + importVatRecoverable);
-
-    return {
-      outputAmount,
-      outputVat,
-      inputAmount,
-      recoverableVat,
-      netVat: roundMoney(outputVat - recoverableVat),
-    };
-  }, [vatFormData]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -406,22 +343,6 @@ export default function VATFiling() {
     generateMutation.mutate({
       periodStart: newPeriodStart,
       periodEnd: newPeriodEnd,
-    });
-  };
-
-  const updateVatWorksheetField = (field: VatWorksheetField, value: string) => {
-    const parsedValue = Number(value);
-    const nextValue = Number.isFinite(parsedValue) ? parsedValue : 0;
-
-    setVatFormData((previous) => {
-      const next = { ...previous, [field]: nextValue };
-      const autoVatField = VAT_AUTO_FIELDS[field];
-
-      if (autoVatField) {
-        next[autoVatField] = roundMoney(nextValue * 0.05);
-      }
-
-      return next;
     });
   };
 
@@ -822,62 +743,6 @@ export default function VATFiling() {
     }
   };
 
-  const renderVatInput = (
-    field: VatWorksheetField,
-    testId: string,
-    ariaLabel: string,
-    placeholder = "0.00"
-  ) => (
-    <Input
-      type="number"
-      inputMode="decimal"
-      step="0.01"
-      value={vatFormData[field]}
-      onChange={(event) => updateVatWorksheetField(field, event.target.value)}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      className="h-9 text-right font-mono"
-      data-testid={testId}
-    />
-  );
-
-  const renderWorksheetRow = ({
-    label,
-    helper,
-    amountField,
-    vatField,
-    amountTestId,
-    vatTestId,
-  }: {
-    label: string;
-    helper?: string;
-    amountField: VatWorksheetField;
-    vatField?: VatWorksheetField;
-    amountTestId: string;
-    vatTestId?: string;
-  }) => (
-    <div className="grid gap-2 border-t py-3 first:border-t-0 md:grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)_minmax(7rem,9rem)] md:items-center">
-      <div className="min-w-0">
-        <Label className="text-sm font-medium">{label}</Label>
-        {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
-      </div>
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground md:hidden">Amount</p>
-        {renderVatInput(amountField, amountTestId, `${label} amount`)}
-      </div>
-      <div>
-        <p className="mb-1 text-xs text-muted-foreground md:hidden">VAT</p>
-        {vatField ? (
-          renderVatInput(vatField, vatTestId || `${amountTestId}-vat`, `${label} VAT`)
-        ) : (
-          <div className="flex h-9 items-center justify-end rounded-md border bg-muted/40 px-3 text-xs text-muted-foreground">
-            No VAT
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   if (isLoadingCompany) {
     return (
       <div className="space-y-6 p-6">
@@ -921,171 +786,13 @@ export default function VATFiling() {
         }
       />
 
-      <Card data-testid="vat-worksheet-grid">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-1">
-              <CardTitle>{locale === "ar" ? "ورقة عمل VAT 201" : "VAT 201 worksheet"}</CardTitle>
-              <CardDescription>
-                {locale === "ar"
-                  ? "منطقة شبيهة بجدول Excel لإدخال إجمالي المبيعات والمشتريات والاستيراد والاحتساب العكسي قبل إنشاء المسودة الرسمية."
-                  : "Excel-like area for the VAT return. Enter total sales, purchases, imports, reverse charge, zero-rated, exempt, and adjustment totals here before creating the official draft from the books."}
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setVatFormData(DEFAULT_VAT_DATA)}
-                data-testid="button-reset-vat-worksheet"
-              >
-                Reset
-              </Button>
-              {canGenerateVatReturn ? (
-                <Button onClick={handleCreateReturn} data-testid="button-open-vat-worksheet-guide">
-                  <Calculator className="w-4 h-4 mr-2" />
-                  {locale === "ar" ? "إنشاء مسودة رسمية" : "Create official draft"}
-                </Button>
-              ) : (
-                <Button asChild data-testid="button-open-vat-worksheet-guide">
-                  <Link href="/company-profile" data-testid="link-add-trn-for-vat">
-                    <AlertTriangle className="w-4 h-4 mr-2" />
-                    {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
-                  </Link>
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
-            <div className="space-y-5">
-              <section className="rounded-md border">
-                <div className="grid gap-2 border-b bg-muted/40 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)_minmax(7rem,9rem)]">
-                  <h3 className="text-sm font-semibold">Sales and output VAT</h3>
-                  <p className="hidden text-right text-xs font-medium text-muted-foreground md:block">
-                    Amount
-                  </p>
-                  <p className="hidden text-right text-xs font-medium text-muted-foreground md:block">
-                    VAT
-                  </p>
-                </div>
-                <div className="px-4">
-                  {renderWorksheetRow({
-                    label: "Standard-rated sales",
-                    helper:
-                      "Use the main emirate total here; detailed emirate split remains in the official draft.",
-                    amountField: "box1bDubaiAmount",
-                    vatField: "box1bDubaiVat",
-                    amountTestId: "input-standard-sales",
-                    vatTestId: "input-standard-sales-vat",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Reverse charge outputs",
-                    amountField: "box3ReverseChargeAmount",
-                    vatField: "box3ReverseChargeVat",
-                    amountTestId: "input-reverse-charge-sales",
-                    vatTestId: "input-reverse-charge-sales-vat",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Zero-rated sales",
-                    amountField: "box4ZeroRatedAmount",
-                    amountTestId: "input-zero-rated-sales",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Exempt sales",
-                    amountField: "box5ExemptAmount",
-                    amountTestId: "input-exempt-sales",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Imports",
-                    amountField: "box6ImportsAmount",
-                    vatField: "box6ImportsVat",
-                    amountTestId: "input-imports",
-                    vatTestId: "input-imports-vat",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Import adjustments",
-                    amountField: "box7ImportsAdjAmount",
-                    vatField: "box7ImportsAdjVat",
-                    amountTestId: "input-import-adjustments",
-                    vatTestId: "input-import-adjustments-vat",
-                  })}
-                </div>
-              </section>
-
-              <section className="rounded-md border">
-                <div className="grid gap-2 border-b bg-muted/40 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)_minmax(7rem,9rem)]">
-                  <h3 className="text-sm font-semibold">Purchases and input VAT</h3>
-                  <p className="hidden text-right text-xs font-medium text-muted-foreground md:block">
-                    Amount
-                  </p>
-                  <p className="hidden text-right text-xs font-medium text-muted-foreground md:block">
-                    VAT
-                  </p>
-                </div>
-                <div className="px-4">
-                  {renderWorksheetRow({
-                    label: "Standard-rated purchases",
-                    helper: "Total purchase and expense amount with recoverable VAT.",
-                    amountField: "box9ExpensesAmount",
-                    vatField: "box9ExpensesVat",
-                    amountTestId: "input-standard-purchases",
-                    vatTestId: "input-standard-purchases-vat",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Purchase adjustments",
-                    amountField: "box9ExpensesAdj",
-                    amountTestId: "input-purchase-adjustments",
-                  })}
-                  {renderWorksheetRow({
-                    label: "Reverse charge purchases",
-                    amountField: "box10ReverseChargeAmount",
-                    vatField: "box10ReverseChargeVat",
-                    amountTestId: "input-reverse-charge-purchases",
-                    vatTestId: "input-reverse-charge-purchases-vat",
-                  })}
-                </div>
-              </section>
-            </div>
-
-            <aside className="space-y-3 rounded-md border bg-muted/20 p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Output VAT</p>
-                <p className="text-xl font-semibold" data-testid="vat-worksheet-output-vat">
-                  {formatCurrency(worksheetTotals.outputVat)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  On {formatCurrency(worksheetTotals.outputAmount)} of sales/output totals
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Recoverable input VAT</p>
-                <p className="text-xl font-semibold" data-testid="vat-worksheet-input-vat">
-                  {formatCurrency(worksheetTotals.recoverableVat)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  On {formatCurrency(worksheetTotals.inputAmount)} of purchases/input totals
-                </p>
-              </div>
-              <div className="rounded-md bg-background p-3">
-                <p className="text-xs text-muted-foreground">
-                  {worksheetTotals.netVat >= 0 ? "Net VAT payable" : "Net VAT refundable"}
-                </p>
-                <p
-                  className={`text-2xl font-bold ${worksheetTotals.netVat >= 0 ? "text-red-600" : "text-green-600"}`}
-                  data-testid="vat-worksheet-net-vat"
-                >
-                  {formatCurrency(Math.abs(worksheetTotals.netVat))}
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Official draft creation uses recorded books and requires the company TRN. Use Edit
-                on a draft for the full VAT 201 grid and export-ready workbook.
-              </p>
-            </aside>
-          </div>
-        </CardContent>
-      </Card>
+      <VatWorkpaperPanel
+        companyId={companyId}
+        canGenerateVatReturn={canGenerateVatReturn}
+        defaultPeriodStart={currentQuarter.start}
+        defaultPeriodEnd={currentQuarter.end}
+        defaultEmirate={company?.emirate}
+      />
 
       {!company?.trnVatNumber && (
         <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">

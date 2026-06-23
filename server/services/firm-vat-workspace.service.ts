@@ -156,6 +156,14 @@ function toMoney(value: unknown): number {
 
 function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const dmy = trimmed.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (dmy) {
+      const [, day, month, year] = dmy;
+      return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    }
+  }
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
@@ -337,13 +345,22 @@ async function assertWorkpaperEditable(workpaper: VatWorkpaper): Promise<void> {
   await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd);
 }
 
-export async function listVatWorkpapers(companyIds: string[], companyId?: string) {
+export async function listVatWorkpapers(
+  companyIds: string[],
+  companyId?: string,
+  options: { clientOnly?: boolean } = {}
+) {
   if (companyIds.length === 0) return [];
   if (companyId && !companyIds.includes(companyId)) {
     throw new NotFoundError("VAT workpaper");
   }
 
   const scopedCompanyIds = companyId ? [companyId] : companyIds;
+  const clientOnly = options.clientOnly ?? true;
+  const conditions = [
+    inArray(vatWorkpapers.companyId, scopedCompanyIds),
+    ...(clientOnly ? [eq(companies.companyType, "client")] : []),
+  ];
   const rows = await db
     .select({
       id: vatWorkpapers.id,
@@ -363,12 +380,10 @@ export async function listVatWorkpapers(companyIds: string[], companyId?: string
     })
     .from(vatWorkpapers)
     .innerJoin(companies, eq(companies.id, vatWorkpapers.companyId))
-    .where(eq(companies.companyType, "client"))
+    .where(and(...conditions))
     .orderBy(desc(vatWorkpapers.periodEnd), desc(vatWorkpapers.updatedAt));
 
-  return (rows as Array<{ companyId: string }>).filter((row: { companyId: string }) =>
-    scopedCompanyIds.includes(row.companyId)
-  );
+  return rows;
 }
 
 export async function getVatWorkpaperDetail(workpaperId: string) {
