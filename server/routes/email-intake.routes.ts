@@ -13,6 +13,7 @@ import { normalizeEmail } from "../services/email-intake";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { pollEmailIntakeOnce } from "../services/email-intake-poller.service";
 import { computeCompletenessGaps, type BankLine } from "../services/intake-completeness";
+import { createChaseRequestsFromGaps } from "../services/intake-chasing";
 
 const log = createLogger("email-intake-routes");
 
@@ -28,6 +29,20 @@ const updateSourceBody = z.object({
   label: z.string().max(120).optional(),
   requireDkimPass: z.boolean().optional(),
 });
+
+/** Load a company's bank transactions as the BankLine shape the completeness math expects. */
+async function loadBankLines(companyId: string): Promise<BankLine[]> {
+  const txns = await storage.getBankTransactionsByCompanyId(companyId);
+  return txns.map((t) => ({
+    id: t.id,
+    transactionDate: t.transactionDate,
+    amount: Number(t.amount),
+    description: t.description,
+    matchStatus: (t.matchStatus as BankLine["matchStatus"]) ?? "unmatched",
+    matchedReceiptId: t.matchedReceiptId,
+    matchedInvoiceId: t.matchedInvoiceId,
+  }));
+}
 
 /**
  * Firm-internal email document intake (pilot). Every route is gated by
@@ -152,17 +167,45 @@ export function registerEmailIntakeRoutes(app: Express) {
         return res.status(400).json({ message: "periodStart and periodEnd (ISO dates) are required" });
       }
 
-      const txns = await storage.getBankTransactionsByCompanyId(companyId);
-      const lines: BankLine[] = txns.map((t) => ({
-        id: t.id,
-        transactionDate: t.transactionDate,
-        amount: Number(t.amount),
-        description: t.description,
-        matchStatus: (t.matchStatus as BankLine["matchStatus"]) ?? "unmatched",
-        matchedReceiptId: t.matchedReceiptId,
-        matchedInvoiceId: t.matchedInvoiceId,
-      }));
+      const lines = await loadBankLines(companyId);
       res.json(computeCompletenessGaps({ lines, periodStart, periodEnd }));
+    })
+  );
+
+  // Raise document-chasing requests for the period's completeness gaps (idempotent
+  // — bank lines already being chased are skipped).
+  app.post(
+    "/api/firm/email-intake/completeness/:companyId/chase",
+    authMiddleware,
+    requireFirmRole(),
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = (req as any).user;
+      const { companyId } = req.params;
+      const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
+      if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
+
+      const periodStart = new Date(String(req.body?.periodStart ?? ""));
+      const periodEnd = new Date(String(req.body?.periodEnd ?? ""));
+      if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
+        return res.status(400).json({ message: "periodStart and periodEnd (ISO dates) are required" });
+      }
+      // Default the chase due date to two weeks after period end unless overridden.
+      const dueDate = req.body?.dueDate ? new Date(String(req.body.dueDate)) : new Date(periodEnd.getTime() + 14 * 86400000);
+
+      const lines = await loadBankLines(companyId);
+      const { gaps } = computeCompletenessGaps({ lines, periodStart, periodEnd });
+      const result = await createChaseRequestsFromGaps(companyId, gaps, { dueDate });
+
+      await recordAudit({
+        userId: user.id,
+        companyId,
+        action: "email_intake.chase_gaps",
+        entityType: "company",
+        entityId: companyId,
+        extra: { created: result.created, skipped: result.skipped },
+        req,
+      });
+      res.json(result);
     })
   );
 
