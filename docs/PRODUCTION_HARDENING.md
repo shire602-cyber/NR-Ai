@@ -102,11 +102,22 @@
   run in CI (need Postgres) — can't execute in this sandbox.
 
 ## Phase L — Launch ops (before public)
-- Owner inputs (from LAUNCH_READINESS.md): email (Resend/SMTP), Stripe + price
-  IDs (flip BILLING_ENFORCEMENT last), bank-feed sandbox, web-push VAPID keys,
-  domain + FRONTEND_URL.
-- ToS / privacy / support pages; onboarding polish; pilot protocol (parallel
-  VAT run, week-1 backup drills).
+- [x] **L1 ToS / privacy / support pages.** DONE (already built, verified):
+  `PrivacyPolicy.tsx` (11 sections, UAE PDPL Decree-Law 45/2021, FTA Art. 78
+  5-yr retention, DPO contact, real entity "Najma Al Raeda Accounting LLC"),
+  `TermsOfService.tsx` (14 sections incl. tax/accounting disclaimer, governing
+  law, limitation of liability), `CookiePolicy.tsx`, and `HelpCenter.tsx`
+  (support@muhasib.ai, migration guidance). All routed (`/privacy`, `/terms`,
+  `/cookies`, `/help`). Recommend a final legal review + adding the full
+  registered street address before GA.
+- [ ] **L2 Owner inputs (env, not code)** — see LAUNCH_READINESS.md §"What remains":
+  email (Resend/SMTP), Stripe + 8 price IDs (flip `BILLING_ENFORCEMENT=true`
+  LAST), bank-feed sandbox creds, web-push VAPID keys, domain + `FRONTEND_URL`.
+- [ ] **L3 Pilot protocol** — parallel VAT run for one period, week-1 daily backup
+  drills (see BACKUP_RESTORE_DRILL.md), manual review of first 20 receipts before
+  enabling autopilot. Owner-run with a pilot company.
 
-_Last updated: 2026-06 — Phases S, O, R done. Remaining: O3 external wiring (owner,
-post-DSN), Phase T test depth, Phase L launch ops (owner inputs)._
+_Last updated: 2026-06 — Phases S, O, R, T1, and L1 (legal/support pages) done. All
+code-side hardening that can run in-sandbox is complete. Remaining is owner-/live-DB-
+gated only: O3 (wire Sentry once a DSN is chosen), T2 (DB golden-ledger tests in CI),
+L2 (email/Stripe/bank/domain env), L3 (pilot protocol + backup drill execution)._
