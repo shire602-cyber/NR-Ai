@@ -127,6 +127,10 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     titleKey: "compliance",
     icon: ClipboardList,
     items: [
+      { titleKey: "vatFiling", url: "/vat-filing" },
+      { titleKey: "vatAutopilot", url: "/vat-autopilot" },
+      { titleKey: "corporateTax", url: "/corporate-tax" },
+      { titleKey: "taxReturnArchive", url: "/tax-return-archive" },
       { titleKey: "complianceCalendar", url: "/compliance-calendar" },
       { titleKey: "documentVersions", url: "/document-versions" },
     ],

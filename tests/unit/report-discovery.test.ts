@@ -102,6 +102,7 @@ describe("report discoverability", () => {
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
+  const vatFilingSource = read("client/src/pages/VATFiling.tsx");
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
   const reportCatalogServiceSource = read("server/services/report-catalog.service.ts");
@@ -1040,6 +1041,17 @@ describe("report discoverability", () => {
     expect(reportWorkflowContextHref({ persona: "all", tab: "pl", search: "vat review" })).toBe(
       "/reports?tab=pl&persona=all&workflowSearch=vat+review#report-workflow-finder-title"
     );
+  });
+
+  it("keeps VAT filing and the VAT 201 worksheet discoverable from compliance navigation", () => {
+    expect(sidebarSource).toContain('key: "compliance"');
+    expect(sidebarSource).toContain('titleKey: "vatFiling", url: "/vat-filing"');
+    expect(sidebarSource).toContain('titleKey: "vatAutopilot", url: "/vat-autopilot"');
+    expect(sidebarSource).toContain('titleKey: "corporateTax", url: "/corporate-tax"');
+    expect(sidebarSource).toContain('titleKey: "taxReturnArchive", url: "/tax-return-archive"');
+    expect(vatFilingSource).toContain("VAT 201 worksheet");
+    expect(vatFilingSource).toContain("Excel-like area for the VAT return");
+    expect(vatFilingSource).toContain('data-testid="button-open-vat-worksheet-guide"');
   });
 
   it("persists workflow finder search and gap context per reporting persona", () => {
