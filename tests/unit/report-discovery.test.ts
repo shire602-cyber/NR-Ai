@@ -1049,6 +1049,12 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('titleKey: "vatAutopilot", url: "/vat-autopilot"');
     expect(sidebarSource).toContain('titleKey: "corporateTax", url: "/corporate-tax"');
     expect(sidebarSource).toContain('titleKey: "taxReturnArchive", url: "/tax-return-archive"');
+    expect(sidebarSource).toContain("CLIENT_PORTAL_COMPLIANCE_ITEMS");
+    expect(sidebarSource).toContain(
+      '{ titleKey: "vatFiling", icon: ClipboardList, url: "/vat-filing" }'
+    );
+    expect(sidebarSource).toContain("{CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}");
+    expect(sidebarSource).toContain('{t.compliance ?? "Compliance"}');
     expect(vatFilingSource).toContain("VAT 201 worksheet");
     expect(vatFilingSource).toContain("Excel-like area for the VAT return");
     expect(vatFilingSource).toContain('data-testid="button-open-vat-worksheet-guide"');
