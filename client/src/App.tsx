@@ -127,6 +127,7 @@ const Feedback = lazy(() => import("@/pages/Feedback"));
 
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const BankReconciliation = lazy(() => import("@/pages/BankReconciliation"));
+const EvidenceCenter = lazy(() => import("@/pages/EvidenceCenter"));
 const VATFiling = lazy(() => import("@/pages/VATFiling"));
 const VATAutopilot = lazy(() => import("@/pages/VATAutopilot"));
 const CorporateTax = lazy(() => import("@/pages/CorporateTax"));
@@ -639,6 +640,7 @@ function Router() {
             <Route path="/analytics" component={Analytics} />
             <Route path="/admin" component={Admin} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
+            <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />
             <Route path="/vat-autopilot" component={VATAutopilot} />
             <Route path="/corporate-tax" component={CorporateTax} />

@@ -84,6 +84,7 @@ import { registerFirmGrowthRoutes } from "./routes/firm-growth.routes";
 import { registerFirmVatWorkspaceRoutes } from "./routes/firm-vat-workspace.routes";
 import { registerClientPortalRoutes } from "./routes/client-portal.routes";
 import { registerDocumentChasingRoutes } from "./routes/document-chasing.routes";
+import { registerEvidenceCenterRoutes } from "./routes/evidence-center.routes";
 
 const log = createLogger("routes");
 
@@ -154,6 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerNotificationRoutes(app);
   registerReminderRoutes(app);
   registerDocumentChasingRoutes(app);
+  registerEvidenceCenterRoutes(app);
   registerOnboardingRoutes(app);
   registerBackupRoutes(app);
   registerReferralRoutes(app);
