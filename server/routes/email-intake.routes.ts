@@ -12,6 +12,7 @@ import { resolveAccessibleClientIds } from "../services/firm-command-center.serv
 import { normalizeEmail } from "../services/email-intake";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { pollEmailIntakeOnce } from "../services/email-intake-poller.service";
+import { computeCompletenessGaps, type BankLine } from "../services/intake-completeness";
 
 const log = createLogger("email-intake-routes");
 
@@ -130,6 +131,38 @@ export function registerEmailIntakeRoutes(app: Express) {
       if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
       const messages = await storage.listEmailIntakeMessagesByCompany(req.params.companyId);
       res.json({ messages });
+    })
+  );
+
+  // Completeness check for a client/period: which bank lines moved money with no
+  // supporting document yet (what to chase / verify before filing the return).
+  app.get(
+    "/api/firm/email-intake/completeness/:companyId",
+    authMiddleware,
+    requireFirmRole(),
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = (req as any).user;
+      const { companyId } = req.params;
+      const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
+      if (!allowed) return res.status(403).json({ message: "Company not in your firm's client list" });
+
+      const periodStart = new Date(String(req.query.periodStart ?? ""));
+      const periodEnd = new Date(String(req.query.periodEnd ?? ""));
+      if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
+        return res.status(400).json({ message: "periodStart and periodEnd (ISO dates) are required" });
+      }
+
+      const txns = await storage.getBankTransactionsByCompanyId(companyId);
+      const lines: BankLine[] = txns.map((t) => ({
+        id: t.id,
+        transactionDate: t.transactionDate,
+        amount: Number(t.amount),
+        description: t.description,
+        matchStatus: (t.matchStatus as BankLine["matchStatus"]) ?? "unmatched",
+        matchedReceiptId: t.matchedReceiptId,
+        matchedInvoiceId: t.matchedInvoiceId,
+      }));
+      res.json(computeCompletenessGaps({ lines, periodStart, periodEnd }));
     })
   );
 

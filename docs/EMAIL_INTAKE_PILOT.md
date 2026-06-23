@@ -151,8 +151,18 @@ Track these per return in a simple pilot scorecard from day one.
   Extractor + autopilot are injectable seams; no-op when no AI key is set.
   Tests: `ocr-extraction.test.ts`. (Firm intake queue *view* is the remaining
   P2 UI piece, deferred with the rest of the client UI.)
-- **P3 — Completeness + exceptions.** Bank-reconciliation gap surfacing, document-
-  chasing hook, late-document/period-lock exceptions, duplicate UI.
+- **P3 — Completeness + exceptions. [DONE, backend]** `intake-completeness.ts`:
+  pure `computeCompletenessGaps` turns a period's unmatched bank lines into an
+  evidence-gap list (unmatched outflow = missing purchase doc; unmatched inflow =
+  possibly-unrecorded sale; "suggested" still counts as a gap until a human
+  confirms), sorted biggest-first, plus a coverage ratio — the completeness check
+  before filing. Exposed at `GET /api/firm/email-intake/completeness/:companyId`
+  (firm-gated, period query). Late-document/period-lock is already handled:
+  `runAutopilot` never posts into a locked period (assertPeriodNotLocked) and
+  queues the receipt for review instead. Duplicate detection landed in P1/P2
+  (sha256, `is_duplicate`). Tests: `intake-completeness.test.ts` (9).
+  Remaining: wire gaps into document-chasing nudges + the firm UI (with the rest
+  of the client UI).
 - **P4 — Pilot instrumentation.** Per-return scorecard (accuracy, time saved,
   completeness), correction-feedback loop, weekly review with the accountant.
 - **P5 — Hardening for the sub-address model (Option B)** only if/when going wider.
