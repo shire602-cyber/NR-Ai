@@ -54,6 +54,7 @@ const StaffManagement = lazy(() => import("@/pages/firm/StaffManagement"));
 const BulkOperations = lazy(() => import("@/pages/firm/BulkOperations"));
 const FirmHealth = lazy(() => import("@/pages/firm/FirmHealth"));
 const FirmComms = lazy(() => import("@/pages/firm/FirmComms"));
+const EmailIntake = lazy(() => import("@/pages/firm/EmailIntake"));
 const FirmAnalytics = lazy(() => import("@/pages/firm/FirmAnalytics"));
 const LeadPipeline = lazy(() => import("@/pages/firm/LeadPipeline"));
 const ValueOps = lazy(() => import("@/pages/firm/ValueOps"));
@@ -709,6 +710,11 @@ function Router() {
             <Route path="/firm/document-chasing">
               <FirmRoute>
                 <DocumentChasing />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/email-intake">
+              <FirmRoute>
+                <EmailIntake />
               </FirmRoute>
             </Route>
             <Route path="/firm/analytics">

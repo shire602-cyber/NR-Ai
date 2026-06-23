@@ -172,6 +172,7 @@ const NRA_GROUP: NavGroup = {
     { titleKey: "healthDashboard", url: "/firm/health" },
     { titleKey: "communications", url: "/firm/comms" },
     { titleKey: "documentChasing", url: "/firm/document-chasing" },
+    { titleKey: "emailIntake", url: "/firm/email-intake" },
   ],
 };
 

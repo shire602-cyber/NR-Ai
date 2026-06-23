@@ -161,8 +161,16 @@ Track these per return in a simple pilot scorecard from day one.
   `runAutopilot` never posts into a locked period (assertPeriodNotLocked) and
   queues the receipt for review instead. Duplicate detection landed in P1/P2
   (sha256, `is_duplicate`). Tests: `intake-completeness.test.ts` (9).
-  Remaining: wire gaps into document-chasing nudges + the firm UI (with the rest
-  of the client UI).
+  Gaps now also feed document-chasing: `intake-chasing.ts` maps each gap to a
+  `document_requirements` row (deduped by an `intake-gap:<bankTxnId>` marker),
+  raised via `POST /api/firm/email-intake/completeness/:companyId/chase`.
+
+- **Firm UI. [DONE]** `client/src/pages/firm/EmailIntake.tsx` (route
+  `/firm/email-intake`, FirmRoute-gated, in the NRA Center nav): a Sender-mappings
+  tab (link/pause/remove sender→client, DKIM toggle) and a Completeness tab (pick
+  client + period → coverage %, missing-purchase/sales totals, gap table, and a
+  one-click "Create chase requests"). Shows pilot-disabled / no-mailbox banners
+  from the feature flags. Verified: tsc + `npm run check` + production build.
 - **P4 — Pilot instrumentation.** Per-return scorecard (accuracy, time saved,
   completeness), correction-feedback loop, weekly review with the accountant.
 - **P5 — Hardening for the sub-address model (Option B)** only if/when going wider.
