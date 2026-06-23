@@ -142,9 +142,15 @@ Track these per return in a simple pilot scorecard from day one.
 - **P1 — Ingestion skeleton.** `client_email_sources` + mapping UI (firm settings);
   Gmail/IMAP poller via scheduler; normalise to the internal message shape; store
   attachments + dedup hash. Flagged off.
-- **P2 — Wire to OCR/autopilot.** Hand each attachment to `/api/ocr/process` with
-  the resolved `companyId`; create `receipts`; let existing autopilot draft/post.
-  Firm intake queue view.
+- **P2 — Wire to OCR/autopilot. [DONE]** Each non-duplicate, processable
+  attachment is OCR'd in-memory during ingestion (`ocr-extraction.service.ts`:
+  `extractReceiptToOcr` for the vision call, pure `normalizeOcrJson` for the
+  amount math — made self-consistent since results auto-post), then run through
+  the existing `runAutopilot` (draft or auto-post + audit), with the created
+  `receiptId` linked back onto the intake document and `ocr_status` updated.
+  Extractor + autopilot are injectable seams; no-op when no AI key is set.
+  Tests: `ocr-extraction.test.ts`. (Firm intake queue *view* is the remaining
+  P2 UI piece, deferred with the rest of the client UI.)
 - **P3 — Completeness + exceptions.** Bank-reconciliation gap surfacing, document-
   chasing hook, late-document/period-lock exceptions, duplicate UI.
 - **P4 — Pilot instrumentation.** Per-return scorecard (accuracy, time saved,

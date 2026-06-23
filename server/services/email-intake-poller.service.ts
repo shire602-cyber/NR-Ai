@@ -19,7 +19,10 @@ import {
   matchSenderToCompany,
   normalizeInboundMessage,
   type EmailSourceRef,
+  type NormalizedIntakeAttachment,
 } from "./email-intake";
+import { extractReceiptToOcr } from "./ocr-extraction.service";
+import { runAutopilot, type OcrReceipt, type AutopilotResult } from "./receipt-autopilot.service";
 
 const log = createLogger("email-intake");
 
@@ -31,6 +34,10 @@ export interface PollSummary {
   messagesIgnored: number;
   documentsStored: number;
   duplicatesSkipped: number;
+  /** Receipts created by the autopilot from ingested documents (P2). */
+  receiptsCreated: number;
+  autoPosted: number;
+  queuedForReview: number;
 }
 
 const EMPTY: PollSummary = {
@@ -40,6 +47,20 @@ const EMPTY: PollSummary = {
   messagesIgnored: 0,
   documentsStored: 0,
   duplicatesSkipped: 0,
+  receiptsCreated: 0,
+  autoPosted: 0,
+  queuedForReview: 0,
+};
+
+/** Injectable seams so the orchestration is testable without a model or DB. */
+export interface PollDeps {
+  extract: (args: { content: Buffer; mimeType: string }) => Promise<OcrReceipt | null>;
+  autopilot: (companyId: string, uploadedBy: string, ocr: OcrReceipt) => Promise<AutopilotResult>;
+}
+
+const defaultDeps: PollDeps = {
+  extract: (a) => extractReceiptToOcr(a),
+  autopilot: runAutopilot,
 };
 
 /**
@@ -49,7 +70,11 @@ const EMPTY: PollSummary = {
 export async function pollEmailIntakeOnce(args: {
   accessibleCompanyIds: string[];
   since: Date;
+  /** The firm user receipts are attributed to (created_by on auto-posts). */
+  uploadedBy?: string;
+  deps?: PollDeps;
 }): Promise<PollSummary> {
+  const deps = args.deps ?? defaultDeps;
   if (!isEmailIntakeEnabled()) return { ...EMPTY, reason: "feature_disabled" };
 
   const source = getEmailIntakeSource();
@@ -98,7 +123,7 @@ export async function pollEmailIntakeOnce(args: {
 
       for (const att of normalized.attachments) {
         const duplicate = seen.has(att.sha256);
-        await storage.createEmailIntakeDocument({
+        const doc = await storage.createEmailIntakeDocument({
           messageId: stored.id,
           companyId: normalized.companyId,
           filename: att.filename,
@@ -111,11 +136,24 @@ export async function pollEmailIntakeOnce(args: {
         } as any);
         if (duplicate) {
           summary.duplicatesSkipped++;
-        } else {
-          seen.add(att.sha256);
-          summary.documentsStored++;
+          continue;
         }
+        seen.add(att.sha256);
+        summary.documentsStored++;
+
+        // P2: OCR + autopilot for processable, non-duplicate attachments. Bytes
+        // are still in memory here, so nothing extra is persisted to disk.
+        await processAttachment({
+          att,
+          docId: doc.id,
+          companyId: normalized.companyId,
+          uploadedBy: args.uploadedBy ?? matched.id,
+          deps,
+          summary,
+        });
       }
+      // done vs partially_processed: any pending doc means OCR didn't complete.
+      await storage.updateEmailIntakeMessageStatus(stored.id, "done");
       summary.messagesIngested++;
     } catch (err) {
       // Idempotency: a unique-constraint hit on provider_message_id means we
@@ -127,4 +165,44 @@ export async function pollEmailIntakeOnce(args: {
 
   log.info(summary, "email intake poll complete");
   return summary;
+}
+
+/**
+ * OCR one attachment and run the receipt autopilot, linking the created receipt
+ * back to the intake document. Resilient: a failure here marks the doc 'error'
+ * and leaves the rest of the batch unaffected. Non-processable attachments
+ * (unsupported type) are marked 'skipped'.
+ */
+async function processAttachment(args: {
+  att: NormalizedIntakeAttachment;
+  docId: string;
+  companyId: string;
+  uploadedBy: string;
+  deps: PollDeps;
+  summary: PollSummary;
+}): Promise<void> {
+  const { att, docId, companyId, uploadedBy, deps, summary } = args;
+  if (!att.processable) {
+    await storage.updateEmailIntakeDocument(docId, { ocrStatus: "skipped" });
+    return;
+  }
+  try {
+    const ocr = await deps.extract({ content: att.content, mimeType: att.mimeType });
+    if (!ocr) {
+      // No provider configured, or extraction declined — leave for retry/manual.
+      await storage.updateEmailIntakeDocument(docId, { ocrStatus: "pending" });
+      return;
+    }
+    const result = await deps.autopilot(companyId, uploadedBy, ocr);
+    await storage.updateEmailIntakeDocument(docId, {
+      ocrStatus: "processed",
+      receiptId: result.receiptId,
+    });
+    summary.receiptsCreated++;
+    if (result.autoPosted) summary.autoPosted++;
+    if (result.queuedForReview) summary.queuedForReview++;
+  } catch (err) {
+    log.warn({ err, docId }, "attachment OCR/autopilot failed");
+    await storage.updateEmailIntakeDocument(docId, { ocrStatus: "error" });
+  }
 }

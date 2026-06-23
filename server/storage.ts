@@ -2293,6 +2293,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(emailIntakeMessages.receivedAt));
   }
 
+  async updateEmailIntakeDocument(
+    id: string,
+    patch: Partial<Pick<EmailIntakeDocument, "receiptId" | "ocrStatus">>
+  ): Promise<void> {
+    await db.update(emailIntakeDocuments).set(patch).where(eq(emailIntakeDocuments.id, id));
+  }
+
+  async updateEmailIntakeMessageStatus(
+    id: string,
+    status: string,
+    error?: string | null
+  ): Promise<void> {
+    await db
+      .update(emailIntakeMessages)
+      .set({ status, error: error ?? null })
+      .where(eq(emailIntakeMessages.id, id));
+  }
+
   async updateReceipt(
     id: string,
     companyId: string,
