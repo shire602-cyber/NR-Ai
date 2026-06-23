@@ -64,6 +64,12 @@ interface NavGroup {
   url?: string;
 }
 
+interface ClientPortalItem {
+  titleKey: string;
+  icon: LucideIcon;
+  url: string;
+}
+
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
 const CUSTOMER_GROUPS: NavGroup[] = [
@@ -185,11 +191,19 @@ const ADMIN_GROUP: NavGroup = {
 };
 
 // Client portal flat items (no collapsible — spec: "don't change this")
-const CLIENT_PORTAL_ITEMS = [
+const CLIENT_PORTAL_DOCUMENT_ITEMS: ClientPortalItem[] = [
   { titleKey: "documentVault", icon: FolderArchive, url: "/document-vault" },
-  { titleKey: "taxReturnArchive", icon: FileStack, url: "/tax-return-archive" },
+];
+
+const CLIENT_PORTAL_COMPLIANCE_ITEMS: ClientPortalItem[] = [
+  { titleKey: "vatFiling", icon: ClipboardList, url: "/vat-filing" },
+  { titleKey: "corporateTax", icon: FileStack, url: "/corporate-tax" },
   { titleKey: "complianceCalendar", icon: CalendarDays, url: "/compliance-calendar" },
+  { titleKey: "taxReturnArchive", icon: FileStack, url: "/tax-return-archive" },
   { titleKey: "taskCenter", icon: ListTodo, url: "/task-center" },
+];
+
+const CLIENT_PORTAL_INSIGHT_ITEMS: ClientPortalItem[] = [
   { titleKey: "newsFeed", icon: Newspaper, url: "/news-feed" },
 ];
 
@@ -394,7 +408,7 @@ export function AppSidebar() {
     );
   };
 
-  const renderClientPortalItem = (item: (typeof CLIENT_PORTAL_ITEMS)[0]) => {
+  const renderClientPortalItem = (item: ClientPortalItem) => {
     const Icon = item.icon;
     const isActive = location === item.url;
     const label = (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
@@ -467,13 +481,21 @@ export function AppSidebar() {
               Documents
             </div>
             <SidebarMenu className="px-1.5">
-              {CLIENT_PORTAL_ITEMS.map(renderClientPortalItem)}
+              {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
+            </SidebarMenu>
+
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              {t.compliance ?? "Compliance"}
+            </div>
+            <SidebarMenu className="px-1.5">
+              {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
               Insights
             </div>
             <SidebarMenu className="px-1.5">
+              {CLIENT_PORTAL_INSIGHT_ITEMS.map(renderClientPortalItem)}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={location === "/reports"}
