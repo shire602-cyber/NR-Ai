@@ -8,7 +8,12 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 
-import { canAccessNraCenter, hasFullNraScope, isNraFirmRole } from "../../shared/access";
+import {
+  canAccessNraCenter,
+  hasFullNraScope,
+  isNraFirmRole,
+  shouldShowNraCenterNav,
+} from "../../shared/access";
 import { requireNraAccess, requireFirmOwner, requireFirmRole } from "../../server/middleware/rbac";
 
 type TestUser = {
@@ -101,6 +106,28 @@ describe("requireNraAccess middleware", () => {
   it("requireFirmRole stays an alias of requireNraAccess (admins now pass)", async () => {
     expect(await probe(appWithGuard(requireFirmRole, PERSONAS.platformAdmin))).toBe(200);
     expect(await probe(appWithGuard(requireFirmRole, PERSONAS.customer))).toBe(403);
+  });
+});
+
+describe("shouldShowNraCenterNav (sidebar visibility, context-aware)", () => {
+  it("shows the NRA group at the firm level for admins and firm staff", () => {
+    expect(shouldShowNraCenterNav(PERSONAS.platformAdmin, { inClientContext: false })).toBe(true);
+    expect(shouldShowNraCenterNav(PERSONAS.firmOwner, { inClientContext: false })).toBe(true);
+    expect(shouldShowNraCenterNav(PERSONAS.firmAdmin, { inClientContext: false })).toBe(true);
+  });
+
+  it("hides the NRA group once drilled into a client company file", () => {
+    expect(shouldShowNraCenterNav(PERSONAS.platformAdmin, { inClientContext: true })).toBe(false);
+    expect(shouldShowNraCenterNav(PERSONAS.firmOwner, { inClientContext: true })).toBe(false);
+    expect(shouldShowNraCenterNav(PERSONAS.firmAdmin, { inClientContext: true })).toBe(false);
+  });
+
+  it("never shows the NRA group to customers or client-portal users, in any context", () => {
+    for (const inClientContext of [false, true]) {
+      expect(shouldShowNraCenterNav(PERSONAS.customer, { inClientContext })).toBe(false);
+      expect(shouldShowNraCenterNav(PERSONAS.clientPortal, { inClientContext })).toBe(false);
+      expect(shouldShowNraCenterNav(null, { inClientContext })).toBe(false);
+    }
   });
 });
 

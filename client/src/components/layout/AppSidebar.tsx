@@ -35,7 +35,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { canAccessNraCenter } from "@shared/access";
+import { shouldShowNraCenterNav } from "@shared/access";
 import { useTranslation, useI18n } from "@/lib/i18n";
 import { useRTL } from "@/components/RTLProvider";
 import { removeToken } from "@/lib/auth";
@@ -251,7 +251,7 @@ export function AppSidebar() {
   // so we hide that group while a specific client file is the active workspace.
   // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
   const { isFirmContext } = useActiveCompany();
-  const showNraCenter = canAccessNraCenter(currentUser) && !isFirmContext;
+  const showNraCenter = shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext });
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(

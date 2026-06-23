@@ -26,6 +26,25 @@ export function canAccessNraCenter(user: NraAccessUser | null | undefined): bool
 }
 
 /**
+ * Whether the NRA Center group should appear in the sidebar right now.
+ *
+ * Access (canAccessNraCenter) says the user is *allowed* into the firm
+ * workspace; this adds the active-context rule: the firm-level group is hidden
+ * while the user has drilled into a specific client company's file, because
+ * those tools belong at the firm level, not inside a single client. The user
+ * returns to the firm via the "Firm workspace" entry in the company switcher.
+ *
+ * This does NOT replace server-side authorization (requireNraAccess) — it only
+ * controls visibility. The API stays protected regardless of context.
+ */
+export function shouldShowNraCenterNav(
+  user: NraAccessUser | null | undefined,
+  opts: { inClientContext: boolean }
+): boolean {
+  return canAccessNraCenter(user) && !opts.inClientContext;
+}
+
+/**
  * True when the user may see/manage ALL client companies (platform admin or
  * firm_owner). firm_admin sees only assigned clients.
  */

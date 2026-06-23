@@ -67,8 +67,13 @@ async function callReportCatalogRoute(
   const res: any = {
     statusCode: 200,
     body: undefined,
+    headers: {} as Record<string, string>,
     status(code: number) {
       this.statusCode = code;
+      return this;
+    },
+    set(name: string, value: string) {
+      this.headers[name] = value;
       return this;
     },
     json(body: any) {

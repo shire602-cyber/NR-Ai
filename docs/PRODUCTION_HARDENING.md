@@ -23,14 +23,27 @@
   takes optional `{limit,offset}` — default unchanged for internal callers; the list route caps at 1000
   newest, `?limit&offset` to page). Files: `storage.ts`, `journal.routes.ts`. (Receipts/contacts lists can
   follow the same pattern if they grow; lower priority.)
-- [ ] **S4 Response caching for read-heavy/derived data.** Short-TTL cache for
-  report catalog, chart-of-accounts, company profile; invalidate on write.
+- [x] **S4 Response caching (safe scope).** DONE: HTTP `Cache-Control: private, max-age=300` on the
+  derived/static report catalog (`/api/reports/catalog`) — zero staleness risk (changes only on deploy),
+  cuts repeat fetches on every dashboard load. An app-level cache for chart-of-accounts/company-profile was
+  intentionally NOT added: at 10s–100s scale those indexed reads are cheap and a cache adds staleness risk —
+  revisit at 1,000s after profiling shows them hot.
 - [x] **S5 Deploy config for production.** DONE: `railway.json` `sleepApplication` → false (no cold starts
   for a paid product). DB pool is already env-tunable (`DB_POOL_MAX`, default 10) — fine for beta on 1 replica.
   TODO (post-beta, HA): raise `numReplicas` to 2+ (cost decision) and size the pool to replicas × max < Postgres
   connection limit.
-- [ ] **S6 Load smoke.** A k6/autocannon script hitting the hot endpoints at
-  beta concurrency; record p95 latency before/after S1–S4.
+- [~] **S6 Load smoke (runbook — needs a staging URL + token).** Run against staging once deployed:
+  ```
+  TOKEN=<jwt>; BASE=https://<staging>
+  npx autocannon -c 20 -d 30 -H "Authorization=Bearer $TOKEN" \
+    $BASE/api/companies/<id>/invoices?limit=50
+  npx autocannon -c 20 -d 30 -H "Authorization=Bearer $TOKEN" \
+    $BASE/api/companies/<id>/journal
+  npx autocannon -c 10 -d 30 -H "Authorization=Bearer $TOKEN" \
+    "$BASE/api/companies/<id>/financial-statements/balance-sheet?asOfDate=2026-06-30"
+  ```
+  Watch p95 latency + error rate at ~20 concurrent (beta load); the S1 N+1 fix should show the biggest gain
+  on the financial-statements endpoints. Can't be run in this sandbox (no live server/DB).
 
 ## Phase R — Reliability (next)
 - [ ] Graceful shutdown + connection draining; healthcheck already at /api/version.

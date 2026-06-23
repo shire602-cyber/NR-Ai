@@ -48,6 +48,10 @@ export function registerReportRoutes(app: Express) {
           .json({ message: "persona must be owner, freelancer, or accountant" });
       }
 
+      // S4: the catalog is derived from static code (changes only on deploy),
+      // so let the browser cache it briefly — cuts repeat fetches on every
+      // dashboard/report-center load. Private (per-user) + short TTL.
+      res.set("Cache-Control", "private, max-age=300");
       res.json(
         buildReportCatalogDiscovery({
           persona: isReportCatalogPersona(persona) ? persona : null,
