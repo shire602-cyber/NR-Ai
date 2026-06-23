@@ -40,6 +40,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
+import { evidenceSectionHref, evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   type ExportData,
   exportToExcel,
@@ -3664,7 +3665,8 @@ export default function Reports() {
       (hasFocusedReportSelection &&
         selectedReportId !== null &&
         reportIds.includes(selectedReportId)));
-  const shouldLoadWorkflowData = Boolean(selectedCompanyId) && activeReportWorkspaceTab !== "reports";
+  const shouldLoadWorkflowData =
+    Boolean(selectedCompanyId) && activeReportWorkspaceTab !== "reports";
   const shouldLoadReportDeliveryData =
     Boolean(selectedCompanyId) &&
     ["home", "automation", "delivery", "suites"].includes(activeReportWorkspaceTab);
@@ -11835,24 +11837,35 @@ export default function Reports() {
         title={t.reports}
         description="Financial reports, comparisons, and automation-ready workspaces"
         actions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" disabled={isExporting} data-testid="button-export">
-                <Download className="w-4 h-4 mr-2" />
-                {isExporting ? "Exporting..." : t.export}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Export to Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
-                <SiGooglesheets className="w-4 h-4 mr-2" />
-                Export to Google Sheets
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" data-testid="button-report-proof-trail">
+              <Link href={evidenceSectionHref("proof-drilldown")}>
+                <FileText className="w-4 h-4 mr-2" />
+                View proof
+              </Link>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isExporting} data-testid="button-export">
+                  <Download className="w-4 h-4 mr-2" />
+                  {isExporting ? "Exporting..." : t.export}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export to Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleExportGoogleSheets}
+                  data-testid="menu-export-sheets"
+                >
+                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  Export to Google Sheets
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         }
       />
 
@@ -18864,6 +18877,7 @@ export default function Reports() {
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Amount</TableHead>
                             <TableHead className="text-right">AED value</TableHead>
+                            <TableHead className="text-right">Proof</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18893,6 +18907,13 @@ export default function Reports() {
                               </TableCell>
                               <TableCell className="text-right font-mono font-medium">
                                 {formatCurrency(amountInAed(invoice), "AED", locale)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button asChild size="sm" variant="outline">
+                                  <Link href={evidenceSourceHref("invoice", invoice.id)}>
+                                    Proof
+                                  </Link>
+                                </Button>
                               </TableCell>
                             </TableRow>
                           ))}

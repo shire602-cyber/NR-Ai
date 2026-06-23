@@ -133,7 +133,6 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     titleKey: "compliance",
     icon: ClipboardList,
     items: [
-      { titleKey: "evidenceCenter", url: "/evidence-center" },
       { titleKey: "vatFiling", url: "/vat-filing" },
       { titleKey: "vatAutopilot", url: "/vat-autopilot" },
       { titleKey: "corporateTax", url: "/corporate-tax" },
@@ -197,7 +196,6 @@ const CLIENT_PORTAL_DOCUMENT_ITEMS: ClientPortalItem[] = [
 ];
 
 const CLIENT_PORTAL_COMPLIANCE_ITEMS: ClientPortalItem[] = [
-  { titleKey: "evidenceCenter", icon: Shield, url: "/evidence-center" },
   { titleKey: "vatFiling", icon: ClipboardList, url: "/vat-filing" },
   { titleKey: "corporateTax", icon: FileStack, url: "/corporate-tax" },
   { titleKey: "complianceCalendar", icon: CalendarDays, url: "/compliance-calendar" },

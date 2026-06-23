@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -75,6 +76,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from "@/lib/export";
+import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
   FileText,
@@ -1157,6 +1159,17 @@ export default function Invoices() {
                           <Edit className="w-4 h-4 mr-1" />
                           Edit
                         </Button>
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          data-testid={`mobile-button-proof-invoice-${invoice.id}`}
+                        >
+                          <Link href={evidenceSourceHref("invoice", invoice.id)}>
+                            <FileText className="w-4 h-4 mr-1" />
+                            Proof
+                          </Link>
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -1255,6 +1268,17 @@ export default function Invoices() {
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">
+                              <Button
+                                asChild
+                                variant="ghost"
+                                size="sm"
+                                data-testid={`button-proof-invoice-${invoice.id}`}
+                              >
+                                <Link href={evidenceSourceHref("invoice", invoice.id)}>
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  Proof
+                                </Link>
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"

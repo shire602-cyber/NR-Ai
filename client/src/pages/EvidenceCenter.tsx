@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   AlertTriangle,
   Archive,
@@ -136,9 +136,20 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
   return disposition?.match(/filename="([^"]+)"/)?.[1] ?? fallback;
 }
 
+function getSourceFilter(search: string) {
+  const params = new URLSearchParams(search);
+  const sourceType = params.get("sourceType");
+  if (!sourceType) return null;
+  return {
+    sourceType,
+    sourceId: params.get("sourceId"),
+  };
+}
+
 export default function EvidenceCenter() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { toast } = useToast();
+  const search = useSearch();
   const [exportingPack, setExportingPack] = useState<"xlsx" | "pdf" | "zip" | null>(null);
   const [issueDialog, setIssueDialog] = useState<{
     issue: EvidenceIssue;
@@ -158,6 +169,18 @@ export default function EvidenceCenter() {
     queryKey: evidenceQueryKey,
     enabled: !!companyId,
   });
+
+  const sourceFilter = useMemo(() => getSourceFilter(search), [search]);
+  const visibleProofLines = useMemo(() => {
+    if (!data || !sourceFilter) return data?.proofDrilldowns ?? [];
+    return data.proofDrilldowns.filter((line) => {
+      if (line.sourceType !== sourceFilter.sourceType) return false;
+      if (!sourceFilter.sourceId) return true;
+      return (
+        line.sourceId === sourceFilter.sourceId || line.sourceDocumentId === sourceFilter.sourceId
+      );
+    });
+  }, [data, sourceFilter]);
 
   const topMetrics = useMemo(() => {
     if (!data) return [];
@@ -320,9 +343,9 @@ export default function EvidenceCenter() {
       <div className="p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Evidence Center unavailable</CardTitle>
+            <CardTitle>Proof trail unavailable</CardTitle>
             <CardDescription>
-              The evidence workspace could not load. Refresh the page or check company access.
+              The proof workspace could not load. Refresh the page or check company access.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -334,8 +357,8 @@ export default function EvidenceCenter() {
     <div className="space-y-6 p-6" data-testid="evidence-center-page">
       <PageHeader
         eyebrow="Compliance"
-        title="Evidence Center"
-        description="A single operating workspace for refund packs, proof drilldowns, missing evidence, filing risk, close readiness, and owner actions."
+        title="Proof trail"
+        description="Contextual evidence behind VAT, invoices, purchases, reports, close readiness, and owner actions."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -365,6 +388,23 @@ export default function EvidenceCenter() {
           </div>
         }
       />
+
+      {sourceFilter ? (
+        <section className="rounded-md border bg-muted/40 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="font-semibold">Focused source proof</h2>
+              <p className="text-sm text-muted-foreground">
+                Showing proof rows for {sourceFilter.sourceType.replace(/_/g, " ")}
+                {sourceFilter.sourceId ? ` ${sourceFilter.sourceId}` : ""}.
+              </p>
+            </div>
+            <Badge variant={visibleProofLines.length ? "default" : "secondary"}>
+              {visibleProofLines.length} matching row{visibleProofLines.length === 1 ? "" : "s"}
+            </Badge>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-3 md:grid-cols-4" data-testid="evidence-center-summary">
         {topMetrics.map((metric) => (
@@ -428,10 +468,14 @@ export default function EvidenceCenter() {
         })}
       </section>
 
-      <section className="rounded-md border bg-card" data-testid="refund-pack-export">
+      <section
+        id="refund-pack-export"
+        className="rounded-md border bg-card"
+        data-testid="refund-pack-export"
+      >
         <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
-            <h2 className="font-semibold">Refund Pack Export</h2>
+            <h2 className="font-semibold">VAT refund support pack</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Download one source-evidence bundle, or export the workbook and cover separately.
             </p>
@@ -685,14 +729,16 @@ export default function EvidenceCenter() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.proofDrilldowns.length === 0 ? (
+              {visibleProofLines.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                    No proof rows yet. Start from the VAT evidence workpaper or source documents.
+                    {sourceFilter
+                      ? "No proof row is linked to this source yet. Review source documents, VAT workpaper rows, or posting links."
+                      : "No proof rows yet. Start from the VAT evidence workpaper or source documents."}
                   </TableCell>
                 </TableRow>
               ) : (
-                data.proofDrilldowns.slice(0, 20).map((line) => (
+                visibleProofLines.slice(0, 20).map((line) => (
                   <TableRow key={line.id}>
                     <TableCell>{line.label}</TableCell>
                     <TableCell>{formatDate(line.date)}</TableCell>
@@ -872,7 +918,7 @@ export default function EvidenceCenter() {
         <div className="divide-y">
           {data.actionTrail.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">
-              No Evidence Center actions have been logged yet.
+              No proof trail actions have been logged yet.
             </div>
           ) : (
             data.actionTrail.slice(0, 12).map((entry) => (

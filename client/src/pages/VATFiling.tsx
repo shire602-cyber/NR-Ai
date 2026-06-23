@@ -31,6 +31,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { exportToExcel } from "@/lib/export";
+import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
@@ -770,19 +771,33 @@ export default function VATFiling() {
         backHref="/reports"
         backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
-          canGenerateVatReturn ? (
-            <Button onClick={handleCreateReturn} data-testid="button-create-return">
-              <Calculator className="w-4 h-4 mr-2" />
-              {locale === "ar" ? "إنشاء مسودة رسمية" : "Create official draft"}
-            </Button>
-          ) : (
-            <Button asChild data-testid="button-add-trn-header">
-              <Link href="/company-profile">
-                <AlertTriangle className="w-4 h-4 mr-2" />
-                {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" data-testid="button-vat-proof-trail">
+              <Link href={evidenceSectionHref("proof-drilldown")}>
+                <Eye className="w-4 h-4 mr-2" />
+                {locale === "ar" ? "عرض أدلة الضريبة" : "View VAT proof"}
               </Link>
             </Button>
-          )
+            <Button asChild variant="outline" data-testid="button-vat-refund-support">
+              <Link href={evidenceSectionHref("refund-pack-export")}>
+                <FileText className="w-4 h-4 mr-2" />
+                {locale === "ar" ? "حزمة دعم الاسترداد" : "Refund support"}
+              </Link>
+            </Button>
+            {canGenerateVatReturn ? (
+              <Button onClick={handleCreateReturn} data-testid="button-create-return">
+                <Calculator className="w-4 h-4 mr-2" />
+                {locale === "ar" ? "إنشاء مسودة رسمية" : "Create official draft"}
+              </Button>
+            ) : (
+              <Button asChild data-testid="button-add-trn-header">
+                <Link href="/company-profile">
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
+                </Link>
+              </Button>
+            )}
+          </div>
         }
       />
 

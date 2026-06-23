@@ -104,6 +104,10 @@ describe("report discoverability", () => {
   const reportsSource = read("client/src/pages/Reports.tsx");
   const vatFilingSource = read("client/src/pages/VATFiling.tsx");
   const vatWorkpaperPanelSource = read("client/src/components/vat/VatWorkpaperPanel.tsx");
+  const invoicesSource = read("client/src/pages/Invoices.tsx");
+  const receiptsSource = read("client/src/pages/Receipts.tsx");
+  const journalSource = read("client/src/pages/Journal.tsx");
+  const evidenceLinksSource = read("client/src/lib/evidenceLinks.ts");
   const vatAutopilotSource = read("client/src/pages/VATAutopilot.tsx");
   const vatAutopilotRouteSource = read("server/routes/vat-autopilot.routes.ts");
   const vatRoutesSource = read("server/routes/vat.routes.ts");
@@ -1053,13 +1057,25 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('titleKey: "vatAutopilot", url: "/vat-autopilot"');
     expect(sidebarSource).toContain('titleKey: "corporateTax", url: "/corporate-tax"');
     expect(sidebarSource).toContain('titleKey: "taxReturnArchive", url: "/tax-return-archive"');
+    expect(sidebarSource).not.toContain('titleKey: "evidenceCenter", url: "/evidence-center"');
     expect(sidebarSource).toContain("CLIENT_PORTAL_COMPLIANCE_ITEMS");
     expect(sidebarSource).toContain(
       '{ titleKey: "vatFiling", icon: ClipboardList, url: "/vat-filing" }'
     );
+    expect(sidebarSource).not.toContain(
+      '{ titleKey: "evidenceCenter", icon: Shield, url: "/evidence-center" }'
+    );
     expect(sidebarSource).toContain("{CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}");
     expect(sidebarSource).toContain('{t.compliance ?? "Compliance"}');
     expect(vatFilingSource).toContain("VatWorkpaperPanel");
+    expect(vatFilingSource).toContain('data-testid="button-vat-proof-trail"');
+    expect(vatFilingSource).toContain('data-testid="button-vat-refund-support"');
+    expect(evidenceLinksSource).toContain("evidenceSourceHref");
+    expect(invoicesSource).toContain("data-testid={`button-proof-invoice-${invoice.id}`}");
+    expect(receiptsSource).toContain("data-testid={`button-proof-receipt-${receipt.id}`}");
+    expect(journalSource).toContain("data-testid={`button-proof-journal-${entry.id}`}");
+    expect(reportsSource).toContain('data-testid="button-report-proof-trail"');
+    expect(reportsSource).toContain('evidenceSourceHref("invoice", invoice.id)');
     expect(vatWorkpaperPanelSource).toContain("VAT evidence workpaper");
     expect(vatWorkpaperPanelSource).toContain("Excel-like area for the VAT return");
     expect(vatFilingSource).toContain("canGenerateVatReturn");

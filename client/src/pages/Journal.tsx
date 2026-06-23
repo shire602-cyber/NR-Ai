@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
+import { Link } from "wouter";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -43,6 +44,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
   BookMarked,
@@ -631,6 +633,10 @@ export default function Journal() {
               if (!source) return null;
               return <StatusBadge tone={source.tone}>{source.label}</StatusBadge>;
             };
+            const sourceProofHref =
+              entry.source && entry.source !== "manual" && entry.sourceId
+                ? evidenceSourceHref(entry.source, entry.sourceId)
+                : evidenceSourceHref("journal_entry", entry.id, "evidence-audit-trail");
 
             return (
               <Card key={entry.id} className={cn(isVoid && "opacity-60")}>
@@ -648,6 +654,17 @@ export default function Journal() {
                     <div className="flex items-center gap-2 flex-wrap">
                       {getStatusBadge()}
                       {getSourceBadge()}
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        data-testid={`button-proof-journal-${entry.id}`}
+                      >
+                        <Link href={sourceProofHref}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Proof
+                        </Link>
+                      </Button>
 
                       {isDraft && (
                         <>

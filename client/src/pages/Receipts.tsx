@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import {
   downloadReceiptsExcel,
   ocrDataToExportRow,
 } from "@/lib/export";
+import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import Tesseract from "tesseract.js";
 import {
   Upload,
@@ -1872,6 +1874,18 @@ export default function Receipts() {
                       >
                         <Edit className="w-4 h-4 mr-2" />
                         Edit
+                      </Button>
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                        data-testid={`button-proof-receipt-${receipt.id}`}
+                      >
+                        <Link href={evidenceSourceHref("receipt", receipt.id)}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Proof
+                        </Link>
                       </Button>
                       <Button
                         variant="ghost"

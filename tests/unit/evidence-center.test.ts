@@ -69,6 +69,9 @@ describe("evidence center model", () => {
     expect(serviceSource).toContain("Smart Import From Excel");
     expect(serviceSource).toContain("Filing Timeline With Consequences");
     expect(serviceSource).toContain("Owner-Friendly What Should I Do?");
+    expect(pageSource).toContain("Focused source proof");
+    expect(pageSource).toContain("visibleProofLines");
+    expect(pageSource).toContain("Proof trail");
     expect(routeSource).toContain("authMiddleware");
     expect(routeSource).toContain("requireCustomer");
     expect(routeSource).toContain("storage.hasCompanyAccess");
