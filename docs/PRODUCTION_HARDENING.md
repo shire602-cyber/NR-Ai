@@ -91,8 +91,15 @@
   `/health/ready` + a public status page. Client-side error boundary → same DSN.
 
 ## Phase T — Test depth (parallel)
-- [ ] Raise coverage from ~12.7% with integration/route tests on the money
-  paths (golden-ledger via the CI Postgres job pattern).
+- [~] **T1 Money-path branch coverage.** Added `tests/unit/money-coverage.test.ts`
+  (19 tests) closing untested branches: `sumMoney` fils-exact summation (float-drift
+  cases), every `classifyCounterpart` cash-flow bucket (operating/investing/financing),
+  `isCashOrBankAccount` (subType/code-range/name), and `evaluateCreditNoteRequest`
+  invalid-amount + default-remaining branches. Suite now 777 pass / 1 skip, tsc clean.
+- [ ] **T2 DB-backed golden-ledger integration tests.** Extend the CI Postgres-job
+  pattern (already running `credit-note-consolidation`) with end-to-end posting tests:
+  invoice→payment→credit-note→void, asserting debits=credits and final balances. These
+  run in CI (need Postgres) — can't execute in this sandbox.
 
 ## Phase L — Launch ops (before public)
 - Owner inputs (from LAUNCH_READINESS.md): email (Resend/SMTP), Stripe + price
