@@ -45,10 +45,24 @@
   Watch p95 latency + error rate at ~20 concurrent (beta load); the S1 N+1 fix should show the biggest gain
   on the financial-statements endpoints. Can't be run in this sandbox (no live server/DB).
 
-## Phase R — Reliability (next)
-- [ ] Graceful shutdown + connection draining; healthcheck already at /api/version.
-- [ ] Rate-limit coverage audit across all mutating/expensive endpoints.
-- [ ] Backup + restore drill (docs/TRUST.md flow) on a schedule.
+## Phase R — Reliability
+- [x] **R1 Graceful shutdown + connection draining.** DONE (already built, audited):
+  `server/shutdown.ts` `installGracefulShutdown` — stop accepting (LB rotation) →
+  disconnect WS politely → drain in-flight HTTP (bounded) → drain DB pool (bounded)
+  → hard-exit watchdog. Wired in `bootstrap()`. Healthchecks at `/health/live`,
+  `/health/ready`, `/health`.
+- [x] **R2 Rate-limit coverage audit.** DONE: coverage is complete. Per-route
+  profiles (OAuth, credential-auth with success-refund + session-read skip, AI/OCR,
+  bulk OCR) PLUS a two-tier general limiter on `/api/` (reads 3000/min, mutations
+  100/min) so **every** `/api` route is covered — no unprotected mutating endpoint.
+  Global 10MB body cap + HTTPS enforcement also in `security.ts`. All limits
+  env-tunable (`RL_*`). No gap found for beta.
+- [x] **R3 Backup + restore drill.** DONE (runbook): app-level checksum-verified
+  transactional restore already exists + is E2E-tested (`backups.routes.ts`).
+  Added `docs/BACKUP_RESTORE_DRILL.md` — two backup layers (Railway snapshot +
+  in-app), RPO 24h / RTO 4h beta targets, weekly/monthly drill cadence, a
+  ledger-invariant verification checklist (debits=credits), and a drill log.
+  Owner-run (needs live/staging DB).
 
 ## Phase O — Observability
 > Found the basics already mature: requestId on every request, a request logger
@@ -87,4 +101,5 @@
 - ToS / privacy / support pages; onboarding polish; pilot protocol (parallel
   VAT run, week-1 backup drills).
 
-_Last updated: 2026-06 — Phase S starting (S1 first)._
+_Last updated: 2026-06 — Phases S, O, R done. Remaining: O3 external wiring (owner,
+post-DSN), Phase T test depth, Phase L launch ops (owner inputs)._
