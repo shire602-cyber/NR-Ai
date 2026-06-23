@@ -44,6 +44,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -245,7 +246,12 @@ export function AppSidebar() {
   const isAdmin = currentUser?.isAdmin === true;
   const userType = currentUser?.userType || "customer";
 
-  const showNraCenter = canAccessNraCenter(currentUser);
+  // `isFirmContext` is true when the user has switched INTO a firm-managed
+  // client company. Firm-level tools (the NRA Center) belong at the firm level,
+  // so we hide that group while a specific client file is the active workspace.
+  // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
+  const { isFirmContext } = useActiveCompany();
+  const showNraCenter = canAccessNraCenter(currentUser) && !isFirmContext;
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(

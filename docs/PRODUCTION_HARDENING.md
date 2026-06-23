@@ -18,15 +18,17 @@
   invoice_payments(invoice_id/company_id), bank_transactions(company+match_status), quotes/CN/PO company+status).
   Added the one gap: `idx_journal_entries_company_source` (company_id, source, source_id) for
   `getJournalEntriesBySource` (migration 0083). Files: `shared/schema.ts`, `migrations/0083…`.
-- [ ] **S3 List-endpoint pagination + projections.** Ensure invoices/journal/
-  receipts/contacts list endpoints page (limit/offset or cursor) and use the
-  trimmed projections (already done for invoices — extend) so large tenants
-  don't return 10k rows.
+- [x] **S3 List-endpoint pagination.** DONE for the heavy ones: invoices list already paged (trimmed
+  projection, cap 1000); added the same to the **journal entries list** (`getJournalEntriesByCompanyId` now
+  takes optional `{limit,offset}` — default unchanged for internal callers; the list route caps at 1000
+  newest, `?limit&offset` to page). Files: `storage.ts`, `journal.routes.ts`. (Receipts/contacts lists can
+  follow the same pattern if they grow; lower priority.)
 - [ ] **S4 Response caching for read-heavy/derived data.** Short-TTL cache for
   report catalog, chart-of-accounts, company profile; invalidate on write.
-- [ ] **S5 Deploy config for production.** `railway.json`: `sleepApplication`
-  off (no cold starts for a paid product); plan multi-replica for HA; confirm
-  DB connection-pool size vs Railway Postgres limits (`server/db.ts`).
+- [x] **S5 Deploy config for production.** DONE: `railway.json` `sleepApplication` → false (no cold starts
+  for a paid product). DB pool is already env-tunable (`DB_POOL_MAX`, default 10) — fine for beta on 1 replica.
+  TODO (post-beta, HA): raise `numReplicas` to 2+ (cost decision) and size the pool to replicas × max < Postgres
+  connection limit.
 - [ ] **S6 Load smoke.** A k6/autocannon script hitting the hot endpoints at
   beta concurrency; record p95 latency before/after S1–S4.
 

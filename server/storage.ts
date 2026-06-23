@@ -450,7 +450,10 @@ export interface IStorage {
 
   // Journal Entries
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
-  getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
+  getJournalEntriesByCompanyId(
+    companyId: string,
+    opts?: { limit?: number; offset?: number }
+  ): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
     companyId: string
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
@@ -1795,12 +1798,21 @@ export class DatabaseStorage implements IStorage {
     return entry || undefined;
   }
 
-  async getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]> {
-    return await db
+  async getJournalEntriesByCompanyId(
+    companyId: string,
+    opts?: { limit?: number; offset?: number }
+  ): Promise<JournalEntry[]> {
+    // S3: optional pagination. Default (no opts) returns all rows — the many
+    // internal callers (financial statements, reports, CT) rely on the full set;
+    // the list endpoint passes {limit, offset} to cap the payload.
+    let q: any = db
       .select()
       .from(journalEntries)
       .where(eq(journalEntries.companyId, companyId))
       .orderBy(desc(journalEntries.date));
+    if (opts?.limit != null) q = q.limit(opts.limit);
+    if (opts?.offset != null) q = q.offset(opts.offset);
+    return await q;
   }
 
   async getPostedJournalEntriesWithLines(
