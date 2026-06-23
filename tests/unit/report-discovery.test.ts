@@ -103,6 +103,8 @@ describe("report discoverability", () => {
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");
   const vatFilingSource = read("client/src/pages/VATFiling.tsx");
+  const vatAutopilotSource = read("client/src/pages/VATAutopilot.tsx");
+  const vatAutopilotRouteSource = read("server/routes/vat-autopilot.routes.ts");
   const exportSource = read("client/src/lib/export.ts");
   const reportDeliveryRouteSource = read("server/routes/report-delivery.routes.ts");
   const reportCatalogServiceSource = read("server/services/report-catalog.service.ts");
@@ -1057,7 +1059,24 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('{t.compliance ?? "Compliance"}');
     expect(vatFilingSource).toContain("VAT 201 worksheet");
     expect(vatFilingSource).toContain("Excel-like area for the VAT return");
+    expect(vatFilingSource).toContain("canGenerateVatReturn");
+    expect(vatFilingSource).toContain('href="/company-profile"');
+    expect(vatFilingSource).toContain('data-testid="vat-worksheet-grid"');
+    expect(vatFilingSource).toContain('"input-standard-sales"');
+    expect(vatFilingSource).toContain('"input-standard-purchases"');
+    expect(vatFilingSource).toContain("Create official draft");
     expect(vatFilingSource).toContain('data-testid="button-open-vat-worksheet-guide"');
+    expect(vatAutopilotSource).toContain("due-dates?companyId=");
+    expect(vatAutopilotSource).toContain("d.companyId === companyId");
+    expect(vatAutopilotSource).toContain("VAT 201 due dates for the active company file");
+    expect(vatAutopilotSource).not.toContain(
+      "VAT 201 due dates across companies you have access to"
+    );
+    expect(vatAutopilotRouteSource).toContain("dueDatesQuerySchema");
+    expect(vatAutopilotRouteSource).toContain(
+      "storage.hasCompanyAccess(uid, query.data.companyId)"
+    );
+    expect(vatAutopilotRouteSource).toContain("listDueDates([query.data.companyId])");
   });
 
   it("persists workflow finder search and gap context per reporting persona", () => {

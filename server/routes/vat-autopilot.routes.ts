@@ -58,6 +58,10 @@ const statusBodySchema = z.object({
   ftaReferenceNumber: z.string().min(1).max(100).optional(),
 });
 
+const dueDatesQuerySchema = z.object({
+  companyId: z.string().uuid().optional(),
+});
+
 const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
 
 function parsePeriod(parsed: z.infer<typeof calculateQuerySchema>): VatPeriod | undefined {
@@ -251,6 +255,15 @@ export function registerVATAutopilotRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const uid = userId(req);
       if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      const query = dueDatesQuerySchema.safeParse(req.query);
+      if (!query.success) return badRequest(res, query.error);
+      if (query.data.companyId) {
+        const hasAccess = await storage.hasCompanyAccess(uid, query.data.companyId);
+        if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+        const dueDates = await listDueDates([query.data.companyId]);
+        return res.json(dueDates);
+      }
+
       // Resolve every company the caller has direct membership in. Firm staff
       // see all assigned clients via the same companyUsers join; ordinary users
       // see only their own companies. Either way the SQL is server-side

@@ -159,15 +159,16 @@ export default function VATAutopilot() {
   });
 
   const dueDatesQuery = useQuery<DueDateView[]>({
-    queryKey: ["/api/vat/autopilot/due-dates"],
-    queryFn: () => apiRequest("GET", "/api/vat/autopilot/due-dates"),
+    queryKey: ["/api/vat/autopilot/due-dates", companyId],
+    enabled: !!companyId,
+    queryFn: () => apiRequest("GET", `/api/vat/autopilot/due-dates?companyId=${companyId}`),
   });
 
   const calcMutation = useMutation<CalculationResult, Error, void>({
     mutationFn: () => apiRequest("GET", `/api/vat/autopilot/calculate/${companyId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({
         title: "VAT return recalculated",
         description: "All boxes updated from latest data.",
@@ -236,7 +237,7 @@ export default function VATAutopilot() {
       apiRequest("PATCH", `/api/vat/autopilot/periods/${periodId}/status`, { status, companyId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({ title: "Status updated" });
     },
     onError: (err: any) => {
@@ -245,8 +246,8 @@ export default function VATAutopilot() {
   });
 
   const upcoming = useMemo(() => {
-    return (dueDatesQuery.data || []).slice(0, 5);
-  }, [dueDatesQuery.data]);
+    return (dueDatesQuery.data || []).filter((d) => d.companyId === companyId).slice(0, 5);
+  }, [dueDatesQuery.data, companyId]);
 
   if (companyLoading) {
     return <Skeleton className="h-96 w-full" />;
@@ -510,11 +511,11 @@ export default function VATAutopilot() {
         </CardContent>
       </Card>
 
-      {/* Firm-wide deadlines */}
+      {/* Active-company deadlines */}
       <Card>
         <CardHeader>
-          <CardTitle>Upcoming deadlines</CardTitle>
-          <CardDescription>VAT 201 due dates across companies you have access to.</CardDescription>
+          <CardTitle>This company’s VAT deadlines</CardTitle>
+          <CardDescription>VAT 201 due dates for the active company file.</CardDescription>
         </CardHeader>
         <CardContent>
           {dueDatesQuery.isLoading ? (
@@ -541,8 +542,6 @@ export default function VATAutopilot() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead>TRN</TableHead>
                   <TableHead>Period end</TableHead>
                   <TableHead>Due</TableHead>
                   <TableHead>Status</TableHead>
@@ -550,9 +549,7 @@ export default function VATAutopilot() {
               </TableHeader>
               <TableBody>
                 {upcoming.map((d) => (
-                  <TableRow key={d.companyId} data-testid="row-due-date">
-                    <TableCell className="font-medium">{d.companyName}</TableCell>
-                    <TableCell className="font-mono text-xs">{d.trnVatNumber || "—"}</TableCell>
+                  <TableRow key={`${d.companyId}-${d.periodEnd}`} data-testid="row-due-date">
                     <TableCell>{formatDate(d.periodEnd)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
