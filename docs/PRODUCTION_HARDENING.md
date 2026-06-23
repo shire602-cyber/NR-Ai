@@ -50,10 +50,31 @@
 - [ ] Rate-limit coverage audit across all mutating/expensive endpoints.
 - [ ] Backup + restore drill (docs/TRUST.md flow) on a schedule.
 
-## Phase O — Observability (next)
-- [ ] Error tracking (Sentry/equivalent) wired in client + server.
-- [ ] Request metrics + p95 latency + DB pool saturation; basic alerting.
-- [ ] Uptime monitor on /api/version + a public status page.
+## Phase O — Observability
+> Found the basics already mature: requestId on every request, a request logger
+> (method/path/status/duration, level-by-status), `/health/live` + `/health/ready`
+> + `/health` (DB ping latency, pool stats, memory, version, uptime), and
+> process-level `unhandledRejection`/`uncaughtException` handlers. Phase O adds the
+> single alertable seam + latency flagging on top.
+- [x] **O1 Central error-capture seam.** DONE: `server/services/monitoring.ts`
+  `captureException(err, ctx)` — ONE place all server errors route through. The
+  global error handler (non-operational + 5xx + unhandled branches) and the
+  process crash handlers (`unhandledRejection`/`uncaughtException`) now call it.
+  Logs structured today (behaviour unchanged); forwards to an external tracker
+  (Sentry/Datadog) when `SENTRY_DSN`/`MONITORING_DSN` is set — env-gated + lazy so
+  no SDK dependency until you opt in (same seam pattern as the ASP adapter). Tests:
+  `tests/unit/monitoring.test.ts`. Files: `monitoring.ts`, `errorHandler.ts`,
+  `index.ts`.
+- [x] **O2 Slow-request flagging + pool visibility.** DONE: `requestLogger` now warns
+  on successful requests slower than `SLOW_REQUEST_MS` (default 2000ms) tagged
+  `slow:true`, so latency outliers surface in logs without an APM. `/health` already
+  reports `pool` saturation (total/idle/waiting) and DB ping latency; added
+  `errorTracking: configured|logs-only` so the health page shows whether an external
+  monitor is wired. Files: `requestLogger.ts`, `index.ts`.
+- [ ] **O3 External wiring (owner action, post-DSN).** When you pick a tracker:
+  `npm i @sentry/node`, init in `index.ts`, and fill the forward hook in
+  `monitoring.ts` (one block). Add an uptime monitor (UptimeRobot/BetterStack) on
+  `/health/ready` + a public status page. Client-side error boundary → same DSN.
 
 ## Phase T — Test depth (parallel)
 - [ ] Raise coverage from ~12.7% with integration/route tests on the money
