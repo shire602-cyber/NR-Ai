@@ -157,6 +157,87 @@ function moneyFromCell(value: string | undefined) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function roundMoney(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Evaluate an amount the user typed, allowing simple arithmetic so the field
+ * doubles as a calculator: "7800+1850" → 9650, "100*1.05" → 105, "(20+5)/2" →
+ * 12.5. Strips AED / currency symbols, thousands separators and spaces, and
+ * accepts Arabic-Indic digits. Supports + - * / and parentheses with a small
+ * recursive-descent parser (no eval). Anything malformed returns 0.
+ */
+export function evaluateAmountExpression(input: string | number | null | undefined): number {
+  if (typeof input === "number") return Number.isFinite(input) ? roundMoney(input) : 0;
+  const raw = String(input ?? "").trim();
+  if (!raw) return 0;
+
+  // Normalise Arabic-Indic digits and the Arabic decimal/thousands marks.
+  const ARABIC = "٠١٢٣٤٥٦٧٨٩";
+  let s = raw
+    .replace(/[٠-٩]/g, (d) => String(ARABIC.indexOf(d)))
+    .replace(/٫/g, ".") // Arabic decimal separator
+    .replace(/aed|د\.إ|dhs?/gi, "")
+    .replace(/[,،٬\s]/g, "");
+  if (!s) return 0;
+
+  // Only digits, decimal points and the four operators / parentheses are valid.
+  // Anything else is malformed → 0 (no eval, no guessing a number out of junk).
+  if (!/^[0-9+\-*/().]+$/.test(s)) return 0;
+
+  let i = 0;
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (s[i] === "+" || s[i] === "-") {
+      const op = s[i++];
+      const rhs = parseTerm();
+      value = op === "+" ? value + rhs : value - rhs;
+    }
+    return value;
+  };
+  const parseTerm = (): number => {
+    let value = parseFactor();
+    while (s[i] === "*" || s[i] === "/") {
+      const op = s[i++];
+      const rhs = parseFactor();
+      value = op === "*" ? value * rhs : value / rhs;
+    }
+    return value;
+  };
+  const parseFactor = (): number => {
+    if (s[i] === "+") {
+      i++;
+      return parseFactor();
+    }
+    if (s[i] === "-") {
+      i++;
+      return -parseFactor();
+    }
+    if (s[i] === "(") {
+      i++;
+      const v = parseExpression();
+      if (s[i] !== ")") throw new Error("unbalanced");
+      i++;
+      return v;
+    }
+    let num = "";
+    while (i < s.length && /[0-9.]/.test(s[i])) num += s[i++];
+    if (num === "" || num === ".") throw new Error("bad number");
+    const n = Number(num);
+    if (!Number.isFinite(n)) throw new Error("bad number");
+    return n;
+  };
+
+  try {
+    const result = parseExpression();
+    if (i !== s.length) return 0; // trailing garbage → reject
+    return Number.isFinite(result) ? roundMoney(result) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function normalizeVatRowCategory(value: string | undefined): VatRowCategory {
   const normalized = keySlug(value);
   const match = vatRowCategories.find(

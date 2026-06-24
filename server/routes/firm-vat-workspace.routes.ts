@@ -18,6 +18,7 @@ import {
   addVatWorkpaperRowsBulk,
   bulkUpdateVatWorkpaperRowStatus,
   createVatWorkpaper,
+  deleteVatWorkpaperRow,
   pullVatWorkpaperRowsFromBooks,
   generateVatReturnFromWorkpaper,
   getVatWorkpaperDetail,
@@ -330,6 +331,28 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
         req,
       });
       res.json(row);
+    })
+  );
+
+  router.delete(
+    "/:id/rows/:rowId",
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = rowParamSchema.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+      const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
+      if (!detail) return;
+
+      const result = await deleteVatWorkpaperRow(parsedParams.data.id, parsedParams.data.rowId);
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: "firm_vat_workpaper_row_delete",
+        entityType: "vat_workpaper_row",
+        entityId: parsedParams.data.rowId,
+        req,
+      });
+      res.json(result);
     })
   );
 

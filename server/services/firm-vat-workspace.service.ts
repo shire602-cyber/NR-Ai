@@ -581,6 +581,38 @@ export async function updateVatWorkpaperRow(
   return updated;
 }
 
+/**
+ * Permanently remove a VAT workpaper row (and any evidence attached to it), then
+ * recalculate the workpaper totals. Used by the grid's Delete action so a wrong
+ * row can be removed outright, not just excluded.
+ */
+export async function deleteVatWorkpaperRow(workpaperId: string, rowId: string) {
+  const workpaper = await getWorkpaperOrThrow(workpaperId);
+  await assertWorkpaperEditable(workpaper);
+  const [existing] = await db
+    .select()
+    .from(vatWorkpaperRows)
+    .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)))
+    .limit(1);
+  if (!existing) throw new NotFoundError("VAT workpaper row");
+
+  // Remove attached evidence first (avoids orphaned attachment rows / FK issues).
+  await db
+    .delete(vatWorkpaperAttachments)
+    .where(
+      and(
+        eq(vatWorkpaperAttachments.rowId, rowId),
+        eq(vatWorkpaperAttachments.workpaperId, workpaperId)
+      )
+    );
+  await db
+    .delete(vatWorkpaperRows)
+    .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)));
+
+  await recalculateVatWorkpaper(workpaperId);
+  return { id: rowId };
+}
+
 export async function scanVatWorkpaperEvidence(
   workpaperId: string,
   actorUserId: string,
