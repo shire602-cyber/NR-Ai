@@ -78,6 +78,7 @@ import {
   ArrowUpRight,
   Coins,
   X,
+  ChevronRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -713,6 +714,25 @@ function CustomerDashboard() {
     () => getPreferredReportPersona() ?? "owner"
   );
   const [reportWorkflowPreferenceRevision, setReportWorkflowPreferenceRevision] = useState(0);
+  // Progressive disclosure: the full report workspace is heavy and secondary to a
+  // daily glance, so it's collapsed by default. Preference persists per user.
+  const [showReportWorkspace, setShowReportWorkspace] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("dashboard-show-report-workspace") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleReportWorkspace = () =>
+    setShowReportWorkspace((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("dashboard-show-report-workspace", next ? "true" : "false");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   const [
     acknowledgedDashboardReportDeliveryHandoffGaps,
     setAcknowledgedDashboardReportDeliveryHandoffGaps,
@@ -2220,7 +2240,28 @@ function CustomerDashboard() {
           </motion.section>
         )}
 
-      {/* ── Preferred report workspace ──────────────────────────────────── */}
+      {/* ── Preferred report workspace (collapsed by default) ───────────── */}
+      <section>
+        <button
+          type="button"
+          onClick={toggleReportWorkspace}
+          aria-expanded={showReportWorkspace}
+          className="flex w-full items-center justify-between rounded-xl border border-card-border bg-card/60 px-4 py-3 text-left transition-colors hover:bg-card"
+          data-testid="dashboard-report-workspace-toggle"
+        >
+          <span className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-foreground">
+            <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
+            Reports workspace
+            <span className="font-normal text-muted-foreground">
+              · {preferredReportQuickAccess.readyReports}/{preferredReportQuickAccess.reports.length} ready
+            </span>
+          </span>
+          <ChevronRight
+            className={`h-4 w-4 text-muted-foreground transition-transform ${showReportWorkspace ? "rotate-90" : ""}`}
+          />
+        </button>
+      </section>
+      {showReportWorkspace && (
       <section data-testid="dashboard-report-workspace">
         <SectionHeader
           eyebrow="Reports"
@@ -3732,6 +3773,7 @@ function CustomerDashboard() {
           </CardContent>
         </Card>
       </section>
+      )}
 
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>
