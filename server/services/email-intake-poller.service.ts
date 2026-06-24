@@ -20,6 +20,7 @@ import {
   normalizeInboundMessage,
   type EmailSourceRef,
   type NormalizedIntakeAttachment,
+  type RawInboundMessage,
 } from "./email-intake";
 import { extractReceiptToOcr } from "./ocr-extraction.service";
 import { runAutopilot, type OcrReceipt, type AutopilotResult } from "./receipt-autopilot.service";
@@ -90,11 +91,28 @@ export async function pollEmailIntakeOnce(args: {
   }));
 
   const raw = await source.fetchNewMessages(args.since);
-  const summary: PollSummary = { ...EMPTY, ran: true, messagesFetched: raw.length };
+  return ingestRawMessages({ raw, refs, deps, uploadedBy: args.uploadedBy });
+}
+
+/**
+ * Shared ingest: route each raw message by sender, gate (allowlist + DKIM),
+ * dedup attachments, persist, and OCR→autopilot each one. Used by BOTH the
+ * poll-based source and the inbound webhook. `refs` is the set of active
+ * sender→company mappings to match against.
+ */
+export async function ingestRawMessages(args: {
+  raw: RawInboundMessage[];
+  refs: EmailSourceRef[];
+  deps?: PollDeps;
+  uploadedBy?: string;
+}): Promise<PollSummary> {
+  const deps = args.deps ?? defaultDeps;
+  const refs = args.refs;
+  const summary: PollSummary = { ...EMPTY, ran: true, messagesFetched: args.raw.length };
   // Per-company dedup sets, lazily loaded.
   const hashCache = new Map<string, Set<string>>();
 
-  for (const msg of raw) {
+  for (const msg of args.raw) {
     const matched = matchSenderToCompany(msg.fromHeader, refs);
     const gate = evaluateSenderGate({ source: matched, dkimPass: msg.dkimPass });
     if (!gate.ingest || !matched) {
@@ -163,7 +181,7 @@ export async function pollEmailIntakeOnce(args: {
     }
   }
 
-  log.info(summary, "email intake poll complete");
+  log.info(summary, "email intake ingest complete");
   return summary;
 }
 
