@@ -24,8 +24,8 @@ describe("isPostableVatCategory", () => {
     expect(isPostableVatCategory("zero_rated_sale")).toBe(true);
     expect(isPostableVatCategory("exempt_sale")).toBe(true);
     expect(isPostableVatCategory("standard_expense")).toBe(true);
-    expect(isPostableVatCategory("reverse_charge_input")).toBe(false);
-    expect(isPostableVatCategory("import")).toBe(false);
+    expect(isPostableVatCategory("reverse_charge_input")).toBe(true);
+    expect(isPostableVatCategory("import")).toBe(true);
     expect(isPostableVatCategory("manual_adjustment")).toBe(false);
   });
 });
@@ -156,12 +156,54 @@ describe("buildVatRowJournalLines — standard expense (VAT bill by supplier: 10
 describe("buildVatRowJournalLines — guards", () => {
   it("rejects still-unsupported categories as not auto-postable", () => {
     const r = buildVatRowJournalLines(
-      { rowCategory: "reverse_charge_input", taxableAmount: 100, vatAmount: 5 },
+      { rowCategory: "manual_adjustment", taxableAmount: 100, vatAmount: 5 },
       ACCT
     );
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe("NOT_AUTO_POSTABLE");
+  });
+});
+
+describe("buildVatRowJournalLines — reverse charge / import (self-assessed VAT)", () => {
+  it("reverse-charge posts Dr Expense 100 / Dr Input VAT 5 / Cr A/P 100 / Cr Output VAT 5, balanced", () => {
+    const r = buildVatRowJournalLines(
+      { rowCategory: "reverse_charge_input", taxableAmount: 100, vatAmount: 5 },
+      ACCT
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.lines).toHaveLength(4);
+    expect(r.lines.find((l) => l.accountId === "exp")!.debit).toBe(100);
+    expect(r.lines.find((l) => l.accountId === "vatin")!.debit).toBe(5);
+    expect(r.lines.find((l) => l.accountId === "ap")!.credit).toBe(100);
+    expect(r.lines.find((l) => l.accountId === "vatout")!.credit).toBe(5);
+    expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+    // input VAT = output VAT → net VAT effect is zero
+    expect(r.lines.find((l) => l.accountId === "vatin")!.debit).toBe(
+      r.lines.find((l) => l.accountId === "vatout")!.credit
+    );
+  });
+
+  it("import posts the same self-assessed structure, balanced", () => {
+    const r = buildVatRowJournalLines(
+      { rowCategory: "import", taxableAmount: 500, vatAmount: 25 },
+      ACCT
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(sum(r.lines, "debit")).toBe(sum(r.lines, "credit"));
+    expect(r.lines.find((l) => l.accountId === "ap")!.credit).toBe(500);
+  });
+
+  it("fails closed when VAT accounts are missing but VAT is charged", () => {
+    const r = buildVatRowJournalLines(
+      { rowCategory: "reverse_charge_input", taxableAmount: 100, vatAmount: 5 },
+      { ...ACCT, vatOutputId: null }
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("VAT_ACCOUNT_MISSING");
   });
 
   it("rejects a non-positive amount", () => {

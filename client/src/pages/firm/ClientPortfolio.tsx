@@ -331,6 +331,8 @@ const POSTABLE_VAT_CATEGORIES = [
   "zero_rated_sale",
   "exempt_sale",
   "standard_expense",
+  "reverse_charge_input",
+  "import",
 ];
 
 interface VatWorkpaperAttachment {
