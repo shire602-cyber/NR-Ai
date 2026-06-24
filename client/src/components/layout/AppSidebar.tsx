@@ -35,7 +35,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { canAccessNraCenter } from "@shared/access";
+import { shouldShowNraCenterNav } from "@shared/access";
 import { useTranslation, useI18n } from "@/lib/i18n";
 import { useRTL } from "@/components/RTLProvider";
 import { removeToken } from "@/lib/auth";
@@ -44,6 +44,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -171,6 +172,7 @@ const NRA_GROUP: NavGroup = {
     { titleKey: "healthDashboard", url: "/firm/health" },
     { titleKey: "communications", url: "/firm/comms" },
     { titleKey: "documentChasing", url: "/firm/document-chasing" },
+    { titleKey: "emailIntake", url: "/firm/email-intake" },
   ],
 };
 
@@ -245,7 +247,12 @@ export function AppSidebar() {
   const isAdmin = currentUser?.isAdmin === true;
   const userType = currentUser?.userType || "customer";
 
-  const showNraCenter = canAccessNraCenter(currentUser);
+  // `isFirmContext` is true when the user has switched INTO a firm-managed
+  // client company. Firm-level tools (the NRA Center) belong at the firm level,
+  // so we hide that group while a specific client file is the active workspace.
+  // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
+  const { isFirmContext } = useActiveCompany();
+  const showNraCenter = shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext });
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(

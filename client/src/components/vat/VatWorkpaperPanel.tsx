@@ -30,6 +30,7 @@ import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
+  evaluateAmountExpression,
   parseVatPasteRows,
   vatEmirates,
   vatRowCategories,
@@ -112,7 +113,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 function toMoney(value: unknown) {
-  const parsed = Number(value ?? 0);
+  const parsed = evaluateAmountExpression(value as string | number | null | undefined);
   if (!Number.isFinite(parsed)) return 0;
   return Math.round(parsed * 100) / 100;
 }
@@ -249,9 +250,9 @@ export default function VatWorkpaperPanel({
     counterpartyTrn: rowForm.counterpartyTrn || null,
     invoiceNumber: rowForm.invoiceNumber || null,
     emirate: rowForm.emirate || null,
-    taxableAmount: Number(rowForm.taxableAmount || 0),
-    vatAmount: Number(rowForm.vatAmount || 0),
-    grossAmount: Number(rowForm.grossAmount || 0),
+    taxableAmount: toMoney(rowForm.taxableAmount),
+    vatAmount: toMoney(rowForm.vatAmount),
+    grossAmount: toMoney(rowForm.grossAmount),
     status: "approved",
     sourceMethod: "manual",
     notes: rowForm.notes || null,
@@ -430,7 +431,7 @@ export default function VatWorkpaperPanel({
   const inputAmount = Number(totals.box11TotalAmount ?? 0);
 
   const updateRowAmount = (value: string) => {
-    const taxableAmount = Number(value || 0);
+    const taxableAmount = toMoney(value);
     const vatAmount = defaultVatFor(rowForm.rowCategory, taxableAmount);
     setRowForm((form) => ({
       ...form,
@@ -441,8 +442,8 @@ export default function VatWorkpaperPanel({
   };
 
   const updateRowVatAmount = (value: string) => {
-    const taxableAmount = Number(rowForm.taxableAmount || 0);
-    const vatAmount = Number(value || 0);
+    const taxableAmount = toMoney(rowForm.taxableAmount);
+    const vatAmount = toMoney(value);
     setRowForm((form) => ({
       ...form,
       vatAmount: value,
@@ -451,7 +452,7 @@ export default function VatWorkpaperPanel({
   };
 
   const updateRowCategory = (rowCategory: VatRowCategory) => {
-    const taxableAmount = Number(rowForm.taxableAmount || 0);
+    const taxableAmount = toMoney(rowForm.taxableAmount);
     const vatAmount = defaultVatFor(rowCategory, taxableAmount);
     setRowForm((form) => ({
       ...form,

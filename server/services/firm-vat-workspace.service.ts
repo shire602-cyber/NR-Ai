@@ -3,6 +3,9 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { ConflictError, NotFoundError, ValidationError } from "../errors";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { storage } from "../storage";
+import { ACCOUNT_CODES } from "../constants";
+import { buildVatRowJournalLines } from "./vat-workpaper-posting";
 import {
   companies,
   vatReturns,
@@ -594,6 +597,136 @@ export async function updateVatWorkpaperRow(
 
   await recalculateVatWorkpaper(workpaperId);
   return updated;
+}
+
+/**
+ * Permanently remove a VAT workpaper row (and any evidence attached to it), then
+ * recalculate the workpaper totals. Used by the grid's Delete action so a wrong
+ * row can be removed outright, not just excluded.
+ */
+export async function deleteVatWorkpaperRow(workpaperId: string, rowId: string) {
+  const workpaper = await getWorkpaperOrThrow(workpaperId);
+  await assertWorkpaperEditable(workpaper);
+  const [existing] = await db
+    .select()
+    .from(vatWorkpaperRows)
+    .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)))
+    .limit(1);
+  if (!existing) throw new NotFoundError("VAT workpaper row");
+
+  // If this row was posted to the ledger, reverse it (delete the linked journal
+  // entry) so deleting the row doesn't leave an orphaned GL entry behind.
+  if (existing.journalEntryId) {
+    await storage.deleteJournalEntry(existing.journalEntryId, existing.companyId);
+  }
+
+  // Remove attached evidence first (avoids orphaned attachment rows / FK issues).
+  await db
+    .delete(vatWorkpaperAttachments)
+    .where(
+      and(
+        eq(vatWorkpaperAttachments.rowId, rowId),
+        eq(vatWorkpaperAttachments.workpaperId, workpaperId)
+      )
+    );
+  await db
+    .delete(vatWorkpaperRows)
+    .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)));
+
+  await recalculateVatWorkpaper(workpaperId);
+  return { id: rowId };
+}
+
+/**
+ * Post a manually-entered VAT sales row to the general ledger so it shows up
+ * across the books (journal, P&L, balance sheet) — the books tie to the VAT 201.
+ *
+ * Guards: only manual rows (rows pulled from the books are already in the
+ * ledger — posting would double-count); not already posted; not excluded; a
+ * postable sales category; period not locked; required accounts present.
+ */
+export async function postVatWorkpaperRowToLedger(
+  workpaperId: string,
+  rowId: string,
+  actorUserId: string
+) {
+  const workpaper = await getWorkpaperOrThrow(workpaperId);
+  await assertWorkpaperEditable(workpaper);
+  const [row] = await db
+    .select()
+    .from(vatWorkpaperRows)
+    .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)))
+    .limit(1);
+  if (!row) throw new NotFoundError("VAT workpaper row");
+
+  if (row.journalEntryId) {
+    throw new ConflictError("This row is already posted to the ledger.");
+  }
+  if (row.sourceMethod !== "manual") {
+    throw new ValidationError(
+      "Only manually entered rows can be posted. Rows pulled from the books are already in the ledger."
+    );
+  }
+  if (row.status === "excluded") {
+    throw new ValidationError("Excluded rows are not posted to the ledger.");
+  }
+
+  const companyId = workpaper.companyId;
+  const [ar, revenue, zeroRated, vatOutput] = await Promise.all([
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.AR),
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.REVENUE),
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.ZERO_RATED_SALES),
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.VAT_OUTPUT),
+  ]);
+
+  const built = buildVatRowJournalLines(
+    {
+      rowCategory: row.rowCategory,
+      taxableAmount: Number(row.taxableAmount ?? 0),
+      vatAmount: Number(row.vatAmount ?? 0),
+      label: row.invoiceNumber
+        ? `VAT ${row.rowCategory} ${row.invoiceNumber}`
+        : `VAT ${row.rowCategory}`,
+    },
+    {
+      accountsReceivableId: ar?.id ?? null,
+      salesRevenueId: revenue?.id ?? null,
+      zeroRatedRevenueId: zeroRated?.id ?? null,
+      vatOutputId: vatOutput?.id ?? null,
+    }
+  );
+  if (!built.ok) {
+    throw new ValidationError(built.message);
+  }
+
+  const date = row.documentDate ? new Date(row.documentDate) : new Date();
+  await assertPeriodNotLocked(companyId, date);
+
+  const { entry } = await storage.createJournalEntryWithLines(
+    companyId,
+    date,
+    {
+      createdBy: actorUserId,
+      postedBy: actorUserId,
+      status: "posted",
+      source: "vat_workpaper_row",
+      sourceId: rowId,
+      memo: `VAT workpaper — ${row.invoiceNumber || row.rowCategory}`,
+    },
+    built.lines.map((l) => ({
+      accountId: l.accountId,
+      debit: l.debit,
+      credit: l.credit,
+      description: l.description,
+    })) as any
+  );
+
+  await db
+    .update(vatWorkpaperRows)
+    .set({ journalEntryId: entry.id, updatedAt: new Date() } as any)
+    .where(eq(vatWorkpaperRows.id, rowId));
+
+  return { journalEntryId: entry.id };
 }
 
 export async function scanVatWorkpaperEvidence(

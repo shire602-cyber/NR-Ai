@@ -27,6 +27,7 @@ import {
   ScanLine,
   Check,
   XCircle,
+  Trash2,
   Download,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +65,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
+  evaluateAmountExpression,
   parseVatPasteRows,
   vat201CopyGroups,
   vatEmirates,
@@ -321,7 +323,10 @@ interface VatWorkpaperRow {
   sourceMethod: "manual" | "ocr" | "import" | "generated";
   notes: string | null;
   auditReason: string | null;
+  journalEntryId: string | null;
 }
+
+const POSTABLE_VAT_CATEGORIES = ["standard_sale", "zero_rated_sale", "exempt_sale"];
 
 interface VatWorkpaperAttachment {
   id: string;
@@ -2357,6 +2362,20 @@ function VatWorkspaceDialog({
     });
   };
 
+  // The amount fields double as a calculator: typing e.g. "7800+1850" resolves to
+  // 9650 on blur. Only rewrite when the value actually contains an expression so
+  // plain numbers and half-typed entries are left alone.
+  const normalizeAmountField = (
+    field: "taxableAmount" | "vatAmount" | "grossAmount" | "adjustmentAmount"
+  ) =>
+    setRowForm((form) => {
+      const value = String((form as Record<string, unknown>)[field] ?? "");
+      if (!/\d\s*[+\-*/]/.test(value)) return form;
+      const computed = evaluateAmountExpression(value);
+      if (!Number.isFinite(computed) || computed === 0) return form;
+      return { ...form, [field]: String(computed) };
+    });
+
   const rowPayload = (overrides?: Partial<Pick<VatWorkpaperRow, "status" | "sourceMethod">>) => ({
     rowCategory: rowForm.rowCategory,
     vat201Box: rowForm.rowCategory === "manual_adjustment" ? rowForm.vat201Box : undefined,
@@ -2365,10 +2384,10 @@ function VatWorkspaceDialog({
     counterpartyName: rowForm.counterpartyName || null,
     counterpartyTrn: rowForm.counterpartyTrn || null,
     emirate: rowForm.emirate || null,
-    taxableAmount: Number(rowForm.taxableAmount || 0),
-    vatAmount: Number(rowForm.vatAmount || 0),
-    adjustmentAmount: Number(rowForm.adjustmentAmount || 0),
-    grossAmount: Number(rowForm.grossAmount || 0),
+    taxableAmount: evaluateAmountExpression(rowForm.taxableAmount),
+    vatAmount: evaluateAmountExpression(rowForm.vatAmount),
+    adjustmentAmount: evaluateAmountExpression(rowForm.adjustmentAmount),
+    grossAmount: evaluateAmountExpression(rowForm.grossAmount),
     status: overrides?.status ?? rowForm.status,
     sourceMethod: overrides?.sourceMethod ?? rowForm.sourceMethod,
     notes: rowForm.notes || null,
@@ -2533,6 +2552,32 @@ function VatWorkspaceDialog({
     onSuccess: invalidateWorkspace,
     onError: (e: any) =>
       toast({ variant: "destructive", title: "Could not update VAT row", description: e?.message }),
+  });
+
+  const deleteRowMutation = useMutation({
+    mutationFn: (rowId: string) =>
+      apiRequest("DELETE", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`),
+    onSuccess: (_data, rowId) => {
+      invalidateWorkspace();
+      if (editingRowId === rowId) resetRowForm();
+      toast({ title: "VAT row deleted" });
+    },
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not delete VAT row", description: e?.message }),
+  });
+
+  const postRowMutation = useMutation({
+    mutationFn: (rowId: string) =>
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}/post`),
+    onSuccess: () => {
+      invalidateWorkspace();
+      toast({
+        title: "Posted to ledger",
+        description: "This entry now shows in the journal, P&L and balance sheet.",
+      });
+    },
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not post to ledger", description: e?.message }),
   });
 
   const recalculateMutation = useMutation({
@@ -2927,7 +2972,9 @@ function VatWorkspaceDialog({
                               <TableHead className="min-w-28 text-right">VAT</TableHead>
                               <TableHead className="min-w-28 text-right">Gross</TableHead>
                               <TableHead className="min-w-32">Status</TableHead>
-                              <TableHead className="min-w-36 text-right">Actions</TableHead>
+                              <TableHead className="min-w-36 text-right sticky right-0 bg-background z-20 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
+                                Actions
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -3041,6 +3088,8 @@ function VatWorkspaceDialog({
                                       taxableAmount: e.target.value,
                                     }))
                                   }
+                                  onBlur={() => normalizeAmountField("taxableAmount")}
+                                  title="Tip: you can type a sum like 7800+1850"
                                 />
                               </TableCell>
                               <TableCell>
@@ -3051,6 +3100,8 @@ function VatWorkspaceDialog({
                                   onChange={(e) =>
                                     setRowForm((form) => ({ ...form, vatAmount: e.target.value }))
                                   }
+                                  onBlur={() => normalizeAmountField("vatAmount")}
+                                  title="Tip: you can type a sum like 7800+1850"
                                 />
                               </TableCell>
                               <TableCell>
@@ -3061,6 +3112,8 @@ function VatWorkspaceDialog({
                                   onChange={(e) =>
                                     setRowForm((form) => ({ ...form, grossAmount: e.target.value }))
                                   }
+                                  onBlur={() => normalizeAmountField("grossAmount")}
+                                  title="Tip: you can type a sum like 7800+1850"
                                 />
                               </TableCell>
                               <TableCell>
@@ -3083,7 +3136,7 @@ function VatWorkspaceDialog({
                                   </SelectContent>
                                 </Select>
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-right sticky right-0 bg-background z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
                                 <div className="flex justify-end gap-1">
                                   {editingRowId ? (
                                     <Button
@@ -3170,7 +3223,11 @@ function VatWorkspaceDialog({
                                       {row.status}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-right">
+                                  <TableCell
+                                    className={`text-right sticky right-0 z-10 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)] ${
+                                      editingRowId === row.id ? "bg-primary/5" : "bg-background"
+                                    }`}
+                                  >
                                     <div className="flex justify-end gap-1">
                                       <Button
                                         size="sm"
@@ -3179,6 +3236,27 @@ function VatWorkspaceDialog({
                                       >
                                         Edit
                                       </Button>
+                                      {row.journalEntryId ? (
+                                        <Badge
+                                          variant="outline"
+                                          className="gap-1 text-emerald-600 border-emerald-600/40"
+                                          title="Posted to the general ledger"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          Posted
+                                        </Badge>
+                                      ) : row.sourceMethod === "manual" &&
+                                        POSTABLE_VAT_CATEGORIES.includes(row.rowCategory) ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          title="Post this sale to the ledger so it shows in the journal, P&L and balance sheet"
+                                          disabled={postRowMutation.isPending}
+                                          onClick={() => postRowMutation.mutate(row.id)}
+                                        >
+                                          Post
+                                        </Button>
+                                      ) : null}
                                       {row.status === "draft" ? (
                                         <>
                                           <Button
@@ -3227,6 +3305,26 @@ function VatWorkspaceDialog({
                                           {row.status === "approved" ? "Exclude" : "Approve"}
                                         </Button>
                                       )}
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-destructive hover:text-destructive"
+                                        aria-label={`Delete ${row.invoiceNumber || "VAT row"}`}
+                                        title="Delete this row"
+                                        disabled={deleteRowMutation.isPending}
+                                        onClick={() => {
+                                          if (
+                                            window.confirm(
+                                              "Delete this VAT row? This removes it and any attached evidence and updates the totals."
+                                            )
+                                          ) {
+                                            deleteRowMutation.mutate(row.id);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span className="sr-only">Delete row</span>
+                                      </Button>
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -3261,6 +3359,8 @@ function VatWorkspaceDialog({
                           onChange={(e) =>
                             setRowForm((form) => ({ ...form, adjustmentAmount: e.target.value }))
                           }
+                          onBlur={() => normalizeAmountField("adjustmentAmount")}
+                          title="Tip: you can type a sum like 7800+1850"
                         />
                         <Textarea
                           placeholder="Notes / OCR text"
@@ -3485,6 +3585,25 @@ function VatWorkspaceDialog({
                                       }
                                     >
                                       <XCircle className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-destructive hover:text-destructive"
+                                      aria-label={`Delete ${row.invoiceNumber || "draft VAT row"}`}
+                                      title="Delete this draft row"
+                                      disabled={deleteRowMutation.isPending}
+                                      onClick={() => {
+                                        if (
+                                          window.confirm(
+                                            "Delete this draft row? This removes it and any attached evidence."
+                                          )
+                                        ) {
+                                          deleteRowMutation.mutate(row.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                   </div>
                                 </TableCell>

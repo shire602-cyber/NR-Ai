@@ -26,6 +26,7 @@ import { setupVite, serveStatic } from "./vite";
 import { initScheduler } from "./services/scheduler.service";
 import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from "./db";
 import { installGracefulShutdown } from "./shutdown";
+import { captureException, monitoringConfigured } from "./services/monitoring";
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -160,6 +161,7 @@ app.get("/health", async (_req, res) => {
       databaseLatencyMs: ping.latencyMs,
       databaseError: ping.error,
       pool: getPoolStats(),
+      errorTracking: monitoringConfigured() ? "configured" : "logs-only",
     },
   });
 });
@@ -275,10 +277,11 @@ bootstrap().catch((error) => {
 // no in-flight requests to drain pre-bootstrap.
 
 process.on("unhandledRejection", (reason) => {
-  log.error({ reason }, "Unhandled promise rejection");
+  captureException(reason, { source: "unhandledRejection" });
 });
 
 process.on("uncaughtException", (error) => {
+  captureException(error, { source: "uncaughtException", fatal: true });
   log.fatal({ error }, "Uncaught exception");
   process.exit(1);
 });

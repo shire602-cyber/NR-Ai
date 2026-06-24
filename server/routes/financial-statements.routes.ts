@@ -75,9 +75,10 @@ export function registerFinancialStatementRoutes(app: Express) {
       // Group journal lines by account
       const grouped: GroupedAccounts = {};
 
-      for (const entry of filteredEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
+      // S1: one batched query for all lines instead of one query per entry (N+1).
+      const allLines = await storage.getJournalLinesByEntryIds(filteredEntries.map((e) => e.id));
+      {
+        for (const line of allLines) {
           const account = accountMap.get(line.accountId);
           if (!account) continue;
           // Only income and expense accounts go into P&L
@@ -180,9 +181,10 @@ export function registerFinancialStatementRoutes(app: Express) {
       // Group by account
       const grouped: GroupedAccounts = {};
 
-      for (const entry of filteredEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
+      // S1: one batched query for all lines instead of one query per entry (N+1).
+      const allLines = await storage.getJournalLinesByEntryIds(filteredEntries.map((e) => e.id));
+      {
+        for (const line of allLines) {
           const account = accountMap.get(line.accountId);
           if (!account) continue;
 
@@ -334,11 +336,18 @@ export function registerFinancialStatementRoutes(app: Express) {
       // cash change equals the real change in cash/bank balances — unlike the
       // previous implementation, which summed every account's delta (including
       // the cash account itself) and produced a net change that did not tie out.
-      const entriesWithLines = await Promise.all(
-        filteredEntries.map(async (entry) => ({
-          lines: await storage.getJournalLinesByEntryId(entry.id),
-        }))
-      );
+      // S1: one batched query for all lines, then group by entry in memory
+      // (computeCashFlow needs lines grouped per entry), instead of N+1 queries.
+      const cfLines = await storage.getJournalLinesByEntryIds(filteredEntries.map((e) => e.id));
+      const cfLinesByEntry = new Map<string, typeof cfLines>();
+      for (const l of cfLines) {
+        const arr = cfLinesByEntry.get(l.entryId);
+        if (arr) arr.push(l);
+        else cfLinesByEntry.set(l.entryId, [l]);
+      }
+      const entriesWithLines = filteredEntries.map((entry) => ({
+        lines: cfLinesByEntry.get(entry.id) ?? [],
+      }));
       const cf = computeCashFlow({ entries: entriesWithLines, accounts: allAccounts });
 
       res.json({

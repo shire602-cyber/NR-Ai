@@ -140,7 +140,9 @@
   reads/PDFs canonical credit notes while retiring standalone writes with HTTP 410. Added a real-DB integration
   regression (`RUN_DB_INTEGRATION=1 INTEGRATION_DATABASE_URL=... npm run test:credit-note-consolidation`) that
   seeds a standalone CN, runs the backfill, and asserts VAT-201 sales totals plus trial balance are unchanged.
-  Resolves A-B15 too.
+  Resolves A-B15 too. **CI now runs this regression automatically** — new `db-integration` job in
+  `.github/workflows/ci.yml` provisions a Postgres service, runs migrations, then executes
+  `npm run test:credit-note-consolidation` on every PR/push (no local DB needed by anyone).
 - [ ] **A7.x Remove dead code** revealed during the above (e.g. unwired Stripe path) once A-B1 resolved.
 
 ---

@@ -113,6 +113,7 @@ export const t = {
     // Compliance
     compliance: "Compliance",
     documentChasing: "Document Chasing",
+    emailIntake: "Email Intake",
 
     // Settings items
     history: "Activity History",
@@ -495,6 +496,7 @@ export const t = {
     // Compliance
     compliance: "الامتثال",
     documentChasing: "متابعة المستندات",
+    emailIntake: "استلام المستندات بالبريد",
 
     // Settings items
     history: "سجل النشاط",

@@ -8,6 +8,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
+import { getEInvoiceProvider } from "../services/einvoice-provider";
+import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
 import {
   hasSmtpConfig,
   sendInvoiceEmail,
@@ -959,6 +961,77 @@ export function registerInvoiceRoutes(app: Express) {
       res.set("Content-Type", "application/xml");
       res.set("Content-Disposition", `attachment; filename="einvoice-${invoice.number}.xml"`);
       res.send(invoice.einvoiceXml);
+    })
+  );
+
+  // Customer-only: submit the e-invoice to the active ASP (provider-agnostic).
+  app.post(
+    "/api/invoices/:id/einvoice/submit",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      const invoice = await findInvoiceForUser(userId, id);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      const lines = await storage.getInvoiceLinesByInvoiceId(id);
+      const company = await storage.getCompany(invoice.companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      const provider = getEInvoiceProvider();
+      const result = await submitEInvoice({ invoice, lines, company, provider });
+      if (!result.ok) {
+        return res
+          .status(result.status)
+          .json({ message: result.message, code: result.code, issues: result.issues });
+      }
+
+      await storage.updateInvoice(id, invoice.companyId, result.update as any);
+      await recordAudit({
+        userId,
+        companyId: invoice.companyId,
+        action: "invoice.einvoice_submit",
+        entityType: "invoice",
+        entityId: id,
+        after: {
+          provider: provider.name,
+          providerMessageId: result.providerMessageId,
+          status: result.update.einvoiceStatus,
+        },
+        req,
+      });
+      res.json({
+        status: result.update.einvoiceStatus,
+        provider: provider.name,
+        providerMessageId: result.providerMessageId,
+      });
+    })
+  );
+
+  // Customer-only: poll the ASP for the latest clearance status.
+  app.post(
+    "/api/invoices/:id/einvoice/refresh-status",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      const invoice = await findInvoiceForUser(userId, id);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+
+      const provider = getEInvoiceProvider();
+      const result = await refreshEInvoiceStatus({ invoice, provider });
+      if (!result.ok) {
+        return res.status(result.status).json({ message: result.message, code: result.code });
+      }
+
+      await storage.updateInvoice(id, invoice.companyId, result.update as any);
+      res.json({
+        status: result.update.einvoiceStatus,
+        detail: result.update.einvoiceStatusDetail ?? null,
+      });
     })
   );
 

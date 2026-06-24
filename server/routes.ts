@@ -70,6 +70,7 @@ import { registerBillingRoutes } from "./routes/billing.routes";
 import { registerPushRoutes } from "./routes/push.routes";
 import { registerWebhookRoutes } from "./routes/webhooks.routes";
 import { registerIntegrationStatusRoutes } from "./routes/integration-status.routes";
+import { registerEmailIntakeRoutes } from "./routes/email-intake.routes";
 import { registerAdminHealthRoutes } from "./routes/admin-health.routes";
 import { registerBankStatementRoutes } from "./routes/bank-statements.routes";
 import { registerExchangeRateRoutes } from "./routes/exchange-rates.routes";
@@ -140,6 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPushRoutes(app);
   registerWebhookRoutes(app);
   registerIntegrationStatusRoutes(app);
+  registerEmailIntakeRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);

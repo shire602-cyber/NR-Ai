@@ -49,8 +49,12 @@ export function registerJournalRoutes(app: Express) {
       // Three queries total (entries + lines-by-entry-id + accounts) instead
       // of 1 + N + (N × M). The previous approach issued one round-trip per
       // journal entry plus one per line just to fetch the account row.
+      // S3: cap the list payload (newest first) like the invoices list. Large
+      // tenants can page with ?limit&offset; default cap is 1000.
+      const limit = Math.min(Number(req.query.limit) || 1000, 1000);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
       const [entries, accounts] = await Promise.all([
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { limit, offset }),
         storage.getAccountsByCompanyId(companyId),
       ]);
       const allLines = await storage.getJournalLinesByEntryIds(entries.map((e) => e.id));

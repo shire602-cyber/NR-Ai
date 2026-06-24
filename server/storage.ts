@@ -58,6 +58,12 @@ import type {
   StripeEvent,
   Receipt,
   InsertReceipt,
+  ClientEmailSource,
+  InsertClientEmailSource,
+  EmailIntakeMessage,
+  InsertEmailIntakeMessage,
+  EmailIntakeDocument,
+  InsertEmailIntakeDocument,
   CustomerContact,
   InsertCustomerContact,
   Waitlist,
@@ -198,6 +204,9 @@ import {
   notificationPreferences,
   stripeEvents,
   receipts,
+  clientEmailSources,
+  emailIntakeMessages,
+  emailIntakeDocuments,
   customerContacts,
   waitlist,
   integrationSyncs,
@@ -450,7 +459,10 @@ export interface IStorage {
 
   // Journal Entries
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
-  getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
+  getJournalEntriesByCompanyId(
+    companyId: string,
+    opts?: { limit?: number; offset?: number }
+  ): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
     companyId: string
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
@@ -1795,12 +1807,21 @@ export class DatabaseStorage implements IStorage {
     return entry || undefined;
   }
 
-  async getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]> {
-    return await db
+  async getJournalEntriesByCompanyId(
+    companyId: string,
+    opts?: { limit?: number; offset?: number }
+  ): Promise<JournalEntry[]> {
+    // S3: optional pagination. Default (no opts) returns all rows — the many
+    // internal callers (financial statements, reports, CT) rely on the full set;
+    // the list endpoint passes {limit, offset} to cap the payload.
+    let q: any = db
       .select()
       .from(journalEntries)
       .where(eq(journalEntries.companyId, companyId))
       .orderBy(desc(journalEntries.date));
+    if (opts?.limit != null) q = q.limit(opts.limit);
+    if (opts?.offset != null) q = q.offset(opts.offset);
+    return await q;
   }
 
   async getPostedJournalEntriesWithLines(
@@ -2194,6 +2215,100 @@ export class DatabaseStorage implements IStorage {
       .from(receipts)
       .where(eq(receipts.companyId, companyId))
       .orderBy(desc(receipts.createdAt));
+  }
+
+  // ─── Email document intake (firm-internal pilot) ──────────────
+  async createClientEmailSource(data: InsertClientEmailSource): Promise<ClientEmailSource> {
+    const [row] = await db.insert(clientEmailSources).values(data).returning();
+    return row;
+  }
+
+  async listClientEmailSourcesByFirm(firmId: string): Promise<ClientEmailSource[]> {
+    return await db
+      .select()
+      .from(clientEmailSources)
+      .where(eq(clientEmailSources.firmId, firmId))
+      .orderBy(desc(clientEmailSources.createdAt));
+  }
+
+  /** Active sources across a set of companies — the routing allowlist for the poller. */
+  async listActiveEmailSourcesForCompanies(companyIds: string[]): Promise<ClientEmailSource[]> {
+    if (companyIds.length === 0) return [];
+    return await db
+      .select()
+      .from(clientEmailSources)
+      .where(
+        and(
+          inArray(clientEmailSources.companyId, companyIds),
+          eq(clientEmailSources.status, "active")
+        )
+      );
+  }
+
+  async updateClientEmailSource(
+    id: string,
+    firmId: string,
+    patch: Partial<Pick<ClientEmailSource, "status" | "label" | "requireDkimPass">>
+  ): Promise<ClientEmailSource | undefined> {
+    const [row] = await db
+      .update(clientEmailSources)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(clientEmailSources.id, id), eq(clientEmailSources.firmId, firmId)))
+      .returning();
+    return row;
+  }
+
+  async deleteClientEmailSource(id: string, firmId: string): Promise<boolean> {
+    const rows = await db
+      .delete(clientEmailSources)
+      .where(and(eq(clientEmailSources.id, id), eq(clientEmailSources.firmId, firmId)))
+      .returning();
+    return rows.length > 0;
+  }
+
+  async createEmailIntakeMessage(data: InsertEmailIntakeMessage): Promise<EmailIntakeMessage> {
+    const [row] = await db.insert(emailIntakeMessages).values(data).returning();
+    return row;
+  }
+
+  /** Dedup keys already stored for a company (for the in-batch duplicate check). */
+  async getEmailIntakeHashesForCompany(companyId: string): Promise<string[]> {
+    const rows = await db
+      .select({ sha256: emailIntakeDocuments.sha256 })
+      .from(emailIntakeDocuments)
+      .where(eq(emailIntakeDocuments.companyId, companyId));
+    return rows.map((r: { sha256: string }) => r.sha256);
+  }
+
+  async createEmailIntakeDocument(data: InsertEmailIntakeDocument): Promise<EmailIntakeDocument> {
+    const [row] = await db.insert(emailIntakeDocuments).values(data).returning();
+    return row;
+  }
+
+  async listEmailIntakeMessagesByCompany(companyId: string): Promise<EmailIntakeMessage[]> {
+    return await db
+      .select()
+      .from(emailIntakeMessages)
+      .where(eq(emailIntakeMessages.companyId, companyId))
+      .orderBy(desc(emailIntakeMessages.receivedAt));
+  }
+
+  async updateEmailIntakeDocument(
+    id: string,
+    patch: Partial<Pick<EmailIntakeDocument, "receiptId" | "ocrStatus">>
+  ): Promise<void> {
+    await db.update(emailIntakeDocuments).set(patch).where(eq(emailIntakeDocuments.id, id));
+  }
+
+  async updateEmailIntakeMessageStatus(
+    id: string,
+    status: string,
+    error?: string | null
+  ): Promise<void> {
+    await db
+      .update(emailIntakeMessages)
+      .set({ status, error: error ?? null })
+      .where(eq(emailIntakeMessages.id, id));
   }
 
   async updateReceipt(

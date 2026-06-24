@@ -68,13 +68,22 @@ full suite 707 green):
 1. ~~Verify exact PINT-AE CustomizationID/ProfileID~~ ✅ CONFIRMED against UAE MoF PINT-AE spec v1.0
    (published 19 Jun 2025): `urn:peppol:pint:billing-1@ae-1` / `urn:peppol:bis:billing`. Still TODO:
    validate generated XML against the official PINT-AE validation artefacts / a real ASP sandbox.
-2. **Foreign-currency invoices:** PINT-AE/FTA require the VAT total also expressed in AED (tax currency)
-   — depends on the FX work (A-B4 done; settlement-rate items A-B5 deferred). Add `TaxCurrencyCode` +
-   AED `TaxTotal`.
+2. ~~Foreign-currency invoices: VAT total also in AED~~ ✅ DONE: `TaxCurrencyCode = AED` plus a second
+   `cac:TaxTotal` with the VAT converted at the invoice's AED-per-foreign rate, emitted only when the
+   document currency ≠ AED. Tested in `einvoice.test.ts`.
 3. **Full CreditNote document syntax:** strict PINT-AE credit notes use a `<CreditNote>` root, not an
-   `<Invoice>` with type 381. Current output is an interim improvement; add a dedicated CreditNote
-   serializer.
-4. **Peppol routing identifiers:** seller/buyer `cbc:EndpointID schemeID="…"` (e.g. TRN/Peppol ID) —
-   needed at the ASP hand-off (item 4).
-5. **ASP adapter + status lifecycle (items 4–5):** deferred until a certified-ASP sandbox account exists
-   (owner action). Build behind an adapter interface like `open-banking.service.ts`.
+   `<Invoice>` with type 381. Current output (type 381 + BillingReference) is an interim that most validators
+   accept; a dedicated `<CreditNote>` serializer should be validated against the official PINT-AE artefacts /
+   an ASP sandbox before switching. DEFERRED to the validation phase.
+4. **Peppol routing identifiers (`cbc:EndpointID schemeID="…"`):** the exact Peppol EAS scheme code for the
+   UAE TRN is not confirmable from public sources (it's in the PINT-AE code list; ASPs often also set/override
+   routing). NOT added rather than ship a guessed routing code — confirm the EAS code against the spec/ASP,
+   then add seller+buyer EndpointID (one constant + element). DEFERRED to the validation phase.
+5. **ASP adapter + status lifecycle (items 4–5):** SEAM BUILT (decision: Option A — adapter now, lean
+   aggregator for go-live). `server/services/einvoice-provider.ts` defines the provider-agnostic
+   `EInvoiceProvider` interface + a deterministic `MockEInvoiceProvider` + `getEInvoiceProvider()` env
+   selector; `server/services/einvoice-status.ts` is the submission lifecycle state machine
+   (not_generated → generated → submitted → accepted/rejected/failed, with correct-and-resubmit). Tested in
+   `tests/unit/einvoice-lifecycle.test.ts` (9 cases). REMAINING for live: submit/refresh-status routes +
+   provider-message-id schema columns; one real ASP adapter against the chosen aggregator's REST API (owner
+   picks the ASP); and the XML gaps (EndpointID, AED tax total on foreign invoices, `<CreditNote>` syntax).

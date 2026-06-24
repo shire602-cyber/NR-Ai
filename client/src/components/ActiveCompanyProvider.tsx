@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Company } from "@shared/schema";
 import { getActiveCompanyId, switchActiveCompany, clearActiveCompany } from "@/lib/activeCompany";
 
@@ -35,6 +35,7 @@ interface ActiveCompanyContextValue {
 const ActiveCompanyContext = createContext<ActiveCompanyContextValue | null>(null);
 
 export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(() => getActiveCompanyId());
 
   // Stay in sync with `switchActiveCompany`/`clearActiveCompany` from
@@ -71,13 +72,19 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 
   const clearActiveClientCompany = useCallback(() => {
     clearActiveCompany();
+    // Mirror switchActiveCompany: drop the previous client's tenant-scoped data
+    // so the firm workspace re-renders fresh instead of showing stale panels.
+    void queryClient.cancelQueries().then(() => {
+      queryClient.removeQueries();
+      void queryClient.invalidateQueries();
+    });
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("muhasib:active-company-changed", { detail: { companyId: null } })
       );
     }
     setActiveId(null);
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<ActiveCompanyContextValue>(() => {
     const list = companies ?? [];

@@ -113,3 +113,55 @@ jobs:
           name: e2e-failure-screenshots
           path: tests/e2e/.artifacts/
           if-no-files-found: ignore
+
+  db-integration:
+    name: DB integration · credit-note consolidation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: muhasib
+          POSTGRES_DB: muhasib
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muhasib"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
+      INTEGRATION_DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
+      NODE_ENV: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Generate ephemeral secrets
+        run: |
+          echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      # Build the schema the integration test seeds into (creates all tables,
+      # including the A-B11 0081_credit_note_consolidation migration).
+      - name: Run migrations
+        run: npx tsx server/migrate.ts
+
+      # A-B11/A-B15: backfill must leave the VAT-201 totals and trial balance
+      # unchanged (no double/under count). Runs against the real Postgres above.
+      - name: Credit-note consolidation regression (real DB)
+        run: npm run test:credit-note-consolidation

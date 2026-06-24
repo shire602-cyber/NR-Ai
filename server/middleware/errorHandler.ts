@@ -1,11 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import { createLogger } from "../config/logger";
 import { isProduction } from "../config/env";
 import { RetentionViolationError } from "../services/retention.service";
 import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
-
-const log = createLogger("error");
+import { captureException } from "../services/monitoring";
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -62,37 +60,29 @@ export function globalErrorHandler(
 
   // Any AppError (or subclass).
   if (err instanceof AppError) {
-    if (!err.isOperational) {
-      log.error(
-        { err, requestId: req.id, method: req.method, url: req.url },
-        "Non-operational AppError"
-      );
-    } else if (err.statusCode >= 500) {
-      log.error(
-        {
-          err: { message: err.message, code: err.code, stack: err.stack },
-          requestId: req.id,
-          method: req.method,
-          url: req.url,
-        },
-        "AppError 5xx"
-      );
+    if (!err.isOperational || err.statusCode >= 500) {
+      captureException(err, {
+        requestId: req.id,
+        method: req.method,
+        url: req.url,
+        userId: (req as any).user?.id,
+        code: err.code,
+        operational: err.isOperational,
+      });
     }
     res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
     return;
   }
 
-  // Anything else — unhandled. Always log full detail; never leak stack
+  // Anything else — unhandled. Always capture full detail; never leak stack
   // to the client in production.
-  log.error(
-    {
-      err: { message: err.message, stack: err.stack, name: err.name },
-      requestId: req.id,
-      method: req.method,
-      url: req.url,
-    },
-    "Unhandled error"
-  );
+  captureException(err, {
+    requestId: req.id,
+    method: req.method,
+    url: req.url,
+    userId: (req as any).user?.id,
+    unhandled: true,
+  });
 
   // Platform admins get the underlying message even in production — they own
   // the deployment and need it to diagnose schema/data drift without log

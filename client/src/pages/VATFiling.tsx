@@ -766,7 +766,7 @@ export default function VATFiling() {
         description={
           locale === "ar"
             ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
-            : "Prepare the VAT 201 totals, review official drafts, and export filing support for the official channel."
+            : "Prepare VAT 201 totals, review the worksheet evidence, and export filing support for the official channel."
         }
         backHref="/reports"
         backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}

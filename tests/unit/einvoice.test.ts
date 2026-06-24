@@ -81,6 +81,24 @@ describe("PINT AE profile + document type", () => {
     expect(xml).not.toContain("<cac:BillingReference>");
   });
 
+  it("adds the AED tax total + TaxCurrencyCode for a foreign-currency invoice", () => {
+    // USD invoice, 1000 net + 50 VAT, booked at 3.67 AED/USD.
+    const { xml } = generateEInvoiceXML(
+      makeInvoice({ currency: "USD", exchangeRate: 3.67, subtotal: 1000, vatAmount: 50, total: 1050 }),
+      lines,
+      company
+    );
+    expect(xml).toContain("<cbc:TaxCurrencyCode>AED</cbc:TaxCurrencyCode>");
+    // 50 USD VAT * 3.67 = 183.50 AED
+    expect(xml).toContain('<cbc:TaxAmount currencyID="AED">183.50</cbc:TaxAmount>');
+  });
+
+  it("does not add a second tax total for an AED invoice", () => {
+    const { xml } = generateEInvoiceXML(makeInvoice({ currency: "AED" }), lines, company);
+    const taxTotals = (xml.match(/<cac:TaxTotal>/g) || []).length;
+    expect(taxTotals).toBe(1); // foreign invoices get a second AED tax total
+  });
+
   it("emits type 381 and a billing reference for a credit note", () => {
     const cn = makeInvoice({
       invoiceType: "credit_note",

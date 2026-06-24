@@ -18,6 +18,8 @@ import {
   addVatWorkpaperRowsBulk,
   bulkUpdateVatWorkpaperRowStatus,
   createVatWorkpaper,
+  deleteVatWorkpaperRow,
+  postVatWorkpaperRowToLedger,
   pullVatWorkpaperRowsFromBooks,
   generateVatReturnFromWorkpaper,
   getVatWorkpaperDetail,
@@ -330,6 +332,57 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
         req,
       });
       res.json(row);
+    })
+  );
+
+  router.delete(
+    "/:id/rows/:rowId",
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = rowParamSchema.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+      const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
+      if (!detail) return;
+
+      const result = await deleteVatWorkpaperRow(parsedParams.data.id, parsedParams.data.rowId);
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: "firm_vat_workpaper_row_delete",
+        entityType: "vat_workpaper_row",
+        entityId: parsedParams.data.rowId,
+        req,
+      });
+      res.json(result);
+    })
+  );
+
+  // Post a manual VAT sales row to the general ledger (so it shows up across
+  // the books). Idempotent per row; reversed if the row is later deleted.
+  router.post(
+    "/:id/rows/:rowId/post",
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = rowParamSchema.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+      const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
+      if (!detail) return;
+
+      const result = await postVatWorkpaperRowToLedger(
+        parsedParams.data.id,
+        parsedParams.data.rowId,
+        (req as any).user.id
+      );
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: "firm_vat_workpaper_row_post",
+        entityType: "vat_workpaper_row",
+        entityId: parsedParams.data.rowId,
+        after: result,
+        req,
+      });
+      res.json(result);
     })
   );
 

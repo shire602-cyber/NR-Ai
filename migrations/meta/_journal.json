@@ -568,6 +568,34 @@
       "when": 1781390000000,
       "tag": "0081_credit_note_consolidation",
       "breakpoints": false
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1781400000000,
+      "tag": "0082_einvoice_submission",
+      "breakpoints": false
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1781410000000,
+      "tag": "0083_journal_entries_source_index",
+      "breakpoints": false
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1781420000000,
+      "tag": "0084_email_intake",
+      "breakpoints": false
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1781430000000,
+      "tag": "0085_vat_row_journal_link",
+      "breakpoints": false
     }
   ]
 }
