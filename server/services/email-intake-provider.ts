@@ -46,6 +46,7 @@ export function isEmailIntakeEnabled(env: NodeJS.ProcessEnv = process.env): bool
 
 /** True once a real mailbox provider is configured (for integration-status). */
 export function isEmailIntakeConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.EMAIL_INTAKE_WEBHOOK_SECRET) return true; // inbound-webhook adapter wired
   const name = (env.EMAIL_INTAKE_PROVIDER || "").toLowerCase();
   return name !== "" && name !== "unconfigured";
 }

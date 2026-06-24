@@ -17,6 +17,10 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
   /^\/api\/portal\//,
+  // Provider webhooks are authenticated by their own HMAC signature, not a CSRF
+  // token (the caller is an external service, not the browser).
+  /^\/api\/webhooks\/email-intake$/,
+  /^\/api\/webhooks\/stripe$/,
 ];
 
 function hasBearerAuth(req: Request): boolean {

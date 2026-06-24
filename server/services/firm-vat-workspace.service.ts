@@ -686,7 +686,10 @@ export async function postVatWorkpaperRowToLedger(
   }
 
   const companyId = workpaper.companyId;
-  const isPurchase = row.rowCategory === "standard_expense";
+  const isPurchase =
+    row.rowCategory === "standard_expense" ||
+    row.rowCategory === "reverse_charge_input" ||
+    row.rowCategory === "import";
   const [ar, revenue, zeroRated, vatOutput, ap, vatInput] = await Promise.all([
     storage.getAccountByCode(companyId, ACCOUNT_CODES.AR),
     storage.getAccountByCode(companyId, ACCOUNT_CODES.REVENUE),

@@ -50,6 +50,8 @@ export const POSTABLE_VAT_CATEGORIES = [
   "zero_rated_sale",
   "exempt_sale",
   "standard_expense",
+  "reverse_charge_input",
+  "import",
 ] as const;
 
 export function isPostableVatCategory(category: string): boolean {
@@ -72,8 +74,8 @@ export function buildVatRowJournalLines(row: VatRowForPosting, accounts: Posting
       code: "NOT_AUTO_POSTABLE",
       message:
         `${row.rowCategory} rows aren't posted to the ledger automatically. ` +
-        `Standard sales, zero-rated, exempt, and standard expense rows post ` +
-        `automatically — record this one with a manual journal entry.`,
+        `Sales (standard/zero-rated/exempt), standard expenses, reverse-charge, ` +
+        `and imports post automatically — record this one with a manual journal entry.`,
     };
   }
 
@@ -109,6 +111,39 @@ export function buildVatRowJournalLines(row: VatRowForPosting, accounts: Posting
     const crP = round2(lines.reduce((s, l) => s + l.credit, 0));
     if (Math.abs(drP - crP) > 0.01) {
       return { ok: false, code: "UNBALANCED", message: `VAT purchase entry is unbalanced (${drP} vs ${crP}).` };
+    }
+    return { ok: true, lines };
+  }
+
+  // ── Reverse charge / import VAT (buyer self-assesses VAT) ──────────────────
+  // The supplier charges no VAT; the buyer books both sides so input = output
+  // (net VAT effect zero) and the expense + payable still land in the books:
+  //   Dr Expense (net) + Dr Input VAT (vat) / Cr Accounts Payable (net) + Cr Output VAT (vat)
+  if (row.rowCategory === "reverse_charge_input" || row.rowCategory === "import") {
+    const label =
+      row.label?.trim() || (row.rowCategory === "import" ? "Import VAT" : "Reverse-charge VAT");
+    if (!accounts.generalExpenseId) {
+      return { ok: false, code: "EXPENSE_ACCOUNT_MISSING", message: "An expense account is missing from the chart of accounts." };
+    }
+    if (!accounts.accountsPayableId) {
+      return { ok: false, code: "AP_ACCOUNT_MISSING", message: "Accounts Payable account is missing from the chart of accounts." };
+    }
+    if (vat > 0 && (!accounts.vatInputId || !accounts.vatOutputId)) {
+      return { ok: false, code: "VAT_ACCOUNT_MISSING", message: "Input and Output VAT accounts are required for reverse-charge/import posting." };
+    }
+    lines.push({ accountId: accounts.generalExpenseId, debit: net, credit: 0, description: `${label} — expense` });
+    if (vat > 0) {
+      lines.push({ accountId: accounts.vatInputId!, debit: vat, credit: 0, description: `${label} — input VAT (recoverable)` });
+    }
+    lines.push({ accountId: accounts.accountsPayableId, debit: 0, credit: net, description: `${label} — payable` });
+    if (vat > 0) {
+      lines.push({ accountId: accounts.vatOutputId!, debit: 0, credit: vat, description: `${label} — output VAT (self-assessed)` });
+    }
+
+    const drR = round2(lines.reduce((s, l) => s + l.debit, 0));
+    const crR = round2(lines.reduce((s, l) => s + l.credit, 0));
+    if (Math.abs(drR - crR) > 0.01) {
+      return { ok: false, code: "UNBALANCED", message: `Reverse-charge entry is unbalanced (${drR} vs ${crR}).` };
     }
     return { ok: true, lines };
   }

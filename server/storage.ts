@@ -2231,6 +2231,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(clientEmailSources.createdAt));
   }
 
+  /** All active sources — the routing allowlist for the inbound webhook. */
+  async listAllActiveEmailSources(): Promise<ClientEmailSource[]> {
+    return await db
+      .select()
+      .from(clientEmailSources)
+      .where(eq(clientEmailSources.status, "active"));
+  }
+
   /** Active sources across a set of companies — the routing allowlist for the poller. */
   async listActiveEmailSourcesForCompanies(companyIds: string[]): Promise<ClientEmailSource[]> {
     if (companyIds.length === 0) return [];

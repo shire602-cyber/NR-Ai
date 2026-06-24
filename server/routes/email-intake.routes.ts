@@ -14,6 +14,10 @@ import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email
 import { pollEmailIntakeOnce } from "../services/email-intake-poller.service";
 import { computeCompletenessGaps, type BankLine } from "../services/intake-completeness";
 import { createChaseRequestsFromGaps } from "../services/intake-chasing";
+import { verifyInboundSignature, parseInboundEmail } from "../services/email-intake-webhook";
+import { ingestRawMessages } from "../services/email-intake-poller.service";
+import { getEnv } from "../config/env";
+import type { EmailSourceRef } from "../services/email-intake";
 
 const log = createLogger("email-intake-routes");
 
@@ -50,6 +54,52 @@ async function loadBankLines(companyId: string): Promise<BankLine[]> {
  * guessing. The feature itself is additionally flagged by EMAIL_INTAKE_ENABLED.
  */
 export function registerEmailIntakeRoutes(app: Express) {
+  // ── Public inbound-email webhook (no auth — verified by HMAC signature) ─────
+  // The email provider POSTs parsed emails + attachments here. The raw body is
+  // provided by a dedicated express.raw mount (see index.ts) so we can verify
+  // the signature over the exact bytes.
+  app.post(
+    "/api/webhooks/email-intake",
+    asyncHandler(async (req: Request, res: Response) => {
+      if (!isEmailIntakeEnabled()) {
+        return res.status(503).json({ message: "Email intake is not enabled" });
+      }
+      const secret = getEnv().EMAIL_INTAKE_WEBHOOK_SECRET;
+      const signature =
+        (req.headers["x-email-intake-signature"] as string | undefined) ??
+        (req.headers["x-webhook-signature"] as string | undefined);
+      const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from("");
+      if (!verifyInboundSignature(rawBody, signature, secret)) {
+        return res.status(401).json({ message: "Invalid signature" });
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(rawBody.toString("utf8"));
+      } catch {
+        return res.status(400).json({ message: "Invalid JSON body" });
+      }
+
+      const messages = parseInboundEmail(payload);
+      if (messages.length === 0) {
+        return res.status(202).json({ ingested: false, reason: "no_parseable_message" });
+      }
+
+      const sources = await storage.listAllActiveEmailSources();
+      const refs: EmailSourceRef[] = sources.map((s) => ({
+        id: s.id,
+        companyId: s.companyId,
+        senderEmail: s.senderEmail,
+        status: s.status as EmailSourceRef["status"],
+        requireDkimPass: s.requireDkimPass,
+      }));
+
+      const summary = await ingestRawMessages({ raw: messages, refs });
+      log.info({ summary }, "inbound email webhook processed");
+      res.json(summary);
+    })
+  );
+
   // List the firm's sender→company mappings.
   app.get(
     "/api/firm/email-intake/sources",

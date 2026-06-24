@@ -99,6 +99,9 @@ const envSchema = z.object({
   // Which mailbox adapter to use once one is implemented (gmail | imap |
   // inbound). Unset/"unconfigured" → the no-op source (no mailbox connected).
   EMAIL_INTAKE_PROVIDER: z.string().optional(),
+  // HMAC secret for the inbound-webhook adapter (Mailgun/Postmark/etc.). When
+  // set, POST /api/webhooks/email-intake verifies the provider signature.
+  EMAIL_INTAKE_WEBHOOK_SECRET: z.string().optional(),
 
   // === Session store ===
   // When set, Express sessions are persisted in Redis so they survive
