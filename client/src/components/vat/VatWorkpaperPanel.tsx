@@ -2,7 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { Link } from "wouter";
-import { AlertTriangle, BookOpen, Check, Download, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  Check,
+  Download,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -364,6 +373,26 @@ export default function VatWorkpaperPanel({
       }),
   });
 
+  const deleteRowMutation = useMutation({
+    mutationFn: (rowId: string) => {
+      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
+      return apiRequest(
+        "DELETE",
+        `/api/companies/${companyId}/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`
+      );
+    },
+    onSuccess: () => {
+      invalidateWorkpapers();
+      toast({ title: "VAT row removed" });
+    },
+    onError: (error: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not remove VAT row",
+        description: error?.message,
+      }),
+  });
+
   const generateReturnMutation = useMutation({
     mutationFn: () =>
       apiRequest(
@@ -649,7 +678,7 @@ export default function VatWorkpaperPanel({
                   <TableHead className="min-w-32 text-right">VAT</TableHead>
                   <TableHead className="min-w-32 text-right">Gross</TableHead>
                   <TableHead className="min-w-28">Status</TableHead>
-                  <TableHead className="min-w-28 text-right">Action</TableHead>
+                  <TableHead className="min-w-40 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -824,7 +853,31 @@ export default function VatWorkpaperPanel({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant="outline">{row.sourceMethod}</Badge>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Badge variant="outline">{row.sourceMethod}</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={deleteRowMutation.isPending}
+                            onClick={() => {
+                              const label = row.invoiceNumber
+                                ? `VAT row ${row.invoiceNumber}`
+                                : "this VAT row";
+                              if (
+                                window.confirm(
+                                  `Remove ${label}? This will recalculate the VAT workpaper and reverse any linked journal entry.`
+                                )
+                              ) {
+                                deleteRowMutation.mutate(row.id);
+                              }
+                            }}
+                            data-testid={`button-delete-vat-workpaper-row-${row.id}`}
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Remove
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

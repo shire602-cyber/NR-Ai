@@ -1087,7 +1087,14 @@ describe("report discoverability", () => {
     expect(vatWorkpaperPanelSource).toContain(
       'data-testid="button-generate-return-from-workpaper"'
     );
+    expect(vatWorkpaperPanelSource).toContain(
+      "data-testid={`button-delete-vat-workpaper-row-${row.id}`}"
+    );
     expect(vatRoutesSource).toContain("/api/companies/:companyId/vat-workpapers");
+    expect(vatRoutesSource).toContain(
+      "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/:rowId"
+    );
+    expect(vatRoutesSource).toContain("deleteVatWorkpaperRow");
     expect(vatRoutesSource).toContain("generateVatReturnFromWorkpaper");
     expect(vatAutopilotSource).toContain("due-dates?companyId=");
     expect(vatAutopilotSource).toContain("d.companyId === companyId");

@@ -11,6 +11,7 @@ import {
   addVatWorkpaperRowsBulk,
   bulkUpdateVatWorkpaperRowStatus,
   createVatWorkpaper,
+  deleteVatWorkpaperRow,
   generateVatReturnFromWorkpaper,
   getVatWorkpaperDetail,
   listVatWorkpapers,
@@ -227,6 +228,30 @@ export function registerVATRoutes(app: Express) {
         row
       );
       res.json(updated);
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/:rowId",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+
+      const result = await requireCompanyWorkpaperAccess(
+        req,
+        res,
+        parsedParams.data.companyId,
+        parsedParams.data.workpaperId
+      );
+      if (!result) return;
+
+      const deleted = await deleteVatWorkpaperRow(
+        parsedParams.data.workpaperId,
+        parsedParams.data.rowId
+      );
+      res.json(deleted);
     })
   );
 
