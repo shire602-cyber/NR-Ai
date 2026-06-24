@@ -1932,7 +1932,7 @@ function CustomerDashboard() {
                   <Skeleton className="h-10 w-40" />
                 ) : (
                   <>
-                    <span className="font-display text-[36px] md:text-[44px] leading-none tracking-tight tabular-nums text-foreground">
+                    <span className="font-display text-[24px] md:text-[28px] leading-none tracking-tight tabular-nums text-foreground">
                       {formatCurrency(animatedProfit, "AED", locale)}
                     </span>
                   </>
