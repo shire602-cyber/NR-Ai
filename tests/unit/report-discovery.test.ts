@@ -1093,6 +1093,9 @@ describe("report discoverability", () => {
     expect(vatWorkpaperPanelSource).toContain(
       "data-testid={`button-post-vat-workpaper-row-${row.id}`}"
     );
+    expect(vatWorkpaperPanelSource).toContain("const POSTABLE_LEDGER_CATEGORIES");
+    expect(vatWorkpaperPanelSource).toContain('"reverse_charge_input"');
+    expect(vatWorkpaperPanelSource).toContain('"import"');
     expect(vatRoutesSource).toContain("/api/companies/:companyId/vat-workpapers");
     expect(vatRoutesSource).toContain(
       "/api/companies/:companyId/vat-workpapers/:workpaperId/rows/:rowId"

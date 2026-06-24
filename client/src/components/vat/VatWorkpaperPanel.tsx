@@ -111,6 +111,8 @@ const POSTABLE_LEDGER_CATEGORIES = new Set<VatRowCategory>([
   "zero_rated_sale",
   "exempt_sale",
   "standard_expense",
+  "reverse_charge_input",
+  "import",
 ]);
 
 function canPostVatWorkpaperRow(row: VatWorkpaperRow) {
