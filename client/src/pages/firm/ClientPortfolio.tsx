@@ -386,6 +386,11 @@ function inputDate(date: string | null | undefined) {
   return format(parsed, "yyyy-MM-dd");
 }
 
+/** Today as a yyyy-MM-dd string for pre-filling date inputs (local time). */
+function todayInput() {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
 function copyText(value: unknown) {
   void navigator.clipboard?.writeText(String(value ?? "0"));
 }
@@ -2285,7 +2290,7 @@ function VatWorkspaceDialog({
     rowCategory: "standard_sale" as VatRowCategory,
     vat201Box: "box1bDubaiAmount",
     invoiceNumber: "",
-    documentDate: "",
+    documentDate: todayInput(),
     counterpartyName: "",
     counterpartyTrn: "",
     emirate: client?.emirate ?? "dubai",
@@ -2408,7 +2413,7 @@ function VatWorkspaceDialog({
       status: "approved",
       sourceMethod: "manual",
       invoiceNumber: "",
-      documentDate: "",
+      documentDate: todayInput(),
       counterpartyName: "",
       counterpartyTrn: "",
       taxableAmount: "",
