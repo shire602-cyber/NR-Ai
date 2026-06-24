@@ -77,6 +77,7 @@ interface VatWorkpaperRow {
   sourceMethod: "manual" | "ocr" | "import" | "generated";
   notes: string | null;
   auditReason: string | null;
+  journalEntryId: string | null;
 }
 
 interface VatWorkpaperDetail {
@@ -104,6 +105,22 @@ const STANDARD_VAT_CATEGORIES = new Set<VatRowCategory>([
   "standard_expense",
   "reverse_charge_input",
 ]);
+
+const POSTABLE_LEDGER_CATEGORIES = new Set<VatRowCategory>([
+  "standard_sale",
+  "zero_rated_sale",
+  "exempt_sale",
+  "standard_expense",
+]);
+
+function canPostVatWorkpaperRow(row: VatWorkpaperRow) {
+  return (
+    row.sourceMethod === "manual" &&
+    row.status !== "excluded" &&
+    !row.journalEntryId &&
+    POSTABLE_LEDGER_CATEGORIES.has(row.rowCategory)
+  );
+}
 
 function inputDate(value: string | Date | null | undefined) {
   if (!value) return "";
@@ -369,6 +386,26 @@ export default function VatWorkpaperPanel({
       toast({
         variant: "destructive",
         title: "Could not import pasted rows",
+        description: error?.message,
+      }),
+  });
+
+  const postRowMutation = useMutation({
+    mutationFn: (rowId: string) => {
+      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
+      return apiRequest(
+        "POST",
+        `/api/companies/${companyId}/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}/post`
+      );
+    },
+    onSuccess: () => {
+      invalidateWorkpapers();
+      toast({ title: "VAT row posted to ledger" });
+    },
+    onError: (error: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not post VAT row",
         description: error?.message,
       }),
   });
@@ -853,7 +890,21 @@ export default function VatWorkpaperPanel({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {row.journalEntryId ? (
+                            <Badge variant="outline">posted</Badge>
+                          ) : canPostVatWorkpaperRow(row) ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2"
+                              disabled={postRowMutation.isPending}
+                              onClick={() => postRowMutation.mutate(row.id)}
+                              data-testid={`button-post-vat-workpaper-row-${row.id}`}
+                            >
+                              Post
+                            </Button>
+                          ) : null}
                           <Button
                             variant="ghost"
                             size="icon"
