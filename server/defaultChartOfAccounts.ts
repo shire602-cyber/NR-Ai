@@ -437,6 +437,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
   // EXPENSES (5000-5199)
   // ===========================
   {
+    code: "5000",
+    nameEn: "General Expenses",
+    nameAr: "مصروفات عامة",
+    description: "Uncategorised expenses — default for posted VAT purchase bills",
+    type: "expense",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: false,
+  },
+  {
     code: "5010",
     nameEn: "Rent Expense",
     nameAr: "مصروف الإيجار",

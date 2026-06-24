@@ -36,6 +36,8 @@ export const ACCOUNT_CODES = {
   EQUIPMENT: "1210",
   /** Zero-rated sales (income). */
   ZERO_RATED_SALES: "4060",
+  /** General/uncategorised expenses (expense) — default debit for VAT purchase posting. */
+  GENERAL_EXPENSE: "5000",
   /** Sales Revenue (income). */
   REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */

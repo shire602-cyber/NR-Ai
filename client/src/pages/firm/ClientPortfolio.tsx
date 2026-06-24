@@ -326,7 +326,12 @@ interface VatWorkpaperRow {
   journalEntryId: string | null;
 }
 
-const POSTABLE_VAT_CATEGORIES = ["standard_sale", "zero_rated_sale", "exempt_sale"];
+const POSTABLE_VAT_CATEGORIES = [
+  "standard_sale",
+  "zero_rated_sale",
+  "exempt_sale",
+  "standard_expense",
+];
 
 interface VatWorkpaperAttachment {
   id: string;
