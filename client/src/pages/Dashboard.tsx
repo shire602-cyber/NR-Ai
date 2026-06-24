@@ -1909,15 +1909,11 @@ function CustomerDashboard() {
               <span className="inline-block w-6 h-px bg-accent/60" />
               <span className="font-mono">{monthLabel}</span>
             </div>
-            <h1 className="font-display text-[40px] md:text-[56px] xl:text-[68px] leading-[1.02] tracking-tightest text-foreground">
+            <h1 className="font-display text-[28px] md:text-[34px] leading-[1.05] tracking-tight text-foreground">
               Welcome back<span className="text-accent">.</span>
-              <br />
-              <span className="text-muted-foreground italic">Here is your financial </span>
-              <span className="text-foreground italic">overview.</span>
             </h1>
-            <p className="mt-5 max-w-xl text-[14.5px] text-muted-foreground leading-relaxed">
-              {t.dashboard ?? "Dashboard"} · A real-time portrait of revenue, expenses, and
-              outstanding receivables — built for UAE businesses.
+            <p className="mt-2 max-w-xl text-[13.5px] text-muted-foreground leading-relaxed">
+              Your financial overview — revenue, expenses, and outstanding receivables.
             </p>
           </div>
 
