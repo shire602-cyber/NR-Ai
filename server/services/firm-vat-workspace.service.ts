@@ -637,9 +637,23 @@ export async function deleteVatWorkpaperRow(workpaperId: string, rowId: string) 
   return { id: rowId };
 }
 
+/** Get (or create once) the default "General Expenses" account for VAT purchase posting. */
+async function getOrCreateGeneralExpense(companyId: string) {
+  const existing = await storage.getAccountByCode(companyId, ACCOUNT_CODES.GENERAL_EXPENSE);
+  if (existing) return existing;
+  return storage.createAccount({
+    companyId,
+    code: ACCOUNT_CODES.GENERAL_EXPENSE,
+    nameEn: "General Expenses",
+    type: "expense",
+  } as any);
+}
+
 /**
- * Post a manually-entered VAT sales row to the general ledger so it shows up
- * across the books (journal, P&L, balance sheet) — the books tie to the VAT 201.
+ * Post a manually-entered VAT row to the general ledger so it shows up across
+ * the books (journal, P&L, balance sheet) — the books tie to the VAT 201.
+ * Sales rows post Dr A/R, Cr Revenue, Cr Output VAT; standard purchase rows post
+ * Dr Expense, Dr Input VAT, Cr Accounts Payable.
  *
  * Guards: only manual rows (rows pulled from the books are already in the
  * ledger — posting would double-count); not already posted; not excluded; a
@@ -672,12 +686,19 @@ export async function postVatWorkpaperRowToLedger(
   }
 
   const companyId = workpaper.companyId;
-  const [ar, revenue, zeroRated, vatOutput] = await Promise.all([
+  const isPurchase = row.rowCategory === "standard_expense";
+  const [ar, revenue, zeroRated, vatOutput, ap, vatInput] = await Promise.all([
     storage.getAccountByCode(companyId, ACCOUNT_CODES.AR),
     storage.getAccountByCode(companyId, ACCOUNT_CODES.REVENUE),
     storage.getAccountByCode(companyId, ACCOUNT_CODES.ZERO_RATED_SALES),
     storage.getAccountByCode(companyId, ACCOUNT_CODES.VAT_OUTPUT),
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.AP),
+    storage.getAccountByCode(companyId, ACCOUNT_CODES.VAT_INPUT),
   ]);
+  // Purchases need an expense account to debit. The VAT row carries no expense
+  // category, so default to a "General Expenses" account, creating it once if
+  // the company's chart doesn't have one (the accountant can reclassify later).
+  const generalExpense = isPurchase ? await getOrCreateGeneralExpense(companyId) : null;
 
   const built = buildVatRowJournalLines(
     {
@@ -693,6 +714,9 @@ export async function postVatWorkpaperRowToLedger(
       salesRevenueId: revenue?.id ?? null,
       zeroRatedRevenueId: zeroRated?.id ?? null,
       vatOutputId: vatOutput?.id ?? null,
+      generalExpenseId: generalExpense?.id ?? null,
+      vatInputId: vatInput?.id ?? null,
+      accountsPayableId: ap?.id ?? null,
     }
   );
   if (!built.ok) {

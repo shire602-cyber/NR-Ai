@@ -78,6 +78,7 @@ import {
   ArrowUpRight,
   Coins,
   X,
+  ChevronRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -713,6 +714,25 @@ function CustomerDashboard() {
     () => getPreferredReportPersona() ?? "owner"
   );
   const [reportWorkflowPreferenceRevision, setReportWorkflowPreferenceRevision] = useState(0);
+  // Progressive disclosure: the full report workspace is heavy and secondary to a
+  // daily glance, so it's collapsed by default. Preference persists per user.
+  const [showReportWorkspace, setShowReportWorkspace] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("dashboard-show-report-workspace") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleReportWorkspace = () =>
+    setShowReportWorkspace((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("dashboard-show-report-workspace", next ? "true" : "false");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   const [
     acknowledgedDashboardReportDeliveryHandoffGaps,
     setAcknowledgedDashboardReportDeliveryHandoffGaps,
@@ -1909,15 +1929,11 @@ function CustomerDashboard() {
               <span className="inline-block w-6 h-px bg-accent/60" />
               <span className="font-mono">{monthLabel}</span>
             </div>
-            <h1 className="font-display text-[40px] md:text-[56px] xl:text-[68px] leading-[1.02] tracking-tightest text-foreground">
+            <h1 className="font-display text-[28px] md:text-[34px] leading-[1.05] tracking-tight text-foreground">
               Welcome back<span className="text-accent">.</span>
-              <br />
-              <span className="text-muted-foreground italic">Here is your financial </span>
-              <span className="text-foreground italic">overview.</span>
             </h1>
-            <p className="mt-5 max-w-xl text-[14.5px] text-muted-foreground leading-relaxed">
-              {t.dashboard ?? "Dashboard"} · A real-time portrait of revenue, expenses, and
-              outstanding receivables — built for UAE businesses.
+            <p className="mt-2 max-w-xl text-[13.5px] text-muted-foreground leading-relaxed">
+              Your financial overview — revenue, expenses, and outstanding receivables.
             </p>
           </div>
 
@@ -1936,7 +1952,7 @@ function CustomerDashboard() {
                   <Skeleton className="h-10 w-40" />
                 ) : (
                   <>
-                    <span className="font-display text-[36px] md:text-[44px] leading-none tracking-tight tabular-nums text-foreground">
+                    <span className="font-display text-[24px] md:text-[28px] leading-none tracking-tight tabular-nums text-foreground">
                       {formatCurrency(animatedProfit, "AED", locale)}
                     </span>
                   </>
@@ -2224,7 +2240,28 @@ function CustomerDashboard() {
           </motion.section>
         )}
 
-      {/* ── Preferred report workspace ──────────────────────────────────── */}
+      {/* ── Preferred report workspace (collapsed by default) ───────────── */}
+      <section>
+        <button
+          type="button"
+          onClick={toggleReportWorkspace}
+          aria-expanded={showReportWorkspace}
+          className="flex w-full items-center justify-between rounded-xl border border-card-border bg-card/60 px-4 py-3 text-left transition-colors hover:bg-card"
+          data-testid="dashboard-report-workspace-toggle"
+        >
+          <span className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-foreground">
+            <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
+            Reports workspace
+            <span className="font-normal text-muted-foreground">
+              · {preferredReportQuickAccess.readyReports}/{preferredReportQuickAccess.reports.length} ready
+            </span>
+          </span>
+          <ChevronRight
+            className={`h-4 w-4 text-muted-foreground transition-transform ${showReportWorkspace ? "rotate-90" : ""}`}
+          />
+        </button>
+      </section>
+      {showReportWorkspace && (
       <section data-testid="dashboard-report-workspace">
         <SectionHeader
           eyebrow="Reports"
@@ -3736,6 +3773,7 @@ function CustomerDashboard() {
           </CardContent>
         </Card>
       </section>
+      )}
 
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>
