@@ -323,7 +323,10 @@ interface VatWorkpaperRow {
   sourceMethod: "manual" | "ocr" | "import" | "generated";
   notes: string | null;
   auditReason: string | null;
+  journalEntryId: string | null;
 }
+
+const POSTABLE_VAT_CATEGORIES = ["standard_sale", "zero_rated_sale", "exempt_sale"];
 
 interface VatWorkpaperAttachment {
   id: string;
@@ -2563,6 +2566,20 @@ function VatWorkspaceDialog({
       toast({ variant: "destructive", title: "Could not delete VAT row", description: e?.message }),
   });
 
+  const postRowMutation = useMutation({
+    mutationFn: (rowId: string) =>
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}/post`),
+    onSuccess: () => {
+      invalidateWorkspace();
+      toast({
+        title: "Posted to ledger",
+        description: "This entry now shows in the journal, P&L and balance sheet.",
+      });
+    },
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not post to ledger", description: e?.message }),
+  });
+
   const recalculateMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/recalculate`),
@@ -3219,6 +3236,27 @@ function VatWorkspaceDialog({
                                       >
                                         Edit
                                       </Button>
+                                      {row.journalEntryId ? (
+                                        <Badge
+                                          variant="outline"
+                                          className="gap-1 text-emerald-600 border-emerald-600/40"
+                                          title="Posted to the general ledger"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          Posted
+                                        </Badge>
+                                      ) : row.sourceMethod === "manual" &&
+                                        POSTABLE_VAT_CATEGORIES.includes(row.rowCategory) ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          title="Post this sale to the ledger so it shows in the journal, P&L and balance sheet"
+                                          disabled={postRowMutation.isPending}
+                                          onClick={() => postRowMutation.mutate(row.id)}
+                                        >
+                                          Post
+                                        </Button>
+                                      ) : null}
                                       {row.status === "draft" ? (
                                         <>
                                           <Button
@@ -3547,6 +3585,25 @@ function VatWorkspaceDialog({
                                       }
                                     >
                                       <XCircle className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-destructive hover:text-destructive"
+                                      aria-label={`Delete ${row.invoiceNumber || "draft VAT row"}`}
+                                      title="Delete this draft row"
+                                      disabled={deleteRowMutation.isPending}
+                                      onClick={() => {
+                                        if (
+                                          window.confirm(
+                                            "Delete this draft row? This removes it and any attached evidence."
+                                          )
+                                        ) {
+                                          deleteRowMutation.mutate(row.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                   </div>
                                 </TableCell>

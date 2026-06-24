@@ -3380,6 +3380,11 @@ export const vatWorkpaperRows = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
+    // Set when a manual row has been posted to the general ledger so it shows up
+    // across the books (journal, P&L, balance sheet). Null = not posted.
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
