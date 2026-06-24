@@ -678,7 +678,7 @@ export default function VatWorkpaperPanel({
                   <TableHead className="min-w-32 text-right">VAT</TableHead>
                   <TableHead className="min-w-32 text-right">Gross</TableHead>
                   <TableHead className="min-w-28">Status</TableHead>
-                  <TableHead className="min-w-40 text-right">Action</TableHead>
+                  <TableHead className="w-12 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -853,13 +853,14 @@ export default function VatWorkpaperPanel({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <Badge variant="outline">{row.sourceMethod}</Badge>
+                        <div className="flex items-center justify-end">
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             disabled={deleteRowMutation.isPending}
+                            aria-label={`Remove VAT row ${row.invoiceNumber || row.id}`}
+                            title="Remove VAT row"
                             onClick={() => {
                               const label = row.invoiceNumber
                                 ? `VAT row ${row.invoiceNumber}`
@@ -874,8 +875,7 @@ export default function VatWorkpaperPanel({
                             }}
                             data-testid={`button-delete-vat-workpaper-row-${row.id}`}
                           >
-                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                            Remove
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
