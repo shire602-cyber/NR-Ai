@@ -43,9 +43,31 @@ function getS3(): S3Client | null {
   return _s3;
 }
 
+// ── Vercel Blob backend (native to a Vercel stack; preferred when configured) ──
+function isVercelBlobConfigured(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+// Lazy-load the SDK so the dependency is only needed when Blob is actually used.
+async function loadVercelBlob() {
+  // @ts-ignore optional dependency — installed in deploy environments
+  return import("@vercel/blob");
+}
+
+// Vercel Blob stores a full public-but-unguessable URL as the DB image_path.
+// Restrict reads to the Blob domain so a forged DB value can't trigger SSRF.
+const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\//i;
+
 /** Whether durable object storage is configured (for /health + integration-status). */
 export function isObjectStorageConfigured(): boolean {
-  return getS3() !== null;
+  return isVercelBlobConfigured() || getS3() !== null;
+}
+
+/** Human label for the active storage backend (integration-status). */
+export function objectStorageBackend(): "vercel-blob" | "s3" | "local-disk" {
+  if (isVercelBlobConfigured()) return "vercel-blob";
+  if (getS3() !== null) return "s3";
+  return "local-disk";
 }
 
 function guessContentType(key: string): string {
@@ -85,6 +107,17 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
   const safeName = filename.replace(/[^a-z0-9_\-.]/gi, "_");
   const key = `${receiptsPrefix}/${safeName}`;
 
+  if (isVercelBlobConfigured()) {
+    const { put } = await loadVercelBlob();
+    const { url } = await put(key, buffer, {
+      access: "public",
+      contentType: guessContentType(key),
+      addRandomSuffix: true, // unguessable URL
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    return url; // full Blob URL stored as image_path
+  }
+
   const s3 = getS3();
   if (s3) {
     await s3.send(
@@ -110,6 +143,20 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
 export async function readReceiptImage(
   imagePath: string
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
+  // Vercel Blob: image_path is a full (Blob-domain only) URL — fetch the bytes.
+  if (VERCEL_BLOB_URL.test(imagePath)) {
+    try {
+      const res = await fetch(imagePath);
+      if (!res.ok) return null;
+      return {
+        buffer: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get("content-type") || guessContentType(imagePath),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   const key = assertSafeKey(imagePath);
   const s3 = getS3();
   if (s3) {
@@ -130,8 +177,18 @@ export async function readReceiptImage(
   }
 }
 
-/** Delete a receipt image by its DB key. Silently ignores missing files. */
+/** Delete a receipt image by its DB key/URL. Silently ignores missing files. */
 export async function deleteReceiptImage(imagePath: string): Promise<void> {
+  if (VERCEL_BLOB_URL.test(imagePath)) {
+    try {
+      const { del } = await loadVercelBlob();
+      await del(imagePath, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+
   let key: string;
   try {
     key = assertSafeKey(imagePath);

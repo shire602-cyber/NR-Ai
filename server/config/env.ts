@@ -111,6 +111,8 @@ const envSchema = z.object({
   S3_REGION: z.string().optional(), // R2: "auto"; AWS: e.g. "me-central-1"
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  // Vercel Blob (native to a Vercel stack). When set, used in preference to S3.
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
 
   // === Session store ===
   // When set, Express sessions are persisted in Redis so they survive

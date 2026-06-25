@@ -45,6 +45,7 @@
     "@anthropic-ai/sdk": "^0.96.0",
     "@aws-sdk/client-s3": "^3.1075.0",
     "@hookform/resolvers": "^3.10.0",
+    "@vercel/blob": "^0.27.0",
     "@neondatabase/serverless": "^0.10.4",
     "@pdfme/generator": "^5.4.6",
     "@radix-ui/react-accordion": "^1.2.4",
