@@ -549,32 +549,41 @@ export default function Receipts() {
     });
   };
 
-  const convertPdfToImage = async (file: File): Promise<{ blob: Blob; preview: string }> => {
+  // Safety cap so a huge PDF can't render thousands of pages into memory at once.
+  const MAX_PDF_PAGES = 50;
+
+  // Render EVERY page of a PDF to its own image. A multi-page PDF is almost always
+  // a stack of separate receipts/bills (one per page), so each page becomes its
+  // own receipt to scan — previously only page 1 was processed.
+  const convertPdfToImages = async (
+    file: File
+  ): Promise<{ pages: Array<{ blob: Blob; preview: string }>; total: number; rendered: number }> => {
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const page = await pdf.getPage(1);
+    const total = pdf.numPages;
+    const rendered = Math.min(total, MAX_PDF_PAGES);
+    const pages: Array<{ blob: Blob; preview: string }> = [];
 
-    const scale = 2;
-    const viewport = page.getViewport({ scale });
+    for (let pageNum = 1; pageNum <= rendered; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const scale = 2;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d")!;
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      await page.render({ canvasContext: context, viewport, canvas } as any).promise;
+      const rendered1 = await new Promise<{ blob: Blob; preview: string }>((resolve) => {
+        canvas.toBlob(
+          (blob) => resolve({ blob: blob!, preview: canvas.toDataURL("image/png") }),
+          "image/png"
+        );
+      });
+      pages.push(rendered1);
+    }
 
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d")!;
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-
-    await page.render({
-      canvasContext: context,
-      viewport: viewport,
-      canvas: canvas,
-    } as any).promise;
-
-    return new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        const preview = canvas.toDataURL("image/png");
-        resolve({ blob: blob!, preview });
-      }, "image/png");
-    });
+    return { pages, total, rendered };
   };
 
   const handleFilesSelect = useCallback(
@@ -598,27 +607,30 @@ export default function Receipts() {
           try {
             toast({
               title: "Converting PDF",
-              description: `Processing first page of ${file.name}...`,
+              description: `Reading all pages of ${file.name}...`,
             });
 
-            const { blob, preview } = await convertPdfToImage(file);
-            const imageFile = new File([blob], file.name.replace(".pdf", ".png"), {
-              type: "image/png",
-            });
+            const { pages, total, rendered } = await convertPdfToImages(file);
+            const baseName = file.name.replace(/\.pdf$/i, "");
+            const newReceipts = pages.map((p, i) => ({
+              file: new File(
+                [p.blob],
+                pages.length > 1 ? `${baseName} (p${i + 1}).png` : `${baseName}.png`,
+                { type: "image/png" }
+              ),
+              preview: p.preview,
+              status: "pending" as const,
+              progress: 0,
+            }));
 
-            setProcessedReceipts((prev) => [
-              ...prev,
-              {
-                file: imageFile,
-                preview,
-                status: "pending",
-                progress: 0,
-              },
-            ]);
+            setProcessedReceipts((prev) => [...prev, ...newReceipts]);
 
             toast({
-              title: "PDF converted",
-              description: `${file.name} converted successfully. Only the first page is processed.`,
+              title: "PDF ready",
+              description:
+                rendered < total
+                  ? `${file.name}: ${rendered} of ${total} pages added (capped at ${MAX_PDF_PAGES}). Each page is a separate receipt to scan.`
+                  : `${file.name}: ${rendered} page${rendered === 1 ? "" : "s"} added — each is a separate receipt to scan.`,
             });
           } catch (error: any) {
             console.error("PDF conversion error:", error);
