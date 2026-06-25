@@ -726,7 +726,9 @@ export async function postVatWorkpaperRowToLedger(
     throw new ValidationError(built.message);
   }
 
-  const date = row.documentDate ? new Date(row.documentDate) : new Date();
+  // A dateless row belongs to the VAT period being worked, not "today" — posting
+  // to today could land it in the wrong return. Fall back to the period end.
+  const date = row.documentDate ? new Date(row.documentDate) : new Date(workpaper.periodEnd);
   await assertPeriodNotLocked(companyId, date);
 
   const { entry } = await storage.createJournalEntryWithLines(
