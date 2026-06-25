@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
 import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
+import { isObjectStorageConfigured } from "../services/fileStorage";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -26,6 +27,16 @@ export function registerIntegrationStatusRoutes(app: Express) {
             "RESEND_API_KEY (simplest) — or SMTP_HOST + SMTP_USER + SMTP_PASS (+ SMTP_PORT, SMTP_FROM)",
           ],
           unlocks: "Password resets, invoice sending, payment chasing emails",
+        },
+        {
+          key: "object_storage",
+          name: "Receipt image storage",
+          configured: isObjectStorageConfigured(),
+          detail: isObjectStorageConfigured() ? "S3-compatible bucket" : "local disk (ephemeral — lost on redeploy)",
+          requiredEnv: [
+            "S3_BUCKET + S3_ACCESS_KEY_ID + S3_SECRET_ACCESS_KEY (+ S3_ENDPOINT for R2, + S3_REGION)",
+          ],
+          unlocks: "Durable receipt images that survive redeploys (required on Vercel)",
         },
         {
           key: "email_intake",

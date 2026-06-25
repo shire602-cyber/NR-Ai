@@ -134,6 +134,49 @@ function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
   return pdfJsPromise;
 }
 
+// Formats the receipt save route accepts. Anything else (notably iPhone HEIC)
+// must be converted client-side first.
+const SAVE_ALLOWED_IMAGE = /^image\/(jpeg|png|webp|gif)$/i;
+
+// Convert an image the server won't accept (e.g. HEIC) to JPEG via canvas.
+// Works wherever the browser can decode the source — Safari/iOS decode HEIC
+// natively. Returns null if the browser can't decode it (e.g. HEIC in Chrome).
+async function normalizeImageToJpeg(file: File): Promise<File | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(
+        (blob) => {
+          URL.revokeObjectURL(url);
+          resolve(
+            blob
+              ? new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" })
+              : null
+          );
+        },
+        "image/jpeg",
+        0.92
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
 // Fetches a saved receipt's image via the authenticated server route and
 // returns a blob URL the parent can show as a thumbnail or full preview.
 // Returns `null` while loading and on any failure (including receipts with
@@ -591,8 +634,11 @@ export default function Receipts() {
       const fileArray = Array.from(files);
 
       for (const file of fileArray) {
-        const isImage = file.type.startsWith("image/");
-        const isPdf = file.type === "application/pdf";
+        // Accept by extension too — HEIC files sometimes arrive with an empty type.
+        const isImage =
+          file.type.startsWith("image/") ||
+          /\.(heic|heif|jpe?g|png|webp|gif|bmp|tiff?)$/i.test(file.name);
+        const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 
         if (!isImage && !isPdf) {
           toast({
@@ -641,20 +687,34 @@ export default function Receipts() {
             });
           }
         } else {
+          // Normalize formats the save route rejects (notably iPhone HEIC) to JPEG.
+          let imageFile = file;
+          if (!SAVE_ALLOWED_IMAGE.test(file.type)) {
+            const converted = await normalizeImageToJpeg(file);
+            if (!converted) {
+              toast({
+                title: "Couldn't read this photo",
+                description: `${file.name} is in a format this browser can't open (often iPhone HEIC). Open the app in Safari, or convert it to JPEG and re-upload.`,
+                variant: "destructive",
+              });
+              continue;
+            }
+            imageFile = converted;
+          }
           const reader = new FileReader();
           reader.onload = (e) => {
             const preview = e.target?.result as string;
             setProcessedReceipts((prev) => [
               ...prev,
               {
-                file,
+                file: imageFile,
                 preview,
                 status: "pending",
                 progress: 0,
               },
             ]);
           };
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(imageFile);
         }
       }
     },
@@ -1097,6 +1157,7 @@ export default function Receipts() {
     setIsSavingAll(true);
     let successCount = 0;
     let errorCount = 0;
+    let firstSaveError: string | undefined;
 
     // Save each receipt sequentially with status updates
     for (const { receipt, index } of completedIndices) {
@@ -1132,6 +1193,7 @@ export default function Receipts() {
 
         // Extract error message
         const errorMessage = error?.message || "Failed to save to database";
+        if (!firstSaveError) firstSaveError = errorMessage;
 
         // Mark this receipt as failed to save
         setProcessedReceipts((prev) => {
@@ -1169,11 +1231,26 @@ export default function Receipts() {
     } else {
       toast({
         title: "Save Failed",
-        description: "Failed to save any receipts. Please try again.",
+        description: firstSaveError
+          ? `Couldn't save: ${firstSaveError}`
+          : "Failed to save any receipts. Please try again.",
         variant: "destructive",
       });
     }
   };
+
+  // Warn before navigating away/refreshing while there are extracted-but-unsaved
+  // receipts — they live only in memory until "Save All", so a refresh loses them.
+  const hasUnsavedReceipts = processedReceipts.some((r) => r.status !== "saved");
+  useEffect(() => {
+    if (!hasUnsavedReceipts) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUnsavedReceipts]);
 
   const pendingCount = processedReceipts.filter((r) => r.status === "pending").length;
   const processingCount = processedReceipts.filter((r) => r.status === "processing").length;

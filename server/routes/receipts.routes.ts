@@ -5,7 +5,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
-import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from "../services/fileStorage";
+import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../services/fileStorage";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
@@ -918,11 +918,12 @@ export function registerReceiptRoutes(app: Express) {
       res.set("Content-Disposition", `attachment; filename="receipt-${id}.jpg"`);
 
       if (receipt.imagePath) {
-        try {
-          return res.sendFile(resolveImagePath(receipt.imagePath));
-        } catch {
+        const image = await readReceiptImage(receipt.imagePath);
+        if (!image) {
           return res.status(404).json({ message: "No image available for this receipt" });
         }
+        res.set("Content-Type", image.contentType);
+        return res.send(image.buffer);
       }
 
       // Backward compat: legacy records that have base64 imageData but no imagePath
