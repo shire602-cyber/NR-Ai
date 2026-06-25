@@ -1,9 +1,12 @@
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "../..");
+// Uploads live at <cwd>/uploads in both dev and the bundled production build.
+// Deriving this from __dirname was the bug: esbuild bundles the server into
+// dist/, so __dirname becomes dist/ and "../.." overshot to the filesystem root,
+// producing "/uploads" → `mkdir '/uploads'` EACCES. process.cwd() is the app
+// root in both modes and matches the uploads dir index.ts creates at boot.
+const projectRoot = process.cwd();
 
 // All uploaded receipt images land under <projectRoot>/uploads/receipts/
 const receiptsDir = path.join(projectRoot, "uploads", "receipts");
