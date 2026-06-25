@@ -71,9 +71,12 @@ COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/drizzle.config.ts ./
 COPY --from=builder /app/migrations ./migrations
 
-RUN mkdir -p uploads && chown -R muhasib:nodejs uploads
+RUN mkdir -p uploads/receipts && chown -R muhasib:nodejs uploads
 
-USER muhasib
+# NOTE: we intentionally do NOT `USER muhasib` here. Railway mounts the durable
+# uploads Volume owned by root, so the container must start as root to chown the
+# mount; server/index.ts then drops privileges to the muhasib user (uid 1001)
+# at startup. The app process therefore still runs unprivileged at runtime.
 
 EXPOSE ${PORT:-5000}
 

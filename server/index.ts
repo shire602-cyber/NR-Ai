@@ -3,6 +3,7 @@ import "dotenv/config";
 
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 import express from "express";
@@ -171,11 +172,63 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-// ─── Ensure required directories exist ───────────────────────
+// ─── Ensure required directories exist & fix mounted-volume ownership ──
+// On Railway, the durable receipt-image storage is a mounted Volume. Railway
+// mounts volumes owned by ROOT, but the container runs as the unprivileged
+// `muhasib` user (uid 1001) — so the app gets EACCES creating/writing inside
+// the mount (e.g. `mkdir /app/uploads/receipts`). To fix this cleanly we let
+// the container start as root, make the uploads tree writable by the app
+// user, then DROP privileges back to that user for the rest of the process.
 const uploadsDir = path.resolve(projectRoot, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  log.info(`Created uploads directory: ${uploadsDir}`);
+const receiptsDir = path.join(uploadsDir, "receipts");
+
+// Must match the user/group created in the Dockerfile (muhasib:nodejs).
+const APP_UID = 1001;
+const APP_GID = 1001;
+
+const runningAsRoot =
+  process.platform === "linux" &&
+  typeof process.getuid === "function" &&
+  process.getuid() === 0;
+
+if (runningAsRoot) {
+  // We own everything right now — create the tree and hand the (root-owned)
+  // volume mount over to the app user so it stays writable after we drop.
+  try {
+    fs.mkdirSync(receiptsDir, { recursive: true });
+    execSync(`chown -R ${APP_UID}:${APP_GID} ${uploadsDir}`);
+    log.info({ uploadsDir }, "Prepared uploads volume and chowned to app user");
+  } catch (err) {
+    log.error(
+      { err: (err as Error).message, uploadsDir },
+      "Failed to prepare/chown uploads volume; saves still work as root"
+    );
+  }
+  // Drop privileges: setgid BEFORE setuid (cannot setgid once unprivileged).
+  try {
+    if (typeof process.setgid === "function" && typeof process.setuid === "function") {
+      process.setgid(APP_GID);
+      process.setuid(APP_UID);
+      log.info({ uid: APP_UID, gid: APP_GID }, "Dropped privileges to app user");
+    }
+  } catch (err) {
+    // Staying root is acceptable: the volume is already chowned and root can
+    // write it, so receipt saving works — we only lose the hardening.
+    log.error(
+      { err: (err as Error).message },
+      "Failed to drop privileges; continuing as root"
+    );
+  }
+} else {
+  // Non-root (local dev, or already-unprivileged): just ensure the dirs.
+  try {
+    fs.mkdirSync(receiptsDir, { recursive: true });
+  } catch (err) {
+    log.warn(
+      { err: (err as Error).message, receiptsDir },
+      "Could not create uploads directory"
+    );
+  }
 }
 
 // ─── Module-level refs for graceful shutdown ─────────────────
