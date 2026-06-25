@@ -103,6 +103,15 @@ const envSchema = z.object({
   // set, POST /api/webhooks/email-intake verifies the provider signature.
   EMAIL_INTAKE_WEBHOOK_SECRET: z.string().optional(),
 
+  // === Object storage for receipt images (S3-compatible: R2 / AWS S3 / etc.) ===
+  // When S3_BUCKET is set, receipt images are stored durably in object storage
+  // instead of the (ephemeral) local disk — required on Railway and on Vercel.
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(), // R2: https://<account>.r2.cloudflarestorage.com; AWS: leave unset
+  S3_REGION: z.string().optional(), // R2: "auto"; AWS: e.g. "me-central-1"
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+
   // === Session store ===
   // When set, Express sessions are persisted in Redis so they survive
   // deploys and can be shared across replicas. When unset, the server
