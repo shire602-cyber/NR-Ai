@@ -4,7 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
 import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
-import { isObjectStorageConfigured } from "../services/fileStorage";
+import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
 
 /**
  * The "what do I paste where" surface: each integration with its live
@@ -32,9 +32,14 @@ export function registerIntegrationStatusRoutes(app: Express) {
           key: "object_storage",
           name: "Receipt image storage",
           configured: isObjectStorageConfigured(),
-          detail: isObjectStorageConfigured() ? "S3-compatible bucket" : "local disk (ephemeral — lost on redeploy)",
+          detail:
+            objectStorageBackend() === "vercel-blob"
+              ? "Vercel Blob"
+              : objectStorageBackend() === "s3"
+                ? "S3-compatible bucket"
+                : "local disk (ephemeral — lost on redeploy)",
           requiredEnv: [
-            "S3_BUCKET + S3_ACCESS_KEY_ID + S3_SECRET_ACCESS_KEY (+ S3_ENDPOINT for R2, + S3_REGION)",
+            "BLOB_READ_WRITE_TOKEN (Vercel Blob) — or S3_BUCKET + S3_ACCESS_KEY_ID + S3_SECRET_ACCESS_KEY (+ S3_ENDPOINT/S3_REGION for R2/S3)",
           ],
           unlocks: "Durable receipt images that survive redeploys (required on Vercel)",
         },
