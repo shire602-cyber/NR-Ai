@@ -9,6 +9,11 @@ import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../servi
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import {
+  recordClassificationFeedback,
+  autoPostManualReceipt,
+} from "../services/receipt-autopilot.service";
+import { evaluateClassificationFeedback } from "../services/classification-feedback.util";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import {
@@ -182,7 +187,14 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { imageData, ...receiptData } = req.body;
+      const {
+        imageData,
+        suggestedCategory,
+        classifierMethod,
+        classifierConfidence,
+        classifierReason,
+        ...receiptData
+      } = req.body;
 
       // The client sends date as an ISO string; the Drizzle timestamp column
       // needs a Date object (string input crashes mapToDriverValue).
@@ -251,6 +263,80 @@ export function registerReceiptRoutes(app: Express) {
         after: { merchant: receipt.merchant, amount: receipt.amount, currency: receipt.currency },
         req,
       });
+
+      // Learning loop: record the AI's suggested category against the user's
+      // final category so the per-tenant classifier learns from manual uploads.
+      // This is non-fatal and must never block saving the receipt.
+      let userKeptSuggestion = false;
+      if (suggestedCategory && typeof suggestedCategory === "string") {
+        try {
+          const gross =
+            (Number(receipt.amount) || 0) + (Number((receipt as any).vatAmount) || 0);
+          const { wasAccepted, method } = evaluateClassificationFeedback(
+            suggestedCategory,
+            receipt.category,
+            classifierMethod
+          );
+          userKeptSuggestion = wasAccepted;
+          const classificationRow = await storage.createTransactionClassification({
+            companyId,
+            description: receipt.merchant ?? "",
+            merchant: receipt.merchant ?? "",
+            amount: gross,
+            suggestedAccountId: (receipt as any).accountId ?? null,
+            suggestedCategory,
+            aiConfidence: Number(classifierConfidence) || 0,
+            aiReason:
+              typeof classifierReason === "string" && classifierReason
+                ? classifierReason
+                : "Manual receipt upload",
+            classifierMethod: method,
+          });
+          await recordClassificationFeedback(
+            companyId,
+            classificationRow.id,
+            wasAccepted,
+            (receipt as any).accountId ?? null
+          );
+        } catch (err) {
+          log.warn(
+            { err: (err as Error).message, receiptId: receipt.id },
+            "Classification feedback recording failed (non-fatal)"
+          );
+        }
+      }
+
+      // Guarded auto-post: only companies that explicitly enabled autopilot can
+      // auto-post, and only if the user kept the AI category. Non-fatal by design.
+      try {
+        const auto = await autoPostManualReceipt({
+          companyId,
+          uploadedBy: userId,
+          receipt: {
+            id: receipt.id,
+            merchant: receipt.merchant,
+            amount: (receipt as any).amount,
+            vatAmount: (receipt as any).vatAmount,
+            currency: receipt.currency,
+            date: (receipt as any).date,
+          },
+          userKeptSuggestion,
+        });
+        if (auto.autoPosted) {
+          (receipt as any).posted = true;
+          (receipt as any).autoPosted = true;
+          (receipt as any).journalEntryId = auto.journalEntryId;
+          log.info(
+            { receiptId: receipt.id, journalEntryId: auto.journalEntryId },
+            "Receipt auto-posted on manual upload"
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err: (err as Error).message, receiptId: receipt.id },
+          "Manual auto-post attempt failed (non-fatal - receipt saved)"
+        );
+      }
 
       createAndEmitNotification({
         userId,

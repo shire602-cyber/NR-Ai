@@ -146,7 +146,10 @@ export async function readReceiptImage(
   // Vercel Blob: image_path is a full (Blob-domain only) URL — fetch the bytes.
   if (VERCEL_BLOB_URL.test(imagePath)) {
     try {
-      const res = await fetch(imagePath);
+      // `redirect: "error"` hardens against SSRF: the URL is allow-listed to the
+      // Blob domain, but a 3xx from that host could otherwise bounce us to an
+      // internal address. Refuse to follow redirects so the allow-list holds.
+      const res = await fetch(imagePath, { redirect: "error" });
       if (!res.ok) return null;
       return {
         buffer: Buffer.from(await res.arrayBuffer()),

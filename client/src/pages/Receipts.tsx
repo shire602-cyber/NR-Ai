@@ -99,6 +99,8 @@ interface ExtractedData {
   category?: string;
   lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
   confidence?: number;
+  suggestedCategory?: string;
+  classifier?: { method?: string; confidence?: number; reason?: string } | null;
 }
 
 interface ProcessedReceipt {
@@ -829,6 +831,8 @@ export default function Receipts() {
             lineItems: result.lineItems || [],
             rawText: result.rawText || "",
             confidence: result.confidence ?? 0.85,
+            suggestedCategory: result.category || "Other",
+            classifier: result.classifier || null,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
@@ -1176,6 +1180,10 @@ export default function Receipts() {
           imageData: receipt.preview,
           rawText: receipt.data!.rawText,
           lineItems: receipt.data!.lineItems || [],
+          suggestedCategory: receipt.data!.suggestedCategory ?? null,
+          classifierMethod: receipt.data!.classifier?.method ?? null,
+          classifierConfidence: receipt.data!.classifier?.confidence ?? null,
+          classifierReason: receipt.data!.classifier?.reason ?? null,
         };
 
         await apiRequest("POST", `/api/companies/${companyId}/receipts`, receiptData);
