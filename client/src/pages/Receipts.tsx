@@ -281,6 +281,15 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
   );
 }
 
+// Human-readable labels for how a category suggestion was derived, shown on
+// the review card so users understand why a category was pre-filled.
+const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
+  rule: "your company rules",
+  keyword: "UAE keyword match",
+  statistical: "your past classifications",
+  openai: "AI vision",
+};
+
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -1815,6 +1824,26 @@ export default function Receipts() {
                                 <Sparkles className="w-2 h-2 mr-1" />
                                 GPT-4o Vision
                               </Badge>
+                            </p>
+                          </div>
+                        )}
+
+                        {receipt.data.classifier?.method && (
+                          <div className="col-span-2">
+                            <p
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-classifier-why-${index}`}
+                              title={receipt.data.classifier.reason || undefined}
+                            >
+                              Category suggested by{" "}
+                              <span className="font-medium text-foreground">
+                                {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
+                                  receipt.data.classifier.method}
+                              </span>
+                              {typeof receipt.data.classifier.confidence === "number" && (
+                                <> · {Math.round(receipt.data.classifier.confidence * 100)}% confident</>
+                              )}
+                              . You can change it above — your correction trains the model.
                             </p>
                           </div>
                         )}

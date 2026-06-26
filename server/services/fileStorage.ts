@@ -70,6 +70,57 @@ export function objectStorageBackend(): "vercel-blob" | "s3" | "local-disk" {
   return "local-disk";
 }
 
+export interface StorageDurability {
+  backend: "vercel-blob" | "s3" | "local-disk";
+  /** True when receipt images will survive a redeploy. */
+  durable: boolean;
+  /** Human-readable explanation for logs. */
+  detail: string;
+}
+
+/**
+ * Assess whether receipt-image storage will survive a redeploy.
+ *
+ * Object storage is always durable. Local disk is durable only when the uploads
+ * dir is under a persistent Railway volume or explicitly marked persistent.
+ */
+export function assessStorageDurability(uploadsDir: string): StorageDurability {
+  const backend = objectStorageBackend();
+  if (backend !== "local-disk") {
+    return { backend, durable: true, detail: `${backend} object storage` };
+  }
+
+  const resolvedUploads = path.resolve(uploadsDir);
+  const volumeMount = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  if (volumeMount) {
+    const resolvedMount = path.resolve(volumeMount);
+    const onVolume =
+      resolvedUploads === resolvedMount ||
+      resolvedUploads.startsWith(resolvedMount + path.sep);
+    return onVolume
+      ? { backend, durable: true, detail: `local disk on Railway volume (${resolvedMount})` }
+      : {
+          backend,
+          durable: false,
+          detail: `uploads dir ${resolvedUploads} is NOT under the Railway volume (${resolvedMount})`,
+        };
+  }
+
+  if (process.env.UPLOADS_PERSISTENT === "true") {
+    return {
+      backend,
+      durable: true,
+      detail: "local disk marked persistent (UPLOADS_PERSISTENT=true)",
+    };
+  }
+
+  return {
+    backend,
+    durable: false,
+    detail: `local disk at ${resolvedUploads} with no detected persistent volume - images are lost on redeploy`,
+  };
+}
+
 function guessContentType(key: string): string {
   const ext = path.extname(key).toLowerCase();
   if (ext === ".png") return "image/png";

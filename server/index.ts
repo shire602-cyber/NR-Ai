@@ -28,6 +28,7 @@ import { initScheduler } from "./services/scheduler.service";
 import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from "./db";
 import { installGracefulShutdown } from "./shutdown";
 import { captureException, monitoringConfigured } from "./services/monitoring";
+import { assessStorageDurability } from "./services/fileStorage";
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -227,6 +228,39 @@ if (runningAsRoot) {
     log.warn(
       { err: (err as Error).message, receiptsDir },
       "Could not create uploads directory"
+    );
+  }
+}
+
+// ─── Storage durability check ────────────────────────────────
+// Receipt images must survive redeploys. Object storage OR a persistent volume
+// satisfies this; an ephemeral container disk does not. We surface the result
+// at boot so an accidentally-ephemeral production deploy is loud, not silent.
+// Set STORAGE_STRICT=true to hard-fail the boot instead of warning.
+{
+  const durability = assessStorageDurability(uploadsDir);
+  if (durability.durable) {
+    log.info(
+      { backend: durability.backend, detail: durability.detail },
+      "Receipt image storage is durable"
+    );
+  } else if (env.NODE_ENV === "production") {
+    const msg =
+      `Receipt image storage is EPHEMERAL (${durability.detail}). ` +
+      "Images will be lost on redeploy. Configure object storage " +
+      "(S3_BUCKET or BLOB_READ_WRITE_TOKEN) or attach a persistent volume.";
+    if (process.env.STORAGE_STRICT === "true") {
+      log.error(
+        { backend: durability.backend },
+        `${msg} STORAGE_STRICT is set - refusing to boot.`
+      );
+      process.exit(1);
+    }
+    log.error({ backend: durability.backend }, msg);
+  } else {
+    log.warn(
+      { backend: durability.backend, detail: durability.detail },
+      "Receipt image storage is ephemeral (acceptable for local dev)"
     );
   }
 }
