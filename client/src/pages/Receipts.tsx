@@ -54,6 +54,7 @@ import {
   Image as ImageIcon,
   X,
   Trash2,
+  RefreshCw,
   Edit,
   Download,
   FileSpreadsheet,
@@ -110,6 +111,10 @@ interface ProcessedReceipt {
   progress: number;
   data?: ExtractedData;
   error?: string;
+}
+
+function isOcrRetryable(receipt: ProcessedReceipt): boolean {
+  return receipt.status === "pending" || receipt.status === "error";
 }
 
 const receiptSchema = z.object({
@@ -760,7 +765,7 @@ export default function Receipts() {
 
     setProcessedReceipts((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], status: "processing", progress: 10 };
+      updated[index] = { ...updated[index], status: "processing", progress: 10, error: undefined };
       return updated;
     });
 
@@ -789,6 +794,9 @@ export default function Receipts() {
       const normaliseOcrError = (status: number | null, message: string | null) => {
         if (status && status >= 500) {
           return "OCR service is temporarily unavailable. Please try again in a moment.";
+        }
+        if (message && /failed to fetch|load failed|networkerror/i.test(message)) {
+          return "Could not reach the OCR service. Please try again.";
         }
         if (!message || /internal server error/i.test(message)) {
           return "OCR processing failed. Please try again.";
@@ -966,18 +974,22 @@ export default function Receipts() {
   };
 
   const processAllReceipts = async () => {
+    const indexesToProcess = processedReceipts
+      .map((receipt, index) => (isOcrRetryable(receipt) ? index : -1))
+      .filter((index) => index >= 0);
+
+    if (indexesToProcess.length === 0) return;
+
     setIsProcessingBulk(true);
 
-    for (let i = 0; i < processedReceipts.length; i++) {
-      if (processedReceipts[i].status === "pending") {
-        await processReceipt(i);
-      }
+    for (const index of indexesToProcess) {
+      await processReceipt(index);
     }
 
     setIsProcessingBulk(false);
     toast({
       title: "Processing Complete",
-      description: `Processed ${processedReceipts.length} receipt(s)`,
+      description: `Processed ${indexesToProcess.length} receipt(s)`,
     });
   };
 
@@ -1275,6 +1287,7 @@ export default function Receipts() {
   const savedCount = processedReceipts.filter((r) => r.status === "saved").length;
   const errorCount = processedReceipts.filter((r) => r.status === "error").length;
   const saveErrorCount = processedReceipts.filter((r) => r.status === "save_error").length;
+  const retryableOcrCount = processedReceipts.filter(isOcrRetryable).length;
 
   const filteredReceipts = useMemo(() => {
     if (!receipts || receipts.length === 0) return [];
@@ -1524,7 +1537,7 @@ export default function Receipts() {
             <div className="flex gap-2">
               <Button
                 onClick={processAllReceipts}
-                disabled={isProcessingBulk || pendingCount === 0}
+                disabled={isProcessingBulk || retryableOcrCount === 0}
                 className="flex-1"
                 size="lg"
                 data-testid="button-process-all"
@@ -1537,7 +1550,11 @@ export default function Receipts() {
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Process All Receipts ({pendingCount})
+                    {errorCount > 0 && pendingCount === 0
+                      ? `Retry Failed OCR (${errorCount})`
+                      : errorCount > 0
+                        ? `Process / Retry OCR (${retryableOcrCount})`
+                        : `Process All Receipts (${pendingCount})`}
                   </>
                 )}
               </Button>
@@ -1673,9 +1690,21 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === "error" && (
-                      <div className="flex items-center gap-2 text-destructive">
-                        <XCircle className="w-4 h-4" />
+                      <div className="flex flex-wrap items-center gap-2 text-destructive">
+                        <XCircle className="w-4 h-4 shrink-0" />
                         <span className="text-sm">{receipt.error}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="ml-0 text-foreground sm:ml-2"
+                          onClick={() => processReceipt(index)}
+                          disabled={isProcessingBulk}
+                          data-testid={`button-retry-ocr-${index}`}
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Try again
+                        </Button>
                       </div>
                     )}
 
