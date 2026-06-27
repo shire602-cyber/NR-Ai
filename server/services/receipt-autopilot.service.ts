@@ -35,6 +35,7 @@ import {
 } from "./training-data.service";
 import type { Account } from "../../shared/schema";
 import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
+import { evaluateAutoPostGate } from "./classification-feedback.util";
 
 const log = createLogger("receipt-autopilot");
 
@@ -365,6 +366,190 @@ export async function recordClassificationFeedback(
   });
   invalidateModel(companyId);
   await applyAccuracyFailsafe(companyId);
+}
+
+// =============================================
+// Manual-upload auto-post
+// =============================================
+
+export interface ManualReceiptForAutoPost {
+  id: string;
+  merchant: string | null;
+  /** Net (pre-VAT) amount as stored on the receipt. */
+  amount: number | string | null;
+  vatAmount: number | string | null;
+  currency: string | null;
+  date: Date | string;
+}
+
+export interface ManualAutoPostResult {
+  autoPosted: boolean;
+  journalEntryId: string | null;
+  /** Machine-readable reason (eligible/posted or why it was skipped). */
+  reason: string;
+}
+
+/**
+ * Auto-post an already-saved, human-reviewed manual receipt — the manual-upload
+ * counterpart to the email-intake autopilot. The receipt row already exists
+ * (created with the user's reviewed data); this only DECIDES and, if eligible,
+ * posts a balanced journal entry and links it back. Safe by default: returns
+ * early unless the company has explicitly enabled autopilot.
+ *
+ * `userKeptSuggestion` MUST be true for posting — if the user changed the AI's
+ * category we never post automatically, since that's a signal of disagreement.
+ */
+export async function autoPostManualReceipt(args: {
+  companyId: string;
+  uploadedBy: string;
+  receipt: ManualReceiptForAutoPost;
+  userKeptSuggestion: boolean;
+}): Promise<ManualAutoPostResult> {
+  const { companyId, uploadedBy, receipt, userKeptSuggestion } = args;
+  const skip = (reason: string): ManualAutoPostResult => ({
+    autoPosted: false,
+    journalEntryId: null,
+    reason,
+  });
+
+  const config = await getClassifierConfig(companyId);
+  const net = Number(receipt.amount) || 0;
+  const vat = Number(receipt.vatAmount) || 0;
+  const currency = (receipt.currency || "AED").toUpperCase();
+
+  // Cheap guards first — avoid the classify round-trip when obviously ineligible
+  // (this is the common case: most companies have autopilot off).
+  if (!config.autopilotEnabled) return skip("autopilot_disabled");
+  if (!userKeptSuggestion) return skip("user_overrode_category");
+  if (!(net > 0)) return skip("non_positive_amount");
+  if (currency !== "AED") return skip("non_aed");
+
+  const accounts = await storage.getAccountsByCompanyId(companyId);
+  const expenseAccounts = accounts.filter(
+    (a) => a.type === "expense" && a.isActive && !a.isArchived
+  );
+
+  // Re-classify server-side so the auto-post decision is authoritative (not
+  // dependent on client-supplied confidence).
+  const model = await getModel(companyId);
+  const classification = await classifyReceipt({
+    merchant: typeof receipt.merchant === "string" ? receipt.merchant : "",
+    amount: net,
+    lineItems: [],
+    model,
+    options: { threshold: config.accuracyThreshold, mode: config.mode },
+    openai: getOpenAI(),
+    expenseAccountNames: expenseAccounts.map((a) => a.nameEn),
+  });
+
+  const autopostThreshold =
+    typeof config.autopostThreshold === "number"
+      ? config.autopostThreshold
+      : DEFAULT_CLASSIFIER_CONFIG.autopostThreshold;
+  const matchedRule = classification.matchedRuleId
+    ? model.rules.find((r) => r.id === classification.matchedRuleId)
+    : null;
+
+  const ruleAccountStillActive =
+    classification.accountId && expenseAccounts.some((a) => a.id === classification.accountId);
+  const expenseAccountId = ruleAccountStillActive
+    ? classification.accountId
+    : pickExpenseAccountForCategory(expenseAccounts, classification.category);
+  const paymentAccountId = pickPaymentAccount(accounts);
+
+  const gate = evaluateAutoPostGate({
+    autopilotEnabled: config.autopilotEnabled,
+    userKeptSuggestion,
+    confidence: classification.confidence,
+    autopostThreshold,
+    ruleTimesAccepted: matchedRule ? matchedRule.timesAccepted : null,
+    hasExpenseAccount: !!expenseAccountId,
+    hasPaymentAccount: !!paymentAccountId,
+    netAmount: net,
+    currency,
+  });
+  if (!gate.ok) return skip(gate.reason);
+
+  const ocr: OcrReceipt = {
+    merchant: typeof receipt.merchant === "string" ? receipt.merchant : "",
+    amount: net,
+    vatAmount: vat,
+    total: net + vat,
+    currency: "AED",
+    date:
+      typeof receipt.date === "string"
+        ? receipt.date
+        : new Date(receipt.date).toISOString().split("T")[0],
+    category: classification.category,
+  };
+
+  let journalEntryId: string;
+  try {
+    journalEntryId = await autoPostJournalEntry({
+      companyId,
+      uploadedBy,
+      ocr,
+      expenseAccountId: expenseAccountId!,
+      paymentAccountId: paymentAccountId!,
+      accounts,
+      classification,
+    });
+  } catch (err: any) {
+    log.error(
+      { err: err?.message || err, receiptId: receipt.id },
+      "Manual auto-post failed before JE creation — leaving receipt for manual review"
+    );
+    return skip("post_failed");
+  }
+
+  await recordAudit({
+    userId: uploadedBy,
+    companyId,
+    action: "ai_autopost_receipt",
+    entityType: "journal_entry",
+    entityId: journalEntryId,
+    extra: {
+      receiptId: receipt.id,
+      confidence: classification.confidence,
+      autopostThreshold,
+      method: classification.method,
+      reason: classification.reason,
+      merchant: ocr.merchant,
+      amount: net + vat,
+      source: "manual_upload",
+    },
+  });
+
+  try {
+    await storage.updateReceipt(receipt.id, companyId, {
+      posted: true,
+      autoPosted: true,
+      journalEntryId,
+      accountId: expenseAccountId,
+      paymentAccountId,
+    });
+  } catch (err: any) {
+    log.error(
+      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      "Manual auto-post: JE created but receipt link update failed — manual repair needed"
+    );
+  }
+
+  if (classification.matchedRuleId) {
+    try {
+      await pool.query(
+        `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
+        [classification.matchedRuleId, companyId]
+      );
+    } catch (err: any) {
+      log.warn(
+        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        "Manual auto-post: rule times_applied bump failed — non-fatal"
+      );
+    }
+  }
+
+  return { autoPosted: true, journalEntryId, reason: "posted" };
 }
 
 // =============================================

@@ -1,0 +1,10 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Najma Al Raeda">
+  <g stroke="#6f9e3a" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- baseline, peak, rising growth line -->
+    <path d="M4 30 H13 L19 20 L25 28 L34 11"/>
+    <!-- arrowhead -->
+    <path d="M27 11 H34 V18"/>
+    <!-- lower baseline -->
+    <path d="M4 35 H36" stroke-width="2" opacity="0.55"/>
+  </g>
+</svg>

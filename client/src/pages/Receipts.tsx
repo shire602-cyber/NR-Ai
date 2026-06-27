@@ -97,6 +97,11 @@ interface ExtractedData {
   category?: string;
   lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
   confidence?: number;
+  // The category the AI classifier originally suggested (snapshotted at OCR
+  // time so it survives user edits to `category`) plus how it was derived.
+  // Sent back on save to train the per-tenant classifier.
+  suggestedCategory?: string;
+  classifier?: { method?: string; confidence?: number; reason?: string } | null;
 }
 
 interface ProcessedReceipt {
@@ -276,6 +281,15 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
     typeof value === "string" && (INTERNAL_CLASSIFIER_METHODS as readonly string[]).includes(value)
   );
 }
+
+// Human-readable labels for how a category suggestion was derived, shown on the
+// review card so users understand WHY a category was pre-filled.
+const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
+  rule: "your company rules",
+  keyword: "UAE keyword match",
+  statistical: "your past classifications",
+  openai: "AI vision",
+};
 
 export default function Receipts() {
   const { t, locale } = useTranslation();
@@ -827,6 +841,10 @@ export default function Receipts() {
             lineItems: result.lineItems || [],
             rawText: result.rawText || "",
             confidence: result.confidence ?? 0.85,
+            // Snapshot the AI's suggested category + how it was derived, so we
+            // can tell on save whether the user kept or corrected it.
+            suggestedCategory: result.category || "Other",
+            classifier: result.classifier || null,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
@@ -1174,6 +1192,12 @@ export default function Receipts() {
           imageData: receipt.preview,
           rawText: receipt.data!.rawText,
           lineItems: receipt.data!.lineItems || [],
+          // Training feedback: the AI's original suggestion vs. the (possibly
+          // edited) category above. Lets the server learn from this upload.
+          suggestedCategory: receipt.data!.suggestedCategory ?? null,
+          classifierMethod: receipt.data!.classifier?.method ?? null,
+          classifierConfidence: receipt.data!.classifier?.confidence ?? null,
+          classifierReason: receipt.data!.classifier?.reason ?? null,
         };
 
         await apiRequest("POST", `/api/companies/${companyId}/receipts`, receiptData);
@@ -1805,6 +1829,26 @@ export default function Receipts() {
                                 <Sparkles className="w-2 h-2 mr-1" />
                                 GPT-4o Vision
                               </Badge>
+                            </p>
+                          </div>
+                        )}
+
+                        {receipt.data.classifier?.method && (
+                          <div className="col-span-2">
+                            <p
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-classifier-why-${index}`}
+                              title={receipt.data.classifier.reason || undefined}
+                            >
+                              Category suggested by{" "}
+                              <span className="font-medium text-foreground">
+                                {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
+                                  receipt.data.classifier.method}
+                              </span>
+                              {typeof receipt.data.classifier.confidence === "number" && (
+                                <> · {Math.round(receipt.data.classifier.confidence * 100)}% confident</>
+                              )}
+                              . You can change it above — your correction trains the model.
                             </p>
                           </div>
                         )}

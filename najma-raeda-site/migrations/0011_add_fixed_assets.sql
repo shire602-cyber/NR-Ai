@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS "fixed_assets" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+  "asset_name" text NOT NULL,
+  "asset_name_ar" text,
+  "asset_number" text,
+  "category" text NOT NULL,
+  "purchase_date" timestamp NOT NULL,
+  "purchase_cost" numeric(12,2) NOT NULL,
+  "salvage_value" numeric(12,2) DEFAULT 0,
+  "useful_life_years" integer NOT NULL,
+  "depreciation_method" text DEFAULT 'straight_line',
+  "accumulated_depreciation" numeric(12,2) DEFAULT 0,
+  "net_book_value" numeric(12,2),
+  "location" text,
+  "serial_number" text,
+  "status" text DEFAULT 'active',
+  "disposal_date" timestamp,
+  "disposal_amount" numeric(12,2),
+  "notes" text,
+  "created_at" timestamp DEFAULT now()
+);

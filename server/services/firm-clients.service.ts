@@ -49,11 +49,20 @@ export type VatCohortKey =
   | "monthly"
   | "annual";
 
+export type NrClientVatGroupKey = "group_1" | "group_2" | "group_3";
+
 export interface VatCohort {
   key: VatCohortKey;
   label: string;
   closeMonths: number[];
   closeMonthLabels: string[];
+}
+
+export interface NrClientVatGroup {
+  key: NrClientVatGroupKey;
+  label: string;
+  vatPeriodStartMonth: number;
+  cohortLabel: string;
 }
 
 export interface TaxPeriodWindow {
@@ -82,6 +91,103 @@ const VAT_COHORTS: Array<Omit<VatCohort, "closeMonthLabels">> = [
   { key: "feb_may_aug_nov", label: "Feb / May / Aug / Nov", closeMonths: [2, 5, 8, 11] },
   { key: "mar_jun_sep_dec", label: "Mar / Jun / Sep / Dec", closeMonths: [3, 6, 9, 12] },
 ];
+
+export const NR_CLIENT_VAT_GROUPS: Record<NrClientVatGroupKey, NrClientVatGroup> = {
+  group_1: {
+    key: "group_1",
+    label: "Group 1",
+    vatPeriodStartMonth: 1,
+    cohortLabel: "Jan / Apr / Jul / Oct",
+  },
+  group_2: {
+    key: "group_2",
+    label: "Group 2",
+    vatPeriodStartMonth: 2,
+    cohortLabel: "Feb / May / Aug / Nov",
+  },
+  group_3: {
+    key: "group_3",
+    label: "Group 3",
+    vatPeriodStartMonth: 3,
+    cohortLabel: "Mar / Jun / Sep / Dec",
+  },
+};
+
+const NR_CLIENT_VAT_GROUP_NAMES: Record<NrClientVatGroupKey, string[]> = {
+  group_1: [
+    "Al ain business Center",
+    "Mokhtar Mohammed",
+    "Dar Al mustaqbal",
+    "Bandar Qasim",
+    "midnimo",
+    "High Speed General Trading",
+    "Al Intifa Building Materials L.L.C.",
+    "Bulsho Building Materials L.L.C.",
+    "Hirsi Trading",
+    "Eastern Coast General Trading",
+    "Al Nezam Al Asasy General Trading",
+    "Ebyan lady tailors",
+    "Iddle General Trading",
+    "Miras fast food",
+    "faduma ladies, sufretna, jiba, qasr",
+    "faduma ladies",
+    "sufretna",
+    "jiba",
+    "qasr",
+    "amal abu dhabi and abraj",
+    "amal abu dhabi",
+    "abraj",
+    "Bab al marouf",
+    "OLYMPIC ARAN GENERAL TRADING LLC",
+  ],
+  group_2: [
+    "Noble Gate General Trading",
+    "Najmatul Khair General Trading",
+    "Anbar General trading LLC",
+    "Shabelli",
+    "Mohammed Saleh General Trading",
+    "Wafaa Jewelary",
+    "FATMA RASHED TRADING L.L.C",
+    "RAWDHA AL SHARQ TECHNOLOGY L.L.C",
+    "TAQWA GENERAL TRADING L.L.C",
+    "Bratco Food stuff",
+    "AL DARWISH COMMERCIAL BROKER",
+    "najma furqan",
+    "Najma Al Quds",
+    "mashco",
+    "bosaso",
+    "sifa green",
+    "bicco",
+    "Al Wein Express",
+    "Noujoum al kheir",
+    "mowlid cargo",
+  ],
+  group_3: [
+    "AbdulKader Food Stuff L.L.C.",
+    "Iftin General Trading",
+    "Taran General Trading LLC",
+    "Norton General Trading",
+    "Hikmah General Trading L.L.C.",
+    "Ocean Organic General Trading LLC",
+    "Barwaqo General Trading",
+    "Ain Al Qamar",
+    "Hodan General Trading",
+    "Hamar ade General Trading LLC",
+    "Moftah Al Nourin General Trading",
+    "Abdighani Abdurahman General Trading",
+    "JJB Fashion",
+    "Najmat Al Iman",
+    "Sky Dalma",
+    "Digrio",
+    "AGDIGA",
+    "main souq dahab amal",
+    "syrgical",
+    "asha gellee",
+    "Muradso Computer",
+    "next generation",
+    "dalsoor",
+  ],
+};
 
 const MONTH_NAME_ALIASES = new Map<string, number>([
   ["jan", 1],
@@ -143,6 +249,82 @@ function sameMonthSet(a: number[], b: number[]): boolean {
   return left === right;
 }
 
+export function normaliseNrClientVatGroupName(name: string | null | undefined): string {
+  if (!name) return "";
+  return name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\bnew\s+(?:client|clinet)\b/g, " ")
+    .replace(/\bl\s*\.?\s*l\s*\.?\s*c\b/g, " llc ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token && token !== "llc")
+    .join(" ")
+    .trim();
+}
+
+function buildNrClientVatGroupLookup(): Map<string, NrClientVatGroup> {
+  const lookup = new Map<string, NrClientVatGroup>();
+
+  for (const [groupKey, names] of Object.entries(NR_CLIENT_VAT_GROUP_NAMES) as Array<
+    [NrClientVatGroupKey, string[]]
+  >) {
+    const group = NR_CLIENT_VAT_GROUPS[groupKey];
+    for (const name of names) {
+      const normalised = normaliseNrClientVatGroupName(name);
+      if (!normalised) continue;
+      const existing = lookup.get(normalised);
+      if (existing && existing.key !== group.key) {
+        throw new Error(
+          `Duplicate NR VAT client mapping for "${name}" in ${existing.label} and ${group.label}`
+        );
+      }
+      lookup.set(normalised, group);
+    }
+  }
+
+  return lookup;
+}
+
+const NR_CLIENT_VAT_GROUP_LOOKUP = buildNrClientVatGroupLookup();
+
+export function nrClientVatGroupForName(
+  name: string | null | undefined
+): NrClientVatGroup | undefined {
+  return NR_CLIENT_VAT_GROUP_LOOKUP.get(normaliseNrClientVatGroupName(name));
+}
+
+export function vatPeriodStartMonthForNrClientName(
+  name: string | null | undefined
+): number | undefined {
+  return nrClientVatGroupForName(name)?.vatPeriodStartMonth;
+}
+
+export function resolveNrClientVatPeriodStartMonth(
+  name: string | null | undefined,
+  configuredPeriodStartMonth: number | string | null | undefined,
+  companyType?: string | null
+): number {
+  const isFirmClient = companyType == null || companyType === "client";
+  return (
+    (isFirmClient ? vatPeriodStartMonthForNrClientName(name) : undefined) ??
+    normaliseMonth(configuredPeriodStartMonth)
+  );
+}
+
+export function withNrClientVatGroup<
+  T extends { name: string; companyType?: string | null; vatPeriodStartMonth?: number | null },
+>(company: T): T & { nrVatGroup?: NrClientVatGroup } {
+  if (company.companyType != null && company.companyType !== "client") return company;
+  const group = nrClientVatGroupForName(company.name);
+  if (!group) return company;
+  return {
+    ...company,
+    vatPeriodStartMonth: group.vatPeriodStartMonth,
+    nrVatGroup: group,
+  };
+}
+
 export function normaliseMonth(month: number | string | null | undefined): number {
   const parsed = Number(month);
   if (!Number.isFinite(parsed)) return 1;
@@ -193,7 +375,7 @@ export function vatCohortFromPeriodStart(
     };
   }
 
-  const closeMonths = [2, 5, 8, 11].map((offset) => normaliseMonth(startMonth + offset));
+  const closeMonths = [3, 6, 9, 12].map((offset) => normaliseMonth(startMonth + offset));
   const cohort =
     VAT_COHORTS.find((candidate) => sameMonthSet(candidate.closeMonths, closeMonths)) ??
     VAT_COHORTS[2];
@@ -216,6 +398,15 @@ export function currentVatPeriodForCompany(
   if (frequency === "monthly") {
     const periodStart = utcMonthStart(currentYear, currentMonth);
     const periodEnd = addUtcDays(addUtcMonths(periodStart, 1), -1);
+    if (periodEnd >= now) {
+      const previousPeriodStart = addUtcMonths(periodStart, -1);
+      const previousPeriodEnd = addUtcDays(periodStart, -1);
+      return {
+        periodStart: previousPeriodStart,
+        periodEnd: previousPeriodEnd,
+        dueDate: addUtcDays(previousPeriodEnd, 28),
+      };
+    }
     return { periodStart, periodEnd, dueDate: addUtcDays(periodEnd, 28) };
   }
 
@@ -227,6 +418,15 @@ export function currentVatPeriodForCompany(
   const candidateYear = candidateStartMonth > currentMonth ? currentYear - 1 : currentYear;
   const periodStart = utcMonthStart(candidateYear, candidateStartMonth);
   const periodEnd = addUtcDays(addUtcMonths(periodStart, periodLength), -1);
+  if (periodEnd >= now) {
+    const previousPeriodStart = addUtcMonths(periodStart, -periodLength);
+    const previousPeriodEnd = addUtcDays(periodStart, -1);
+    return {
+      periodStart: previousPeriodStart,
+      periodEnd: previousPeriodEnd,
+      dueDate: addUtcDays(previousPeriodEnd, 28),
+    };
+  }
 
   return { periodStart, periodEnd, dueDate: addUtcDays(periodEnd, 28) };
 }
@@ -309,7 +509,7 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
     compact.includes("jul") &&
     compact.includes("oct")
   ) {
-    return 11;
+    return 1;
   }
   if (
     compact.includes("feb") &&
@@ -317,7 +517,7 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
     compact.includes("aug") &&
     compact.includes("nov")
   ) {
-    return 12;
+    return 2;
   }
   if (
     compact.includes("mar") &&
@@ -325,13 +525,13 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
     compact.includes("sep") &&
     compact.includes("dec")
   ) {
-    return 1;
+    return 3;
   }
 
   if (!directPeriodStart) return undefined;
-  if ([1, 4, 7, 10].includes(directPeriodStart)) return 11;
-  if ([2, 5, 8, 11].includes(directPeriodStart)) return 12;
-  return 1;
+  if ([1, 4, 7, 10].includes(directPeriodStart)) return 1;
+  if ([2, 5, 8, 11].includes(directPeriodStart)) return 2;
+  return 3;
 }
 
 export function normaliseServiceScope(raw: string): ClientServiceCode[] | undefined {
@@ -431,7 +631,8 @@ export function mapImportRow(row: Record<string, unknown>): ImportedClient | { e
           "VAT Cohort",
           "VAT Group"
         )
-      ),
+      ) ??
+      vatPeriodStartMonthForNrClientName(name),
     fiscalYearStartMonth: normaliseFiscalYearStartMonth(
       pick(
         row,

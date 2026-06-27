@@ -12,6 +12,7 @@ import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
+import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
 
@@ -169,7 +170,7 @@ export function registerCompanyRoutes(app: Express) {
         firmRole,
         (req as any).user?.isAdmin === true
       );
-      res.json(companies);
+      res.json(companies.map((company) => withNrClientVatGroup(company)));
     })
   );
 
@@ -208,7 +209,7 @@ export function registerCompanyRoutes(app: Express) {
       // Seed Chart of Accounts
       await seedChartOfAccounts(company.id);
 
-      res.json(company);
+      res.json(withNrClientVatGroup(company));
     })
   );
 
@@ -266,7 +267,7 @@ export function registerCompanyRoutes(app: Express) {
           { route: "PUT /api/companies/:id", id, userId },
           () => storage.updateCompany(id, updateData)
         );
-        res.json(company);
+        res.json(withNrClientVatGroup(company));
       } catch (err: any) {
         if (handleCompanyWriteError(err, { route: "PUT /api/companies/:id", id, userId }, res)) {
           return;
@@ -312,7 +313,7 @@ export function registerCompanyRoutes(app: Express) {
           () => storage.updateCompany(id, updateData)
         );
         log.info({ id: company.id }, "Company profile updated");
-        res.json(company);
+        res.json(withNrClientVatGroup(company));
       } catch (err: any) {
         if (handleCompanyWriteError(err, { route: "PATCH /api/companies/:id", id, userId }, res)) {
           return;
@@ -358,7 +359,7 @@ export function registerCompanyRoutes(app: Express) {
 
       const company = await storage.updateCompany(id, updateData as any);
       log.info({ id: company.id }, "Company preferences updated");
-      res.json(company);
+      res.json(withNrClientVatGroup(company));
     })
   );
 
@@ -377,7 +378,7 @@ export function registerCompanyRoutes(app: Express) {
       }
 
       const company = await storage.updateCompany(id, { onboardingCompleted: true });
-      res.json(company);
+      res.json(withNrClientVatGroup(company));
     })
   );
 

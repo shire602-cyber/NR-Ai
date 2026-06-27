@@ -2,6 +2,8 @@ import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import { formatCurrency, formatDate } from "./format";
 
+export type InvoicePdfTemplate = "standard" | "nra";
+
 export interface InvoicePDFData {
   invoiceNumber: string;
   date: string;
@@ -25,6 +27,8 @@ export interface InvoicePDFData {
   total: number;
   currency: string;
   locale: "en" | "ar";
+  companyType?: string | null;
+  invoiceTemplate?: InvoicePdfTemplate;
   // Invoice customization settings
   showLogo?: boolean;
   showAddress?: boolean;
@@ -36,7 +40,24 @@ export interface InvoicePDFData {
   isVATRegistered?: boolean;
 }
 
+const NRA_PAGE_WIDTH = 210;
+const NR_GREEN: [number, number, number] = [111, 158, 58];
+const BORDER: [number, number, number] = [17, 17, 17];
+const HEADER_FILL: [number, number, number] = [230, 230, 230];
+
+export function invoicePdfTemplateForData(data: InvoicePDFData): InvoicePdfTemplate {
+  return data.invoiceTemplate ?? (data.companyType === "client" ? "nra" : "standard");
+}
+
 export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
+  if (invoicePdfTemplateForData(data) === "nra") {
+    return generateNraInvoicePDF(data);
+  }
+
+  return generateStandardInvoicePDF(data);
+}
+
+async function generateStandardInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -369,6 +390,285 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   }
 
   return doc;
+}
+
+async function generateNraInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
+
+  doc.setProperties({
+    title: `Invoice ${data.invoiceNumber}`,
+    author: "Najma Al Raeda Accounting Services",
+    subject: "Invoice",
+    creator: "Muhasib.ai",
+  });
+
+  drawNraInvoiceTitle(doc);
+  drawNraDateInvoiceBox(doc, data);
+  drawNraHeader(doc);
+  drawNraBillToBox(doc, data);
+  drawNraLineItemsTable(doc, data);
+  drawNraTotalBox(doc, data);
+
+  return doc;
+}
+
+function drawNraInvoiceTitle(doc: jsPDF) {
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(26);
+  doc.text("Invoice", NRA_PAGE_WIDTH / 2, 22, { align: "center" });
+}
+
+function drawNraDateInvoiceBox(doc: jsPDF, data: InvoicePDFData) {
+  const x = 152.4;
+  const y = 13.4;
+  const w = 51.2;
+  const h = 13.8;
+  const colW = w / 2;
+  const headerH = 5.3;
+
+  doc.setLineWidth(0.35);
+  doc.setDrawColor(...BORDER);
+  doc.rect(x, y, w, h, "S");
+  doc.line(x + colW, y, x + colW, y + h);
+  doc.line(x, y + headerH, x + w, y + headerH);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Date", x + colW / 2, y + 3.8, { align: "center" });
+  doc.text("Invoice #", x + colW + colW / 2, y + 3.8, { align: "center" });
+
+  doc.setFont("times", "normal");
+  doc.setFontSize(10.5);
+  doc.text(formatNraInvoiceDate(data.date), x + colW / 2, y + 11.5, { align: "center" });
+  drawNraSingleLineCellText(doc, data.invoiceNumber, x + colW, y + 11.5, colW);
+}
+
+function drawNraHeader(doc: jsPDF) {
+  const centerX = NRA_PAGE_WIDTH / 2;
+  const logoTop = 24.7;
+
+  doc.setDrawColor(...NR_GREEN);
+  doc.setFillColor(...NR_GREEN);
+  doc.setLineWidth(1.4);
+  doc.line(centerX - 29.3, logoTop + 17.6, centerX - 10.6, logoTop + 17.6);
+  doc.line(centerX - 10.6, logoTop + 17.6, centerX - 2.5, logoTop + 8.8);
+  doc.line(centerX - 2.5, logoTop + 8.8, centerX + 6, logoTop + 17.6);
+  doc.line(centerX + 6, logoTop + 17.6, centerX + 26.5, logoTop - 6.4);
+  doc.triangle(
+    centerX + 26.5,
+    logoTop - 6.4,
+    centerX + 22.6,
+    logoTop + 0.7,
+    centerX + 31.4,
+    logoTop - 10.2,
+    "F"
+  );
+
+  doc.setLineWidth(0.7);
+  doc.line(centerX - 29.3, logoTop + 17.6, centerX + 30, logoTop + 17.6);
+
+  doc.setTextColor(...NR_GREEN);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(21);
+  doc.text("NAJMA AL RAEDA", centerX, 53.8, { align: "center" });
+
+  doc.setLineWidth(0.5);
+  doc.line(centerX - 29.3, 55.7, centerX + 29.3, 55.7);
+
+  doc.setFontSize(8.5);
+  doc.text("A C C O U N T I N G   S E R V I C E S", centerX, 62.1, {
+    align: "center",
+  });
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("times", "normal");
+  doc.setFontSize(12);
+  doc.text("Al Futtaim Tower, 202", centerX, 69.2, { align: "center" });
+  doc.text("Baniyas Square,", centerX, 74.5, { align: "center" });
+  doc.text("Dubai, U.A.E.", centerX, 79.8, { align: "center" });
+  doc.text("971-50-7042270", centerX, 85.1, { align: "center" });
+}
+
+function drawNraBillToBox(doc: jsPDF, data: InvoicePDFData) {
+  const x = 130.5;
+  const y = 77.6;
+  const w = 65.3;
+  const h = 33.9;
+  const headerH = 8.5;
+
+  doc.setLineWidth(0.35);
+  doc.setDrawColor(...BORDER);
+  doc.rect(x, y, w, h, "S");
+  doc.line(x, y + headerH, x + w, y + headerH);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.text("Bill To", x + 4.2, y + 5.8);
+
+  doc.setTextColor(34, 34, 34);
+  doc.setFont("times", "normal");
+  doc.setFontSize(9.5);
+  doc.text(data.customerName, x + 1.5, y + headerH + 5.1, {
+    maxWidth: w - 3,
+  });
+}
+
+function drawNraLineItemsTable(doc: jsPDF, data: InvoicePDFData) {
+  const x = 12.7;
+  const y = 121.7;
+  const w = 184.5;
+  const h = 140.4;
+  const headerH = 7;
+  const widths = [16.2, 52.9, 67, 26.1, 22.3];
+  const headers = ["Quantity", "Item Code", "Description", "Price Each", "Amount"];
+  const colX = widths.reduce<number[]>(
+    (acc, width) => {
+      acc.push(acc[acc.length - 1] + width);
+      return acc;
+    },
+    [x]
+  );
+
+  doc.setLineWidth(0.35);
+  doc.setDrawColor(...BORDER);
+  doc.rect(x, y, w, h, "S");
+  doc.setFillColor(...HEADER_FILL);
+  doc.rect(x, y, w, headerH, "FD");
+
+  for (let i = 1; i < colX.length - 1; i += 1) {
+    doc.line(colX[i], y, colX[i], y + h);
+  }
+  doc.line(x, y + headerH, x + w, y + headerH);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  headers.forEach((header, index) => {
+    doc.text(header, colX[index] + widths[index] / 2, y + 4.9, {
+      align: "center",
+    });
+  });
+
+  let rowY = y + headerH + 4.5;
+  doc.setFont("times", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(17, 17, 17);
+
+  for (const line of data.lines) {
+    if (rowY > y + h - 6) break;
+
+    const parsed = splitLineDescription(line.description);
+    const amount = Number(line.quantity || 0) * Number(line.unitPrice || 0);
+    const itemCodeLines = doc.splitTextToSize(parsed.itemCode || " ", widths[1] - 2);
+    const descriptionLines = doc.splitTextToSize(parsed.description || " ", widths[2] - 2);
+
+    doc.text(formatNraQuantity(line.quantity), colX[0] + widths[0] / 2, rowY, {
+      align: "center",
+    });
+    doc.text(itemCodeLines, colX[1] + 1.2, rowY);
+    doc.text(descriptionLines, colX[2] + 1.2, rowY);
+    doc.text(formatNraPlainAmount(Number(line.unitPrice || 0)), colX[3] + widths[3] - 2, rowY, {
+      align: "right",
+    });
+    doc.text(formatNraPlainAmount(amount), colX[4] + widths[4] - 2, rowY, {
+      align: "right",
+    });
+
+    rowY += Math.max(6, itemCodeLines.length * 4.4, descriptionLines.length * 4.4);
+  }
+}
+
+function drawNraTotalBox(doc: jsPDF, data: InvoicePDFData) {
+  const x = 12.7;
+  const y = 263.9;
+  const w = 184.5;
+  const h = 14.1;
+  const splitX = 146.1;
+
+  doc.setLineWidth(0.35);
+  doc.setDrawColor(...BORDER);
+  doc.rect(x, y, w, h, "S");
+  doc.line(splitX, y, splitX, y + h);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Total", splitX + 4.6, y + 9.8);
+
+  doc.setFont("times", "normal");
+  doc.setFontSize(10.5);
+  doc.text(formatNraTotalAmount(Number(data.total || 0), data.currency), x + w - 4.2, y + 9.8, {
+    align: "right",
+  });
+}
+
+function splitLineDescription(description: string): { itemCode: string; description: string } {
+  const lines = description
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (lines.length > 1) {
+    return { itemCode: lines[0], description: lines.slice(1).join(" ") };
+  }
+
+  const dashMatch = description.match(/^(.+?)\s+-\s+(.+)$/);
+  if (dashMatch) {
+    return { itemCode: dashMatch[1].trim(), description: dashMatch[2].trim() };
+  }
+
+  return { itemCode: description, description: "" };
+}
+
+function formatNraInvoiceDate(date: string): string {
+  const dateOnly = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnly) return `${dateOnly[2]}/${dateOnly[3]}/${dateOnly[1]}`;
+
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${month}/${day}/${parsed.getFullYear()}`;
+}
+
+function drawNraSingleLineCellText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  width: number
+) {
+  let fontSize = 10.5;
+  doc.setFont("times", "normal");
+  doc.setFontSize(fontSize);
+  while (fontSize > 7 && doc.getTextWidth(text) > width - 2) {
+    fontSize -= 0.5;
+    doc.setFontSize(fontSize);
+  }
+  doc.text(text, x + width / 2, y + (10.5 - fontSize) / 4, { align: "center" });
+}
+
+function formatNraQuantity(quantity: number): string {
+  if (quantity === 1) return "";
+  return Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(2);
+}
+
+function formatNraPlainAmount(amount: number): string {
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatNraTotalAmount(amount: number, currency: string = "AED"): string {
+  return `${currency} ${formatNraPlainAmount(amount)}`;
 }
 
 export async function downloadInvoicePDF(data: InvoicePDFData, filename?: string) {

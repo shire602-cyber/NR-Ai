@@ -3,6 +3,7 @@ import {
   round2,
   computeDueDate,
   detectPeriod,
+  detectFilingPeriod,
   listRecentPeriods,
   deadlineStatus,
   convertToAed,
@@ -127,6 +128,14 @@ describe("detectPeriod", () => {
     expect(period.start.toISOString()).toBe("2026-01-01T00:00:00.000Z");
     expect(period.end.toISOString()).toBe("2026-01-31T23:59:59.999Z");
   });
+
+  it("detects the latest completed filing period instead of the still-open period", () => {
+    const ref = new Date(Date.UTC(2026, 5, 27, 12)); // 27 Jun 2026
+    const period = detectFilingPeriod("quarterly", 3, ref);
+    expect(period.start.toISOString()).toBe("2026-03-01T00:00:00.000Z");
+    expect(period.end.toISOString()).toBe("2026-05-31T23:59:59.999Z");
+    expect(period.dueDate.toISOString()).toBe("2026-06-28T00:00:00.000Z");
+  });
 });
 
 // ─── listRecentPeriods ──────────────────────────────────────────────────────
@@ -136,20 +145,20 @@ describe("listRecentPeriods", () => {
     const ref = new Date(Date.UTC(2026, 4, 10)); // 10 May 2026
     const periods = listRecentPeriods("quarterly", 1, 4, ref);
     expect(periods).toHaveLength(4);
-    // Q2 2026, Q1 2026, Q4 2025, Q3 2025
-    expect(periods[0].start.toISOString()).toBe("2026-04-01T00:00:00.000Z");
-    expect(periods[1].start.toISOString()).toBe("2026-01-01T00:00:00.000Z");
-    expect(periods[2].start.toISOString()).toBe("2025-10-01T00:00:00.000Z");
-    expect(periods[3].start.toISOString()).toBe("2025-07-01T00:00:00.000Z");
+    // Q2 2026 is still open in May, so the filing list starts with Q1 2026.
+    expect(periods[0].start.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    expect(periods[1].start.toISOString()).toBe("2025-10-01T00:00:00.000Z");
+    expect(periods[2].start.toISOString()).toBe("2025-07-01T00:00:00.000Z");
+    expect(periods[3].start.toISOString()).toBe("2025-04-01T00:00:00.000Z");
   });
 
   it("walks backwards through months for monthly filers", () => {
     const ref = new Date(Date.UTC(2026, 3, 10)); // 10 Apr 2026
     const periods = listRecentPeriods("monthly", 1, 3, ref);
     expect(periods.map((p) => p.start.toISOString())).toEqual([
-      "2026-04-01T00:00:00.000Z",
       "2026-03-01T00:00:00.000Z",
       "2026-02-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
     ]);
   });
 
@@ -157,10 +166,10 @@ describe("listRecentPeriods", () => {
     const ref = new Date(Date.UTC(2026, 1, 5)); // 5 Feb 2026
     const periods = listRecentPeriods("monthly", 1, 4, ref);
     expect(periods.map((p) => p.start.toISOString())).toEqual([
-      "2026-02-01T00:00:00.000Z",
       "2026-01-01T00:00:00.000Z",
       "2025-12-01T00:00:00.000Z",
       "2025-11-01T00:00:00.000Z",
+      "2025-10-01T00:00:00.000Z",
     ]);
   });
 
@@ -170,10 +179,20 @@ describe("listRecentPeriods", () => {
     const ref = new Date(Date.UTC(2026, 1, 15)); // 15 Feb 2026
     const periods = listRecentPeriods("quarterly", 2, 3, ref);
     expect(periods.map((p) => p.start.toISOString())).toEqual([
-      "2026-02-01T00:00:00.000Z",
       "2025-11-01T00:00:00.000Z",
       "2025-08-01T00:00:00.000Z",
+      "2025-05-01T00:00:00.000Z",
     ]);
+  });
+
+  it("lists Group 3's Mar-May return first during June 2026", () => {
+    const ref = new Date(Date.UTC(2026, 5, 27, 12)); // 27 Jun 2026
+    const periods = listRecentPeriods("quarterly", 3, 2, ref);
+    expect(periods.map((p) => `${p.start.toISOString()}::${p.end.toISOString()}`)).toEqual([
+      "2026-03-01T00:00:00.000Z::2026-05-31T23:59:59.999Z",
+      "2025-12-01T00:00:00.000Z::2026-02-28T23:59:59.999Z",
+    ]);
+    expect(periods[0].dueDate.toISOString()).toBe("2026-06-28T00:00:00.000Z");
   });
 });
 

@@ -9,6 +9,11 @@ import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../servi
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import {
+  recordClassificationFeedback,
+  autoPostManualReceipt,
+} from "../services/receipt-autopilot.service";
+import { evaluateClassificationFeedback } from "../services/classification-feedback.util";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import {
@@ -182,7 +187,17 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { imageData, ...receiptData } = req.body;
+      // `suggested*` / `classifier*` carry the AI classifier's suggestion so we
+      // can record training feedback below. They are NOT receipt columns, so we
+      // pull them out before spreading `receiptData` into createReceipt.
+      const {
+        imageData,
+        suggestedCategory,
+        classifierMethod,
+        classifierConfidence,
+        classifierReason,
+        ...receiptData
+      } = req.body;
 
       // The client sends date as an ISO string; the Drizzle timestamp column
       // needs a Date object (string input crashes mapToDriverValue).
@@ -251,6 +266,88 @@ export function registerReceiptRoutes(app: Express) {
         after: { merchant: receipt.merchant, amount: receipt.amount, currency: receipt.currency },
         req,
       });
+
+      // ── Learning loop ──────────────────────────────────────────────────
+      // The manual Receipt Scanner pre-fills a category from the per-tenant AI
+      // classifier. Record that suggestion against the user's FINAL category so
+      // the model learns from every manual upload (the Bayes stage trains on
+      // accepted classifications). Never let this block or fail the save.
+      // Tracks whether the user kept the AI's suggested category — gates auto-post.
+      let userKeptSuggestion = false;
+      if (suggestedCategory && typeof suggestedCategory === "string") {
+        try {
+          const gross =
+            (Number(receipt.amount) || 0) + (Number((receipt as any).vatAmount) || 0);
+          const { wasAccepted, method } = evaluateClassificationFeedback(
+            suggestedCategory,
+            receipt.category,
+            classifierMethod
+          );
+          userKeptSuggestion = wasAccepted;
+          const classificationRow = await storage.createTransactionClassification({
+            companyId,
+            description: receipt.merchant ?? "",
+            merchant: receipt.merchant ?? "",
+            amount: gross,
+            suggestedAccountId: (receipt as any).accountId ?? null,
+            suggestedCategory,
+            aiConfidence: Number(classifierConfidence) || 0,
+            aiReason:
+              typeof classifierReason === "string" && classifierReason
+                ? classifierReason
+                : "Manual receipt upload",
+            classifierMethod: method,
+          });
+          // Mark accepted/rejected + invalidate the cached model + run the
+          // accuracy failsafe — the same path the dedicated feedback endpoint uses.
+          await recordClassificationFeedback(
+            companyId,
+            classificationRow.id,
+            wasAccepted,
+            (receipt as any).accountId ?? null
+          );
+        } catch (err) {
+          log.warn(
+            { err: (err as Error).message, receiptId: receipt.id },
+            "Classification feedback recording failed (non-fatal)"
+          );
+        }
+      }
+
+      // ── Guarded auto-post ──────────────────────────────────────────────
+      // For companies that have explicitly enabled autopilot, a high-confidence
+      // receipt backed by a trusted merchant rule (and where the user kept the
+      // AI's category) is posted to the ledger automatically — no manual "Post"
+      // click. Gated off by default; never blocks or fails the save.
+      try {
+        const auto = await autoPostManualReceipt({
+          companyId,
+          uploadedBy: userId,
+          receipt: {
+            id: receipt.id,
+            merchant: receipt.merchant,
+            amount: (receipt as any).amount,
+            vatAmount: (receipt as any).vatAmount,
+            currency: receipt.currency,
+            date: (receipt as any).date,
+          },
+          userKeptSuggestion,
+        });
+        if (auto.autoPosted) {
+          (receipt as any).posted = true;
+          (receipt as any).autoPosted = true;
+          (receipt as any).journalEntryId = auto.journalEntryId;
+          log.info(
+            { receiptId: receipt.id, journalEntryId: auto.journalEntryId },
+            "Receipt auto-posted on manual upload"
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err: (err as Error).message, receiptId: receipt.id },
+          "Manual auto-post attempt failed (non-fatal — receipt saved)"
+        );
+      }
 
       createAndEmitNotification({
         userId,

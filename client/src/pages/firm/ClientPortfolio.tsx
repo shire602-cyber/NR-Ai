@@ -1781,11 +1781,12 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            {(dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => (
+            {(dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort, index) => (
               <div key={cohort.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-sm">{cohort.label}</p>
+                    <p className="font-medium text-sm">Group {index + 1}</p>
+                    <p className="text-xs text-muted-foreground">{cohort.label}</p>
                     <p className="text-xs text-muted-foreground">{cohort.clientCount} clients</p>
                   </div>
                   <div className="flex gap-1">
@@ -3830,7 +3831,7 @@ const emptyForm: AddClientFormData = {
   businessAddress: "",
   emirate: "dubai",
   vatFilingFrequency: "quarterly",
-  vatPeriodStartMonth: "1",
+  vatPeriodStartMonth: "auto",
   fiscalYearStartMonth: "1",
   corporateTaxId: "",
   serviceScope: [...DEFAULT_CLIENT_SERVICE_CODES],
@@ -3841,9 +3842,42 @@ type QuickFilter =
   | "critical"
   | "attention"
   | "vat-due"
+  | "vat-group-1"
+  | "vat-group-2"
+  | "vat-group-3"
   | "close-blocked"
   | "unassigned"
   | "no-docs";
+
+const VAT_GROUP_FILTERS: Array<{
+  filter: QuickFilter;
+  cohortKey: string;
+  periodStartMonth: number;
+  label: string;
+}> = [
+  {
+    filter: "vat-group-1",
+    cohortKey: "jan_apr_jul_oct",
+    periodStartMonth: 1,
+    label: "Group 1",
+  },
+  {
+    filter: "vat-group-2",
+    cohortKey: "feb_may_aug_nov",
+    periodStartMonth: 2,
+    label: "Group 2",
+  },
+  {
+    filter: "vat-group-3",
+    cohortKey: "mar_jun_sep_dec",
+    periodStartMonth: 3,
+    label: "Group 3",
+  },
+];
+
+const vatGroupFilterByQuickFilter = new Map(
+  VAT_GROUP_FILTERS.map((filter) => [filter.filter, filter])
+);
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
@@ -3978,6 +4012,15 @@ export default function ClientPortfolio() {
                 ops.vat.daysTilDue !== null &&
                 ops.vat.daysTilDue <= 28
             : hasClientService(c, "vat") && vatDueSoon(c);
+        case "vat-group-1":
+        case "vat-group-2":
+        case "vat-group-3": {
+          const groupFilter = vatGroupFilterByQuickFilter.get(quickFilter);
+          if (!groupFilter) return true;
+          return ops
+            ? hasClientService(ops, "vat") && ops.vat.cohortKey === groupFilter.cohortKey
+            : hasClientService(c, "vat") && c.vatPeriodStartMonth === groupFilter.periodStartMonth;
+        }
         case "close-blocked":
           return ops
             ? hasClientService(ops, "bookkeeping") && ops.bookkeeping.status !== "on_track"
@@ -4135,6 +4178,23 @@ export default function ClientPortfolio() {
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
           VAT Due Soon ({bookkeeperDashboard?.summary.vatDue28Days ?? 0})
         </Button>
+        {VAT_GROUP_FILTERS.map((group) => {
+          const cohort = bookkeeperDashboard?.vatCohorts?.find(
+            (candidate) => candidate.key === group.cohortKey
+          );
+          return (
+            <Button
+              key={group.filter}
+              size="sm"
+              variant={quickFilter === group.filter ? "secondary" : "outline"}
+              onClick={() => setQuickFilter(group.filter)}
+              data-testid={`filter-${group.filter}`}
+            >
+              <Calendar className="w-3.5 h-3.5 mr-1.5" />
+              {group.label} ({cohort?.clientCount ?? 0})
+            </Button>
+          );
+        })}
         <Button
           size="sm"
           variant={quickFilter === "close-blocked" ? "secondary" : "outline"}
@@ -4281,9 +4341,12 @@ export default function ClientPortfolio() {
                       </TableCell>
                       <TableCell className="text-sm">
                         {ops && hasClientService(ops, "vat") ? (
-                          <span>
-                            {formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}
-                          </span>
+                          <div>
+                            <span>
+                              {formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}
+                            </span>
+                            <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
+                          </div>
                         ) : (
                           <Badge variant="outline">Not scoped</Badge>
                         )}
@@ -4448,7 +4511,7 @@ export default function ClientPortfolio() {
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <span>
                         {hasClientService(ops, "vat")
-                          ? `VAT ${formatDays(ops.vat.daysTilDue)}`
+                          ? `${ops.vat.cohortLabel} · ${formatDays(ops.vat.daysTilDue)}`
                           : "VAT not scoped"}
                       </span>
                       <span>
@@ -4570,7 +4633,10 @@ export default function ClientPortfolio() {
                     <TableCell>{client.invoiceCount}</TableCell>
                     <TableCell>
                       {ops && hasClientService(ops, "vat") ? (
-                        <PriorityBadge priority={ops.vat.status} />
+                        <div className="space-y-1">
+                          <PriorityBadge priority={ops.vat.status} />
+                          <p className="text-xs text-muted-foreground">{ops.vat.cohortLabel}</p>
+                        </div>
                       ) : (
                         <Badge variant="outline">Not scoped</Badge>
                       )}
@@ -4769,6 +4835,7 @@ export default function ClientPortfolio() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="auto">Auto from NR client group</SelectItem>
                     <SelectItem value="11">Jan / Apr / Jul / Oct</SelectItem>
                     <SelectItem value="12">Feb / May / Aug / Nov</SelectItem>
                     <SelectItem value="1">Mar / Jun / Sep / Dec</SelectItem>
