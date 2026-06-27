@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import type { Company } from "@shared/schema";
 import { Briefcase, Building2, Check, ChevronsUpDown } from "lucide-react";
 import {
@@ -27,6 +28,7 @@ import { canAccessNraCenter } from "@shared/access";
  */
 export function CompanySwitcher() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const { company: active } = useDefaultCompany();
   const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
   const { data: currentUser } = useCurrentUser();
@@ -45,6 +47,9 @@ export function CompanySwitcher() {
   const handleReturnToFirm = () => {
     if (!isFirmContext) return;
     clearActiveClientCompany();
+    // Mirror the FirmContextBanner's "Back to Firm" action so both exits land
+    // in the firm workspace rather than leaving the user on a client page.
+    navigate("/firm/clients");
     toast({
       title: "Firm workspace",
       description: "Returned to the NRA firm workspace.",

@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.cursor
+.claire/
+*.swp
+
+# Build artifacts
+server/public
+vite.config.ts.*
+*.tar.gz
+*.tsbuildinfo
+node_modules/.cache
+
+# Uploads
+uploads
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage
+
+# Replit (legacy)
+.replit
+replit.md
+*.nix
+tests/e2e/.artifacts/
+docs/qa/*-benchmark-audit-local/
+
+# E2E bootstrap runtime files (scripts/qa/bootstrap-e2e.sh)
+.e2e-token
+.e2e-company-id
+.e2e-server.log
+.e2e-server.pid

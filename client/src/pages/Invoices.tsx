@@ -1322,6 +1322,7 @@ export default function Invoices() {
                                       total: invoiceDetails.total,
                                       currency: invoiceDetails.currency,
                                       locale,
+                                      companyType: company?.companyType,
                                       // Invoice customization settings
                                       showLogo:
                                         company?.invoiceShowLogo !== undefined

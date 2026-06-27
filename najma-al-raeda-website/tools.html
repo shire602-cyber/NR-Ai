@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Free UAE VAT &amp; Corporate Tax Calculator | Najma Al Raeda</title>
+<meta name="description" content="Free interactive UAE VAT and Corporate Tax calculator from Najma Al Raeda. Estimate your 5% VAT and 9% Corporate Tax instantly." />
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://d8j0ntlcm91z4.cloudfront.net" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="index.html">
+      <img class="brand-mark" src="assets/logo.svg" alt="Najma Al Raeda" />
+      <span class="brand-name">Najma Al Raeda<small>Accounting Services</small></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="services.html">Services</a></li>
+      <li><a href="industries.html">Industries</a></li>
+      <li><a href="insights.html">Insights</a></li>
+      <li><a href="tools.html" class="active">Tools</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <div class="nav-cta">
+      <a href="contact.html" class="btn btn-primary">Book a consultation <span class="arrow">&rarr;</span></a>
+    </div>
+    <button class="nav-toggle" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<section class="page-hero">
+  <div class="wrap reveal">
+    <div class="crumbs"><a href="index.html">Home</a> / Tools</div>
+    <span class="eyebrow">Free tool</span>
+    <h1 class="display" style="font-size:clamp(2.4rem,5vw,4rem);margin-top:18px;">UAE VAT &amp; Corporate Tax calculator.</h1>
+    <p class="lead">Get an instant, indicative estimate of your VAT or Corporate Tax. Built on current UAE Federal Tax Authority rules &mdash; for guidance only, not a formal computation.</p>
+  </div>
+</section>
+<section style="padding-top:30px;">
+  <div class="wrap">
+    <div class="calc-tabs reveal" style="max-width:420px;">
+      <div class="calc-tab active" data-tab="ct">Corporate Tax</div>
+      <div class="calc-tab" data-tab="vat">VAT</div>
+    </div>
+
+    <div class="calc-wrap reveal" id="ct-calc">
+      <div class="calc-input">
+        <span class="eyebrow">Corporate Tax estimate</span>
+        <h3 style="margin:10px 0 24px;">Your details</h3>
+        <div class="calc-field">
+          <label for="ct-profit">Annual taxable income (AED)</label>
+          <input type="number" id="ct-profit" value="600000" min="0" step="1000" />
+          <div class="calc-hint">Taxable profit after allowable deductions &mdash; not revenue.</div>
+        </div>
+        <div class="calc-field">
+          <label for="ct-revenue">Annual revenue (AED)</label>
+          <input type="number" id="ct-revenue" value="1200000" min="0" step="1000" />
+          <div class="calc-hint">Used to check Small Business Relief eligibility (&le; AED 3m).</div>
+        </div>
+        <div class="calc-field">
+          <label style="display:flex;align-items:center;gap:10px;font-weight:500;">
+            <input type="checkbox" id="ct-sbr" style="width:auto;" /> Apply Small Business Relief if eligible
+          </label>
+        </div>
+      </div>
+      <div class="calc-output">
+        <span class="eyebrow">Your estimate</span>
+        <div class="calc-result"><div class="rl">Taxed at 0% (first AED 375,000)</div><div class="rv" id="ct-zero">AED 375,000</div></div>
+        <div class="calc-result"><div class="rl">Taxed at 9%</div><div class="rv" id="ct-taxed">AED 225,000</div></div>
+        <div class="calc-result total"><div class="rl">Estimated Corporate Tax due</div><div class="rv" id="ct-due">AED 20,250</div></div>
+        <div class="calc-result"><div class="rl">Effective tax rate</div><div class="rv" id="ct-eff">3.4%</div></div>
+        <p class="calc-note" id="ct-msg">Based on 0% up to AED 375,000 and 9% above. Free-zone qualifying income and other reliefs may change this.</p>
+      </div>
+    </div>
+
+    <div class="calc-wrap reveal" id="vat-calc" style="display:none;">
+      <div class="calc-input">
+        <span class="eyebrow">VAT estimate</span>
+        <h3 style="margin:10px 0 24px;">Your details</h3>
+        <div class="calc-field">
+          <label for="vat-amount">Amount (AED)</label>
+          <input type="number" id="vat-amount" value="10000" min="0" step="100" />
+        </div>
+        <div class="calc-field">
+          <label for="vat-dir">This amount is&hellip;</label>
+          <select id="vat-dir">
+            <option value="add">Net &mdash; add 5% VAT</option>
+            <option value="remove">Gross &mdash; extract 5% VAT</option>
+          </select>
+        </div>
+      </div>
+      <div class="calc-output">
+        <span class="eyebrow">Your estimate</span>
+        <div class="calc-result"><div class="rl">Net amount (excl. VAT)</div><div class="rv" id="vat-net">AED 10,000</div></div>
+        <div class="calc-result total"><div class="rl">VAT at 5%</div><div class="rv" id="vat-vat">AED 500</div></div>
+        <div class="calc-result"><div class="rl">Gross amount (incl. VAT)</div><div class="rv" id="vat-gross">AED 10,500</div></div>
+        <p class="calc-note">Standard UAE VAT rate is 5%. Zero-rated and exempt supplies are treated differently &mdash; ask us if unsure.</p>
+      </div>
+    </div>
+    <p class="form-note" style="margin-top:22px;max-width:760px;">These figures are indicative estimates for general guidance only and do not constitute a formal tax computation or tax advice. For an accurate calculation tailored to your business, <a href="contact.html" style="color:var(--gold-deep);font-weight:600;">book a free consultation</a>.</p>
+  </div>
+</section>
+
+<section class="cta-band has-texture" style="--tex:url('https://d8j0ntlcm91z4.cloudfront.net/user_3Er19yhNcCBleF6VbHc1DnoxQpn/hf_20260623_145717_868fd67b-e559-4dc4-ad53-5b04054bde42.png')">
+  <div class="wrap inner reveal">
+    <span class="eyebrow">Want the real numbers?</span>
+    <h2>We&rsquo;ll prepare your actual VAT and Corporate Tax filings.</h2>
+    <p class="lead">Our FTA-registered specialists handle registration, computation and filing end to end &mdash; with zero penalties as the standard.</p>
+    <div class="cta-actions">
+      <a href="contact.html" class="btn btn-primary">Book a consultation <span class="arrow">&rarr;</span></a>
+      <a href="tools.html" class="btn btn-ghost">Try the tax calculator</a>
+    </div>
+  </div>
+</section>
+<script>
+(function(){
+  var fmt=function(n){return 'AED '+Math.round(n).toLocaleString('en-US');};
+  var tabs=document.querySelectorAll('.calc-tab');
+  var ct=document.getElementById('ct-calc'), vat=document.getElementById('vat-calc');
+  tabs.forEach(function(t){t.addEventListener('click',function(){
+    tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');
+    if(t.dataset.tab==='ct'){ct.style.display='';vat.style.display='none';}else{ct.style.display='none';vat.style.display='';}
+  });});
+  function ctCalc(){
+    var p=parseFloat(document.getElementById('ct-profit').value)||0;
+    var rev=parseFloat(document.getElementById('ct-revenue').value)||0;
+    var sbr=document.getElementById('ct-sbr').checked;
+    var THRESH=375000, eligible=rev<=3000000, due, taxed, msg;
+    if(sbr&&eligible){due=0;taxed=0;msg='Small Business Relief applied: revenue is at or below AED 3m, so taxable income is treated as nil for this period.';}
+    else{taxed=Math.max(0,p-THRESH);due=taxed*0.09;
+      msg='Based on 0% up to AED 375,000 and 9% above.'+(sbr&&!eligible?' Small Business Relief not applied: revenue exceeds AED 3m.':'');}
+    document.getElementById('ct-zero').textContent=fmt(Math.min(p,THRESH));
+    document.getElementById('ct-taxed').textContent=fmt(taxed);
+    document.getElementById('ct-due').textContent=fmt(due);
+    document.getElementById('ct-eff').textContent=(p>0?((due/p)*100).toFixed(1):'0.0')+'%';
+    document.getElementById('ct-msg').textContent=msg;
+  }
+  function vatCalc(){
+    var a=parseFloat(document.getElementById('vat-amount').value)||0;
+    var dir=document.getElementById('vat-dir').value, net,vt,gross;
+    if(dir==='add'){net=a;vt=a*0.05;gross=a*1.05;}else{net=a/1.05;vt=a-net;gross=a;}
+    document.getElementById('vat-net').textContent=fmt(net);
+    document.getElementById('vat-vat').textContent=fmt(vt);
+    document.getElementById('vat-gross').textContent=fmt(gross);
+  }
+  ['ct-profit','ct-revenue'].forEach(function(id){document.getElementById(id).addEventListener('input',ctCalc);});
+  document.getElementById('ct-sbr').addEventListener('change',ctCalc);
+  ['vat-amount','vat-dir'].forEach(function(id){document.getElementById(id).addEventListener('input',vatCalc);});
+  ctCalc();vatCalc();
+})();
+</script>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="index.html">
+          <img class="brand-mark" src="assets/logo.svg" alt="Najma Al Raeda" />
+          <span class="brand-name" style="color:var(--paper)">Najma Al Raeda</span>
+        </a>
+        <p>A Dubai accounting, tax and advisory firm helping businesses across the UAE stay compliant, clear and confident since 2017.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Services</h5>
+        <ul>
+          <li><a href="service-bookkeeping.html">Bookkeeping</a></li>
+          <li><a href="service-vat-tax.html">VAT &amp; Corporate Tax</a></li>
+          <li><a href="service-audit.html">Audit &amp; Assurance</a></li>
+          <li><a href="service-cfo.html">CFO &amp; Advisory</a></li>
+          <li><a href="service-company-formation.html">Company Formation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Explore</h5>
+        <ul>
+          <li><a href="insights.html">Insights</a></li>
+          <li><a href="tools.html">Tax calculator</a></li>
+          <li><a href="industries.html">Industries</a></li>
+          <li><a href="about.html">About us</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Get in touch</h5>
+        <ul>
+          <li><a href="mailto:hello@nraccounts.com">hello@nraccounts.com</a></li>
+          <li><a href="tel:+97143360773">+971 4 336 0773</a></li>
+          <li><a href="contact.html">Al Futtaim Tower, Baniyas Square, Dubai</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; <span id="year">2026</span> Najma Al Raeda Accounting &amp; Advisory. All rights reserved.</p>
+      <p>Registered FTA Tax Agency &middot; Free-zone approved &middot; Dubai, United Arab Emirates</p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/script.js"></script>
+</body>
+</html>

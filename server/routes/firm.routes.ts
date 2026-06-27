@@ -13,8 +13,11 @@ import {
   currentVatPeriodForCompany,
   mapImportRow,
   nextCorporateTaxFilingWindow,
+  resolveNrClientVatPeriodStartMonth,
   validateImportedClient,
+  vatPeriodStartMonthForNrClientName,
   vatCohortFromPeriodStart,
+  withNrClientVatGroup,
   type VatCohort,
   type VatCohortKey,
 } from "../services/firm-clients.service";
@@ -401,9 +404,9 @@ function buildBookkeeperIntervention(input: {
 }
 
 const STANDARD_VAT_COHORTS = [
-  vatCohortFromPeriodStart(11, "quarterly"),
-  vatCohortFromPeriodStart(12, "quarterly"),
   vatCohortFromPeriodStart(1, "quarterly"),
+  vatCohortFromPeriodStart(2, "quarterly"),
+  vatCohortFromPeriodStart(3, "quarterly"),
 ] as VatCohort[];
 
 function emptyBookkeeperDashboard() {
@@ -567,6 +570,10 @@ async function upsertClientServicePlan(
 // ─── Route registration ───────────────────────────────────────────────────────
 
 const clientServiceSchema = z.enum(["vat", "bookkeeping", "corporate_tax", "accounting"]);
+const optionalVatPeriodStartMonthSchema = z.preprocess((value) => {
+  if (value == null || value === "" || value === "auto") return undefined;
+  return value;
+}, z.coerce.number().int().min(1).max(12).optional());
 
 const createClientSchema = z.object({
   name: z.string().min(1),
@@ -580,7 +587,7 @@ const createClientSchema = z.object({
   websiteUrl: z.string().optional(),
   emirate: z.string().optional(),
   vatFilingFrequency: z.string().optional(),
-  vatPeriodStartMonth: z.coerce.number().int().min(1).max(12).optional(),
+  vatPeriodStartMonth: optionalVatPeriodStartMonthSchema,
   fiscalYearStartMonth: z.coerce.number().int().min(1).max(12).optional(),
   taxRegistrationType: z.string().optional(),
   corporateTaxId: z.string().optional(),
@@ -635,10 +642,11 @@ export function registerFirmRoutes(app: Express): void {
 
       const clientsWithStats = await Promise.all(
         clientCompanies.map(async (company) => {
+          const organisedCompany = withNrClientVatGroup(company);
           const stats = await getClientStats(company.id);
           const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
           return {
-            ...company,
+            ...organisedCompany,
             ...stats,
             serviceScope: servicePlan.servicesIncluded,
             servicePlan,
@@ -695,9 +703,11 @@ export function registerFirmRoutes(app: Express): void {
         ]);
       const servicePlan = servicePlanMap.get(companyId) ?? servicePlanFromEngagement(undefined);
 
+      const organisedCompany = withNrClientVatGroup(company);
+
       res.json({
         company: {
-          ...company,
+          ...organisedCompany,
           serviceScope: servicePlan.servicesIncluded,
           servicePlan,
         },
@@ -738,7 +748,8 @@ export function registerFirmRoutes(app: Express): void {
         websiteUrl: companyInput.websiteUrl,
         emirate: companyInput.emirate || "dubai",
         vatFilingFrequency: companyInput.vatFilingFrequency || "quarterly",
-        vatPeriodStartMonth: companyInput.vatPeriodStartMonth,
+        vatPeriodStartMonth:
+          companyInput.vatPeriodStartMonth ?? vatPeriodStartMonthForNrClientName(companyInput.name),
         fiscalYearStartMonth: companyInput.fiscalYearStartMonth,
         taxRegistrationType: companyInput.taxRegistrationType,
         corporateTaxId: companyInput.corporateTaxId,
@@ -1206,13 +1217,15 @@ export function registerFirmRoutes(app: Express): void {
         const hasCorporateTaxService = services.includes("corporate_tax");
         const hasBookkeepingService = services.includes("bookkeeping");
         const hasAccountingService = services.includes("accounting");
-        const vatCohort = vatCohortFromPeriodStart(
+        const vatPeriodStartMonth = resolveNrClientVatPeriodStartMonth(
+          company.name,
           company.vatPeriodStartMonth,
-          company.vatFilingFrequency
+          "client"
         );
+        const vatCohort = vatCohortFromPeriodStart(vatPeriodStartMonth, company.vatFilingFrequency);
         const plannedVat = currentVatPeriodForCompany(
           now,
-          company.vatPeriodStartMonth,
+          vatPeriodStartMonth,
           company.vatFilingFrequency
         );
         const latestVat = vatMap.get(company.id) ?? null;

@@ -1,0 +1,4 @@
+reports/
+*.command
+README.md
+.DS_Store

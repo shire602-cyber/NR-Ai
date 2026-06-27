@@ -1,0 +1,75 @@
+// UAE accounting constants used across the codebase.
+// Centralized here so VAT rates, currency, and the system Chart of Accounts
+// codes are not duplicated as magic numbers/strings in route and service files.
+
+/** UAE standard VAT rate (5%). */
+export const UAE_VAT_RATE = 0.05;
+
+/** UAE Corporate Tax small-business exemption threshold in AED. */
+export const UAE_CT_EXEMPTION_THRESHOLD = 375_000;
+
+/** Default reporting/invoice currency for UAE-based businesses. */
+export const DEFAULT_CURRENCY = "AED";
+
+/**
+ * System-account codes from the default UAE Chart of Accounts.
+ * The accounting code lookup logic in routes/services should reference these
+ * names instead of bare strings, so a future COA renumbering only touches one
+ * file.
+ */
+export const ACCOUNT_CODES = {
+  /** Accounts Receivable (current asset). */
+  AR: "1040",
+  /** Accounts Payable (current liability). */
+  AP: "2010",
+  /** Output VAT payable (current liability). */
+  VAT_OUTPUT: "2020",
+  /** Input VAT receivable (current asset). */
+  VAT_INPUT: "1050",
+  /** Cash on hand (current asset). */
+  CASH: "1010",
+  /** Bank accounts (current asset). */
+  BANK: "1020",
+  /** Inventory (current asset). */
+  INVENTORY: "1070",
+  /** Office equipment (fixed asset). */
+  EQUIPMENT: "1210",
+  /** Zero-rated sales (income). */
+  ZERO_RATED_SALES: "4060",
+  /** Sales Revenue (income). */
+  REVENUE: "4010",
+  /** Service Revenue (alternate revenue account some firms use). */
+  REVENUE_ALT: "4020",
+  /** Deferred Revenue / customer advances (holds invoice overpayments). */
+  DEFERRED_REVENUE: "2050",
+  /** Employee Reimbursements Payable (owed to staff for approved expense claims). */
+  EMP_REIMBURSEMENT_PAYABLE: "2045",
+  /** Foreign-exchange gain (income) — realised + unrealised FX differences. */
+  FX_GAIN: "4090",
+  /** Foreign-exchange loss (expense) — realised + unrealised FX differences. */
+  FX_LOSS: "5140",
+} as const;
+
+export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
+
+/**
+ * Receipt posting state. Receipts are stored unposted until they are turned
+ * into a journal entry, at which point `posted=true`.
+ */
+export const RECEIPT_STATUS = {
+  UNPOSTED: false,
+  POSTED: true,
+} as const;
+
+/**
+ * Generic integration sync status used by the integrations subsystem
+ * (Google Sheets imports/exports, etc.).
+ */
+export const INTEGRATION_SYNC_STATUS = {
+  PENDING: "pending",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const;
+
+export type IntegrationSyncStatus =
+  (typeof INTEGRATION_SYNC_STATUS)[keyof typeof INTEGRATION_SYNC_STATUS];

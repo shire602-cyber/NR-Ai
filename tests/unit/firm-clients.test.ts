@@ -4,12 +4,16 @@ import {
   validateImportedClient,
   normaliseEmirate,
   normaliseFiscalYearStartMonth,
+  normaliseNrClientVatGroupName,
   normaliseServiceScope,
   normaliseVatCloseGroup,
   normaliseVatFiling,
+  nrClientVatGroupForName,
+  resolveNrClientVatPeriodStartMonth,
   corporateTaxWindow,
   currentVatPeriodForCompany,
   nextCorporateTaxFilingWindow,
+  vatPeriodStartMonthForNrClientName,
   vatCohortFromPeriodStart,
 } from "../../server/services/firm-clients.service";
 
@@ -77,7 +81,7 @@ describe("firm-clients.service: import mapping", () => {
         businessAddress: "Dubai",
         industry: "Construction",
         websiteUrl: "https://acme.ae",
-        vatPeriodStartMonth: 11,
+        vatPeriodStartMonth: 1,
         fiscalYearStartMonth: 4,
         corporateTaxId: "CT-1002345678",
       });
@@ -90,6 +94,23 @@ describe("firm-clients.service: import mapping", () => {
       });
       if ("error" in result) throw new Error("expected mapped row");
       expect(result.serviceScope).toEqual(["vat", "bookkeeping", "corporate_tax"]);
+    });
+
+    it("auto-assigns submitted NR clients to their VAT group when no close group is supplied", () => {
+      const result = mapImportRow({
+        "Company Name": "AL INTIFA BUILDING MATERIALS LLC",
+      });
+      if ("error" in result) throw new Error("expected mapped row");
+      expect(result.vatPeriodStartMonth).toBe(1);
+    });
+
+    it("keeps an explicit import close group ahead of the NR name mapping", () => {
+      const result = mapImportRow({
+        "Company Name": "AL INTIFA BUILDING MATERIALS LLC",
+        "VAT Close Group": "Feb / May / Aug / Nov",
+      });
+      if ("error" in result) throw new Error("expected mapped row");
+      expect(result.vatPeriodStartMonth).toBe(2);
     });
   });
 
@@ -139,15 +160,15 @@ describe("firm-clients.service: import mapping", () => {
 
   describe("bulk-import tax month normalisers", () => {
     it("maps the three VAT close groups to the stored VAT period start month", () => {
-      expect(normaliseVatCloseGroup("Jan / Apr / Jul / Oct")).toBe(11);
-      expect(normaliseVatCloseGroup("Feb, May, Aug, Nov")).toBe(12);
-      expect(normaliseVatCloseGroup("Mar Jun Sep Dec")).toBe(1);
+      expect(normaliseVatCloseGroup("Jan / Apr / Jul / Oct")).toBe(1);
+      expect(normaliseVatCloseGroup("Feb, May, Aug, Nov")).toBe(2);
+      expect(normaliseVatCloseGroup("Mar Jun Sep Dec")).toBe(3);
     });
 
     it("maps a single close month to its VAT close group", () => {
-      expect(normaliseVatCloseGroup("January")).toBe(11);
-      expect(normaliseVatCloseGroup("May")).toBe(12);
-      expect(normaliseVatCloseGroup("September")).toBe(1);
+      expect(normaliseVatCloseGroup("January")).toBe(1);
+      expect(normaliseVatCloseGroup("May")).toBe(2);
+      expect(normaliseVatCloseGroup("September")).toBe(3);
     });
 
     it("parses financial year start month names and numbers", () => {
@@ -155,6 +176,51 @@ describe("firm-clients.service: import mapping", () => {
       expect(normaliseFiscalYearStartMonth("Sep")).toBe(9);
       expect(normaliseFiscalYearStartMonth("12")).toBe(12);
       expect(normaliseFiscalYearStartMonth("Not a month")).toBeUndefined();
+    });
+  });
+
+  describe("submitted NR VAT group assignments", () => {
+    it("normalises legal suffixes, punctuation, notes, and casing", () => {
+      expect(normaliseNrClientVatGroupName("FATMA RASHED TRADING(L.L.C) (new clinet)")).toBe(
+        "fatma rashed trading"
+      );
+    });
+
+    it("maps the submitted Group 1 clients to the first VAT close cohort", () => {
+      expect(vatPeriodStartMonthForNrClientName("Al ain business Center")).toBe(1);
+      expect(vatPeriodStartMonthForNrClientName("OLYMPIC ARAN GENERAL TRADING LLC")).toBe(1);
+      expect(nrClientVatGroupForName("sufretna")).toMatchObject({
+        key: "group_1",
+        label: "Group 1",
+      });
+    });
+
+    it("maps the submitted Group 2 clients to the second VAT close cohort", () => {
+      expect(vatPeriodStartMonthForNrClientName("FATMA RASHED TRADING(L.L.C) (new client)")).toBe(
+        2
+      );
+      expect(vatPeriodStartMonthForNrClientName("RAWDHA AL SHARQ TECHNOLOGY LLC")).toBe(2);
+      expect(nrClientVatGroupForName("mowlid cargo")).toMatchObject({
+        key: "group_2",
+        label: "Group 2",
+      });
+    });
+
+    it("maps the submitted Group 3 clients to the third VAT close cohort", () => {
+      expect(vatPeriodStartMonthForNrClientName("AbdulKader Food Stuff L.L.C.")).toBe(3);
+      expect(vatPeriodStartMonthForNrClientName("Muradso Computer")).toBe(3);
+      expect(nrClientVatGroupForName("next generation")).toMatchObject({
+        key: "group_3",
+        label: "Group 3",
+      });
+    });
+
+    it("falls back to the configured VAT period start for clients outside the submitted list", () => {
+      expect(resolveNrClientVatPeriodStartMonth("Acme LLC", 12)).toBe(12);
+    });
+
+    it("does not apply submitted NR grouping to self-service customer companies", () => {
+      expect(resolveNrClientVatPeriodStartMonth("Shabelli", 1, "customer")).toBe(1);
     });
   });
 
@@ -223,17 +289,17 @@ describe("firm-clients.service: import mapping", () => {
 
   describe("VAT cohort and filing windows", () => {
     it("maps quarterly clients into the three FTA closing cohorts", () => {
-      expect(vatCohortFromPeriodStart(11, "quarterly")).toMatchObject({
+      expect(vatCohortFromPeriodStart(1, "quarterly")).toMatchObject({
         key: "jan_apr_jul_oct",
         label: "Jan / Apr / Jul / Oct",
         closeMonths: [1, 4, 7, 10],
       });
-      expect(vatCohortFromPeriodStart(12, "quarterly")).toMatchObject({
+      expect(vatCohortFromPeriodStart(2, "quarterly")).toMatchObject({
         key: "feb_may_aug_nov",
         label: "Feb / May / Aug / Nov",
         closeMonths: [2, 5, 8, 11],
       });
-      expect(vatCohortFromPeriodStart(1, "quarterly")).toMatchObject({
+      expect(vatCohortFromPeriodStart(3, "quarterly")).toMatchObject({
         key: "mar_jun_sep_dec",
         label: "Mar / Jun / Sep / Dec",
         closeMonths: [3, 6, 9, 12],
@@ -248,18 +314,25 @@ describe("firm-clients.service: import mapping", () => {
       });
     });
 
-    it("calculates the active VAT period and 28-day due date", () => {
+    it("calculates the latest completed VAT filing period and 28-day due date", () => {
       const window = currentVatPeriodForCompany(new Date("2026-05-16T12:00:00Z"), 1, "quarterly");
-      expect(window.periodStart.toISOString()).toBe("2026-04-01T00:00:00.000Z");
-      expect(window.periodEnd.toISOString()).toBe("2026-06-30T00:00:00.000Z");
-      expect(window.dueDate.toISOString()).toBe("2026-07-28T00:00:00.000Z");
+      expect(window.periodStart.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+      expect(window.periodEnd.toISOString()).toBe("2026-03-31T00:00:00.000Z");
+      expect(window.dueDate.toISOString()).toBe("2026-04-28T00:00:00.000Z");
+    });
+
+    it("uses Group 3's Mar-May VAT filing window during June", () => {
+      const window = currentVatPeriodForCompany(new Date("2026-06-27T12:00:00Z"), 3, "quarterly");
+      expect(window.periodStart.toISOString()).toBe("2026-03-01T00:00:00.000Z");
+      expect(window.periodEnd.toISOString()).toBe("2026-05-31T00:00:00.000Z");
+      expect(window.dueDate.toISOString()).toBe("2026-06-28T00:00:00.000Z");
     });
 
     it("handles VAT periods that start in the prior calendar year", () => {
-      const window = currentVatPeriodForCompany(new Date("2026-01-15T12:00:00Z"), 11, "quarterly");
-      expect(window.periodStart.toISOString()).toBe("2025-11-01T00:00:00.000Z");
-      expect(window.periodEnd.toISOString()).toBe("2026-01-31T00:00:00.000Z");
-      expect(window.dueDate.toISOString()).toBe("2026-02-28T00:00:00.000Z");
+      const window = currentVatPeriodForCompany(new Date("2026-01-15T12:00:00Z"), 3, "quarterly");
+      expect(window.periodStart.toISOString()).toBe("2025-09-01T00:00:00.000Z");
+      expect(window.periodEnd.toISOString()).toBe("2025-11-30T00:00:00.000Z");
+      expect(window.dueDate.toISOString()).toBe("2025-12-28T00:00:00.000Z");
     });
   });
 

@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
+import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -219,6 +220,23 @@ export function detectPeriod(
 }
 
 /**
+ * Detect the VAT return that is currently fileable. Unlike `detectPeriod`,
+ * this never returns a still-open period. In June 2026, for a Mar/Jun/Sep/Dec
+ * Group 3 filer, this returns the Mar-May return due on 28 Jun 2026.
+ */
+export function detectFilingPeriod(
+  frequency: VatFrequency,
+  periodStartMonth: number,
+  referenceDate: Date = new Date()
+): VatPeriod {
+  const activePeriod = detectPeriod(frequency, periodStartMonth, referenceDate);
+  if (activePeriod.end.getTime() <= referenceDate.getTime()) {
+    return activePeriod;
+  }
+  return detectPeriod(frequency, periodStartMonth, new Date(activePeriod.start.getTime() - 1));
+}
+
+/**
  * Enumerate the N most recent VAT periods ending on or before `referenceDate`
  * (inclusive). Used to populate the periods list — we don't store every past
  * period in the DB, just generate them on demand and overlay any saved status.
@@ -230,14 +248,13 @@ export function listRecentPeriods(
   referenceDate: Date = new Date()
 ): VatPeriod[] {
   const periods: VatPeriod[] = [];
-  const stepMonths = frequency === "monthly" ? 1 : QUARTER_LENGTH_MONTHS;
   let cursor = referenceDate;
   for (let i = 0; i < count; i++) {
-    const period = detectPeriod(frequency, periodStartMonth, cursor);
+    const period = detectFilingPeriod(frequency, periodStartMonth, cursor);
     periods.push(period);
-    // Step `cursor` back by stepMonths so the next iteration falls inside the
-    // previous period — using the start - 1 day avoids edge cases at boundaries.
-    cursor = new Date(period.start.getTime() - 24 * 60 * 60 * 1000);
+    // Step to the final millisecond before this period so the next iteration
+    // lands on the completed period immediately before it.
+    cursor = new Date(period.start.getTime() - 1);
   }
   return periods;
 }
@@ -592,7 +609,7 @@ interface CompanyVatConfig {
 
 async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | null> {
   const res = await pool.query(
-    `SELECT id, COALESCE(emirate, 'dubai') AS emirate, trn_vat_number,
+    `SELECT id, name, company_type, COALESCE(emirate, 'dubai') AS emirate, trn_vat_number,
             vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS vat_period_start_month,
             COALESCE(vat_auto_calculate, true) AS vat_auto_calculate,
@@ -608,14 +625,22 @@ async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | 
     emirate: String(r.emirate),
     trnVatNumber: (r.trn_vat_number as string | null) ?? null,
     vatFilingFrequency: (r.vat_filing_frequency as string | null) ?? null,
-    vatPeriodStartMonth: Number(r.vat_period_start_month) || 1,
+    vatPeriodStartMonth: resolveNrClientVatPeriodStartMonth(
+      String(r.name),
+      Number(r.vat_period_start_month) || 1,
+      (r.company_type as string | null) ?? null
+    ),
     vatAutoCalculate: Boolean(r.vat_auto_calculate),
     exemptSupplyRatio: Number(r.exempt_supply_ratio) || 0,
   };
 }
 
 export function frequencyFromCompany(value: string | null | undefined): VatFrequency {
-  return value === "Monthly" ? "monthly" : "quarterly";
+  return String(value || "").toLowerCase() === "monthly" ? "monthly" : "quarterly";
+}
+
+function periodKey(start: string | Date, end: string | Date): string {
+  return `${new Date(start).toISOString()}::${new Date(end).toISOString()}`;
 }
 
 /**
@@ -638,7 +663,7 @@ export async function calculateVatReturn(
   }
 
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
-  const resolvedPeriod = period ?? detectPeriod(frequency, company.vatPeriodStartMonth, now);
+  const resolvedPeriod = period ?? detectFilingPeriod(frequency, company.vatPeriodStartMonth, now);
 
   // ── Sales side ────────────────────────────────────────────────────────────
   // Pull invoice lines for the period in a single query. We exclude draft,
@@ -910,12 +935,16 @@ export async function listPeriodsForCompany(
 
   const storedByKey = new Map<string, StoredPeriodRow>();
   for (const row of stored.rows as StoredPeriodRow[]) {
-    const key = `${new Date(row.period_start).toISOString()}::${new Date(row.period_end).toISOString()}`;
-    storedByKey.set(key, row);
+    storedByKey.set(periodKey(row.period_start, row.period_end), row);
   }
 
+  const oldestSyntheticEnd = synthetic.reduce(
+    (oldest, period) => Math.min(oldest, period.end.getTime()),
+    Number.POSITIVE_INFINITY
+  );
+
   const summaries: VatPeriodSummary[] = synthetic.map((p) => {
-    const key = `${p.start.toISOString()}::${p.end.toISOString()}`;
+    const key = periodKey(p.start, p.end);
     const row = storedByKey.get(key);
     if (row) storedByKey.delete(key);
     return {
@@ -936,12 +965,16 @@ export async function listPeriodsForCompany(
 
   // Add any stored periods that didn't match a synthetic slot (older history).
   for (const row of storedByKey.values()) {
+    const periodEnd = new Date(row.period_end);
+    if (periodEnd.getTime() > now.getTime()) continue;
+    if (periodEnd.getTime() > oldestSyntheticEnd) continue;
+
     const due = new Date(row.due_date);
     summaries.push({
       id: String(row.id),
       companyId,
       periodStart: new Date(row.period_start).toISOString(),
-      periodEnd: new Date(row.period_end).toISOString(),
+      periodEnd: periodEnd.toISOString(),
       dueDate: due.toISOString(),
       frequency: (row.frequency as VatFrequency) || frequency,
       status: row.status as VatPeriodStatus,
@@ -1076,7 +1109,7 @@ export async function listDueDates(
 ): Promise<DueDateView[]> {
   if (companyIds.length === 0) return [];
   const companyRes = await pool.query(
-    `SELECT id, name, trn_vat_number,
+    `SELECT id, name, company_type, trn_vat_number,
             COALESCE(vat_filing_frequency, 'Quarterly') AS vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS vat_period_start_month
      FROM companies
@@ -1084,38 +1117,50 @@ export async function listDueDates(
     [companyIds]
   );
   const periodRes = await pool.query(
-    `SELECT id, company_id, period_end, due_date, status
+    `SELECT id, company_id, period_start, period_end, due_date, status
      FROM vat_return_periods
      WHERE company_id = ANY($1::uuid[])
        AND status IN ('draft','ready')`,
     [companyIds]
   );
-  const storedByCompany = new Map<string, any>();
+  const storedByCompany = new Map<string, any[]>();
   for (const row of periodRes.rows) {
     const key = String(row.company_id);
-    const existing = storedByCompany.get(key);
-    if (!existing || new Date(row.due_date) < new Date(existing.due_date)) {
-      storedByCompany.set(key, row);
-    }
+    storedByCompany.set(key, [...(storedByCompany.get(key) ?? []), row]);
   }
 
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
-    const stored = storedByCompany.get(cid);
-    let periodEnd: Date;
-    let dueDate: Date;
-    let status: VatPeriodStatus = "draft";
-    if (stored) {
-      periodEnd = new Date(stored.period_end);
-      dueDate = new Date(stored.due_date);
-      status = stored.status as VatPeriodStatus;
-    } else {
-      const freq = frequencyFromCompany(String(c.vat_filing_frequency));
-      const period = detectPeriod(freq, Number(c.vat_period_start_month), now);
-      periodEnd = period.end;
-      dueDate = period.dueDate;
+    const freq = frequencyFromCompany(String(c.vat_filing_frequency));
+    const periodStartMonth = resolveNrClientVatPeriodStartMonth(
+      String(c.name),
+      Number(c.vat_period_start_month),
+      (c.company_type as string | null) ?? null
+    );
+    const synthetic = listRecentPeriods(freq, periodStartMonth, 8, now);
+    const syntheticKeys = new Set(synthetic.map((period) => periodKey(period.start, period.end)));
+    const scheduled = synthetic[0] ?? detectFilingPeriod(freq, periodStartMonth, now);
+    let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {
+      periodEnd: scheduled.end,
+      dueDate: scheduled.dueDate,
+      status: "draft",
+    };
+
+    for (const stored of storedByCompany.get(cid) ?? []) {
+      const storedPeriodKey = periodKey(stored.period_start ?? scheduled.start, stored.period_end);
+      if (!syntheticKeys.has(storedPeriodKey)) continue;
+      const storedDue = new Date(stored.due_date);
+      if (storedDue < candidate.dueDate) {
+        candidate = {
+          periodEnd: new Date(stored.period_end),
+          dueDate: storedDue,
+          status: stored.status as VatPeriodStatus,
+        };
+      }
     }
+
+    const { periodEnd, dueDate, status } = candidate;
     const dl = deadlineStatus(dueDate, now);
     out.push({
       companyId: cid,
