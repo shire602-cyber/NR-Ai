@@ -32,6 +32,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { clearCsrfToken, withCsrfHeader } from "@/lib/csrf";
+import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import {
   exportToExcel,
@@ -616,7 +617,11 @@ export default function Receipts() {
   // own receipt to scan — previously only page 1 was processed.
   const convertPdfToImages = async (
     file: File
-  ): Promise<{ pages: Array<{ blob: Blob; preview: string }>; total: number; rendered: number }> => {
+  ): Promise<{
+    pages: Array<{ blob: Blob; preview: string }>;
+    total: number;
+    rendered: number;
+  }> => {
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -994,108 +999,7 @@ export default function Receipts() {
   };
 
   const parseReceiptText = (text: string): ExtractedData => {
-    const lines = text.split("\n").filter((l) => l.trim().length > 0);
-    let merchant = "";
-    let date = "";
-    let total = 0;
-    let vatAmount = 0;
-
-    // Extract merchant (usually first or second non-empty line)
-    if (lines.length > 0) {
-      merchant = lines[0].trim();
-      // If first line is too short, try second line
-      if (merchant.length < 3 && lines.length > 1) {
-        merchant = lines[1].trim();
-      }
-    }
-
-    // Extract total - try multiple patterns
-    const totalPatterns = [
-      /(?:total|amount|grand total|net total)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
-      /(?:AED|aed|dhs)[:\s]*([\d,]+\.?\d*)[\s]*(?:total)?/i,
-      /([\d,]+\.?\d*)[:\s]*(?:AED|aed|dhs)/i,
-    ];
-
-    for (const pattern of totalPatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        const value = parseFloat(match[1].replace(/,/g, ""));
-        if (value > 0 && value < 1000000) {
-          // Sanity check
-          total = value;
-          break;
-        }
-      }
-    }
-
-    // Extract VAT - try multiple patterns
-    const vatPatterns = [
-      /(?:vat|tax|gst)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
-      /(?:5%|5\s*%)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
-    ];
-
-    for (const pattern of vatPatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        const value = parseFloat(match[1].replace(/,/g, ""));
-        if (value > 0 && value < total) {
-          // VAT should be less than total
-          vatAmount = value;
-          break;
-        }
-      }
-    }
-
-    // If no VAT found but we have a total, estimate 5% UAE VAT
-    if (total > 0 && vatAmount === 0) {
-      // Check if the total might already include VAT (look for subtotal)
-      const subtotalPattern =
-        /(?:subtotal|sub total|sub-total)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i;
-      const subtotalMatch = text.match(subtotalPattern);
-      if (subtotalMatch) {
-        const subtotal = parseFloat(subtotalMatch[1].replace(/,/g, ""));
-        vatAmount = total - subtotal;
-      }
-    }
-
-    // Extract date - try multiple formats
-    const datePatterns = [
-      /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/,
-      /\d{4}[-/]\d{1,2}[-/]\d{1,2}/,
-      /\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4}/i,
-    ];
-
-    for (const pattern of datePatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        date = match[0];
-        break;
-      }
-    }
-
-    // If no date found, use today
-    if (!date) {
-      date = new Date().toISOString().split("T")[0];
-    }
-
-    // Derive subtotal from total and VAT
-    const derivedSubtotal =
-      vatAmount > 0 && total > 0
-        ? parseFloat((total - vatAmount).toFixed(2))
-        : parseFloat((total / 1.05).toFixed(2));
-    const derivedVat = vatAmount > 0 ? vatAmount : parseFloat((total - derivedSubtotal).toFixed(2));
-
-    return {
-      merchant: merchant || "Unknown Merchant",
-      date,
-      subtotal: derivedSubtotal,
-      vatPercentage: 5,
-      vatAmount: derivedVat,
-      total,
-      currency: "AED",
-      rawText: text,
-      confidence: 0.5,
-    };
+    return parseReceiptOcrText(text);
   };
 
   const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
@@ -1870,7 +1774,11 @@ export default function Receipts() {
                                   receipt.data.classifier.method}
                               </span>
                               {typeof receipt.data.classifier.confidence === "number" && (
-                                <> · {Math.round(receipt.data.classifier.confidence * 100)}% confident</>
+                                <>
+                                  {" "}
+                                  · {Math.round(receipt.data.classifier.confidence * 100)}%
+                                  confident
+                                </>
                               )}
                               . You can change it above — your correction trains the model.
                             </p>

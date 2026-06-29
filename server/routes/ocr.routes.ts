@@ -15,12 +15,14 @@ import {
 } from "../services/excel-export.service";
 import { classifyOcrReceipt } from "../services/receipt-autopilot.service";
 import { isStandardCategory } from "../services/receipt-classifier.service";
+import { extractReceiptWithLocalOcr } from "../services/local-ocr.service";
 import {
   createOcrClients,
   describeOcrProviders,
   formatProviderFailures,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
+import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
 
 const log = createLogger("ocr");
 
@@ -92,14 +94,6 @@ export function registerOCRRoutes(app: Express) {
         "Communication",
         "Other",
       ];
-
-      if (!anthropic && !openai) {
-        log.warn("OCR called but no AI key configured (ANTHROPIC_API_KEY or OPENAI_API_KEY)");
-        return res.status(503).json({
-          message:
-            "OCR service unavailable — AI provider not configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
-        });
-      }
 
       if (!imageData && !sanitizedContent) {
         return res.status(400).json({ message: "Missing imageData or content" });
@@ -178,24 +172,88 @@ Respond ONLY with valid JSON matching this exact structure:
         return aiResult;
       };
 
+      const respondWithResult = async (result: any, rawText: string, ocrSource: string) => {
+        result._ocrSource = result._ocrSource || ocrSource;
+        await enrichWithInternalClassifier(result);
+        return res.json(
+          buildResult(result, rawText, companyId, sanitizedMessageId, validCategories)
+        );
+      };
+
+      let localOcrErrorDetail: string | null = null;
+      const tryLocalImageFallback = async (reason: string) => {
+        if (!imageData) return null;
+        try {
+          const localResult = await extractReceiptWithLocalOcr(String(imageData));
+          localOcrErrorDetail = null;
+          log.warn(
+            {
+              reason,
+              confidence: localResult.confidence,
+              textLength: localResult.rawText.length,
+            },
+            "AI OCR unavailable; used local Tesseract fallback"
+          );
+          return localResult;
+        } catch (err: any) {
+          localOcrErrorDetail = summarizeOcrProviderError(err);
+          log.error({ err: localOcrErrorDetail, reason }, "Local OCR fallback failed");
+          return null;
+        }
+      };
+
+      const parseTextFallback = (reason: string) => {
+        if (!sanitizedContent) return null;
+        const parsed = parseReceiptOcrText(sanitizedContent);
+        log.warn(
+          {
+            reason,
+            confidence: parsed.confidence,
+            textLength: sanitizedContent.length,
+          },
+          "AI OCR unavailable; used deterministic text parser fallback"
+        );
+        return { ...parsed, _ocrSource: "text-parser" };
+      };
+
+      if (!anthropic && !openai) {
+        log.warn("OCR called with no AI key configured; trying local OCR fallback");
+        const fallback =
+          (await tryLocalImageFallback("no configured AI provider")) ||
+          parseTextFallback("no configured AI provider");
+        if (fallback) {
+          return respondWithResult(
+            fallback,
+            fallback.rawText || sanitizedContent,
+            fallback._ocrSource
+          );
+        }
+        return res.status(503).json({
+          message:
+            "OCR service unavailable — AI provider not configured and local OCR fallback could not read the image.",
+        });
+      }
+
       // Strategy 1: Vision API with image (Anthropic preferred, OpenAI fallback)
       if (imageData) {
         try {
           const aiResult = await runVisionOCR(imageData, extractionPrompt, anthropic, openai);
-          await enrichWithInternalClassifier(aiResult);
-          return res.json(
-            buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories)
-          );
+          return respondWithResult(aiResult, sanitizedContent, "ai-vision");
         } catch (visionError: any) {
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(visionError);
           log.error({ err: detail, provider }, "Vision OCR failed");
 
-          // If we have no text fallback, surface the actual provider error so the
-          // client can show something useful instead of a generic message.
+          const fallback = await tryLocalImageFallback(`vision OCR via ${provider} failed`);
+          if (fallback) {
+            return respondWithResult(fallback, fallback.rawText, fallback._ocrSource);
+          }
+
           if (!sanitizedContent) {
             return res.status(502).json({
-              message: `OCR vision request via ${provider} failed: ${detail}`,
+              message: `OCR vision request via ${provider} failed: ${detail}${
+                localOcrErrorDetail ? `. Local OCR fallback failed: ${localOcrErrorDetail}` : ""
+              }`,
             });
           }
           // Otherwise fall through to text-based extraction below
@@ -206,14 +264,15 @@ Respond ONLY with valid JSON matching this exact structure:
       if (sanitizedContent) {
         try {
           const aiResult = await runTextOCR(sanitizedContent, extractionPrompt, anthropic, openai);
-          await enrichWithInternalClassifier(aiResult);
-          return res.json(
-            buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories)
-          );
+          return respondWithResult(aiResult, sanitizedContent, "ai-text");
         } catch (textError: any) {
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(textError);
           log.error({ err: detail, provider }, "Text OCR failed");
+          const fallback = parseTextFallback(`text OCR via ${provider} failed`);
+          if (fallback) {
+            return respondWithResult(fallback, sanitizedContent, fallback._ocrSource);
+          }
           return res.status(502).json({
             message: `OCR text extraction via ${provider} failed: ${detail}`,
           });
@@ -535,6 +594,7 @@ function buildResult(
         ? Math.min(1, Math.max(0, aiResult.confidence))
         : 0.85,
     classifier: aiResult._classifier || null,
+    ocrSource: aiResult._ocrSource || "ai",
     rawText,
     companyId,
     messageId,
