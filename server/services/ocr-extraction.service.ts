@@ -10,11 +10,13 @@
 // is env-keyed and returns null when no AI provider is configured, so the whole
 // thing is a safe no-op until keys + the mailbox are set.
 
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
-import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import type { OcrReceipt } from "./receipt-autopilot.service";
+import {
+  createOcrClients,
+  formatProviderFailures,
+  summarizeOcrProviderError,
+} from "./ocr-provider-clients";
 
 const log = createLogger("ocr-extraction");
 
@@ -91,7 +93,8 @@ export function normalizeOcrJson(
     : "Other";
 
   const fallbackDate = opts.today ?? new Date().toISOString().split("T")[0];
-  const date = typeof raw?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : fallbackDate;
+  const date =
+    typeof raw?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : fallbackDate;
 
   const lineItems = Array.isArray(raw?.lineItems)
     ? raw.lineItems.map((li: any) => ({ description: String(li?.description || "").slice(0, 500) }))
@@ -116,20 +119,9 @@ function extractJson(rawText: string): any {
   return JSON.parse(fenced ? fenced[1].trim() : rawText.trim());
 }
 
-function initClients(env = getEnv() as any) {
-  const anthropicKey =
-    env.ANTHROPIC_API_KEY ||
-    (env.OPENAI_API_KEY?.startsWith("sk-ant-") ? env.OPENAI_API_KEY : undefined);
-  const openaiKey =
-    env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith("sk-ant-") ? env.OPENAI_API_KEY : undefined;
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
-  const openai = !anthropic && openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
-  return { anthropic, openai };
-}
-
 /** Whether any AI provider is configured (extraction is possible). */
 export function isOcrExtractionConfigured(): boolean {
-  const { anthropic, openai } = initClients();
+  const { anthropic, openai } = createOcrClients();
   return Boolean(anthropic || openai);
 }
 
@@ -146,47 +138,71 @@ export async function extractReceiptToOcr(args: {
   mimeType: string;
   rawText?: string | null;
 }): Promise<OcrReceipt | null> {
-  const { anthropic, openai } = initClients();
+  const { anthropic, openai } = createOcrClients();
   if (!anthropic && !openai) return null;
 
   const base64 = args.content.toString("base64");
   const isPdf = /pdf$/i.test(args.mimeType);
+  const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
 
-  try {
-    if (anthropic) {
+  if (anthropic) {
+    try {
       const block = isPdf
-        ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: base64 } }
+        ? {
+            type: "document" as const,
+            source: {
+              type: "base64" as const,
+              media_type: "application/pdf" as const,
+              data: base64,
+            },
+          }
         : {
             type: "image" as const,
             source: {
               type: "base64" as const,
-              media_type: (ANTHROPIC_IMAGE_TYPES.has(args.mimeType) ? args.mimeType : "image/jpeg") as
-                | "image/jpeg"
-                | "image/png"
-                | "image/gif"
-                | "image/webp",
+              media_type: (ANTHROPIC_IMAGE_TYPES.has(args.mimeType)
+                ? args.mimeType
+                : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
               data: base64,
             },
           };
       const resp = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
-        messages: [{ role: "user", content: [block, { type: "text", text: RECEIPT_EXTRACTION_PROMPT }] }],
+        messages: [
+          { role: "user", content: [block, { type: "text", text: RECEIPT_EXTRACTION_PROMPT }] },
+        ],
       });
       const first = resp.content[0];
       if (!first || first.type !== "text") throw new Error("Unexpected Anthropic response");
-      return normalizeOcrJson(extractJson(first.text), { rawText: args.rawText, imageData: base64 });
+      return normalizeOcrJson(extractJson(first.text), {
+        rawText: args.rawText,
+        imageData: base64,
+      });
+    } catch (err) {
+      failures.push({ provider: "Anthropic", error: err });
+      if (openai && !isPdf) {
+        log.warn(
+          { err: summarizeOcrProviderError(err), mimeType: args.mimeType },
+          "Anthropic OCR extraction failed; trying OpenAI"
+        );
+      }
     }
+  }
 
-    // OpenAI fallback — images only.
-    if (openai && !isPdf) {
+  // OpenAI fallback — images only.
+  if (openai && !isPdf) {
+    try {
       const resp = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:${args.mimeType};base64,${base64}`, detail: "high" } },
+              {
+                type: "image_url",
+                image_url: { url: `data:${args.mimeType};base64,${base64}`, detail: "high" },
+              },
               { type: "text", text: RECEIPT_EXTRACTION_PROMPT },
             ],
           },
@@ -197,11 +213,16 @@ export async function extractReceiptToOcr(args: {
       const raw = resp.choices[0]?.message?.content;
       if (!raw) throw new Error("Empty OpenAI response");
       return normalizeOcrJson(JSON.parse(raw), { rawText: args.rawText, imageData: base64 });
+    } catch (err) {
+      failures.push({ provider: "OpenAI", error: err });
     }
-
-    return null; // PDF with only an OpenAI key — defer.
-  } catch (err) {
-    log.warn({ err, mimeType: args.mimeType }, "OCR extraction failed");
-    return null;
   }
+
+  if (failures.length > 0) {
+    log.warn(
+      { err: formatProviderFailures(failures), mimeType: args.mimeType },
+      "OCR extraction failed"
+    );
+  }
+  return null; // PDF with only an OpenAI key, or all configured providers failed.
 }

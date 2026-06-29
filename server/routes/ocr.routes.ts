@@ -1,12 +1,11 @@
 import { type Express, type Request, type Response } from "express";
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
+import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
-import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import {
   buildGenericWorkbook,
@@ -16,24 +15,14 @@ import {
 } from "../services/excel-export.service";
 import { classifyOcrReceipt } from "../services/receipt-autopilot.service";
 import { isStandardCategory } from "../services/receipt-classifier.service";
+import {
+  createOcrClients,
+  describeOcrProviders,
+  formatProviderFailures,
+  summarizeOcrProviderError,
+} from "../services/ocr-provider-clients";
 
 const log = createLogger("ocr");
-
-// Smart key detection: ANTHROPIC_API_KEY preferred; OPENAI_API_KEY with sk-ant-
-// prefix is treated as an Anthropic key (common Railway misconfiguration).
-function initOCRClients() {
-  const env = getEnv();
-  const anthropicKey =
-    env.ANTHROPIC_API_KEY ||
-    (env.OPENAI_API_KEY?.startsWith("sk-ant-") ? env.OPENAI_API_KEY : undefined);
-  const openaiKey =
-    env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith("sk-ant-")
-      ? env.OPENAI_API_KEY
-      : undefined;
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
-  const openai = !anthropic && openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
-  return { anthropic, openai };
-}
 
 function extractJson(raw: string): any {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -41,7 +30,7 @@ function extractJson(raw: string): any {
 }
 
 export function registerOCRRoutes(app: Express) {
-  const { anthropic, openai } = initOCRClients();
+  const { anthropic, openai } = createOcrClients();
 
   // ===========================
   // OCR Processing Endpoint
@@ -198,15 +187,15 @@ Respond ONLY with valid JSON matching this exact structure:
             buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories)
           );
         } catch (visionError: any) {
-          const provider = anthropic ? "Anthropic" : "OpenAI";
-          const detail = visionError?.message || String(visionError);
+          const provider = describeOcrProviders({ anthropic, openai });
+          const detail = summarizeOcrProviderError(visionError);
           log.error({ err: detail, provider }, "Vision OCR failed");
 
           // If we have no text fallback, surface the actual provider error so the
           // client can show something useful instead of a generic message.
           if (!sanitizedContent) {
             return res.status(502).json({
-              message: `OCR vision request to ${provider} failed: ${detail}`,
+              message: `OCR vision request via ${provider} failed: ${detail}`,
             });
           }
           // Otherwise fall through to text-based extraction below
@@ -222,8 +211,8 @@ Respond ONLY with valid JSON matching this exact structure:
             buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories)
           );
         } catch (textError: any) {
-          const provider = anthropic ? "Anthropic" : "OpenAI";
-          const detail = textError?.message || String(textError);
+          const provider = describeOcrProviders({ anthropic, openai });
+          const detail = summarizeOcrProviderError(textError);
           log.error({ err: detail, provider }, "Text OCR failed");
           return res.status(502).json({
             message: `OCR text extraction via ${provider} failed: ${detail}`,
@@ -349,50 +338,79 @@ async function runVisionOCR(
   }
 
   if (anthropic) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-            { type: "text", text: prompt },
-          ],
-        },
-      ],
-    });
-    const block = response.content[0];
-    if (!block || block.type !== "text") {
-      throw new Error("Unexpected Anthropic response (no text block)");
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: mediaType, data: base64Data },
+              },
+              { type: "text", text: prompt },
+            ],
+          },
+        ],
+      });
+      const block = response.content[0];
+      if (!block || block.type !== "text") {
+        throw new Error("Unexpected Anthropic response (no text block)");
+      }
+      return extractJson(block.text);
+    } catch (err) {
+      if (!openai) throw err;
+      log.warn(
+        { err: summarizeOcrProviderError(err) },
+        "Anthropic vision OCR failed; trying OpenAI"
+      );
+      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
+        { provider: "Anthropic", error: err },
+      ];
+      try {
+        return await runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
+      } catch (openaiErr) {
+        failures.push({ provider: "OpenAI", error: openaiErr });
+        throw new Error(formatProviderFailures(failures));
+      }
     }
-    return extractJson(block.text);
   }
 
   if (openai) {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:${mediaType};base64,${base64Data}`, detail: "high" },
-            },
-            { type: "text", text: prompt },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1500,
-    });
-    const raw = response.choices[0]?.message?.content;
-    if (!raw) throw new Error("Empty OpenAI response");
-    return JSON.parse(raw);
+    return runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
   }
 
   throw new Error("No vision client available");
+}
+
+async function runOpenAiVisionOCR(
+  openai: OpenAI,
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+  base64Data: string,
+  prompt: string
+): Promise<any> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: `data:${mediaType};base64,${base64Data}`, detail: "high" },
+          },
+          { type: "text", text: prompt },
+        ],
+      },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 1500,
+  });
+  const raw = response.choices[0]?.message?.content;
+  if (!raw) throw new Error("Empty OpenAI response");
+  return JSON.parse(raw);
 }
 
 async function runTextOCR(
@@ -404,35 +422,53 @@ async function runTextOCR(
   const userMessage = `Extract receipt data from this OCR text:\n\n${textContent}`;
 
   if (anthropic) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: prompt,
-      messages: [{ role: "user", content: userMessage }],
-    });
-    const block = response.content[0];
-    if (!block || block.type !== "text") {
-      throw new Error("Unexpected Anthropic response (no text block)");
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        system: prompt,
+        messages: [{ role: "user", content: userMessage }],
+      });
+      const block = response.content[0];
+      if (!block || block.type !== "text") {
+        throw new Error("Unexpected Anthropic response (no text block)");
+      }
+      return extractJson(block.text);
+    } catch (err) {
+      if (!openai) throw err;
+      log.warn({ err: summarizeOcrProviderError(err) }, "Anthropic text OCR failed; trying OpenAI");
+      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
+        { provider: "Anthropic", error: err },
+      ];
+      try {
+        return await runOpenAiTextOCR(openai, prompt, userMessage);
+      } catch (openaiErr) {
+        failures.push({ provider: "OpenAI", error: openaiErr });
+        throw new Error(formatProviderFailures(failures));
+      }
     }
-    return extractJson(block.text);
   }
 
   if (openai) {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: prompt },
-        { role: "user", content: userMessage },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1500,
-    });
-    const raw = response.choices[0]?.message?.content;
-    if (!raw) throw new Error("Empty OpenAI response");
-    return JSON.parse(raw);
+    return runOpenAiTextOCR(openai, prompt, userMessage);
   }
 
   throw new Error("No text client available");
+}
+
+async function runOpenAiTextOCR(openai: OpenAI, prompt: string, userMessage: string): Promise<any> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: prompt },
+      { role: "user", content: userMessage },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 1500,
+  });
+  const raw = response.choices[0]?.message?.content;
+  if (!raw) throw new Error("Empty OpenAI response");
+  return JSON.parse(raw);
 }
 
 function buildResult(

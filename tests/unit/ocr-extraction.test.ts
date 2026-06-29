@@ -1,11 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { normalizeOcrJson, VALID_OCR_CATEGORIES } from "../../server/services/ocr-extraction.service";
+import {
+  normalizeOcrJson,
+  VALID_OCR_CATEGORIES,
+} from "../../server/services/ocr-extraction.service";
+import {
+  describeOcrProviders,
+  formatProviderFailures,
+  resolveOcrProviderKeys,
+} from "../../server/services/ocr-provider-clients";
 
 const TODAY = "2026-06-23";
 
 describe("normalizeOcrJson — amount reconciliation", () => {
   it("derives subtotal + VAT from a total-only receipt (UAE 5%)", () => {
-    const r = normalizeOcrJson({ merchant: "Acme", total: 105, vatPercentage: 5 }, { today: TODAY });
+    const r = normalizeOcrJson(
+      { merchant: "Acme", total: 105, vatPercentage: 5 },
+      { today: TODAY }
+    );
     expect(r.total).toBe(105);
     expect(r.amount).toBe(100); // 105 / 1.05
     expect(r.vatAmount).toBe(5);
@@ -64,7 +75,9 @@ describe("normalizeOcrJson — fields", () => {
   });
 
   it("accepts a valid ISO date", () => {
-    expect(normalizeOcrJson({ date: "2026-01-31", total: 1 }, { today: TODAY }).date).toBe("2026-01-31");
+    expect(normalizeOcrJson({ date: "2026-01-31", total: 1 }, { today: TODAY }).date).toBe(
+      "2026-01-31"
+    );
   });
 
   it("defaults merchant and currency", () => {
@@ -74,7 +87,10 @@ describe("normalizeOcrJson — fields", () => {
   });
 
   it("passes through rawText and imageData", () => {
-    const r = normalizeOcrJson({ total: 1 }, { today: TODAY, rawText: "hello", imageData: "BASE64" });
+    const r = normalizeOcrJson(
+      { total: 1 },
+      { today: TODAY, rawText: "hello", imageData: "BASE64" }
+    );
     expect(r.rawText).toBe("hello");
     expect(r.imageData).toBe("BASE64");
   });
@@ -85,5 +101,42 @@ describe("normalizeOcrJson — fields", () => {
       { today: TODAY }
     );
     expect(r.lineItems).toEqual([{ description: "Widget" }, { description: "Gadget" }]);
+  });
+});
+
+describe("OCR provider selection", () => {
+  it("keeps OpenAI available when Anthropic is also configured", () => {
+    const keys = resolveOcrProviderKeys({
+      ANTHROPIC_API_KEY: "sk-ant-anthropic",
+      OPENAI_API_KEY: "sk-openai",
+    } as any);
+
+    expect(keys).toEqual({
+      anthropicKey: "sk-ant-anthropic",
+      openaiKey: "sk-openai",
+    });
+  });
+
+  it("treats an sk-ant OPENAI_API_KEY as Anthropic only", () => {
+    const keys = resolveOcrProviderKeys({
+      OPENAI_API_KEY: "sk-ant-misplaced",
+    } as any);
+
+    expect(keys).toEqual({
+      anthropicKey: "sk-ant-misplaced",
+      openaiKey: undefined,
+    });
+  });
+
+  it("describes the fallback order and combines provider failures", () => {
+    expect(describeOcrProviders({ anthropic: {} as any, openai: {} as any })).toBe(
+      "Anthropic then OpenAI"
+    );
+    expect(
+      formatProviderFailures([
+        { provider: "Anthropic", error: new Error("quota exceeded") },
+        { provider: "OpenAI", error: new Error("invalid key") },
+      ])
+    ).toBe("Anthropic: quota exceeded; OpenAI: invalid key");
   });
 });

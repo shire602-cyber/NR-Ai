@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Express, Request, Response } from "express";
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
+import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
@@ -16,13 +16,19 @@ import {
   bankTransactions,
   vatReturns,
 } from "../../shared/schema";
-import { getEnv } from "../config/env";
 import { storage } from "../storage";
 import { UAE_VAT_RATE, DEFAULT_CURRENCY } from "../constants";
+import { createLogger } from "../config/logger";
+import {
+  createOcrClients,
+  formatProviderFailures,
+  summarizeOcrProviderError,
+} from "../services/ocr-provider-clients";
 
 const router = Router();
 router.use(authMiddleware);
 router.use(requireFirmRole());
+const log = createLogger("firm-bulk");
 
 // ─── OCR helpers ──────────────────────────────────────────────────────────────
 
@@ -55,23 +61,6 @@ Extract receipt data and return a JSON object with EXACTLY these fields:
   "confidence": number between 0 and 1
 }
 Return ONLY valid JSON. No markdown.`;
-
-function initOCRClients() {
-  const env = getEnv();
-  const anthropicKey =
-    env.ANTHROPIC_API_KEY ||
-    (env.OPENAI_API_KEY?.startsWith("sk-ant-") ? env.OPENAI_API_KEY : undefined);
-  const openaiKey =
-    env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith("sk-ant-")
-      ? env.OPENAI_API_KEY
-      : undefined;
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
-  const openai =
-    !anthropic && openaiKey
-      ? new OpenAI({ apiKey: openaiKey, baseURL: "https://api.openai.com/v1" })
-      : null;
-  return { anthropic, openai };
-}
 
 function extractJson(raw: string): any {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -108,47 +97,71 @@ async function runOCR(
   const dataUrl = imageData;
 
   let rawText = "";
+  const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
   if (anthropic) {
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
-    if (!match) throw new Error("Invalid image data URL");
-    const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-    const base64Data = match[2];
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-            { type: "text", text: BULK_OCR_PROMPT },
-          ],
-        },
-      ],
-    });
-    const block = response.content[0];
-    if (block.type !== "text") throw new Error("Unexpected Anthropic response type");
-    rawText = block.text;
-  } else if (openai) {
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
-            { type: "text", text: BULK_OCR_PROMPT },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1000,
-    });
-    const raw = aiResponse.choices[0]?.message?.content;
-    if (!raw) throw new Error("Empty OpenAI response");
-    rawText = raw;
-  } else {
-    throw new Error("No OCR API client available");
+    try {
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+      if (!match) throw new Error("Invalid image data URL");
+      const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+      const base64Data = match[2];
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: mediaType, data: base64Data },
+              },
+              { type: "text", text: BULK_OCR_PROMPT },
+            ],
+          },
+        ],
+      });
+      const block = response.content[0];
+      if (block.type !== "text") throw new Error("Unexpected Anthropic response type");
+      rawText = block.text;
+    } catch (err) {
+      failures.push({ provider: "Anthropic", error: err });
+      if (openai) {
+        log.warn(
+          { err: summarizeOcrProviderError(err) },
+          "Anthropic bulk OCR failed; trying OpenAI"
+        );
+      }
+    }
+  }
+
+  if (!rawText && openai) {
+    try {
+      const aiResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+              { type: "text", text: BULK_OCR_PROMPT },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1000,
+      });
+      const raw = aiResponse.choices[0]?.message?.content;
+      if (!raw) throw new Error("Empty OpenAI response");
+      rawText = raw;
+    } catch (err) {
+      failures.push({ provider: "OpenAI", error: err });
+    }
+  }
+
+  if (!rawText) {
+    throw new Error(
+      failures.length ? formatProviderFailures(failures) : "No OCR API client available"
+    );
   }
 
   const result = extractJson(rawText);
@@ -206,7 +219,7 @@ router.post(
       }
     }
 
-    const { anthropic, openai } = initOCRClients();
+    const { anthropic, openai } = createOcrClients();
     if (!anthropic && !openai) {
       return res
         .status(503)
