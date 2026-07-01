@@ -152,12 +152,29 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
  * Middleware: Require a specific feature to be available on the current tier.
  * Returns 403 with structured error if feature is locked.
  */
-// Tier enforcement is explicitly opt-in. Companies get a 'free' subscription
-// row at signup, but until the billing module (plans, checkout, upgrades) is
-// actually deployed there is no way to leave the free tier — enforcing it
-// would paywall features behind a dead upgrade button. Set
-// BILLING_ENFORCEMENT=true when billing ships.
-const billingEnforced = () => process.env.BILLING_ENFORCEMENT === "true";
+// Tier enforcement policy:
+// - Production: ENFORCED by default. Running open in production requires an
+//   explicit BILLING_ENFORCEMENT=false (e.g. during the pre-billing beta) and
+//   logs a loud startup warning (see logBillingEnforcementStatus).
+// - Non-production: fails open unless BILLING_ENFORCEMENT=true, so dev/test
+//   environments don't hit dead paywalls while the billing module is pending.
+export function billingEnforced(): boolean {
+  const flag = process.env.BILLING_ENFORCEMENT;
+  if (process.env.NODE_ENV === "production") {
+    return flag !== "false";
+  }
+  return flag === "true";
+}
+
+/** Call once at startup so an intentionally-open production deploy is loud. */
+export function logBillingEnforcementStatus(): void {
+  if (process.env.NODE_ENV === "production" && !billingEnforced()) {
+    log.warn(
+      "BILLING_ENFORCEMENT=false in production — ALL paid features are free for every tenant. " +
+        "This must be a deliberate pre-billing decision; remove the flag to enforce tiers."
+    );
+  }
+}
 
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {

@@ -3,6 +3,11 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
+import {
+  validateOutboundUrl,
+  safeOutboundFetch,
+  OutboundUrlBlockedError,
+} from "../services/url-guard";
 import crypto from "crypto";
 
 export function registerWebhookRoutes(app: Express) {
@@ -61,11 +66,10 @@ export function registerWebhookRoutes(app: Express) {
         return res.status(400).json({ message: "At least one event is required" });
       }
 
-      // Validate URL format
-      try {
-        new URL(url);
-      } catch {
-        return res.status(400).json({ message: "Invalid webhook URL" });
+      // Validate URL format and reject SSRF targets (private/internal hosts)
+      const urlVerdict = await validateOutboundUrl(url);
+      if (!urlVerdict.ok) {
+        return res.status(400).json({ message: `Invalid webhook URL: ${urlVerdict.reason}` });
       }
 
       const secret = crypto.randomBytes(32).toString("hex");
@@ -109,10 +113,9 @@ export function registerWebhookRoutes(app: Express) {
       }
 
       if (url) {
-        try {
-          new URL(url);
-        } catch {
-          return res.status(400).json({ message: "Invalid webhook URL" });
+        const urlVerdict = await validateOutboundUrl(url);
+        if (!urlVerdict.ok) {
+          return res.status(400).json({ message: `Invalid webhook URL: ${urlVerdict.reason}` });
         }
       }
 
@@ -225,22 +228,29 @@ export function registerWebhookRoutes(app: Express) {
       let success = false;
 
       try {
-        const response = await fetch(endpoint.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Webhook-Signature": `sha256=${signature}`,
-            "X-Webhook-Event": "test",
+        const response = await safeOutboundFetch(
+          endpoint.url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Webhook-Signature": `sha256=${signature}`,
+              "X-Webhook-Event": "test",
+            },
+            body: payloadStr,
           },
-          body: payloadStr,
-          signal: AbortSignal.timeout(10000),
-        });
+          { timeoutMs: 10000 }
+        );
 
         responseStatus = response.status;
-        responseBody = await response.text().catch(() => null);
+        responseBody = response.bodyText || null;
         success = response.ok;
       } catch (err: any) {
-        responseBody = err.message || "Network error";
+        if (err instanceof OutboundUrlBlockedError) {
+          responseBody = `Blocked: ${err.message}`;
+        } else {
+          responseBody = err.message || "Network error";
+        }
         success = false;
       }
 

@@ -56,12 +56,37 @@ afterEach(() => {
   else process.env.BILLING_ENFORCEMENT = originalFlag;
 });
 
-describe("BILLING_ENFORCEMENT off (default)", () => {
+describe("BILLING_ENFORCEMENT off (non-production default)", () => {
   it("fails open — free tier reaches gated endpoints", async () => {
     delete process.env.BILLING_ENFORCEMENT;
     const app = appWithGates();
     expect((await get(app, "/api/companies/co-free/quotes")).status).toBe(200);
     expect((await get(app, "/api/companies/co-free/payroll")).status).toBe(200);
+  });
+});
+
+describe("production defaults", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it("is ENFORCED by default in production (no flag set)", async () => {
+    process.env.NODE_ENV = "production";
+    delete process.env.BILLING_ENFORCEMENT;
+    const app = appWithGates();
+    const res = await get(app, "/api/companies/co-free/quotes");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("TIER_LOCKED");
+  });
+
+  it("only an explicit BILLING_ENFORCEMENT=false opens production", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.BILLING_ENFORCEMENT = "false";
+    const app = appWithGates();
+    expect((await get(app, "/api/companies/co-free/quotes")).status).toBe(200);
   });
 });
 

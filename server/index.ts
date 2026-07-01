@@ -21,6 +21,7 @@ import { requestId } from "./middleware/requestId";
 import { requestLogger } from "./middleware/requestLogger";
 import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from "./middleware/csrf";
+import { logBillingEnforcementStatus } from "./middleware/featureGate";
 import { registerRoutes } from "./routes";
 import { initSocketServer } from "./services/socket.service";
 import { setupVite, serveStatic } from "./vite";
@@ -333,6 +334,7 @@ async function bootstrap() {
     log.info(`✓ Server running at http://localhost:${port}`);
     log.info(`✓ Database: ${env.DATABASE_URL ? "Connected" : "Not configured"}`);
     log.info(`✓ AI: ${env.OPENAI_API_KEY ? "Configured" : "Not configured"}`);
+    logBillingEnforcementStatus();
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

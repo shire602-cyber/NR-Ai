@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { safeOutboundFetch, OutboundUrlBlockedError } from "./url-guard";
 
 const log = createLogger("webhook-service");
 
@@ -51,19 +52,24 @@ export async function dispatchWebhookEvent(
     let success = false;
 
     try {
-      const response = await fetch(endpoint.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Webhook-Signature": `sha256=${signature}`,
-          "X-Webhook-Event": event,
+      // safeOutboundFetch re-resolves DNS and applies SSRF checks at dispatch
+      // time, never follows redirects, and caps the response body size.
+      const response = await safeOutboundFetch(
+        endpoint.url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Webhook-Signature": `sha256=${signature}`,
+            "X-Webhook-Event": event,
+          },
+          body: payloadStr,
         },
-        body: payloadStr,
-        signal: AbortSignal.timeout(15000), // 15 second timeout
-      });
+        { timeoutMs: 15000 }
+      );
 
       responseStatus = response.status;
-      responseBody = await response.text().catch(() => null);
+      responseBody = response.bodyText || null;
       success = response.ok;
 
       log.info(
@@ -71,7 +77,10 @@ export async function dispatchWebhookEvent(
         "Webhook delivered"
       );
     } catch (err: any) {
-      responseBody = err.message || "Network error";
+      responseBody =
+        err instanceof OutboundUrlBlockedError
+          ? `Blocked: ${err.message}`
+          : err.message || "Network error";
       success = false;
 
       log.warn(
