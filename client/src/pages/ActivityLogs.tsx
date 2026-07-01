@@ -69,19 +69,19 @@ export default function ActivityLogs() {
   const getActionIcon = (action: string) => {
     switch (action) {
       case "create":
-        return <Plus className="h-4 w-4 text-green-500" />;
+        return <Plus className="h-4 w-4 text-success" />;
       case "update":
-        return <Edit className="h-4 w-4 text-blue-500" />;
+        return <Edit className="h-4 w-4 text-info" />;
       case "delete":
-        return <Trash2 className="h-4 w-4 text-red-500" />;
+        return <Trash2 className="h-4 w-4 text-destructive" />;
       case "view":
-        return <Eye className="h-4 w-4 text-gray-500" />;
+        return <Eye className="h-4 w-4 text-muted-foreground" />;
       case "login":
-        return <LogIn className="h-4 w-4 text-purple-500" />;
+        return <LogIn className="h-4 w-4 text-chart-5" />;
       case "logout":
-        return <LogOut className="h-4 w-4 text-orange-500" />;
+        return <LogOut className="h-4 w-4 text-warning" />;
       case "invite":
-        return <Mail className="h-4 w-4 text-indigo-500" />;
+        return <Mail className="h-4 w-4 text-info" />;
       default:
         return <Activity className="h-4 w-4" />;
     }
@@ -107,24 +107,24 @@ export default function ActivityLogs() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Create</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
       case "update":
-        return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">Update</Badge>;
+        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
       case "delete":
         return <Badge variant="destructive">Delete</Badge>;
       case "view":
         return <Badge variant="secondary">View</Badge>;
       case "login":
         return (
-          <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">Login</Badge>
+          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">Login</Badge>
         );
       case "logout":
         return (
-          <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20">Logout</Badge>
+          <Badge className="bg-warning/10 text-warning border-warning/20">Logout</Badge>
         );
       case "invite":
         return (
-          <Badge className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20">Invite</Badge>
+          <Badge className="bg-info/10 text-info border-info/20">Invite</Badge>
         );
       default:
         return <Badge variant="outline">{action}</Badge>;

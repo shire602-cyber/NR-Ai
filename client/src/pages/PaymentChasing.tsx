@@ -48,6 +48,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useTranslation } from "@/lib/i18n";
+import { formatCurrency } from "@/lib/format";
 import {
   Send,
   Inbox,
@@ -202,28 +203,28 @@ function levelLabel(level: number, locale: string): string {
 function levelColor(level: number): string {
   switch (level) {
     case 1:
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      return "bg-info-subtle text-info-subtle-foreground ";
     case 2:
-      return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+      return "bg-warning-subtle text-warning-subtle-foreground ";
     case 3:
-      return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+      return "bg-warning-subtle text-warning-subtle-foreground ";
     case 4:
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      return "bg-danger-subtle text-danger-subtle-foreground ";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-muted text-foreground";
   }
 }
 
 function bucketColor(b: AgingBucket): string {
   switch (b) {
     case "1-7":
-      return "bg-blue-50 dark:bg-blue-900/30";
+      return "bg-info-subtle ";
     case "8-30":
-      return "bg-amber-50 dark:bg-amber-900/30";
+      return "bg-warning-subtle ";
     case "31-60":
-      return "bg-orange-50 dark:bg-orange-900/30";
+      return "bg-warning-subtle ";
     case "60+":
-      return "bg-red-50 dark:bg-red-900/30";
+      return "bg-danger-subtle ";
   }
 }
 
@@ -490,7 +491,7 @@ export default function PaymentChasing() {
             <Skeleton className="h-9 w-48" />
           ) : (
             <>
-              {totalOutstandingCurrency} {totalOutstanding.toFixed(2)}
+              {formatCurrency(totalOutstanding, totalOutstandingCurrency)}
               {totalOutstandingCurrency === "Mixed" && (
                 <p className="text-xs font-normal text-muted-foreground mt-1">
                   Sum across multiple currencies — open the table for per-invoice amounts.
@@ -540,7 +541,7 @@ export default function PaymentChasing() {
               {overdueQuery.isLoading && <Skeleton className="h-32" />}
               {!overdueQuery.isLoading && sortedOverdue.length === 0 && (
                 <div className="text-muted-foreground text-sm py-8 text-center">
-                  <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-500" />
+                  <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success" />
                   No overdue invoices. Nice.
                 </div>
               )}
@@ -566,7 +567,7 @@ export default function PaymentChasing() {
                         <TableCell className="font-mono">{row.invoice.number}</TableCell>
                         <TableCell>{row.invoice.customerName}</TableCell>
                         <TableCell className="text-right">
-                          {row.invoice.currency} {row.outstanding.toFixed(2)}
+                          {formatCurrency(row.outstanding, row.invoice.currency)}
                         </TableCell>
                         <TableCell className="text-right">{row.daysOverdue}</TableCell>
                         <TableCell>
@@ -680,7 +681,7 @@ export default function PaymentChasing() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {row.invoice.currency} {row.outstanding.toFixed(2)}
+                            {formatCurrency(row.outstanding, row.invoice.currency)}
                           </TableCell>
                           <TableCell className="text-right">{row.daysOverdue}</TableCell>
                           <TableCell className="text-right">
@@ -762,7 +763,7 @@ export default function PaymentChasing() {
                         </TableCell>
                         <TableCell>
                           {c.paidAt ? (
-                            <Badge className="bg-green-100 text-green-800">
+                            <Badge className="bg-success-subtle text-success-subtle-foreground">
                               Paid {new Date(c.paidAt).toLocaleDateString()}
                             </Badge>
                           ) : (
@@ -1153,7 +1154,7 @@ export default function PaymentChasing() {
                   {c.messageText}
                 </pre>
                 {c.paidAt && (
-                  <Badge className="mt-2 bg-green-100 text-green-800">
+                  <Badge className="mt-2 bg-success-subtle text-success-subtle-foreground">
                     Paid {new Date(c.paidAt).toLocaleDateString()}
                   </Badge>
                 )}

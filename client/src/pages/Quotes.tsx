@@ -63,10 +63,12 @@ import {
   Trash2,
   Download,
   Edit,
+  FileText,
   MoreHorizontal,
   ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const quoteLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -281,19 +283,19 @@ export default function Quotes() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case "draft":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
       case "sent":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400";
+        return "bg-info-subtle text-info ";
       case "accepted":
-        return "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400";
+        return "bg-success-subtle text-success ";
       case "rejected":
-        return "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400";
+        return "bg-danger-subtle text-destructive ";
       case "expired":
-        return "bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400";
+        return "bg-warning-subtle text-warning ";
       case "converted":
-        return "bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400";
+        return "bg-chart-5/10 text-chart-5 ";
       default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
     }
   };
 
@@ -760,8 +762,14 @@ export default function Quotes() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No quotes yet. Create your first quote to get started.
+                    <TableCell colSpan={7} className="py-4">
+                      <EmptyState
+                        icon={FileText}
+                        title="No quotes yet"
+                        description="Send a professional quote in minutes — accepted quotes convert to invoices with one click."
+                        action={{ label: "New Quote", onClick: () => setDialogOpen(true) }}
+                        testId="empty-quotes"
+                      />
                     </TableCell>
                   </TableRow>
                 )}

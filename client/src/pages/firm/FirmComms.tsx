@@ -155,9 +155,9 @@ const SEED_TEMPLATES = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function ChannelIcon({ channel }: { channel: CommChannel }) {
-  if (channel === "email") return <Mail className="h-4 w-4 text-blue-500" />;
-  if (channel === "whatsapp") return <MessageCircle className="h-4 w-4 text-green-500" />;
-  return <MessageCircle className="h-4 w-4 text-gray-500" />;
+  if (channel === "email") return <Mail className="h-4 w-4 text-info" />;
+  if (channel === "whatsapp") return <MessageCircle className="h-4 w-4 text-success" />;
+  return <MessageCircle className="h-4 w-4 text-muted-foreground" />;
 }
 
 function CommStatusBadge({ status }: { status: CommStatus }) {
@@ -819,7 +819,7 @@ function BulkActionsTab() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Zap className="h-4 w-4 text-amber-500" />
+            <Zap className="h-4 w-4 text-warning" />
             {t.sendVatReminders}
           </CardTitle>
         </CardHeader>
@@ -892,7 +892,7 @@ function BulkActionsTab() {
                           <TableCell className="text-sm text-muted-foreground">
                             {item.contactEmail ? (
                               <span className="flex items-center gap-1">
-                                <CheckCircle className="h-3 w-3 text-green-500" />
+                                <CheckCircle className="h-3 w-3 text-success" />
                                 {item.contactEmail}
                               </span>
                             ) : (

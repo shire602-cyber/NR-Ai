@@ -229,7 +229,7 @@ export default function ClientImport() {
                   </div>
                 ) : file ? (
                   <div className="flex flex-col items-center gap-3">
-                    <FileSpreadsheet className="w-10 h-10 text-green-500" />
+                    <FileSpreadsheet className="w-10 h-10 text-success" />
                     <p className="font-medium">{file.name}</p>
                     <Button variant="outline" size="sm" onClick={resetImport}>
                       Choose Different File
@@ -293,7 +293,7 @@ export default function ClientImport() {
                             <TableCell>{row.industry || "-"}</TableCell>
                             <TableCell>
                               {row.name ? (
-                                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                                <Badge className="bg-success/10 text-success border-success/20">
                                   <CheckCircle2 className="w-3 h-3 mr-1" />
                                   Valid
                                 </Badge>
@@ -370,7 +370,7 @@ export default function ClientImport() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
+              <CheckCircle2 className="w-5 h-5 text-success" />
               Import Complete
             </CardTitle>
             <CardDescription>{importResults.message}</CardDescription>
@@ -417,7 +417,7 @@ export default function ClientImport() {
                           </TableCell>
                           <TableCell>{item.email || "-"}</TableCell>
                           <TableCell>
-                            <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                            <Badge className="bg-success/10 text-success border-success/20">
                               Created
                             </Badge>
                           </TableCell>

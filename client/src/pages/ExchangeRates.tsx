@@ -295,7 +295,7 @@ export default function ExchangeRates() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Unrealized gains
                   </p>
-                  <p className="mt-1 text-2xl font-semibold text-green-700">
+                  <p className="mt-1 text-2xl font-semibold text-success">
                     {formatCurrency(fxReport?.totalUnrealizedGain ?? 0, "AED", locale)}
                   </p>
                 </div>
@@ -303,7 +303,7 @@ export default function ExchangeRates() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Unrealized losses
                   </p>
-                  <p className="mt-1 text-2xl font-semibold text-red-700">
+                  <p className="mt-1 text-2xl font-semibold text-destructive">
                     {formatCurrency(fxReport?.totalUnrealizedLoss ?? 0, "AED", locale)}
                   </p>
                 </div>
@@ -314,8 +314,8 @@ export default function ExchangeRates() {
                   <p
                     className={`mt-1 text-2xl font-semibold ${
                       (fxReport?.netUnrealizedGainLoss ?? 0) >= 0
-                        ? "text-green-700"
-                        : "text-red-700"
+                        ? "text-success"
+                        : "text-destructive"
                     }`}
                   >
                     {formatCurrency(fxReport?.netUnrealizedGainLoss ?? 0, "AED", locale)}
@@ -364,7 +364,7 @@ export default function ExchangeRates() {
                             </TableCell>
                             <TableCell
                               className={`text-right font-mono ${
-                                row.unrealizedGainLoss >= 0 ? "text-green-700" : "text-red-700"
+                                row.unrealizedGainLoss >= 0 ? "text-success" : "text-destructive"
                               }`}
                             >
                               {formatCurrency(row.unrealizedGainLoss, "AED", locale)}

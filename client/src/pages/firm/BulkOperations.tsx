@@ -124,11 +124,11 @@ function fileToBase64(file: File): Promise<string> {
 
 function VatStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    draft: { label: "Draft", cls: "bg-gray-100 text-gray-700 border-gray-200" },
-    pending_review: { label: "Pending Review", cls: "bg-blue-100 text-blue-700 border-blue-200" },
-    submitted: { label: "Submitted", cls: "bg-amber-100 text-amber-700 border-amber-200" },
-    filed: { label: "Filed", cls: "bg-green-100 text-green-700 border-green-200" },
-    none: { label: "Not Started", cls: "bg-gray-100 text-gray-500 border-gray-200" },
+    draft: { label: "Draft", cls: "bg-muted text-foreground border-border" },
+    pending_review: { label: "Pending Review", cls: "bg-info-subtle text-info border-info/30" },
+    submitted: { label: "Submitted", cls: "bg-warning-subtle text-warning border-warning/30" },
+    filed: { label: "Filed", cls: "bg-success-subtle text-success border-success/30" },
+    none: { label: "Not Started", cls: "bg-muted text-muted-foreground border-border" },
   };
   const { label, cls } = map[status] ?? map.draft;
   return <Badge className={cls}>{label}</Badge>;
@@ -138,11 +138,11 @@ function CheckItem({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
       {ok ? (
-        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+        <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />
       ) : (
-        <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+        <XCircle className="w-4 h-4 text-destructive flex-shrink-0" />
       )}
-      <span className={ok ? "text-green-700" : "text-red-600"}>{label}</span>
+      <span className={ok ? "text-success" : "text-destructive"}>{label}</span>
     </div>
   );
 }
@@ -284,12 +284,12 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
               <CardTitle className="text-base">
                 {items.length} file{items.length !== 1 ? "s" : ""} queued
                 {successCount > 0 && (
-                  <span className="ml-2 text-green-600 text-sm font-normal">
+                  <span className="ml-2 text-success text-sm font-normal">
                     · {successCount} done
                   </span>
                 )}
                 {errorCount > 0 && (
-                  <span className="ml-2 text-red-600 text-sm font-normal">
+                  <span className="ml-2 text-destructive text-sm font-normal">
                     · {errorCount} failed
                   </span>
                 )}
@@ -345,13 +345,13 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                       <TableCell>
                         {item.status === "pending" && <Badge variant="outline">Pending</Badge>}
                         {item.status === "processing" && (
-                          <Badge className="bg-blue-100 text-blue-700">
+                          <Badge className="bg-info-subtle text-info">
                             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                             Processing
                           </Badge>
                         )}
                         {item.status === "success" && (
-                          <Badge className="bg-green-100 text-green-700">
+                          <Badge className="bg-success-subtle text-success">
                             <CheckCircle2 className="w-3 h-3 mr-1" />
                             Done
                           </Badge>
@@ -725,7 +725,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                     <TableCell className="font-mono text-sm">{r.invoiceNumber ?? "—"}</TableCell>
                     <TableCell>
                       {r.success ? (
-                        <Badge className="bg-green-100 text-green-700">
+                        <Badge className="bg-success-subtle text-success">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
                           Created
                         </Badge>
@@ -888,13 +888,13 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
             <CardContent className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Ready to close</span>
-                <span className="font-semibold text-green-600">
+                <span className="font-semibold text-success">
                   {statuses.filter((s) => s.readyToClose).length}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Issues found</span>
-                <span className="font-semibold text-amber-600">
+                <span className="font-semibold text-warning">
                   {statuses.filter((s) => !s.readyToClose).length}
                 </span>
               </div>
@@ -909,7 +909,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
           {statuses.map((s) => (
             <Card
               key={s.companyId}
-              className={s.readyToClose ? "border-green-200" : "border-amber-200"}
+              className={s.readyToClose ? "border-success/30" : "border-warning/30"}
             >
               <CardContent className="pt-4">
                 <div className="flex items-start justify-between mb-3">
@@ -918,9 +918,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                     <p className="text-sm text-muted-foreground">{s.period}</p>
                   </div>
                   {s.readyToClose ? (
-                    <Badge className="bg-green-100 text-green-700">Ready</Badge>
+                    <Badge className="bg-success-subtle text-success">Ready</Badge>
                   ) : (
-                    <Badge className="bg-amber-100 text-amber-700">
+                    <Badge className="bg-warning-subtle text-warning">
                       {s.issues.length} issue{s.issues.length !== 1 ? "s" : ""}
                     </Badge>
                   )}
@@ -932,9 +932,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   <CheckItem ok={s.checks.vatPrepared} label="VAT return prepared" />
                 </div>
                 {s.issues.length > 0 && (
-                  <div className="mt-3 bg-amber-50 border border-amber-100 rounded p-2">
+                  <div className="mt-3 bg-warning-subtle border border-warning/30 rounded p-2">
                     {s.issues.map((issue, i) => (
-                      <p key={i} className="text-xs text-amber-700">
+                      <p key={i} className="text-xs text-warning">
                         · {issue}
                       </p>
                     ))}

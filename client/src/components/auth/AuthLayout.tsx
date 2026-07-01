@@ -85,7 +85,7 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 + i * 0.12, ease: [0.22, 1, 0.36, 1] }}
               >
-                <span className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.06] ring-1 ring-white/10">
+                <span className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg bg-card/[0.06] ring-1 ring-white/10">
                   <Icon className="w-4 h-4" style={{ color: "#34A87A" }} strokeWidth={1.75} />
                 </span>
                 <span>
@@ -102,7 +102,7 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
         </motion.div>
 
         <div className="relative flex items-center gap-2 text-[11px] font-mono tracking-tight text-white/35">
-          <span className="inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400/80 animate-pulse-dot" />
+          <span className="inline-flex w-1.5 h-1.5 rounded-full bg-success/70 animate-pulse-dot" />
           The ledger, handled · UAE · AED
         </div>
       </aside>

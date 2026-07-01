@@ -1880,7 +1880,7 @@ export default function Receipts() {
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
                             variant="secondary"
-                            className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                            className="bg-info/10 text-info border-info/30"
                             data-testid={`badge-classifier-internal-${receipt.id}`}
                             title={`Classified by internal ${receipt.classifierMethod} stage`}
                           >
@@ -1891,7 +1891,7 @@ export default function Receipts() {
                         {receipt.classifierMethod === "openai" && (
                           <Badge
                             variant="secondary"
-                            className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
+                            className="bg-chart-5/10 text-chart-5 border-chart-5/30"
                             data-testid={`badge-classifier-ai-${receipt.id}`}
                             title="Classified by OpenAI fallback"
                           >
@@ -1902,7 +1902,7 @@ export default function Receipts() {
                         {receipt.autoPosted && (
                           <Badge
                             variant="default"
-                            className="bg-emerald-600 hover:bg-emerald-600"
+                            className="bg-success hover:bg-success"
                             data-testid={`badge-auto-posted-${receipt.id}`}
                             title="Auto-posted by Receipt Autopilot"
                           >

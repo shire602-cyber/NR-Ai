@@ -102,7 +102,7 @@ export default function ResetPassword() {
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
         <div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse"
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
           style={{ animationDelay: "1s" }}
         />
       </div>
@@ -118,7 +118,7 @@ export default function ResetPassword() {
 
       <div className="absolute top-8 right-8">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-lg">Muhasib.ai</span>
@@ -132,11 +132,11 @@ export default function ResetPassword() {
         </CardHeader>
         <CardContent>
           {done ? (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900">
-              <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
+              <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-green-800 dark:text-green-200">Password reset</p>
-                <p className="text-green-700 dark:text-green-300/80 mt-0.5">
+                <p className="font-medium text-success-subtle-foreground ">Password reset</p>
+                <p className="text-success mt-0.5">
                   Redirecting you to sign in…
                 </p>
               </div>

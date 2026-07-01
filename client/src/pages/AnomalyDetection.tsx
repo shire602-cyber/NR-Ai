@@ -65,18 +65,18 @@ const severityConfig: Record<
   { color: string; bg: string; icon: typeof AlertTriangle; label: string }
 > = {
   critical: {
-    color: "text-red-600",
-    bg: "bg-red-50 border-red-200",
+    color: "text-destructive",
+    bg: "bg-danger-subtle border-destructive/30",
     icon: AlertCircle,
     label: "Critical",
   },
   warning: {
-    color: "text-orange-600",
-    bg: "bg-orange-50 border-orange-200",
+    color: "text-warning",
+    bg: "bg-warning-subtle border-warning/30",
     icon: AlertTriangle,
     label: "Warning",
   },
-  info: { color: "text-blue-600", bg: "bg-blue-50 border-blue-200", icon: Info, label: "Info" },
+  info: { color: "text-info", bg: "bg-info-subtle border-info/30", icon: Info, label: "Info" },
 };
 
 const typeIcons: Record<string, typeof Copy> = {
@@ -187,8 +187,8 @@ export default function AnomalyDetection() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-red-100 rounded-lg">
-            <ShieldAlert className="h-6 w-6 text-red-600" />
+          <div className="p-2 bg-danger-subtle rounded-lg">
+            <ShieldAlert className="h-6 w-6 text-destructive" />
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">AI Anomaly Detection</h1>
@@ -236,45 +236,45 @@ export default function AnomalyDetection() {
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-red-200"
+            className="cursor-pointer hover:shadow-md transition-shadow border-destructive/30"
             onClick={() => setSeverityFilter("critical")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 text-red-500" />
+                <AlertCircle className="h-3 w-3 text-destructive" />
                 Critical
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-red-600">{result.summary.critical}</div>
+              <div className="text-3xl font-bold text-destructive">{result.summary.critical}</div>
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-orange-200"
+            className="cursor-pointer hover:shadow-md transition-shadow border-warning/30"
             onClick={() => setSeverityFilter("warning")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-orange-500" />
+                <AlertTriangle className="h-3 w-3 text-warning" />
                 Warning
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-orange-600">{result.summary.warning}</div>
+              <div className="text-3xl font-bold text-warning">{result.summary.warning}</div>
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-blue-200"
+            className="cursor-pointer hover:shadow-md transition-shadow border-info/30"
             onClick={() => setSeverityFilter("info")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Info className="h-3 w-3 text-blue-500" />
+                <Info className="h-3 w-3 text-info" />
                 Info
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-blue-600">{result.summary.info}</div>
+              <div className="text-3xl font-bold text-info">{result.summary.info}</div>
             </CardContent>
           </Card>
         </div>
@@ -378,7 +378,7 @@ export default function AnomalyDetection() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center py-8 space-y-3">
-              <ShieldAlert className="h-12 w-12 text-green-500 mx-auto" />
+              <ShieldAlert className="h-12 w-12 text-success mx-auto" />
               <h3 className="text-lg font-semibold">No Anomalies Found</h3>
               <p className="text-muted-foreground text-sm">
                 {severityFilter !== "all"

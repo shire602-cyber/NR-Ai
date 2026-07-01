@@ -291,24 +291,24 @@ export default function ClientDocuments() {
           </CardContent>
         </Card>
 
-        <Card className={expiringDocs.length > 0 ? "border-yellow-500" : ""}>
+        <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <Clock className="w-4 h-4 text-yellow-500" />
+            <Clock className="w-4 h-4 text-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{expiringDocs.length}</div>
+            <div className="text-2xl font-bold text-warning">{expiringDocs.length}</div>
             <p className="text-xs text-muted-foreground">Within 30 days</p>
           </CardContent>
         </Card>
 
-        <Card className={expiredDocs.length > 0 ? "border-red-500" : ""}>
+        <Card className={expiredDocs.length > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expired</CardTitle>
-            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{expiredDocs.length}</div>
+            <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
             <p className="text-xs text-muted-foreground">Need renewal</p>
           </CardContent>
         </Card>

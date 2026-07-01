@@ -47,64 +47,64 @@ const features = [
     title: "AI Receipt OCR",
     description:
       "Photograph receipts and review AI-extracted vendor, amount, date, and VAT fields before posting.",
-    color: "text-violet-500",
-    bg: "bg-violet-500/10",
+    color: "text-chart-5",
+    bg: "bg-chart-5/10",
   },
   {
     icon: FileCheck,
     title: "VAT Workflows",
     description:
       "VAT 201 workpapers, e-invoicing support, and audit-ready ledgers for UAE tax review.",
-    color: "text-blue-500",
-    bg: "bg-blue-500/10",
+    color: "text-info",
+    bg: "bg-info/10",
   },
   {
     icon: RefreshCw,
     title: "Bank Reconciliation",
     description:
       "CSV statement imports with smart matching for UAE bank layouts. Reconcile statement lines before posting.",
-    color: "text-emerald-500",
-    bg: "bg-emerald-500/10",
+    color: "text-success",
+    bg: "bg-success/10",
   },
   {
     icon: Globe,
     title: "Multi-Currency",
     description:
       "AED as home currency with real-time FX rates for USD, EUR, GBP, and 150+ more. Gain/loss auto-posted.",
-    color: "text-orange-500",
-    bg: "bg-orange-500/10",
+    color: "text-warning",
+    bg: "bg-warning/10",
   },
   {
     icon: Languages,
     title: "Arabic + English",
     description:
       "Full bilingual interface and documents. Switch between Arabic and English with one click.",
-    color: "text-rose-500",
-    bg: "bg-rose-500/10",
+    color: "text-destructive",
+    bg: "bg-destructive/10",
   },
   {
     icon: LayoutDashboard,
     title: "Real-Time Dashboard",
     description:
       "Cash flow, P&L, VAT liability, and KPIs updated live. Spot issues before month-end.",
-    color: "text-indigo-500",
-    bg: "bg-indigo-500/10",
+    color: "text-info",
+    bg: "bg-info/10",
   },
   {
     icon: FileText,
     title: "Invoice Management",
     description:
       "Create VAT-ready tax invoices, send by email, and track payment status from the invoice list.",
-    color: "text-cyan-500",
-    bg: "bg-cyan-500/10",
+    color: "text-info",
+    bg: "bg-info/10",
   },
   {
     icon: Users,
     title: "Payroll (WPS SIF)",
     description:
       "Generate WPS-compliant SIF files, calculate end-of-service gratuity, and manage leave accruals.",
-    color: "text-fuchsia-500",
-    bg: "bg-fuchsia-500/10",
+    color: "text-chart-5",
+    bg: "bg-chart-5/10",
   },
 ];
 
@@ -374,7 +374,7 @@ export default function LandingPage() {
         {/* Background gradient blobs */}
         <div className="absolute inset-0 -z-10">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
-          <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-violet-500/5 rounded-full blur-3xl" />
+          <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-chart-5/5 rounded-full blur-3xl" />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -707,7 +707,7 @@ export default function LandingPage() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="px-10 h-12 text-base border-white/40 text-white hover:bg-white/10 hover:text-white"
+                  className="px-10 h-12 text-base border-white/40 text-white hover:bg-card/10 hover:text-white"
                 >
                   Book a Demo
                 </Button>

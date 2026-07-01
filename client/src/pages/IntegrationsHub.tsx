@@ -287,11 +287,11 @@ export default function IntegrationsHub() {
   return (
     <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-purple-600/10 via-pink-600/5 to-transparent border border-purple-600/20 p-8">
+      <div className="relative overflow-hidden rounded-lg border border-chart-5/20 p-8">
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-lg bg-purple-600/20">
-              <Plug className="w-6 h-6 text-purple-600" />
+            <div className="p-3 rounded-lg bg-chart-5/20">
+              <Plug className="w-6 h-6 text-chart-5" />
             </div>
             <div>
               <h1 className="text-3xl font-bold" data-testid="text-integrations-title">
@@ -303,8 +303,8 @@ export default function IntegrationsHub() {
             </div>
           </div>
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-pink-600/5 rounded-full -ml-24 -mb-24 blur-3xl" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-chart-5/5 rounded-full -mr-32 -mt-32 blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-chart-5/5 rounded-full -ml-24 -mb-24 blur-3xl" />
       </div>
 
       <Tabs defaultValue="platforms" className="space-y-6">
@@ -330,7 +330,7 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Connected</CardTitle>
-                <Link2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <Link2 className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{activeIntegrationCount}</div>
@@ -341,7 +341,7 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Synced Today</CardTitle>
-                <RefreshCw className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <RefreshCw className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{syncedTodayCount}</div>
@@ -352,7 +352,7 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-                <CreditCard className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <CreditCard className="w-4 h-4 text-chart-5 " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
@@ -365,7 +365,7 @@ export default function IntegrationsHub() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Reconciled</CardTitle>
-                <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <Check className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{reconciledPercent}%</div>
@@ -404,7 +404,7 @@ export default function IntegrationsHub() {
                           {isConnected && (
                             <Badge
                               variant="secondary"
-                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                              className="bg-success-subtle text-success "
                             >
                               <Check className="w-3 h-3 mr-1" />
                               Connected
@@ -438,7 +438,7 @@ export default function IntegrationsHub() {
                             </span>
                           </div>
                           {integration.syncStatus === "failed" && integration.syncError && (
-                            <div className="flex items-center gap-2 mt-2 text-sm text-red-600 dark:text-red-400">
+                            <div className="flex items-center gap-2 mt-2 text-sm text-destructive ">
                               <AlertTriangle className="w-4 h-4" />
                               {integration.syncError}
                             </div>
@@ -500,7 +500,7 @@ export default function IntegrationsHub() {
           </div>
 
           {/* Benefits Section */}
-          <Card className="bg-gradient-to-br from-primary/5 to-transparent border-primary/20">
+          <Card className="border-primary/20">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Zap className="w-5 h-5 text-primary" />
@@ -613,7 +613,7 @@ export default function IntegrationsHub() {
                           <div className="flex items-center gap-4">
                             <div className="text-right">
                               <p
-                                className={`font-mono font-bold ${isRefund ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+                                className={`font-mono font-bold ${isRefund ? "text-destructive " : "text-success "}`}
                               >
                                 {isRefund ? "" : "+"}
                                 {formatCurrency(txn.amount, txn.currency)}
@@ -622,7 +622,7 @@ export default function IntegrationsHub() {
                                 {txn.isReconciled ? (
                                   <Badge
                                     variant="secondary"
-                                    className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs"
+                                    className="bg-success-subtle text-success text-xs"
                                   >
                                     <Check className="w-3 h-3 mr-1" />
                                     Reconciled
@@ -630,7 +630,7 @@ export default function IntegrationsHub() {
                                 ) : (
                                   <Badge
                                     variant="secondary"
-                                    className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs"
+                                    className="bg-warning-subtle text-warning text-xs"
                                   >
                                     <Clock className="w-3 h-3 mr-1" />
                                     Pending
@@ -657,7 +657,7 @@ export default function IntegrationsHub() {
                 <CardTitle className="text-sm font-medium">Pending Reconciliation</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">12</div>
+                <div className="text-2xl font-bold text-warning ">12</div>
                 <p className="text-xs text-muted-foreground mt-1">Transactions need review</p>
               </CardContent>
             </Card>
@@ -666,7 +666,7 @@ export default function IntegrationsHub() {
                 <CardTitle className="text-sm font-medium">Auto-Matched</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600 dark:text-green-400">156</div>
+                <div className="text-2xl font-bold text-success ">156</div>
                 <p className="text-xs text-muted-foreground mt-1">This month</p>
               </CardContent>
             </Card>
@@ -675,7 +675,7 @@ export default function IntegrationsHub() {
                 <CardTitle className="text-sm font-medium">Failed Imports</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600 dark:text-red-400">3</div>
+                <div className="text-2xl font-bold text-destructive ">3</div>
                 <p className="text-xs text-muted-foreground mt-1">Require attention</p>
               </CardContent>
             </Card>

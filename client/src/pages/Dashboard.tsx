@@ -654,7 +654,7 @@ function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
         <div className="group relative h-full p-5 rounded-xl border border-card-border bg-card hover-lift cursor-pointer overflow-hidden transition-colors">
           <div
             aria-hidden
-            className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-accent/8 via-transparent to-primary/5 pointer-events-none"
+            className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
           />
           <div className="relative">
             <div className="flex items-center gap-2.5">
@@ -2177,7 +2177,7 @@ function CustomerDashboard() {
                 <div aria-hidden className="absolute inset-0 bg-spotlight pointer-events-none" />
                 <div className="relative flex items-start gap-4">
                   <div className="relative flex-shrink-0">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent/15 to-accent/5 ring-1 ring-accent/25 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-lg ring-1 ring-accent/25 flex items-center justify-center">
                       <Sparkles className="w-5 h-5 text-accent" />
                     </div>
                     <span

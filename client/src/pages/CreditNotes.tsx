@@ -69,6 +69,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const creditNoteLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -319,13 +320,13 @@ export default function CreditNotes() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case "draft":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
       case "issued":
-        return "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400";
+        return "bg-success-subtle text-success ";
       case "void":
-        return "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400";
+        return "bg-danger-subtle text-destructive ";
       default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
     }
   };
 
@@ -790,9 +791,14 @@ export default function CreditNotes() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                      <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No credit notes yet. Create your first credit note to get started.</p>
+                    <TableCell colSpan={7} className="py-4">
+                      <EmptyState
+                        icon={FileText}
+                        title="No credit notes yet"
+                        description="Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically."
+                        action={{ label: "New Credit Note", onClick: () => setDialogOpen(true) }}
+                        testId="empty-credit-notes"
+                      />
                     </TableCell>
                   </TableRow>
                 )}

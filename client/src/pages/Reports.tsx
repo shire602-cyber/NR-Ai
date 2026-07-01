@@ -17973,8 +17973,8 @@ export default function Reports() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                    <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                      <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <div className="w-8 h-8 rounded-md bg-success-subtle flex items-center justify-center">
+                      <TrendingUp className="w-4 h-4 text-success " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -17994,8 +17994,8 @@ export default function Reports() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-                    <div className="w-8 h-8 rounded-md bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
-                      <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <div className="w-8 h-8 rounded-md bg-danger-subtle flex items-center justify-center">
+                      <TrendingDown className="w-4 h-4 text-destructive " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18015,8 +18015,8 @@ export default function Reports() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-                    <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                      <DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <div className="w-8 h-8 rounded-md bg-info-subtle flex items-center justify-center">
+                      <DollarSign className="w-4 h-4 text-info " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18046,7 +18046,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-green-600 dark:text-green-400">
+                        <h3 className="font-semibold mb-3 text-success ">
                           Revenue
                         </h3>
                         <Table>
@@ -18075,7 +18075,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
+                        <h3 className="font-semibold mb-3 text-destructive ">
                           Expenses
                         </h3>
                         <Table>
@@ -18107,7 +18107,7 @@ export default function Reports() {
                         <div className="flex justify-between items-center text-lg font-semibold">
                           <span>Net Profit</span>
                           <span
-                            className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                            className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                           >
                             {formatCurrency(profitLoss?.netProfit ?? 0, "AED", locale)}
                           </span>
@@ -18135,7 +18135,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-blue-600 dark:text-blue-400">
+                        <h3 className="font-semibold mb-3 text-info ">
                           Assets
                         </h3>
                         <Table>
@@ -18164,7 +18164,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">
+                        <h3 className="font-semibold mb-3 text-destructive ">
                           Liabilities
                         </h3>
                         <Table>
@@ -18193,7 +18193,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-purple-600 dark:text-purple-400">
+                        <h3 className="font-semibold mb-3 text-chart-5 ">
                           Equity
                         </h3>
                         <Table>
@@ -18243,7 +18243,7 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-green-600 dark:text-green-400">
+                          <h3 className="font-semibold text-success ">
                             Sales (Output VAT)
                           </h3>
                           <div className="space-y-2">
@@ -18263,7 +18263,7 @@ export default function Reports() {
                         </div>
 
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-blue-600 dark:text-blue-400">
+                          <h3 className="font-semibold text-info ">
                             Purchases (Input VAT)
                           </h3>
                           <div className="space-y-2">
@@ -18287,7 +18287,7 @@ export default function Reports() {
                         <div className="flex justify-between items-center text-lg font-semibold">
                           <span>Net VAT Payable to FTA</span>
                           <span
-                            className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+                            className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
                           >
                             {formatCurrency(
                               Math.abs(vatSummary?.netVATPayable ?? 0),
@@ -18503,7 +18503,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18521,7 +18521,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Overdue Outstanding</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18948,7 +18948,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      <TrendingUp className="h-4 w-4 text-success " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18966,7 +18966,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -18989,7 +18989,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -19901,7 +19901,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Posted Expenses</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -19955,7 +19955,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Posting Queue</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -20565,9 +20565,9 @@ export default function Reports() {
                     <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {trialBalanceSummary.isBalanced ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="h-4 w-4 text-success " />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <AlertTriangle className="h-4 w-4 text-warning " />
                       )}
                     </div>
                   </CardHeader>
@@ -20777,9 +20777,9 @@ export default function Reports() {
                     <CardTitle className="text-sm font-medium">Debit / Credit Difference</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {ledgerReport.difference < 0.005 ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="h-4 w-4 text-success " />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <AlertTriangle className="h-4 w-4 text-warning " />
                       )}
                     </div>
                   </CardHeader>
@@ -21112,7 +21112,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Completed</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      <CheckCircle2 className="h-4 w-4 text-success " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -21128,7 +21128,7 @@ export default function Reports() {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                     <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -21548,9 +21548,9 @@ export default function Reports() {
                     <CardTitle className="text-sm font-medium">Variance</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {planningReport.variance >= 0 ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="h-4 w-4 text-success " />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <AlertTriangle className="h-4 w-4 text-warning " />
                       )}
                     </div>
                   </CardHeader>

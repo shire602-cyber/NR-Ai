@@ -231,24 +231,24 @@ function formatPercent(value: number): string {
 function priorityClass(priority: Priority): string {
   switch (priority) {
     case "critical":
-      return "bg-red-100 text-red-800 border-red-200";
+      return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
     case "high":
-      return "bg-orange-100 text-orange-800 border-orange-200";
+      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
     case "medium":
-      return "bg-amber-100 text-amber-800 border-amber-200";
+      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
     case "low":
-      return "bg-slate-100 text-slate-800 border-slate-200";
+      return "bg-muted text-foreground border-border";
   }
 }
 
 function evidenceClass(status: ClientAuditPack["evidence"][number]["status"]): string {
   switch (status) {
     case "ready":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      return "bg-success-subtle text-success-subtle-foreground border-success/30";
     case "attention":
-      return "bg-amber-100 text-amber-800 border-amber-200";
+      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
     case "missing":
-      return "bg-red-100 text-red-800 border-red-200";
+      return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
   }
 }
 
@@ -262,7 +262,7 @@ function ScoreBar({
   inverse?: boolean;
 }) {
   const risk = inverse ? 100 - value : value;
-  const color = risk >= 75 ? "text-red-600" : risk >= 50 ? "text-amber-600" : "text-emerald-600";
+  const color = risk >= 75 ? "text-destructive" : risk >= 50 ? "text-warning" : "text-success";
   return (
     <div className="space-y-1">
       <div className="flex justify-between gap-2 text-xs">
@@ -351,7 +351,7 @@ export default function ValueOps() {
 
   if (dashboardQuery.isError || !data) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-6 text-sm text-red-900">
+      <div className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm text-danger-subtle-foreground">
         Value operations could not be loaded.
       </div>
     );
@@ -694,9 +694,9 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
       </div>
 
       {pack.reviewerNotes.length > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-          <div className="mb-2 font-medium text-amber-900">Reviewer notes</div>
-          <ul className="space-y-1 text-sm text-amber-900">
+        <div className="rounded-md border border-warning/30 bg-warning-subtle p-3">
+          <div className="mb-2 font-medium text-warning-subtle-foreground">Reviewer notes</div>
+          <ul className="space-y-1 text-sm text-warning-subtle-foreground">
             {pack.reviewerNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}
@@ -704,7 +704,7 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
         </div>
       )}
       {pack.reviewerNotes.length === 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+        <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success-subtle p-3 text-sm text-success-subtle-foreground">
           <CheckCircle2 className="h-4 w-4" />
           Evidence pack is ready for reviewer sign-off.
         </div>

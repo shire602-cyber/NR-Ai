@@ -98,15 +98,15 @@ function humanize(s: string) {
 function levelBadgeColor(level: string) {
   switch (level) {
     case "friendly":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+      return "bg-info-subtle text-info-subtle-foreground ";
     case "follow_up":
-      return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300";
+      return "bg-warning-subtle text-warning-subtle-foreground ";
     case "urgent":
-      return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
+      return "bg-warning-subtle text-warning-subtle-foreground ";
     case "final":
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
+      return "bg-danger-subtle text-danger-subtle-foreground ";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-muted text-foreground";
   }
 }
 
@@ -241,7 +241,7 @@ export default function DocumentChasing() {
     return (
       <div
         role="alert"
-        className="m-6 rounded-md border border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-900 p-6 text-sm"
+        className="m-6 rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="document-chasing-error"
       >
         <div className="font-medium mb-1">Failed to load document chasing data.</div>
@@ -308,18 +308,18 @@ export default function DocumentChasing() {
         <StatCard
           title="Missing Documents"
           value={stats.total}
-          icon={<FileText className="w-5 h-5 text-blue-500" />}
+          icon={<FileText className="w-5 h-5 text-info" />}
         />
         <StatCard
           title="Overdue"
           value={stats.overdue}
-          icon={<AlertTriangle className="w-5 h-5 text-red-500" />}
+          icon={<AlertTriangle className="w-5 h-5 text-destructive" />}
           tone={stats.overdue > 0 ? "danger" : "normal"}
         />
         <StatCard
           title="Due in 14 days"
           value={stats.dueSoon}
-          icon={<CalendarDays className="w-5 h-5 text-amber-500" />}
+          icon={<CalendarDays className="w-5 h-5 text-warning" />}
           tone={stats.dueSoon > 0 ? "warning" : "normal"}
         />
         <StatCard
@@ -329,7 +329,7 @@ export default function DocumentChasing() {
               ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
               : "—"
           }
-          icon={<Sparkles className="w-5 h-5 text-green-500" />}
+          icon={<Sparkles className="w-5 h-5 text-success" />}
         />
       </div>
 
@@ -508,7 +508,7 @@ export default function DocumentChasing() {
                         {dUntil < 0 ? (
                           <Badge variant="destructive">{Math.abs(dUntil)}d overdue</Badge>
                         ) : dUntil <= 30 ? (
-                          <Badge className="bg-amber-100 text-amber-800">in {dUntil}d</Badge>
+                          <Badge className="bg-warning-subtle text-warning-subtle-foreground">in {dUntil}d</Badge>
                         ) : (
                           <Badge variant="secondary">in {dUntil}d</Badge>
                         )}
@@ -611,9 +611,9 @@ function StatCard(props: {
 }) {
   const ringClass =
     props.tone === "danger"
-      ? "border-red-200 dark:border-red-900"
+      ? "border-destructive/30 "
       : props.tone === "warning"
-        ? "border-amber-200 dark:border-amber-900"
+        ? "border-warning/30 "
         : "";
   return (
     <Card className={ringClass}>

@@ -94,17 +94,17 @@ type SortDir = "asc" | "desc";
 
 function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineStatus }) {
   const colorMap: Record<string, string> = {
-    healthy: "bg-green-500",
-    "on-track": "bg-green-500",
-    upcoming: "bg-green-500",
-    attention: "bg-yellow-500",
-    "due-soon": "bg-yellow-500",
-    critical: "bg-red-500",
-    overdue: "bg-red-500",
+    healthy: "bg-success",
+    "on-track": "bg-success",
+    upcoming: "bg-success",
+    attention: "bg-warning",
+    "due-soon": "bg-warning",
+    critical: "bg-destructive",
+    overdue: "bg-destructive",
   };
   return (
     <span
-      className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? "bg-gray-400"}`}
+      className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? "bg-muted-foreground/30"}`}
       title={status}
     />
   );
@@ -113,7 +113,7 @@ function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineSta
 function HealthBadge({ status }: { status: HealthStatus }) {
   if (status === "healthy") {
     return (
-      <Badge className="bg-green-100 text-green-800 border-green-200 gap-1">
+      <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30 gap-1">
         <CheckCircle2 className="w-3 h-3" />
         Healthy
       </Badge>
@@ -121,14 +121,14 @@ function HealthBadge({ status }: { status: HealthStatus }) {
   }
   if (status === "attention") {
     return (
-      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 gap-1">
+      <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30 gap-1">
         <AlertTriangle className="w-3 h-3" />
         Attention
       </Badge>
     );
   }
   return (
-    <Badge className="bg-red-100 text-red-800 border-red-200 gap-1">
+    <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30 gap-1">
       <XCircle className="w-3 h-3" />
       Critical
     </Badge>
@@ -138,14 +138,14 @@ function HealthBadge({ status }: { status: HealthStatus }) {
 function DeadlineBadge({ status, daysTilDue }: { status: DeadlineStatus; daysTilDue: number }) {
   if (status === "overdue") {
     return (
-      <Badge className="bg-red-100 text-red-800 border-red-200">
+      <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30">
         {Math.abs(daysTilDue)}d overdue
       </Badge>
     );
   }
   if (status === "due-soon") {
     return (
-      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+      <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
         Due in {daysTilDue}d
       </Badge>
     );
@@ -228,7 +228,7 @@ export default function FirmHealth() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Activity className="w-6 h-6 text-amber-600" />
+          <Activity className="w-6 h-6 text-warning" />
           {t.healthDashboard}
         </h1>
         <p className="text-muted-foreground mt-1">{t.healthDashboardDesc}</p>
@@ -247,43 +247,43 @@ export default function FirmHealth() {
           </CardContent>
         </Card>
 
-        <Card className="border-green-200 bg-green-50/40 dark:bg-green-950/20">
+        <Card className="border-success/30 bg-success-subtle/40 ">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-1.5">
+            <CardTitle className="text-sm font-medium text-success flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
               {t.healthy}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-green-700 dark:text-green-400">
+            <p className="text-3xl font-bold text-success ">
               {summary?.healthy ?? 0}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-yellow-200 bg-yellow-50/40 dark:bg-yellow-950/20">
+        <Card className="border-warning/30 bg-warning-subtle/40 ">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-yellow-700 dark:text-yellow-400 flex items-center gap-1.5">
+            <CardTitle className="text-sm font-medium text-warning flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4" />
               {t.needsAttention}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-yellow-700 dark:text-yellow-400">
+            <p className="text-3xl font-bold text-warning ">
               {summary?.attention ?? 0}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-red-200 bg-red-50/40 dark:bg-red-950/20">
+        <Card className="border-destructive/30 bg-danger-subtle/40 ">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400 flex items-center gap-1.5">
+            <CardTitle className="text-sm font-medium text-destructive flex items-center gap-1.5">
               <XCircle className="w-4 h-4" />
               {t.critical}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-red-700 dark:text-red-400">
+            <p className="text-3xl font-bold text-destructive ">
               {summary?.critical ?? 0}
             </p>
           </CardContent>
@@ -428,7 +428,7 @@ export default function FirmHealth() {
         <CardContent>
           {deadlines.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
-              <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
+              <CheckCircle2 className="w-8 h-8 text-success mb-2" />
               <p className="text-muted-foreground">{t.noDeadlines}</p>
             </div>
           ) : (

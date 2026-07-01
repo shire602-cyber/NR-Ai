@@ -250,10 +250,10 @@ export default function TaxReturnArchive() {
             <CardTitle className="text-sm font-medium">
               {locale === "ar" ? "إقرارات ضريبة القيمة المضافة" : "VAT Returns"}
             </CardTitle>
-            <Receipt className="w-4 h-4 text-blue-500" />
+            <Receipt className="w-4 h-4 text-info" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.vatReturns}</div>
+            <div className="text-2xl font-bold text-info">{stats.vatReturns}</div>
           </CardContent>
         </Card>
 
@@ -262,10 +262,10 @@ export default function TaxReturnArchive() {
             <CardTitle className="text-sm font-medium">
               {locale === "ar" ? "ضريبة الشركات" : "Corporate Tax"}
             </CardTitle>
-            <Building2 className="w-4 h-4 text-purple-500" />
+            <Building2 className="w-4 h-4 text-chart-5" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{stats.corporateTax}</div>
+            <div className="text-2xl font-bold text-chart-5">{stats.corporateTax}</div>
           </CardContent>
         </Card>
 
@@ -274,10 +274,10 @@ export default function TaxReturnArchive() {
             <CardTitle className="text-sm font-medium">
               {locale === "ar" ? "إجمالي الضرائب المدفوعة" : "Total Tax Paid"}
             </CardTitle>
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
+            <CheckCircle2 className="w-4 h-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-success">
               {formatCurrency(stats.totalTaxPaid)}
             </div>
           </CardContent>
@@ -353,7 +353,7 @@ export default function TaxReturnArchive() {
                     <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
                     <TableHead>{locale === "ar" ? "تاريخ التقديم" : "Filing Date"}</TableHead>
                     <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
-                    <TableHead>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
+                    <TableHead className="text-right">{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
                     <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
                     <TableHead className="text-right">
                       {locale === "ar" ? "إجراءات" : "Actions"}
@@ -385,7 +385,7 @@ export default function TaxReturnArchive() {
                           </div>
                         </TableCell>
                         <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="text-right font-mono font-medium">
                           {formatCurrency(ret.taxAmount)}
                         </TableCell>
                         <TableCell>

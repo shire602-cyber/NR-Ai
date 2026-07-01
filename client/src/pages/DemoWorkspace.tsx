@@ -165,7 +165,7 @@ export default function DemoWorkspace() {
             { label: "VAT payable", value: money(11100), icon: ShieldCheck },
             { label: "CT estimate", value: money(7425), icon: Banknote },
           ].map(({ label, value, icon: Icon }) => (
-            <Card key={label} className="border-black/10 bg-white">
+            <Card key={label} className="border-black/10 bg-card">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-black/50">
@@ -182,7 +182,7 @@ export default function DemoWorkspace() {
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded-lg border border-black/10 bg-white">
+          <section className="rounded-lg border border-black/10 bg-card">
             <div className="border-b border-black/10 p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -366,7 +366,7 @@ export default function DemoWorkspace() {
           </section>
 
           <aside className="space-y-4">
-            <Card className="border-black/10 bg-white">
+            <Card className="border-black/10 bg-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CheckCircle2 className="h-5 w-5 text-[#0D5C3D]" />
@@ -394,7 +394,7 @@ export default function DemoWorkspace() {
                   </p>
                 </div>
                 <Link href="/register">
-                  <Button className="w-full bg-white text-[#0E1320] hover:bg-white/90">
+                  <Button className="w-full bg-card text-[#0E1320] hover:bg-card/90">
                     Start setup
                   </Button>
                 </Link>

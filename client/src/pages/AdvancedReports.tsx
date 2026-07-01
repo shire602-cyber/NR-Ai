@@ -349,7 +349,7 @@ export default function AdvancedReports() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold ${cashFlowSummary.operating >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold ${cashFlowSummary.operating >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(cashFlowSummary.operating)}
                 </div>
@@ -363,7 +363,7 @@ export default function AdvancedReports() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold ${cashFlowSummary.investing >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold ${cashFlowSummary.investing >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(cashFlowSummary.investing)}
                 </div>
@@ -377,7 +377,7 @@ export default function AdvancedReports() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold ${cashFlowSummary.financing >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold ${cashFlowSummary.financing >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(cashFlowSummary.financing)}
                 </div>
@@ -391,7 +391,7 @@ export default function AdvancedReports() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold ${cashFlowSummary.net >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold ${cashFlowSummary.net >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(cashFlowSummary.net)}
                 </div>
@@ -482,7 +482,7 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
-                    <span className="font-mono text-green-600">
+                    <span className="font-mono text-success">
                       {formatCurrency(agingSummary.receivables.current, "AED", locale)}
                     </span>
                   </div>
@@ -490,7 +490,7 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
-                    <span className="font-mono text-red-600">
+                    <span className="font-mono text-destructive">
                       {formatCurrency(agingSummary.receivables.overdue, "AED", locale)}
                     </span>
                   </div>
@@ -521,7 +521,7 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "حالي" : "Current"}
                     </span>
-                    <span className="font-mono text-green-600">
+                    <span className="font-mono text-success">
                       {formatCurrency(agingSummary.payables.current, "AED", locale)}
                     </span>
                   </div>
@@ -529,7 +529,7 @@ export default function AdvancedReports() {
                     <span className="text-muted-foreground">
                       {locale === "ar" ? "متأخر" : "Overdue"}
                     </span>
-                    <span className="font-mono text-red-600">
+                    <span className="font-mono text-destructive">
                       {formatCurrency(agingSummary.payables.overdue, "AED", locale)}
                     </span>
                   </div>
@@ -643,7 +643,7 @@ export default function AdvancedReports() {
                           <TableCell className="text-right font-mono">
                             {formatCurrency(item.days90, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-red-600">
+                          <TableCell className="text-right font-mono text-destructive">
                             {formatCurrency(item.over90, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-mono font-medium">
@@ -713,7 +713,7 @@ export default function AdvancedReports() {
                             {formatComparisonValue(item, item.previous)}
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono ${item.change >= 0 ? "text-green-600" : "text-red-600"}`}
+                            className={`text-right font-mono ${item.change >= 0 ? "text-success" : "text-destructive"}`}
                           >
                             <div className="flex items-center justify-end gap-1">
                               {item.change >= 0 ? (
@@ -725,7 +725,7 @@ export default function AdvancedReports() {
                             </div>
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono ${item.changePercent >= 0 ? "text-green-600" : "text-red-600"}`}
+                            className={`text-right font-mono ${item.changePercent >= 0 ? "text-success" : "text-destructive"}`}
                           >
                             {item.changePercent >= 0 ? "+" : ""}
                             {item.changePercent.toFixed(1)}%

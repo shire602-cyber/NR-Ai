@@ -187,7 +187,7 @@ export function WhatsAppComposer({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <SiWhatsapp className="w-5 h-5 text-green-500" />
+            <SiWhatsapp className="w-5 h-5 text-success" />
             {title || (en ? "Send WhatsApp Message" : "إرسال رسالة واتساب")}
           </DialogTitle>
           <DialogDescription>
@@ -249,7 +249,7 @@ export function WhatsAppComposer({
           </Button>
           <Button
             onClick={handleSend}
-            className="bg-green-600 hover:bg-green-700"
+            className="bg-success hover:bg-success"
             data-testid="composer-send"
           >
             <Send className="w-4 h-4 mr-2" />

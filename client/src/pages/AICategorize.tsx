@@ -80,9 +80,9 @@ export default function AICategorize() {
   };
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return "text-green-600 dark:text-green-400";
-    if (confidence >= 0.5) return "text-amber-600 dark:text-amber-400";
-    return "text-red-600 dark:text-red-400";
+    if (confidence >= 0.8) return "text-success ";
+    if (confidence >= 0.5) return "text-warning ";
+    return "text-destructive ";
   };
 
   const examples = [
@@ -196,7 +196,7 @@ export default function AICategorize() {
                       {result.suggestedAccountCode}
                     </div>
                   </div>
-                  <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
+                  <CheckCircle2 className="w-6 h-6 text-success flex-shrink-0" />
                 </div>
 
                 <div className="space-y-3">
@@ -213,7 +213,7 @@ export default function AICategorize() {
                   {result.confidence >= 0.8 && (
                     <Badge
                       variant="outline"
-                      className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                      className="bg-success-subtle text-success "
                     >
                       High Confidence
                     </Badge>
@@ -221,7 +221,7 @@ export default function AICategorize() {
                   {result.confidence >= 0.5 && result.confidence < 0.8 && (
                     <Badge
                       variant="outline"
-                      className="bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                      className="bg-warning-subtle text-warning "
                     >
                       Medium Confidence
                     </Badge>
@@ -229,7 +229,7 @@ export default function AICategorize() {
                   {result.confidence < 0.5 && (
                     <Badge
                       variant="outline"
-                      className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                      className="bg-danger-subtle text-destructive "
                     >
                       Low Confidence
                     </Badge>

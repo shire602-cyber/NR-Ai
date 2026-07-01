@@ -122,23 +122,23 @@ export default function TrustSecurity() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    <ShieldCheck className="h-5 w-5 text-success" />
                     Launch posture
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
                     <span>High/critical production dependency audit gate is part of release.</span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
                     <span>
                       Automated test, build, type-check, and migration-secret gates run locally.
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <Clock className="mt-0.5 h-4 w-4 text-amber-600" />
+                    <Clock className="mt-0.5 h-4 w-4 text-warning" />
                     <span>External certifications are roadmap items, not current claims.</span>
                   </div>
                 </CardContent>
@@ -258,7 +258,7 @@ export default function TrustSecurity() {
                 key={item}
                 className="flex gap-3 rounded-lg border p-4 text-sm text-muted-foreground"
               >
-                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <span>{item}</span>
               </div>
             ))}

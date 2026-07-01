@@ -51,7 +51,7 @@ export function InlineHelp({
 
       {displayTips && displayTips.length > 0 && (
         <div>
-          <div className="flex items-center gap-1 text-xs font-medium text-yellow-600 dark:text-yellow-400 mb-1">
+          <div className="flex items-center gap-1 text-xs font-medium text-warning mb-1">
             <Lightbulb className="w-3 h-3" />
             <span>{locale === "ar" ? "نصائح" : "Tips"}</span>
           </div>
@@ -68,7 +68,7 @@ export function InlineHelp({
 
       {displayExample && (
         <div>
-          <div className="flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
+          <div className="flex items-center gap-1 text-xs font-medium text-info mb-1">
             <BookOpen className="w-3 h-3" />
             <span>{locale === "ar" ? "مثال" : "Example"}</span>
           </div>

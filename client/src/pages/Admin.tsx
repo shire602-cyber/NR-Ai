@@ -384,7 +384,7 @@ export default function Admin() {
                   {stats?.totalUsers || 0}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">+12%</span> from last month
+                  <span className="text-success">+12%</span> from last month
                 </p>
               </CardContent>
             </Card>
@@ -399,7 +399,7 @@ export default function Admin() {
                   {stats?.totalCompanies || 0}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">+8%</span> from last month
+                  <span className="text-success">+8%</span> from last month
                 </p>
               </CardContent>
             </Card>
@@ -414,7 +414,7 @@ export default function Admin() {
                   AED {(stats?.monthlyRevenue || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">+15%</span> from last month
+                  <span className="text-success">+15%</span> from last month
                 </p>
               </CardContent>
             </Card>
@@ -443,28 +443,28 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <CheckCircle className="w-4 h-4 text-success" />
                     <span>Database</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
                     Healthy
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <CheckCircle className="w-4 h-4 text-success" />
                     <span>API Services</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
                     Operational
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <CheckCircle className="w-4 h-4 text-success" />
                     <span>AI Services (OpenAI)</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
                     Connected
                   </Badge>
                 </div>
@@ -586,9 +586,9 @@ export default function Admin() {
                 {auditLogs.slice(0, 5).map((log) => (
                   <div key={log.id} className="flex items-center gap-4">
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {log.action === "create" && <Plus className="w-4 h-4 text-green-600" />}
-                      {log.action === "update" && <Edit2 className="w-4 h-4 text-blue-600" />}
-                      {log.action === "delete" && <Trash2 className="w-4 h-4 text-red-600" />}
+                      {log.action === "create" && <Plus className="w-4 h-4 text-success" />}
+                      {log.action === "update" && <Edit2 className="w-4 h-4 text-info" />}
+                      {log.action === "delete" && <Trash2 className="w-4 h-4 text-destructive" />}
                       {log.action === "login" && (
                         <Users className="w-4 h-4 text-muted-foreground" />
                       )}
@@ -785,7 +785,7 @@ export default function Admin() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                          <Badge variant="outline" className="bg-success-subtle text-success">
                             Active
                           </Badge>
                         </TableCell>
@@ -1254,7 +1254,7 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                  <Badge variant="outline" className="bg-warning-subtle text-warning">
                     Not Configured
                   </Badge>
                 </div>
@@ -1294,7 +1294,7 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                  <Badge variant="outline" className="bg-success-subtle text-success">
                     Connected
                   </Badge>
                 </div>
@@ -1335,7 +1335,7 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                  <Badge variant="outline" className="bg-success-subtle text-success">
                     Connected
                   </Badge>
                 </div>

@@ -156,7 +156,7 @@ export default function UserInvitations() {
     const isExpired = invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
 
     if (invitation.status === "accepted") {
-      return <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Accepted</Badge>;
+      return <Badge className="bg-success/10 text-success border-success/20">Accepted</Badge>;
     }
     if (invitation.status === "revoked") {
       return <Badge variant="destructive">Revoked</Badge>;
@@ -164,7 +164,7 @@ export default function UserInvitations() {
     if (isExpired) {
       return <Badge variant="secondary">Expired</Badge>;
     }
-    return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">Pending</Badge>;
+    return <Badge className="bg-info/10 text-info border-info/20">Pending</Badge>;
   };
 
   const handleSendInvitation = (e: React.FormEvent<HTMLFormElement>) => {
@@ -314,7 +314,7 @@ export default function UserInvitations() {
             <CardTitle className="text-sm font-medium">Pending</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-500">{pendingCount}</div>
+            <div className="text-2xl font-bold text-info">{pendingCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -322,7 +322,7 @@ export default function UserInvitations() {
             <CardTitle className="text-sm font-medium">Accepted</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">{acceptedCount}</div>
+            <div className="text-2xl font-bold text-success">{acceptedCount}</div>
           </CardContent>
         </Card>
       </div>

@@ -129,10 +129,10 @@ const STATUS_VARIANT: Record<VatPeriodStatus, "default" | "secondary" | "destruc
   };
 
 const LEVEL_BADGE: Record<DeadlineStatus["level"], { label: string; className: string }> = {
-  ok: { label: "On track", className: "bg-emerald-100 text-emerald-800" },
-  warning: { label: "Due soon", className: "bg-amber-100 text-amber-800" },
-  critical: { label: "Critical", className: "bg-orange-100 text-orange-800" },
-  overdue: { label: "Overdue", className: "bg-red-100 text-red-800" },
+  ok: { label: "On track", className: "bg-success-subtle text-success-subtle-foreground" },
+  warning: { label: "Due soon", className: "bg-warning-subtle text-warning-subtle-foreground" },
+  critical: { label: "Critical", className: "bg-warning-subtle text-warning-subtle-foreground" },
+  overdue: { label: "Overdue", className: "bg-danger-subtle text-danger-subtle-foreground" },
 };
 
 function formatDate(iso: string): string {
@@ -386,9 +386,9 @@ export default function VATAutopilot() {
 
       {/* Reconciliation alert */}
       {visibleCalc?.reconciliation.hasDiscrepancy && (
-        <Card className="border-amber-300">
+        <Card className="border-warning/30">
           <CardContent className="p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
             <div className="text-sm">
               <p className="font-medium">Ledger reconciliation mismatch</p>
               <p className="text-muted-foreground">

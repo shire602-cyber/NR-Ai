@@ -44,14 +44,14 @@ export default function PortalMessages() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Messages</h2>
-        <p className="text-sm text-gray-500 mt-1">Communicate with your NR Accounting team.</p>
+        <h2 className="text-xl font-semibold text-foreground">Messages</h2>
+        <p className="text-sm text-muted-foreground mt-1">Communicate with your NR Accounting team.</p>
       </div>
 
       {/* Compose */}
       <Card>
         <CardContent className="pt-4 space-y-3">
-          <p className="text-sm font-medium text-gray-700">New Message</p>
+          <p className="text-sm font-medium text-foreground">New Message</p>
           <Input
             placeholder="Subject (optional)"
             value={subject}
@@ -67,7 +67,7 @@ export default function PortalMessages() {
             <Button
               onClick={handleSend}
               disabled={!content.trim() || sendMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-info hover:bg-info text-white"
             >
               {sendMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -89,30 +89,30 @@ export default function PortalMessages() {
             </div>
           ) : sorted.length === 0 ? (
             <div className="text-center py-12">
-              <MessageSquare className="w-9 h-9 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">No messages yet.</p>
+              <MessageSquare className="w-9 h-9 text-muted-foreground/70 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground/70">No messages yet.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-border">
               {sorted.map((msg: any) => (
                 <div key={msg.id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       {msg.subject && (
-                        <p className="text-sm font-semibold text-gray-900 truncate">
+                        <p className="text-sm font-semibold text-foreground truncate">
                           {msg.subject}
                         </p>
                       )}
-                      <p className="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap">
+                      <p className="text-sm text-foreground mt-0.5 whitespace-pre-wrap">
                         {msg.content}
                       </p>
                     </div>
-                    <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">
+                    <span className="text-xs text-muted-foreground/70 flex-shrink-0 mt-0.5">
                       {msg.createdAt ? format(new Date(msg.createdAt), "MMM d, h:mm a") : ""}
                     </span>
                   </div>
                   {!msg.isRead && (
-                    <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                    <span className="inline-block mt-1 text-xs bg-info-subtle text-info rounded px-1.5 py-0.5">
                       Unread
                     </span>
                   )}

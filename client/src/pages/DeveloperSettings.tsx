@@ -395,7 +395,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopy}>
                 {copied ? (
-                  <Check className="h-4 w-4 text-green-600" />
+                  <Check className="h-4 w-4 text-success" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
@@ -752,7 +752,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopySecret}>
                 {copied ? (
-                  <Check className="h-4 w-4 text-green-600" />
+                  <Check className="h-4 w-4 text-success" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
@@ -810,7 +810,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       </TableCell>
                       <TableCell>
                         {delivery.success ? (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                          <Badge className="bg-success-subtle text-success-subtle-foreground ">
                             Success
                           </Badge>
                         ) : (

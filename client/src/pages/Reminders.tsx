@@ -123,14 +123,14 @@ export default function Reminders() {
     switch (status) {
       case "sent":
         return (
-          <Badge className="bg-green-500">
+          <Badge className="bg-success">
             <CheckCircle className="w-3 h-3 mr-1" />
             Sent
           </Badge>
         );
       case "delivered":
         return (
-          <Badge className="bg-blue-500">
+          <Badge className="bg-info">
             <CheckCircle className="w-3 h-3 mr-1" />
             Delivered
           </Badge>

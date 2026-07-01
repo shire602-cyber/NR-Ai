@@ -64,15 +64,15 @@ function formatDate(date: string): string {
 function getStatusColor(status: string): string {
   switch (status) {
     case "paid":
-      return "bg-green-100 text-green-800";
+      return "bg-success-subtle text-success-subtle-foreground";
     case "sent":
-      return "bg-blue-100 text-blue-800";
+      return "bg-info-subtle text-info-subtle-foreground";
     case "draft":
-      return "bg-gray-100 text-gray-800";
+      return "bg-muted text-foreground";
     case "void":
-      return "bg-red-100 text-red-800";
+      return "bg-danger-subtle text-danger-subtle-foreground";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-muted text-foreground";
   }
 }
 
@@ -100,10 +100,10 @@ export default function PublicInvoiceView() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-muted flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-500">Loading invoice...</p>
+          <div className="animate-spin w-10 h-10 border-3 border-info border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading invoice...</p>
         </div>
       </div>
     );
@@ -115,18 +115,18 @@ export default function PublicInvoiceView() {
     const isExpired = message.includes("expired");
 
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             {isExpired ? (
-              <Clock className="w-16 h-16 text-amber-500 mb-4" />
+              <Clock className="w-16 h-16 text-warning mb-4" />
             ) : (
-              <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+              <AlertCircle className="w-16 h-16 text-destructive mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
               {isExpired ? "Link Expired" : "Invoice Not Found"}
             </h2>
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               {isExpired
                 ? "This invoice link has expired. Please contact the sender for a new link."
                 : "This invoice link is invalid or has been removed."}
@@ -141,29 +141,29 @@ export default function PublicInvoiceView() {
   const isVATRegistered = !!company.trnVatNumber;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-muted py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header Card */}
         <Card className="overflow-hidden">
           {/* Blue Header */}
-          <div className="bg-blue-700 text-white p-6">
+          <div className="bg-info text-white p-6">
             <div className="flex items-start justify-between">
               <div>
                 <h1 className="text-2xl font-bold">{company.name}</h1>
                 {company.businessAddress && (
-                  <p className="text-blue-100 text-sm mt-1">{company.businessAddress}</p>
+                  <p className="text-info-foreground text-sm mt-1">{company.businessAddress}</p>
                 )}
                 {company.contactPhone && (
-                  <p className="text-blue-100 text-sm">{company.contactPhone}</p>
+                  <p className="text-info-foreground text-sm">{company.contactPhone}</p>
                 )}
                 {company.contactEmail && (
-                  <p className="text-blue-100 text-sm">{company.contactEmail}</p>
+                  <p className="text-info-foreground text-sm">{company.contactEmail}</p>
                 )}
               </div>
               <div className="text-right">
                 <h2 className="text-lg font-bold">{isVATRegistered ? "TAX INVOICE" : "INVOICE"}</h2>
                 {isVATRegistered && company.trnVatNumber && (
-                  <p className="text-blue-100 text-sm mt-1">TRN: {company.trnVatNumber}</p>
+                  <p className="text-info-foreground text-sm mt-1">TRN: {company.trnVatNumber}</p>
                 )}
               </div>
             </div>
@@ -171,17 +171,17 @@ export default function PublicInvoiceView() {
 
           <CardContent className="p-6 space-y-6">
             {/* Invoice Details */}
-            <div className="flex flex-wrap gap-6 justify-between bg-gray-50 p-4 rounded-lg">
+            <div className="flex flex-wrap gap-6 justify-between bg-muted p-4 rounded-lg">
               <div>
-                <p className="text-sm text-gray-500">Invoice Number</p>
+                <p className="text-sm text-muted-foreground">Invoice Number</p>
                 <p className="font-semibold text-lg">{invoice.number}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Date</p>
+                <p className="text-sm text-muted-foreground">Date</p>
                 <p className="font-semibold">{formatDate(invoice.date)}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Status</p>
+                <p className="text-sm text-muted-foreground">Status</p>
                 <Badge className={getStatusColor(invoice.status)}>
                   {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                 </Badge>
@@ -190,10 +190,10 @@ export default function PublicInvoiceView() {
 
             {/* Bill To */}
             <div>
-              <h3 className="text-sm font-semibold text-blue-700 uppercase mb-2">Bill To</h3>
+              <h3 className="text-sm font-semibold text-info uppercase mb-2">Bill To</h3>
               <p className="font-semibold text-lg">{invoice.customerName}</p>
               {invoice.customerTrn && (
-                <p className="text-sm text-gray-500">TRN: {invoice.customerTrn}</p>
+                <p className="text-sm text-muted-foreground">TRN: {invoice.customerTrn}</p>
               )}
             </div>
 
@@ -201,7 +201,7 @@ export default function PublicInvoiceView() {
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-blue-700 hover:bg-blue-700">
+                  <TableRow className="bg-info hover:bg-info">
                     <TableHead className="text-white font-semibold">Description</TableHead>
                     <TableHead className="text-white font-semibold text-center">Qty</TableHead>
                     <TableHead className="text-white font-semibold text-center">
@@ -216,7 +216,7 @@ export default function PublicInvoiceView() {
                     const lineTotal = line.quantity * line.unitPrice;
                     const vatPercent = ((line.vatRate ?? 0.05) * 100).toFixed(0);
                     return (
-                      <TableRow key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <TableRow key={index} className={index % 2 === 0 ? "bg-card" : "bg-muted"}>
                         <TableCell className="font-medium">{line.description}</TableCell>
                         <TableCell className="text-center">{line.quantity}</TableCell>
                         <TableCell className="text-center">
@@ -237,14 +237,14 @@ export default function PublicInvoiceView() {
             <div className="flex justify-end">
               <div className="w-64 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Subtotal</span>
+                  <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">VAT</span>
+                  <span className="text-muted-foreground">VAT</span>
                   <span>{formatCurrency(invoice.vatAmount, invoice.currency)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t bg-blue-700 text-white -mx-3 px-3 py-2 rounded-lg">
+                <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
                   <span>Total</span>
                   <span>{formatCurrency(invoice.total, invoice.currency)}</span>
                 </div>
@@ -255,7 +255,7 @@ export default function PublicInvoiceView() {
             <div className="flex justify-center pt-4 border-t">
               <Button
                 onClick={handleDownloadPDF}
-                className="bg-blue-700 hover:bg-blue-800"
+                className="bg-info hover:bg-info"
                 size="lg"
               >
                 <Download className="w-5 h-5 mr-2" />
@@ -266,7 +266,7 @@ export default function PublicInvoiceView() {
         </Card>
 
         {/* Footer */}
-        <div className="text-center text-sm text-gray-400 pb-4">
+        <div className="text-center text-sm text-muted-foreground/70 pb-4">
           <p>Thank you for your business</p>
           {isVATRegistered && (
             <p className="mt-1">This is a tax invoice - Please keep for your records</p>

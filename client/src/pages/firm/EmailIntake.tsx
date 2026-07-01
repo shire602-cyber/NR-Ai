@@ -395,9 +395,9 @@ function CompletenessTab({
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               {result.summary.gapCount === 0 ? (
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <CheckCircle2 className="h-5 w-5 text-success" />
               ) : (
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                <AlertTriangle className="h-5 w-5 text-warning" />
               )}
               Coverage {coveragePct}% · {result.summary.gapCount} gap
               {result.summary.gapCount === 1 ? "" : "s"}

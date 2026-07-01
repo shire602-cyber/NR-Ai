@@ -71,6 +71,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const poLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -306,17 +307,17 @@ export default function PurchaseOrders() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case "draft":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
       case "sent":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400";
+        return "bg-info-subtle text-info ";
       case "approved":
-        return "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400";
+        return "bg-success-subtle text-success ";
       case "received":
-        return "bg-teal-100 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400";
+        return "bg-success-subtle text-success ";
       case "cancelled":
-        return "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400";
+        return "bg-danger-subtle text-destructive ";
       default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
     }
   };
 
@@ -831,11 +832,14 @@ export default function PurchaseOrders() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                      <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>
-                        No purchase orders yet. Create your first purchase order to get started.
-                      </p>
+                    <TableCell colSpan={7} className="py-4">
+                      <EmptyState
+                        icon={ShoppingCart}
+                        title="No purchase orders yet"
+                        description="Track what you've ordered from suppliers and match deliveries to bills when they arrive."
+                        action={{ label: "New Purchase Order", onClick: () => setDialogOpen(true) }}
+                        testId="empty-purchase-orders"
+                      />
                     </TableCell>
                   </TableRow>
                 )}

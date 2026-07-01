@@ -22,7 +22,7 @@ export function BrandMark({ size = "md", className }: BrandMarkProps) {
       aria-hidden
       className={cn(
         "flex items-center justify-center shrink-0 select-none font-semibold text-white",
-        "bg-gradient-to-br from-[#0D5C3D] to-[#0A4530] shadow-sm ring-1 ring-white/10",
+        "from-[#0D5C3D] to-[#0A4530] shadow-sm ring-1 ring-white/10",
         SIZES[size],
         className
       )}

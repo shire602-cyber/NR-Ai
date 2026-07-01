@@ -70,13 +70,13 @@ export default function History() {
   const getActionIcon = (action: string) => {
     switch (action) {
       case "create":
-        return <Plus className="h-4 w-4 text-green-500" />;
+        return <Plus className="h-4 w-4 text-success" />;
       case "update":
-        return <Edit className="h-4 w-4 text-blue-500" />;
+        return <Edit className="h-4 w-4 text-info" />;
       case "delete":
-        return <Trash2 className="h-4 w-4 text-red-500" />;
+        return <Trash2 className="h-4 w-4 text-destructive" />;
       case "view":
-        return <Eye className="h-4 w-4 text-gray-500" />;
+        return <Eye className="h-4 w-4 text-muted-foreground" />;
       default:
         return <HistoryIcon className="h-4 w-4" />;
     }
@@ -108,9 +108,9 @@ export default function History() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Create</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
       case "update":
-        return <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">Update</Badge>;
+        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
       case "delete":
         return <Badge variant="destructive">Delete</Badge>;
       case "view":

@@ -110,12 +110,12 @@ export default function CashFlowForecast() {
   const getInsightIcon = (insight: string) => {
     const lower = insight.toLowerCase();
     if (lower.includes("warning") || lower.includes("negative") || lower.includes("drop below")) {
-      return <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />;
+      return <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />;
     }
     if (lower.includes("positive") || lower.includes("improve")) {
-      return <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />;
+      return <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />;
     }
-    return <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />;
+    return <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />;
   };
 
   const getInsightBadge = (insight: string) => {
@@ -128,7 +128,7 @@ export default function CashFlowForecast() {
       );
     }
     if (lower.includes("positive") || lower.includes("improve")) {
-      return <Badge className="bg-green-100 text-green-800 text-xs">Positive</Badge>;
+      return <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">Positive</Badge>;
     }
     return (
       <Badge variant="secondary" className="text-xs">
@@ -199,7 +199,7 @@ export default function CashFlowForecast() {
             </CardHeader>
             <CardContent>
               <div
-                className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? "text-green-600" : "text-red-600"}`}
+                className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? "text-success" : "text-destructive"}`}
               >
                 {formatCurrency(forecast.currentBalance, "AED", locale)}
               </div>
@@ -209,12 +209,12 @@ export default function CashFlowForecast() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <ArrowUpRight className="h-4 w-4 text-green-500" />
+                <ArrowUpRight className="h-4 w-4 text-success" />
                 Projected Inflows ({forecastDays}d)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-success">
                 {formatCurrency(totalProjectedInflows, "AED", locale)}
               </div>
             </CardContent>
@@ -223,12 +223,12 @@ export default function CashFlowForecast() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <ArrowDownRight className="h-4 w-4 text-red-500" />
+                <ArrowDownRight className="h-4 w-4 text-destructive" />
                 Projected Outflows ({forecastDays}d)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">
+              <div className="text-2xl font-bold text-destructive">
                 {formatCurrency(totalProjectedOutflows, "AED", locale)}
               </div>
             </CardContent>
@@ -303,13 +303,13 @@ export default function CashFlowForecast() {
                         {proj.weekStart} - {proj.weekEnd}
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="text-green-600 flex items-center justify-end gap-1">
+                        <span className="text-success flex items-center justify-end gap-1">
                           <TrendingUp className="h-3 w-3" />
                           {formatCurrency(proj.expectedInflows, "AED", locale)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="text-red-600 flex items-center justify-end gap-1">
+                        <span className="text-destructive flex items-center justify-end gap-1">
                           <TrendingDown className="h-3 w-3" />
                           {formatCurrency(proj.expectedOutflows, "AED", locale)}
                         </span>
@@ -317,7 +317,7 @@ export default function CashFlowForecast() {
                       <TableCell className="text-right">
                         <span
                           className={`font-semibold ${
-                            proj.projectedBalance >= 0 ? "text-green-600" : "text-red-600"
+                            proj.projectedBalance >= 0 ? "text-success" : "text-destructive"
                           }`}
                         >
                           {formatCurrency(proj.projectedBalance, "AED", locale)}
@@ -371,16 +371,16 @@ export default function CashFlowForecast() {
                       <TableCell className="font-medium">
                         {h.month} {h.year}
                       </TableCell>
-                      <TableCell className="text-right text-green-600">
+                      <TableCell className="text-right text-success">
                         {formatCurrency(h.totalInflows, "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right text-red-600">
+                      <TableCell className="text-right text-destructive">
                         {formatCurrency(h.totalOutflows, "AED", locale)}
                       </TableCell>
                       <TableCell className="text-right">
                         <span
                           className={`font-semibold ${
-                            h.netCashFlow >= 0 ? "text-green-600" : "text-red-600"
+                            h.netCashFlow >= 0 ? "text-success" : "text-destructive"
                           }`}
                         >
                           {formatCurrency(h.netCashFlow, "AED", locale)}

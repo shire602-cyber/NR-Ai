@@ -191,7 +191,7 @@ function getStatusBadge(status: string) {
       return (
         <Badge
           variant="outline"
-          className="bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400"
+          className="bg-muted text-foreground "
         >
           Pending
         </Badge>
@@ -200,7 +200,7 @@ function getStatusBadge(status: string) {
       return (
         <Badge
           variant="outline"
-          className="bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+          className="bg-info-subtle text-info "
         >
           Approved
         </Badge>
@@ -209,7 +209,7 @@ function getStatusBadge(status: string) {
       return (
         <Badge
           variant="outline"
-          className="bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400"
+          className="bg-warning-subtle text-warning "
         >
           Partial
         </Badge>
@@ -218,7 +218,7 @@ function getStatusBadge(status: string) {
       return (
         <Badge
           variant="outline"
-          className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+          className="bg-success-subtle text-success "
         >
           Paid
         </Badge>
@@ -227,7 +227,7 @@ function getStatusBadge(status: string) {
       return (
         <Badge
           variant="outline"
-          className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+          className="bg-danger-subtle text-destructive "
         >
           Overdue
         </Badge>
@@ -1025,7 +1025,7 @@ export default function BillPay() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removeLine(index)}
-                                    className="text-red-500 hover:text-red-700"
+                                    className="text-destructive hover:text-destructive"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
@@ -1182,7 +1182,7 @@ export default function BillPay() {
                                   )}
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    className="text-red-600"
+                                    className="text-destructive"
                                     onClick={() => {
                                       if (confirm("Are you sure you want to delete this bill?")) {
                                         deleteBillMutation.mutate(bill.id);
@@ -1282,7 +1282,7 @@ export default function BillPay() {
                       {summary?.pending.count || 0} bills
                     </p>
                   </div>
-                  <Clock className="w-8 h-8 text-gray-400" />
+                  <Clock className="w-8 h-8 text-muted-foreground/70" />
                 </div>
               </CardContent>
             </Card>
@@ -1298,7 +1298,7 @@ export default function BillPay() {
                       {summary?.approved.count || 0} bills
                     </p>
                   </div>
-                  <CheckCircle className="w-8 h-8 text-blue-400" />
+                  <CheckCircle className="w-8 h-8 text-info" />
                 </div>
               </CardContent>
             </Card>
@@ -1314,7 +1314,7 @@ export default function BillPay() {
                       {summary?.partial.count || 0} bills
                     </p>
                   </div>
-                  <DollarSign className="w-8 h-8 text-orange-400" />
+                  <DollarSign className="w-8 h-8 text-warning" />
                 </div>
               </CardContent>
             </Card>
@@ -1330,7 +1330,7 @@ export default function BillPay() {
                       {summary?.paid.count || 0} bills
                     </p>
                   </div>
-                  <CheckCircle className="w-8 h-8 text-green-400" />
+                  <CheckCircle className="w-8 h-8 text-success" />
                 </div>
               </CardContent>
             </Card>
@@ -1339,14 +1339,14 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Overdue</p>
-                    <p className="text-2xl font-bold text-red-600">
+                    <p className="text-2xl font-bold text-destructive">
                       {formatCurrency(summary?.overdue.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {summary?.overdue.count || 0} bills
                     </p>
                   </div>
-                  <AlertTriangle className="w-8 h-8 text-red-400" />
+                  <AlertTriangle className="w-8 h-8 text-destructive" />
                 </div>
               </CardContent>
             </Card>
@@ -1398,11 +1398,11 @@ export default function BillPay() {
                       <TableCell className="text-right">{aging.days_61_90.count}</TableCell>
                     </TableRow>
                     <TableRow className="font-semibold">
-                      <TableCell className="text-red-600">90+ Days</TableCell>
-                      <TableCell className="text-right text-red-600">
+                      <TableCell className="text-destructive">90+ Days</TableCell>
+                      <TableCell className="text-right text-destructive">
                         {formatCurrency(aging.days_90_plus.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right text-red-600">
+                      <TableCell className="text-right text-destructive">
                         {aging.days_90_plus.count}
                       </TableCell>
                     </TableRow>

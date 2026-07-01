@@ -65,32 +65,32 @@ const matchTypeConfig = {
   journal_entry: {
     icon: BookOpen,
     label: "Journal Entry",
-    color: "text-purple-600",
-    bg: "bg-purple-100",
+    color: "text-chart-5",
+    bg: "bg-chart-5/10",
   },
-  invoice: { icon: FileText, label: "Invoice", color: "text-blue-600", bg: "bg-blue-100" },
-  receipt: { icon: Receipt, label: "Receipt", color: "text-green-600", bg: "bg-green-100" },
+  invoice: { icon: FileText, label: "Invoice", color: "text-info", bg: "bg-info-subtle" },
+  receipt: { icon: Receipt, label: "Receipt", color: "text-success", bg: "bg-success-subtle" },
 };
 
 function getConfidenceStyle(confidence: number) {
   if (confidence >= 80)
     return {
-      textColor: "text-green-600",
-      barClass: "[&>div]:bg-green-500",
-      badge: "bg-green-100 text-green-800",
+      textColor: "text-success",
+      barClass: "[&>div]:bg-success",
+      badge: "bg-success-subtle text-success-subtle-foreground",
       label: "High",
     };
   if (confidence >= 60)
     return {
-      textColor: "text-amber-600",
-      barClass: "[&>div]:bg-amber-500",
-      badge: "bg-amber-100 text-amber-800",
+      textColor: "text-warning",
+      barClass: "[&>div]:bg-warning",
+      badge: "bg-warning-subtle text-warning-subtle-foreground",
       label: "Medium",
     };
   return {
-    textColor: "text-red-500",
-    barClass: "[&>div]:bg-red-500",
-    badge: "bg-red-100 text-red-800",
+    textColor: "text-destructive",
+    barClass: "[&>div]:bg-destructive",
+    badge: "bg-danger-subtle text-danger-subtle-foreground",
     label: "Low",
   };
 }
@@ -250,25 +250,25 @@ export default function AutoReconcile() {
               <div className="text-3xl font-bold">{result.matches.length}</div>
             </CardContent>
           </Card>
-          <Card className="border-green-200">
+          <Card className="border-success/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-green-500" /> High Confidence
+                <CheckCircle2 className="h-3 w-3 text-success" /> High Confidence
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-green-600">{result.autoMatchedCount}</div>
+              <div className="text-3xl font-bold text-success">{result.autoMatchedCount}</div>
               <p className="text-xs text-muted-foreground mt-1">≥75% — auto-selected</p>
             </CardContent>
           </Card>
-          <Card className="border-orange-200">
+          <Card className="border-warning/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-orange-500" /> Needs Review
+                <AlertTriangle className="h-3 w-3 text-warning" /> Needs Review
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-orange-600">{result.manualReviewCount}</div>
+              <div className="text-3xl font-bold text-warning">{result.manualReviewCount}</div>
               <p className="text-xs text-muted-foreground mt-1">&lt;75% confidence</p>
             </CardContent>
           </Card>
@@ -359,7 +359,7 @@ export default function AutoReconcile() {
                               <span>{formatDate(match.bankDate)}</span>
                               {match.bankAmount != null && (
                                 <span
-                                  className={`font-mono font-medium ${match.bankAmount >= 0 ? "text-green-600" : "text-red-600"}`}
+                                  className={`font-mono font-medium ${match.bankAmount >= 0 ? "text-success" : "text-destructive"}`}
                                 >
                                   {formatCurrency(match.bankAmount)}
                                 </span>
@@ -454,7 +454,7 @@ export default function AutoReconcile() {
             <div className="text-center py-12 space-y-4">
               {result.totalUnreconciled === 0 ? (
                 <>
-                  <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
+                  <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
                   <h3 className="text-lg font-semibold">All Caught Up</h3>
                   <p className="text-muted-foreground text-sm">
                     All bank transactions are already reconciled.
@@ -462,7 +462,7 @@ export default function AutoReconcile() {
                 </>
               ) : (
                 <>
-                  <XCircle className="h-12 w-12 text-orange-500 mx-auto" />
+                  <XCircle className="h-12 w-12 text-warning mx-auto" />
                   <h3 className="text-lg font-semibold">No Matches Found</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic

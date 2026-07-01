@@ -233,7 +233,9 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    /* tnum app-wide: in accounting software every digit column must align. */
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01", "tnum" 1;
+    font-variant-numeric: tabular-nums;
   }
 
   /* Tabular figures everywhere a number is rendered with .font-mono */

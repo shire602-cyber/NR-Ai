@@ -728,7 +728,7 @@ export default function CustomerContacts() {
                   >
                     {file ? (
                       <div className="flex flex-col items-center gap-3">
-                        <FileSpreadsheet className="w-10 h-10 text-green-500" />
+                        <FileSpreadsheet className="w-10 h-10 text-success" />
                         <p className="font-medium">{file.name}</p>
                         <Button variant="outline" size="sm" onClick={resetImport}>
                           Choose Different File
@@ -834,22 +834,22 @@ export default function CustomerContacts() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  <CheckCircle2 className="w-5 h-5 text-success" />
                   Import Complete
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-4 bg-green-500/10 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">{importResults.created}</p>
+                  <div className="text-center p-4 bg-success/10 rounded-lg">
+                    <p className="text-2xl font-bold text-success">{importResults.created}</p>
                     <p className="text-sm text-muted-foreground">Created</p>
                   </div>
-                  <div className="text-center p-4 bg-blue-500/10 rounded-lg">
-                    <p className="text-2xl font-bold text-blue-600">{importResults.updated}</p>
+                  <div className="text-center p-4 bg-info/10 rounded-lg">
+                    <p className="text-2xl font-bold text-info">{importResults.updated}</p>
                     <p className="text-sm text-muted-foreground">Updated</p>
                   </div>
-                  <div className="text-center p-4 bg-yellow-500/10 rounded-lg">
-                    <p className="text-2xl font-bold text-yellow-600">{importResults.skipped}</p>
+                  <div className="text-center p-4 bg-warning/10 rounded-lg">
+                    <p className="text-2xl font-bold text-warning">{importResults.skipped}</p>
                     <p className="text-sm text-muted-foreground">Skipped</p>
                   </div>
                 </div>

@@ -145,7 +145,7 @@ function HeroProductMock() {
     <div className="relative w-full">
       <Reveal delay={0.2} y={40}>
         <div
-          className="relative overflow-hidden rounded-2xl border bg-white shadow-[0_24px_80px_-30px_rgba(15,20,25,0.25),0_8px_24px_-12px_rgba(15,20,25,0.08)]"
+          className="relative overflow-hidden rounded-2xl border bg-card shadow-[0_24px_80px_-30px_rgba(15,20,25,0.25),0_8px_24px_-12px_rgba(15,20,25,0.08)]"
           style={{ borderColor: C.hairline }}
         >
           {/* Browser chrome */}
@@ -167,7 +167,7 @@ function HeroProductMock() {
           {/* Body */}
           <div className="grid grid-cols-12 gap-px" style={{ background: C.hairline }}>
             {/* Sidebar */}
-            <div className="col-span-3 bg-white p-4">
+            <div className="col-span-3 bg-card p-4">
               <div className="mb-4 flex items-center gap-2">
                 <div
                   className="flex h-6 w-6 items-center justify-center rounded font-serif text-sm font-bold text-white"
@@ -203,7 +203,7 @@ function HeroProductMock() {
             </div>
 
             {/* Main area */}
-            <div className="col-span-9 bg-white p-5">
+            <div className="col-span-9 bg-card p-5">
               {/* KPI row */}
               <div className="grid grid-cols-3 gap-3">
                 <KpiTile label="Cash on hand" value="AED 412,840" delta="+8.4%" />
@@ -309,7 +309,7 @@ function HeroProductMock() {
       {/* Floating AI chat surface */}
       <Reveal delay={0.7} y={20}>
         <div
-          className="absolute -bottom-8 -left-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-white p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
+          className="absolute -bottom-8 -left-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-card p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
           style={{ borderColor: C.hairline }}
         >
           <div
@@ -338,13 +338,13 @@ function HeroProductMock() {
             driven by lower zero-rated exports. Want me to draft the return?
             <div className="mt-2 flex gap-1.5">
               <span
-                className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]"
+                className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.emerald }}
               >
                 Draft return
               </span>
               <span
-                className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]"
+                className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.muted }}
               >
                 Show workpaper
@@ -357,7 +357,7 @@ function HeroProductMock() {
       {/* Floating compliance ribbon */}
       <Reveal delay={0.9}>
         <div
-          className="absolute -right-6 -top-6 hidden items-center gap-2 rounded-full border bg-white px-4 py-2 shadow-[0_12px_30px_-12px_rgba(15,20,25,0.2)] sm:flex"
+          className="absolute -right-6 -top-6 hidden items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-[0_12px_30px_-12px_rgba(15,20,25,0.2)] sm:flex"
           style={{ borderColor: C.hairline }}
         >
           <FileCheck className="h-4 w-4" style={{ color: C.emerald }} />
@@ -434,7 +434,7 @@ function FtaTicker() {
           style={{ background: C.ink, color: C.paper }}
         >
           <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="absolute inset-0 animate-ping rounded-full bg-success/60 opacity-75" />
             <span className="relative h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
           </span>
           Tax workflow
@@ -485,7 +485,7 @@ function CapabilityBento() {
           style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
         >
           <div className="grid grid-cols-5 gap-px p-px">
-            <div className="col-span-2 bg-white p-4">
+            <div className="col-span-2 bg-card p-4">
               {/* Mock receipt */}
               <div
                 className="relative aspect-[3/4] rounded-md border"
@@ -515,7 +515,7 @@ function CapabilityBento() {
                 />
               </div>
             </div>
-            <div className="col-span-3 bg-white p-4">
+            <div className="col-span-3 bg-card p-4">
               {[
                 ["Vendor", "Carrefour Hypermarket"],
                 ["Date", "12 Jun 2026"],
@@ -561,7 +561,7 @@ function CapabilityBento() {
             ["Box 9 · Input VAT", "AED 14,820"],
             ["Net payable", "AED 26,380"],
           ].map(([k, v], i) => (
-            <div key={k} className="bg-white p-3">
+            <div key={k} className="bg-card p-3">
               <div
                 className="text-[9px] font-semibold uppercase tracking-wider"
                 style={{ color: C.muted }}
@@ -584,7 +584,7 @@ function CapabilityBento() {
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border text-[8px]"
           style={{ borderColor: C.hairline, background: C.hairline }}
         >
-          <div className="bg-white p-3 leading-tight" style={{ color: C.ink }}>
+          <div className="bg-card p-3 leading-tight" style={{ color: C.ink }}>
             <div className="font-semibold" style={{ color: C.emerald }}>
               Tax Invoice
             </div>
@@ -598,7 +598,7 @@ function CapabilityBento() {
             </div>
           </div>
           <div
-            className="bg-white p-3 text-right leading-tight"
+            className="bg-card p-3 text-right leading-tight"
             dir="rtl"
             style={{ color: C.ink, fontFamily: '"Cairo", "Noto Sans Arabic", sans-serif' }}
           >
@@ -629,7 +629,7 @@ function CapabilityBento() {
           human approval step.
         </BentoBody>
         <div
-          className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-white p-3"
+          className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-card p-3"
           style={{ borderColor: C.hairline }}
         >
           {[
@@ -704,7 +704,7 @@ function BentoCard({
   return (
     <Reveal className={className}>
       <div
-        className="group h-full rounded-2xl border bg-white p-6 transition-shadow hover:shadow-[0_12px_40px_-20px_rgba(15,20,25,0.18)]"
+        className="group h-full rounded-2xl border bg-card p-6 transition-shadow hover:shadow-[0_12px_40px_-20px_rgba(15,20,25,0.18)]"
         style={{ borderColor: C.hairline }}
       >
         {children}
@@ -761,7 +761,7 @@ function ComparisonTable() {
   return (
     <Reveal>
       <div
-        className="overflow-hidden rounded-2xl border bg-white"
+        className="overflow-hidden rounded-2xl border bg-card"
         style={{ borderColor: C.hairline }}
       >
         <div
@@ -961,7 +961,7 @@ function Workflow() {
 
         <div className="sticky top-32">
           <div
-            className="relative overflow-hidden rounded-2xl border bg-white p-6"
+            className="relative overflow-hidden rounded-2xl border bg-card p-6"
             style={{ borderColor: C.hairline, boxShadow: "0 24px 60px -30px rgba(15,20,25,0.25)" }}
           >
             <div
@@ -1094,7 +1094,7 @@ export default function MuhasibLanding() {
           <motion.div
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            className="border-t bg-white md:hidden"
+            className="border-t bg-card md:hidden"
             style={{ borderColor: C.hairline }}
           >
             <div className="flex flex-col gap-1 p-4">
@@ -1440,7 +1440,7 @@ export default function MuhasibLanding() {
           ].map(([eyebrow, title, meta], i) => (
             <Reveal key={i} delay={i * 0.08}>
               <article
-                className="group relative h-full overflow-hidden rounded-2xl border bg-white p-7 transition-shadow hover:shadow-[0_12px_36px_-18px_rgba(15,20,25,0.18)]"
+                className="group relative h-full overflow-hidden rounded-2xl border bg-card p-7 transition-shadow hover:shadow-[0_12px_36px_-18px_rgba(15,20,25,0.18)]"
                 style={{ borderColor: C.hairline }}
               >
                 <div

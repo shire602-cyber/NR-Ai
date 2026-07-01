@@ -17,11 +17,11 @@ function formatAed(n: number) {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  paid: "border-green-200 text-green-700 bg-green-50",
-  sent: "border-blue-200 text-blue-700 bg-blue-50",
-  partial: "border-amber-200 text-amber-700 bg-amber-50",
-  draft: "border-gray-200 text-gray-500",
-  void: "border-red-200 text-red-600 bg-red-50",
+  paid: "border-success/30 text-success bg-success-subtle",
+  sent: "border-info/30 text-info bg-info-subtle",
+  partial: "border-warning/30 text-warning bg-warning-subtle",
+  draft: "border-border text-muted-foreground",
+  void: "border-destructive/30 text-destructive bg-danger-subtle",
 };
 
 async function downloadPdf(invoiceId: string, invoiceNumber: string) {
@@ -47,8 +47,8 @@ export default function PortalInvoices() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Invoices</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="text-xl font-semibold text-foreground">Invoices</h2>
+        <p className="text-sm text-muted-foreground mt-1">
           View and download invoices issued by NR Accounting.
         </p>
       </div>
@@ -60,37 +60,37 @@ export default function PortalInvoices() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : invoices.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-10">No invoices found.</p>
+            <p className="text-sm text-muted-foreground/70 text-center py-10">No invoices found.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Invoice #</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Due Date</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500">Amount</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Invoice #</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Due Date</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {invoices.map((inv: any) => (
-                    <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900">{inv.number}</td>
-                      <td className="px-4 py-3 text-gray-500">
+                    <tr key={inv.id} className="hover:bg-muted transition-colors">
+                      <td className="px-4 py-3 font-medium text-foreground">{inv.number}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
                         {inv.date ? format(new Date(inv.date), "MMM d, yyyy") : "—"}
                       </td>
-                      <td className="px-4 py-3 text-gray-500">
+                      <td className="px-4 py-3 text-muted-foreground">
                         {inv.dueDate ? format(new Date(inv.dueDate), "MMM d, yyyy") : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                      <td className="px-4 py-3 text-right font-semibold text-foreground">
                         {formatAed(Number(inv.total) || 0)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
                           variant="outline"
-                          className={STATUS_STYLES[inv.status] ?? "border-gray-200 text-gray-500"}
+                          className={STATUS_STYLES[inv.status] ?? "border-border text-muted-foreground"}
                         >
                           {inv.status}
                         </Badge>
@@ -99,7 +99,7 @@ export default function PortalInvoices() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          className="h-8 text-info hover:text-info hover:bg-info-subtle"
                           onClick={() => downloadPdf(inv.id, inv.number)}
                         >
                           <FileDown className="w-3.5 h-3.5 mr-1.5" />

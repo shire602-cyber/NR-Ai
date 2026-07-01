@@ -145,7 +145,7 @@ export default function VAT201Form({
   return (
     <div className="space-y-6 font-mono text-sm">
       <Card className="border-2">
-        <CardHeader className="bg-gradient-to-r from-green-800 to-green-600 text-white py-3">
+        <CardHeader className="bg-success text-success-foreground py-3">
           <CardTitle className="text-center text-lg">
             <div className="flex justify-between items-center">
               <span>VAT 201 Return</span>
@@ -647,9 +647,9 @@ export default function VAT201Form({
         </CardContent>
       </Card>
 
-      <Card className="border-2 border-green-600">
-        <CardHeader className="bg-green-50 dark:bg-green-900/20 py-2">
-          <CardTitle className="text-sm flex justify-between text-green-800 dark:text-green-200">
+      <Card className="border-2 border-success">
+        <CardHeader className="bg-success-subtle py-2">
+          <CardTitle className="text-sm flex justify-between text-success-subtle-foreground ">
             <span>Net VAT Due</span>
             <span dir="rtl">صافي ضريبة القيمة المضافة المستحقة</span>
           </CardTitle>
@@ -682,7 +682,7 @@ export default function VAT201Form({
                   {formatNumber(calculateTotalInputVat())}
                 </TableCell>
               </TableRow>
-              <TableRow className="bg-green-100 dark:bg-green-900/40">
+              <TableRow className="bg-success-subtle ">
                 <TableCell className="font-bold">
                   <span className="font-bold">14</span> Payable Tax for the period
                   <br />
@@ -691,7 +691,7 @@ export default function VAT201Form({
                   </span>
                 </TableCell>
                 <TableCell
-                  className={`text-right text-xl font-bold ${calculateNetVat() >= 0 ? "text-red-600" : "text-green-600"}`}
+                  className={`text-right text-xl font-bold ${calculateNetVat() >= 0 ? "text-destructive" : "text-success"}`}
                 >
                   {calculateNetVat() >= 0 ? "" : "("}
                   {formatNumber(Math.abs(calculateNetVat()))}

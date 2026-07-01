@@ -153,7 +153,7 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
+              <CheckCircle className="h-5 w-5 text-success" />
               <span className="text-lg font-medium">Active</span>
             </div>
             <p className="text-xs text-muted-foreground">All AI features operational</p>
@@ -227,10 +227,10 @@ export default function AdminDashboard() {
                   data-testid={`activity-row-${log.id}`}
                 >
                   <div className="mt-1">
-                    {log.action === "create" && <CheckCircle className="h-4 w-4 text-green-500" />}
-                    {log.action === "update" && <Clock className="h-4 w-4 text-blue-500" />}
-                    {log.action === "delete" && <AlertCircle className="h-4 w-4 text-red-500" />}
-                    {log.action === "invite" && <Mail className="h-4 w-4 text-purple-500" />}
+                    {log.action === "create" && <CheckCircle className="h-4 w-4 text-success" />}
+                    {log.action === "update" && <Clock className="h-4 w-4 text-info" />}
+                    {log.action === "delete" && <AlertCircle className="h-4 w-4 text-destructive" />}
+                    {log.action === "invite" && <Mail className="h-4 w-4 text-chart-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm">{log.description}</p>
@@ -326,17 +326,17 @@ export default function AdminDashboard() {
                 const statusConfig = {
                   healthy: {
                     icon: "🟢",
-                    badgeClass: "bg-green-100 text-green-700 border-green-200",
+                    badgeClass: "bg-success-subtle text-success border-success/30",
                     label: "Healthy",
                   },
                   attention: {
                     icon: "🟡",
-                    badgeClass: "bg-yellow-100 text-yellow-700 border-yellow-200",
+                    badgeClass: "bg-warning-subtle text-warning border-warning/30",
                     label: "Attention",
                   },
                   critical: {
                     icon: "🔴",
-                    badgeClass: "bg-red-100 text-red-700 border-red-200",
+                    badgeClass: "bg-danger-subtle text-destructive border-destructive/30",
                     label: "Critical",
                   },
                 };
@@ -437,9 +437,9 @@ export default function AdminDashboard() {
                         key={`${dl.companyId}-${dl.deadlineType}-${idx}`}
                         className={`border-b last:border-0 transition-colors ${
                           isOverdue
-                            ? "bg-red-50 dark:bg-red-950/20"
+                            ? "bg-danger-subtle "
                             : isUrgent
-                              ? "bg-red-50/50 dark:bg-red-950/10"
+                              ? "bg-danger-subtle/50 "
                               : ""
                         }`}
                       >
@@ -449,9 +449,9 @@ export default function AdminDashboard() {
                         <td
                           className={`py-3 pr-4 text-right font-mono font-medium ${
                             isOverdue
-                              ? "text-red-600 dark:text-red-400"
+                              ? "text-destructive "
                               : isUrgent
-                                ? "text-red-600 dark:text-red-400"
+                                ? "text-destructive "
                                 : "text-foreground"
                           }`}
                         >
@@ -464,12 +464,12 @@ export default function AdminDashboard() {
                             variant="outline"
                             className={`text-xs ${
                               dl.status === "overdue" || isOverdue
-                                ? "bg-red-100 text-red-700 border-red-200"
+                                ? "bg-danger-subtle text-destructive border-destructive/30"
                                 : dl.status === "in_progress"
-                                  ? "bg-blue-100 text-blue-700 border-blue-200"
+                                  ? "bg-info-subtle text-info border-info/30"
                                   : dl.status === "pending"
-                                    ? "bg-yellow-100 text-yellow-700 border-yellow-200"
-                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                                    ? "bg-warning-subtle text-warning border-warning/30"
+                                    : "bg-muted text-foreground border-border"
                             }`}
                           >
                             {isOverdue
@@ -536,7 +536,7 @@ export default function AdminDashboard() {
                         <td className="py-3">
                           <Badge
                             variant="outline"
-                            className="text-xs bg-green-100 text-green-700 border-green-200"
+                            className="text-xs bg-success-subtle text-success border-success/30"
                           >
                             Active
                           </Badge>

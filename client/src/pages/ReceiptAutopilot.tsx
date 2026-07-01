@@ -111,7 +111,7 @@ export default function ReceiptAutopilot() {
         className={`${mounted ? "animate-in fade-in slide-in-from-top-4" : ""}`}
         style={{ animationDuration: "500ms" }}
       >
-        <div className="relative overflow-hidden rounded-2xl p-8 mb-6 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10">
+        <div className="relative overflow-hidden rounded-2xl p-8 mb-6 dark:dark:dark:border border-primary/10">
           <div className="flex items-start justify-between flex-wrap gap-6">
             <div className="max-w-2xl">
               <div className="flex items-center gap-3 mb-3">
@@ -144,8 +144,8 @@ export default function ReceiptAutopilot() {
       {/* AI Accuracy Card */}
       <Card>
         <CardHeader className="flex flex-row items-center gap-4">
-          <div className="w-12 h-12 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-            <Activity className="w-6 h-6 text-emerald-600" />
+          <div className="w-12 h-12 rounded-lg bg-success/15 flex items-center justify-center">
+            <Activity className="w-6 h-6 text-success" />
           </div>
           <div className="flex-1">
             <CardTitle>AI Accuracy</CardTitle>
@@ -237,11 +237,11 @@ export default function ReceiptAutopilot() {
                     </div>
                     <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        <CheckCircle2 className="w-3 h-3 text-success" />
                         {m.accepted}
                       </span>
                       <span className="flex items-center gap-1">
-                        <XCircle className="w-3 h-3 text-red-500" />
+                        <XCircle className="w-3 h-3 text-destructive" />
                         {m.rejected}
                       </span>
                       <span className="flex items-center gap-1 ml-auto">
@@ -259,8 +259,8 @@ export default function ReceiptAutopilot() {
       {config && (
         <Card>
           <CardHeader className="flex flex-row items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-blue-500/15 flex items-center justify-center">
-              <ShieldCheck className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 rounded-lg bg-info/15 flex items-center justify-center">
+              <ShieldCheck className="w-6 h-6 text-info" />
             </div>
             <div className="flex-1">
               <CardTitle>Autopilot Settings</CardTitle>

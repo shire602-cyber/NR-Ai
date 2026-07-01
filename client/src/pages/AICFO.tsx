@@ -208,28 +208,28 @@ export default function AICFO() {
       value: profitMarginPct ?? 0,
       format: "percent",
       icon: TrendingUp,
-      color: "text-green-600 dark:text-green-400",
+      color: "text-success ",
     },
     {
       label: "Expense Ratio",
       value: expenseRatioPct ?? 0,
       format: "percent",
       icon: BarChart3,
-      color: "text-blue-600 dark:text-blue-400",
+      color: "text-info ",
     },
     {
       label: "Total Revenue",
       value: profitLoss?.totalRevenue ?? 0,
       format: "currency",
       icon: ArrowUp,
-      color: "text-purple-600 dark:text-purple-400",
+      color: "text-chart-5 ",
     },
     {
       label: "Net Profit",
       value: profitLoss?.netProfit ?? 0,
       format: "currency",
       icon: DollarSign,
-      color: "text-amber-600 dark:text-amber-400",
+      color: "text-warning ",
     },
   ];
 
@@ -238,7 +238,7 @@ export default function AICFO() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-8">
+      <div className="relative overflow-hidden rounded-lg border border-primary/20 p-8">
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-lg bg-primary/20">
@@ -309,14 +309,14 @@ export default function AICFO() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <TrendingUp className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 {statsLoading ? (
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-green-600 dark:text-green-400">
+                    <div className="text-3xl font-bold font-mono text-success ">
                       {formatCurrency(stats.revenue || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
@@ -332,14 +332,14 @@ export default function AICFO() {
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-                <ArrowDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
                 {statsLoading ? (
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-blue-600 dark:text-blue-400">
+                    <div className="text-3xl font-bold font-mono text-info ">
                       {formatCurrency(stats.expenses || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
@@ -353,12 +353,12 @@ export default function AICFO() {
             </Card>
 
             <Card
-              className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-green-200 dark:border-green-900" : "border-red-200 dark:border-red-900"}`}
+              className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-success/30 " : "border-destructive/30 "}`}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
                 <Target
-                  className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
                 />
               </CardHeader>
               <CardContent>
@@ -367,7 +367,7 @@ export default function AICFO() {
                 ) : profitLoss ? (
                   <>
                     <div
-                      className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                      className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
                     >
                       {formatCurrency(profitLoss.netProfit || 0, "AED")}
                     </div>
@@ -388,7 +388,7 @@ export default function AICFO() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <AlertTriangle className="w-4 h-4 text-warning " />
                 Outstanding Invoices
               </CardTitle>
             </CardHeader>
@@ -398,7 +398,7 @@ export default function AICFO() {
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-amber-600 dark:text-amber-400">
+                    <div className="text-3xl font-bold font-mono text-warning ">
                       {formatCurrency(stats.outstanding || 0, "AED")}
                     </div>
                     <p className="text-sm text-muted-foreground">

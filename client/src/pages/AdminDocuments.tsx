@@ -327,10 +327,10 @@ export default function AdminDocuments() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Invoices</CardTitle>
-                <FileText className="w-4 h-4 text-blue-500" />
+                <FileText className="w-4 h-4 text-info" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="text-2xl font-bold text-info">
                   {documents?.filter((d) => d.category === "invoice").length || 0}
                 </div>
               </CardContent>
@@ -339,10 +339,10 @@ export default function AdminDocuments() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Bills/Expenses</CardTitle>
-                <FileUp className="w-4 h-4 text-orange-500" />
+                <FileUp className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-orange-600">
+                <div className="text-2xl font-bold text-warning">
                   {documents?.filter((d) => d.category === "bill").length || 0}
                 </div>
               </CardContent>
@@ -351,10 +351,10 @@ export default function AdminDocuments() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-                <Clock className="w-4 h-4 text-yellow-500" />
+                <Clock className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">
+                <div className="text-2xl font-bold text-warning">
                   {documents?.filter((doc) => {
                     if (!doc.expiryDate || doc.isArchived) return false;
                     const days = differenceInDays(parseISO(doc.expiryDate), new Date());
@@ -457,10 +457,10 @@ export default function AdminDocuments() {
                               {expiryStatus ? (
                                 <div className="flex items-center gap-2">
                                   {expiryStatus.status === "expired" && (
-                                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                                    <AlertTriangle className="w-4 h-4 text-destructive" />
                                   )}
                                   {expiryStatus.status === "expiring_soon" && (
-                                    <Clock className="w-4 h-4 text-yellow-500" />
+                                    <Clock className="w-4 h-4 text-warning" />
                                   )}
                                   <Badge variant={expiryStatus.color}>
                                     {expiryStatus.status === "expired"
@@ -501,7 +501,7 @@ export default function AdminDocuments() {
                                   onClick={() => deleteMutation.mutate(doc.id)}
                                   data-testid={`button-delete-${doc.id}`}
                                 >
-                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                  <Trash2 className="w-4 h-4 text-destructive" />
                                 </Button>
                               </div>
                             </TableCell>

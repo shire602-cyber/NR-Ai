@@ -102,14 +102,14 @@ const statusBadge = (status: string) => {
   switch (status) {
     case "filed":
       return (
-        <Badge variant="default" className="bg-blue-500 hover:bg-blue-600">
+        <Badge variant="default" className="bg-info hover:bg-info">
           <CheckCircle2 className="w-3 h-3 mr-1" />
           Filed
         </Badge>
       );
     case "paid":
       return (
-        <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+        <Badge variant="default" className="bg-success hover:bg-success">
           <Banknote className="w-3 h-3 mr-1" />
           Paid
         </Badge>
@@ -564,7 +564,7 @@ export default function CorporateTax() {
                 ))}
                 <TableRow className="bg-muted/40">
                   <TableCell className="font-bold">Totals</TableCell>
-                  <TableCell className="text-right font-bold text-red-600">
+                  <TableCell className="text-right font-bold text-destructive">
                     {formatCurrency(workpaperTotals.totalExpenses, "AED", locale)}
                   </TableCell>
                   <TableCell className="text-right font-bold">
@@ -576,7 +576,7 @@ export default function CorporateTax() {
                   <TableCell className="font-bold">PROFIT / LOSS (Revenue - Expense)</TableCell>
                   <TableCell />
                   <TableCell
-                    className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-red-600" : "text-green-700"}`}
+                    className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
                   >
                     {workpaperTotals.profitOrLoss < 0
                       ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
@@ -660,7 +660,7 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between">
                     <span>Total Expenses</span>
-                    <span className="font-medium text-red-600">
+                    <span className="font-medium text-destructive">
                       ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
                     </span>
                   </div>
@@ -861,7 +861,7 @@ export default function CorporateTax() {
                                   disabled={updateStatusMutation.isPending}
                                   title="Mark as Filed"
                                 >
-                                  <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                                  <CheckCircle2 className="w-4 h-4 text-info" />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -884,7 +884,7 @@ export default function CorporateTax() {
                                 disabled={updateStatusMutation.isPending}
                                 title="Mark as Paid"
                               >
-                                <Banknote className="w-4 h-4 text-green-500" />
+                                <Banknote className="w-4 h-4 text-success" />
                               </Button>
                             )}
                           </div>

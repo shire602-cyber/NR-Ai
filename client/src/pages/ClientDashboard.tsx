@@ -77,12 +77,12 @@ export default function ClientDashboard() {
   // Compliance status badge color
   const getComplianceBadge = () => {
     if (!nextDeadline)
-      return { color: "bg-green-100 text-green-700 border-green-200", label: "All Clear" };
+      return { color: "bg-success-subtle text-success border-success/30", label: "All Clear" };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
-      return { color: "bg-red-100 text-red-700 border-red-200", label: "Urgent" };
+      return { color: "bg-danger-subtle text-destructive border-destructive/30", label: "Urgent" };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
-      return { color: "bg-yellow-100 text-yellow-700 border-yellow-200", label: "Upcoming" };
-    return { color: "bg-green-100 text-green-700 border-green-200", label: "On Track" };
+      return { color: "bg-warning-subtle text-warning border-warning/30", label: "Upcoming" };
+    return { color: "bg-success-subtle text-success border-success/30", label: "On Track" };
   };
 
   const complianceBadge = getComplianceBadge();
@@ -97,7 +97,7 @@ export default function ClientDashboard() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-2xl p-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 border border-primary/10">
+      <div className="relative overflow-hidden rounded-2xl p-8 border border-primary/10">
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
             Welcome back, <span className="text-primary">{userName}</span>
@@ -116,8 +116,8 @@ export default function ClientDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               My Documents
             </CardTitle>
-            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-              <Upload className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div className="w-9 h-9 rounded-lg bg-info-subtle flex items-center justify-center">
+              <Upload className="w-4 h-4 text-info " />
             </div>
           </CardHeader>
           <CardContent>
@@ -141,8 +141,8 @@ export default function ClientDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Compliance Status
             </CardTitle>
-            <div className="w-9 h-9 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+            <div className="w-9 h-9 rounded-lg bg-success-subtle flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4 text-success " />
             </div>
           </CardHeader>
           <CardContent>
@@ -172,8 +172,8 @@ export default function ClientDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Pending Tasks
             </CardTitle>
-            <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/20 flex items-center justify-center">
-              <ListTodo className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <div className="w-9 h-9 rounded-lg bg-warning-subtle flex items-center justify-center">
+              <ListTodo className="w-4 h-4 text-warning " />
             </div>
           </CardHeader>
           <CardContent>
@@ -197,8 +197,8 @@ export default function ClientDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Recent Activity
             </CardTitle>
-            <div className="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
-              <Activity className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <div className="w-9 h-9 rounded-lg bg-chart-5/10 flex items-center justify-center">
+              <Activity className="w-4 h-4 text-chart-5 " />
             </div>
           </CardHeader>
           <CardContent>
@@ -221,7 +221,7 @@ export default function ClientDashboard() {
               variant="outline"
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
-              <Upload className="w-7 h-7 text-blue-600" />
+              <Upload className="w-7 h-7 text-info" />
               <span className="font-medium">Upload Document</span>
             </Button>
           </Link>
@@ -230,7 +230,7 @@ export default function ClientDashboard() {
               variant="outline"
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
-              <BarChart3 className="w-7 h-7 text-green-600" />
+              <BarChart3 className="w-7 h-7 text-success" />
               <span className="font-medium">View Reports</span>
             </Button>
           </Link>
@@ -239,7 +239,7 @@ export default function ClientDashboard() {
               variant="outline"
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
-              <FileArchive className="w-7 h-7 text-purple-600" />
+              <FileArchive className="w-7 h-7 text-chart-5" />
               <span className="font-medium">View Tax Returns</span>
             </Button>
           </Link>
@@ -248,7 +248,7 @@ export default function ClientDashboard() {
               variant="outline"
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
-              <ListChecks className="w-7 h-7 text-emerald-600" />
+              <ListChecks className="w-7 h-7 text-success" />
               <span className="font-medium">Open Task Center</span>
             </Button>
           </Link>

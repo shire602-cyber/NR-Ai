@@ -164,7 +164,7 @@ export default function Landing() {
           ? "AI-assisted review prompts help categorize expenses while your team keeps approval control."
           : "تساعد تنبيهات المراجعة المدعومة بالذكاء الاصطناعي على تصنيف المصروفات مع بقاء الاعتماد بيد فريقك.",
       color: "from-violet-500 to-purple-600",
-      bgColor: "bg-violet-500/10",
+      bgColor: "bg-chart-5/10",
     },
     {
       icon: FileCheck,
@@ -174,7 +174,7 @@ export default function Landing() {
           ? "Create VAT-ready invoices in seconds with auto VAT calculation and PDF export."
           : "أنشئ فواتير جاهزة لضريبة القيمة المضافة في ثوانٍ مع حساب ضريبة تلقائي.",
       color: "from-blue-500 to-cyan-600",
-      bgColor: "bg-blue-500/10",
+      bgColor: "bg-info/10",
     },
     {
       icon: Scan,
@@ -184,7 +184,7 @@ export default function Landing() {
           ? "Bulk upload receipts. AI-assisted extraction prepares Arabic or English fields for review."
           : "ارفع إيصالات متعددة. يساعدك الذكاء الاصطناعي في تجهيز الحقول بالعربية أو الإنجليزية للمراجعة.",
       color: "from-emerald-500 to-green-600",
-      bgColor: "bg-emerald-500/10",
+      bgColor: "bg-success/10",
     },
     {
       icon: PieChart,
@@ -194,7 +194,7 @@ export default function Landing() {
           ? "Access P&L, balance sheets, and VAT summaries instantly. Export workpapers for review."
           : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر أوراق العمل للمراجعة.",
       color: "from-orange-500 to-amber-600",
-      bgColor: "bg-orange-500/10",
+      bgColor: "bg-warning/10",
     },
     {
       icon: MessageSquare,
@@ -204,7 +204,7 @@ export default function Landing() {
           ? "Ask questions about your finances in plain language. Get instant AI-powered insights."
           : "اسأل عن شؤونك المالية بلغة بسيطة. احصل على رؤى فورية مدعومة بالذكاء الاصطناعي.",
       color: "from-pink-500 to-rose-600",
-      bgColor: "bg-pink-500/10",
+      bgColor: "bg-chart-5/10",
     },
     {
       icon: Shield,
@@ -214,7 +214,7 @@ export default function Landing() {
           ? "Role-based access, audit logs, managed infrastructure controls, and secure transport."
           : "صلاحيات قائمة على الأدوار، وسجلات تدقيق، وضوابط بنية تحتية مدارة، ونقل آمن.",
       color: "from-slate-500 to-gray-600",
-      bgColor: "bg-slate-500/10",
+      bgColor: "bg-muted-foreground/10",
     },
   ];
 
@@ -345,7 +345,7 @@ export default function Landing() {
           }}
         />
         <motion.div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/15 rounded-full blur-[128px]"
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/15 rounded-full blur-[128px]"
           animate={{
             scale: [1, 1.3, 1],
             opacity: [0.2, 0.4, 0.2],
@@ -360,7 +360,7 @@ export default function Landing() {
           }}
         />
         <motion.div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-500/10 rounded-full blur-[128px]"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-info/10 rounded-full blur-[128px]"
           animate={{
             scale: [1, 1.1, 1],
             opacity: [0.1, 0.3, 0.1],
@@ -399,7 +399,7 @@ export default function Landing() {
                 <Briefcase className="w-5 h-5 text-white" />
               </motion.div>
               <motion.div
-                className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background"
+                className="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-background"
                 animate={{
                   scale: [1, 1.2, 1],
                   opacity: [1, 0.7, 1],
@@ -611,7 +611,7 @@ export default function Landing() {
                   <span className="text-sm font-medium">{t.hero.badge}</span>
                   <div className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((i) => (
-                      <Star key={i} className="w-3 h-3 fill-yellow-500 text-yellow-500" />
+                      <Star key={i} className="w-3 h-3 fill-yellow-500 text-warning" />
                     ))}
                   </div>
                 </motion.div>
@@ -691,7 +691,7 @@ export default function Landing() {
                     <Button
                       size="lg"
                       variant="outline"
-                      className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-white/5 transition-all"
+                      className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-card/5 transition-all"
                       data-testid="hero-button-watch-demo"
                     >
                       <motion.div
@@ -707,11 +707,11 @@ export default function Landing() {
 
                 <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <CircleCheck className="w-4 h-4 text-green-500" />
+                    <CircleCheck className="w-4 h-4 text-success" />
                     <span>{t.hero.noCreditCard}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <CircleCheck className="w-4 h-4 text-green-500" />
+                    <CircleCheck className="w-4 h-4 text-success" />
                     <span>{t.hero.cancelAnytime}</span>
                   </div>
                 </div>
@@ -744,9 +744,9 @@ export default function Landing() {
                       {/* Dashboard Header */}
                       <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/10">
                         <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 rounded-full bg-red-500" />
-                          <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                          <div className="w-3 h-3 rounded-full bg-green-500" />
+                          <div className="w-3 h-3 rounded-full bg-destructive" />
+                          <div className="w-3 h-3 rounded-full bg-warning" />
+                          <div className="w-3 h-3 rounded-full bg-success" />
                         </div>
                         <div className="text-xs text-muted-foreground font-mono">
                           dashboard.bookkeep.ai
@@ -759,13 +759,13 @@ export default function Landing() {
                           {
                             label: "Revenue",
                             value: "AED 127,500",
-                            color: "text-green-500",
+                            color: "text-success",
                             icon: TrendingUp,
                           },
                           {
                             label: "Expenses",
                             value: "AED 43,200",
-                            color: "text-orange-500",
+                            color: "text-warning",
                             icon: Wallet,
                           },
                           {
@@ -775,7 +775,7 @@ export default function Landing() {
                             icon: BarChart3,
                           },
                         ].map((stat, i) => (
-                          <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10">
+                          <div key={i} className="p-3 rounded-xl bg-card/5 border border-white/10">
                             <div className="flex items-center gap-2 mb-1">
                               <stat.icon className={`w-4 h-4 ${stat.color}`} />
                               <span className="text-xs text-muted-foreground">{stat.label}</span>
@@ -801,7 +801,7 @@ export default function Landing() {
                               Saved you 15 minutes of manual work
                             </div>
                           </div>
-                          <CheckCircle2 className="w-5 h-5 text-green-500" />
+                          <CheckCircle2 className="w-5 h-5 text-success" />
                         </div>
                       </div>
 
@@ -813,7 +813,7 @@ export default function Landing() {
                         ].map((inv, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10"
+                            className="flex items-center justify-between p-3 rounded-lg bg-card/5 border border-white/10"
                           >
                             <div className="flex items-center gap-3">
                               <FileText className="w-4 h-4 text-muted-foreground" />
@@ -874,7 +874,7 @@ export default function Landing() {
 
       {/* LOGOS / SOCIAL PROOF */}
       <section
-        className="py-12 border-y border-white/10 bg-white/[0.02]"
+        className="py-12 border-y border-white/10 bg-card/[0.02]"
         data-testid="section-logos"
       >
         <div className="container max-w-7xl mx-auto px-6 lg:px-8">
@@ -983,7 +983,7 @@ export default function Landing() {
             {features.map((feature, index) => (
               <StaggerItem key={index} data-testid={`feature-card-${index}`}>
                 <motion.div whileHover={hoverLift} transition={{ duration: 0.3 }}>
-                  <Card className="group relative overflow-hidden p-8 border border-white/10 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/20 transition-all duration-500">
+                  <Card className="group relative overflow-hidden p-8 border border-white/10 bg-card/[0.02] backdrop-blur-sm hover:bg-card/[0.05] hover:border-white/20 transition-all duration-500">
                     <motion.div
                       className={`absolute inset-0 bg-gradient-to-br ${feature.color}`}
                       initial={{ opacity: 0 }}
@@ -1051,12 +1051,12 @@ export default function Landing() {
             {testimonials.map((testimonial, index) => (
               <Card
                 key={index}
-                className={`relative overflow-hidden p-8 border border-white/10 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.05] transition-all duration-300 ${index === activeTestimonial ? "ring-2 ring-primary/50" : ""}`}
+                className={`relative overflow-hidden p-8 border border-white/10 bg-card/[0.02] backdrop-blur-sm hover:bg-card/[0.05] transition-all duration-300 ${index === activeTestimonial ? "ring-2 ring-primary/50" : ""}`}
                 data-testid={`testimonial-${index}`}
               >
                 <div className="flex items-center gap-1 mb-6">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 fill-yellow-500 text-yellow-500" />
+                    <Star key={i} className="w-5 h-5 fill-yellow-500 text-warning" />
                   ))}
                 </div>
                 <p className="text-lg leading-relaxed mb-8 text-foreground/90">
@@ -1109,7 +1109,7 @@ export default function Landing() {
                 className={`relative overflow-hidden p-8 border transition-all duration-300 hover:-translate-y-2 ${
                   plan.popular
                     ? "border-primary/50 bg-gradient-to-b from-primary/10 to-transparent shadow-xl shadow-primary/10"
-                    : "border-white/10 bg-white/[0.02]"
+                    : "border-white/10 bg-card/[0.02]"
                 }`}
                 data-testid={`pricing-${plan.name.toLowerCase()}`}
               >
@@ -1121,7 +1121,7 @@ export default function Landing() {
 
                 <div className="flex items-center gap-3 mb-4">
                   <div
-                    className={`w-12 h-12 rounded-xl ${plan.popular ? "bg-gradient-to-br from-primary to-violet-600" : "bg-white/10"} flex items-center justify-center`}
+                    className={`w-12 h-12 rounded-xl ${plan.popular ? "bg-gradient-to-br from-primary to-violet-600" : "bg-card/10"} flex items-center justify-center`}
                   >
                     <plan.icon
                       className={`w-6 h-6 ${plan.popular ? "text-white" : "text-foreground"}`}
@@ -1146,7 +1146,7 @@ export default function Landing() {
                 <ul className="space-y-4 mb-8">
                   {plan.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-3">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                      <Check className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
                       <span className="text-sm">{feature}</span>
                     </li>
                   ))}
@@ -1179,7 +1179,7 @@ export default function Landing() {
 
         <div className="container max-w-7xl mx-auto px-6 lg:px-8 relative">
           <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-8">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card/10 backdrop-blur-sm border border-white/20 mb-8">
               <Rocket className="w-5 h-5 text-primary" />
               <span className="text-sm font-medium">
                 {locale === "en" ? "Launch Your Financial Transformation" : "أطلق تحولك المالي"}
@@ -1213,7 +1213,7 @@ export default function Landing() {
               <Button
                 size="lg"
                 variant="outline"
-                className="w-full sm:w-auto px-10 py-7 text-lg font-semibold border-2 bg-white/5 hover:bg-white/10 backdrop-blur-sm"
+                className="w-full sm:w-auto px-10 py-7 text-lg font-semibold border-2 bg-card/5 hover:bg-card/10 backdrop-blur-sm"
                 data-testid="cta-button-sales"
               >
                 {t.cta.secondary}

@@ -253,7 +253,7 @@ export default function StaffManagement() {
                     {pendingForMember.length > 0 && (
                       <Badge
                         variant="outline"
-                        className="text-amber-700 border-amber-300 bg-amber-50"
+                        className="text-warning border-warning/30 bg-warning-subtle"
                       >
                         {pendingForMember.length} pending
                       </Badge>
@@ -295,7 +295,7 @@ export default function StaffManagement() {
                                 className={[
                                   "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                                   assigned ? "bg-primary/5 border-primary/20" : "hover:bg-muted/40",
-                                  hasPending ? "ring-1 ring-amber-300" : "",
+                                  hasPending ? "ring-1 ring-warning" : "",
                                 ].join(" ")}
                               >
                                 <Checkbox

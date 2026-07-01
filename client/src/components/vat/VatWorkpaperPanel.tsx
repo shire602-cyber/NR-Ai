@@ -685,7 +685,7 @@ export default function VatWorkpaperPanel({
           <div className="rounded-md border bg-muted/20 p-3">
             <p className="text-xs text-muted-foreground">Net VAT</p>
             <p
-              className={`text-lg font-semibold ${payableVat >= 0 ? "text-red-600" : "text-green-600"}`}
+              className={`text-lg font-semibold ${payableVat >= 0 ? "text-destructive" : "text-success"}`}
               data-testid="vat-workpaper-net-vat"
             >
               {formatCurrency(Math.abs(payableVat))}

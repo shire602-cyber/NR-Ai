@@ -90,7 +90,7 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
         </button>
 
         <DialogHeader className="space-y-4">
-          <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+          <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center">
             <Gift className="w-8 h-8 text-primary-foreground" />
           </div>
 

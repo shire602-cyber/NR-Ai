@@ -62,12 +62,12 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  vat_filing: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  corporate_tax: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-  payment: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-  document_upload: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-  review: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
-  other: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300",
+  vat_filing: "bg-info-subtle text-info-subtle-foreground ",
+  corporate_tax: "bg-chart-5/10 text-chart-5 ",
+  payment: "bg-success-subtle text-success-subtle-foreground ",
+  document_upload: "bg-warning-subtle text-warning-subtle-foreground ",
+  review: "bg-info-subtle text-info-subtle-foreground ",
+  other: "bg-muted text-foreground ",
 };
 
 export default function ComplianceCalendar() {
@@ -259,7 +259,7 @@ export default function ComplianceCalendar() {
                       )}
                     </div>
                     {hasOverdue && (
-                      <AlertTriangle className="w-3 h-3 text-red-500 absolute top-1 right-1" />
+                      <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 right-1" />
                     )}
                   </div>
                 );
@@ -360,9 +360,9 @@ export default function ComplianceCalendar() {
           </Card>
 
           {overdueEvents.length > 0 && (
-            <Card className="border-red-500">
+            <Card className="border-destructive">
               <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2 text-red-600">
+                <CardTitle className="text-sm flex items-center gap-2 text-destructive">
                   <AlertTriangle className="w-4 h-4" />
                   {locale === "ar" ? "متأخرة" : "Overdue"}
                 </CardTitle>
@@ -373,7 +373,7 @@ export default function ComplianceCalendar() {
                     {overdueEvents.map((event) => (
                       <div
                         key={event.id}
-                        className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-950 rounded-md"
+                        className="flex items-center justify-between p-2 bg-danger-subtle rounded-md"
                       >
                         <span className="text-sm font-medium truncate">{event.title}</span>
                         <Badge variant="destructive" className="text-xs">

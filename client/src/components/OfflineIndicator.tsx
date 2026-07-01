@@ -42,8 +42,8 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
         data-testid="offline-indicator"
         className={cn(
           "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
-          "bg-amber-100 text-amber-800 border border-amber-200",
-          "dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800",
+          "bg-warning-subtle text-warning-subtle-foreground border border-warning/30",
+          "",
           className
         )}
       >
@@ -62,8 +62,8 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
       data-testid="reconnected-indicator"
       className={cn(
         "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
-        "bg-emerald-100 text-emerald-800 border border-emerald-200",
-        "dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800",
+        "bg-success-subtle text-success-subtle-foreground border border-success/30",
+        "",
         "animate-in fade-in slide-in-from-top-1",
         className
       )}
@@ -91,8 +91,8 @@ export function OfflineBanner({ className }: { className?: string }) {
     <div
       role="alert"
       className={cn(
-        "flex items-center gap-2 px-4 py-2 text-sm bg-amber-50 border-b border-amber-200 text-amber-900",
-        "dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-100",
+        "flex items-center gap-2 px-4 py-2 text-sm bg-warning-subtle border-b border-warning/30 text-warning-subtle-foreground",
+        "",
         className
       )}
     >

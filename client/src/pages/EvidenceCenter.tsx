@@ -81,9 +81,9 @@ const SEVERITY_BADGE: Record<string, string> = {
 };
 
 function scoreTone(score: number) {
-  if (score >= 80) return "text-green-700";
-  if (score >= 55) return "text-amber-700";
-  return "text-red-700";
+  if (score >= 80) return "text-success";
+  if (score >= 55) return "text-warning";
+  return "text-destructive";
 }
 
 function statusLabel(status: string) {
@@ -811,13 +811,13 @@ export default function EvidenceCenter() {
           <div className="divide-y">
             {data.filingRiskScan.length === 0 ? (
               <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <CheckCircle2 className="h-4 w-4 text-success" />
                 No filing risk signals.
               </div>
             ) : (
               data.filingRiskScan.slice(0, 12).map((issue) => (
                 <div key={issue.id} className="flex items-start gap-3 p-4">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium">{issue.title}</p>

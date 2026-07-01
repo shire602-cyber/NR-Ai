@@ -61,15 +61,15 @@ function formatDate(date: string): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case "paid":
-      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
+      return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Paid</Badge>;
     case "sent":
-      return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Sent</Badge>;
+      return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sent</Badge>;
     case "draft":
-      return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Draft</Badge>;
+      return <Badge className="bg-muted text-foreground hover:bg-muted">Draft</Badge>;
     case "void":
-      return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Void</Badge>;
+      return <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">Void</Badge>;
     default:
-      return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">{status}</Badge>;
+      return <Badge className="bg-muted text-foreground hover:bg-muted">{status}</Badge>;
   }
 }
 
@@ -126,10 +126,10 @@ export default function CustomerPortal() {
   // Loading state
   if (infoLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-muted flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-500">Loading portal...</p>
+          <Loader2 className="w-10 h-10 animate-spin text-info mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading portal...</p>
         </div>
       </div>
     );
@@ -141,18 +141,18 @@ export default function CustomerPortal() {
     const isExpired = message.includes("expired");
 
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             {isExpired ? (
-              <Clock className="w-16 h-16 text-amber-500 mb-4" />
+              <Clock className="w-16 h-16 text-warning mb-4" />
             ) : (
-              <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+              <AlertCircle className="w-16 h-16 text-destructive mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
               {isExpired ? "Link Expired" : "Invalid Portal Link"}
             </h2>
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               {isExpired
                 ? "This portal link has expired. Please contact the accounting firm for a new link."
                 : "This portal link is invalid or has been removed. Please contact the accounting firm for assistance."}
@@ -177,19 +177,19 @@ export default function CustomerPortal() {
   const defaultCurrency = invoices.length > 0 ? invoices[0].currency : "AED";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted">
       {/* Header */}
-      <header className="bg-white border-b shadow-sm">
+      <header className="bg-card border-b shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{info.companyName}</h1>
-              <p className="text-gray-500 mt-1">Client Portal</p>
+              <h1 className="text-2xl font-bold text-foreground">{info.companyName}</h1>
+              <p className="text-muted-foreground mt-1">Client Portal</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="text-lg font-semibold text-gray-900">{info.customerName}</p>
-              {info.contactPerson && <p className="text-sm text-gray-500">{info.contactPerson}</p>}
+              <p className="text-sm text-muted-foreground">Welcome,</p>
+              <p className="text-lg font-semibold text-foreground">{info.customerName}</p>
+              {info.contactPerson && <p className="text-sm text-muted-foreground">{info.contactPerson}</p>}
             </div>
           </div>
         </div>
@@ -202,12 +202,12 @@ export default function CustomerPortal() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-50 rounded-lg">
-                  <DollarSign className="w-5 h-5 text-red-600" />
+                <div className="p-2 bg-danger-subtle rounded-lg">
+                  <DollarSign className="w-5 h-5 text-destructive" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Total Outstanding</p>
-                  <p className="text-xl font-bold text-red-600">
+                  <p className="text-sm text-muted-foreground">Total Outstanding</p>
+                  <p className="text-xl font-bold text-destructive">
                     {formatCurrency(totalOutstanding, defaultCurrency)}
                   </p>
                 </div>
@@ -218,12 +218,12 @@ export default function CustomerPortal() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-50 rounded-lg">
-                  <FileCheck className="w-5 h-5 text-green-600" />
+                <div className="p-2 bg-success-subtle rounded-lg">
+                  <FileCheck className="w-5 h-5 text-success" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Total Paid</p>
-                  <p className="text-xl font-bold text-green-600">
+                  <p className="text-sm text-muted-foreground">Total Paid</p>
+                  <p className="text-xl font-bold text-success">
                     {formatCurrency(totalPaid, defaultCurrency)}
                   </p>
                 </div>
@@ -234,12 +234,12 @@ export default function CustomerPortal() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-lg">
-                  <Receipt className="w-5 h-5 text-blue-600" />
+                <div className="p-2 bg-info-subtle rounded-lg">
+                  <Receipt className="w-5 h-5 text-info" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Total Invoices</p>
-                  <p className="text-xl font-bold text-blue-600">{invoiceCount}</p>
+                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <p className="text-xl font-bold text-info">{invoiceCount}</p>
                 </div>
               </div>
             </CardContent>
@@ -257,13 +257,13 @@ export default function CustomerPortal() {
           <CardContent>
             {invoicesLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-info" />
               </div>
             ) : invoices.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="w-12 h-12 text-gray-300 mb-4" />
-                <p className="text-lg font-medium text-gray-500">No invoices found</p>
-                <p className="text-sm text-gray-400 mt-1">
+                <FileText className="w-12 h-12 text-muted-foreground/70 mb-4" />
+                <p className="text-lg font-medium text-muted-foreground">No invoices found</p>
+                <p className="text-sm text-muted-foreground/70 mt-1">
                   Your invoices will appear here once they are created.
                 </p>
               </div>
@@ -291,7 +291,7 @@ export default function CustomerPortal() {
                           </TableCell>
                           <TableCell>
                             {overdue ? (
-                              <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                              <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">
                                 Overdue
                               </Badge>
                             ) : (
@@ -320,9 +320,9 @@ export default function CustomerPortal() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t bg-white mt-12">
+      <footer className="border-t bg-card mt-12">
         <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-gray-400">Powered by {info.companyName}</p>
+          <p className="text-center text-sm text-muted-foreground/70">Powered by {info.companyName}</p>
         </div>
       </footer>
     </div>

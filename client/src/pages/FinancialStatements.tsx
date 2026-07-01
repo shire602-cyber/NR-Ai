@@ -224,7 +224,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total Revenue</CardDescription>
-                <CardTitle className="text-2xl text-green-600 flex items-center gap-2">
+                <CardTitle className="text-2xl text-success flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
                   {formatCurrency(data.revenue, "AED", locale)}
                 </CardTitle>
@@ -233,7 +233,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total Expenses</CardDescription>
-                <CardTitle className="text-2xl text-red-600 flex items-center gap-2">
+                <CardTitle className="text-2xl text-destructive flex items-center gap-2">
                   <TrendingDown className="h-5 w-5" />
                   {formatCurrency(data.expenses, "AED", locale)}
                 </CardTitle>
@@ -243,7 +243,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
               <CardHeader className="pb-2">
                 <CardDescription>Net Income</CardDescription>
                 <CardTitle
-                  className={`text-2xl flex items-center gap-2 ${data.netIncome >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl flex items-center gap-2 ${data.netIncome >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   <BarChart3 className="h-5 w-5" />
                   {formatCurrency(data.netIncome, "AED", locale)}
@@ -347,7 +347,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Balance Check */}
           <div className="flex items-center gap-2">
             {data.isBalanced ? (
-              <Badge variant="outline" className="text-green-600 border-green-600">
+              <Badge variant="outline" className="text-success border-success">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
                 Balanced
               </Badge>
@@ -556,7 +556,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <CardHeader className="pb-2">
                 <CardDescription>Operating</CardDescription>
                 <CardTitle
-                  className={`text-xl ${data.operating.total >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-xl ${data.operating.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(data.operating.total, "AED", locale)}
                 </CardTitle>
@@ -566,7 +566,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <CardHeader className="pb-2">
                 <CardDescription>Investing</CardDescription>
                 <CardTitle
-                  className={`text-xl ${data.investing.total >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-xl ${data.investing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(data.investing.total, "AED", locale)}
                 </CardTitle>
@@ -576,7 +576,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <CardHeader className="pb-2">
                 <CardDescription>Financing</CardDescription>
                 <CardTitle
-                  className={`text-xl ${data.financing.total >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-xl ${data.financing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   {formatCurrency(data.financing.total, "AED", locale)}
                 </CardTitle>
@@ -586,7 +586,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
               <CardHeader className="pb-2">
                 <CardDescription>Net Cash Change</CardDescription>
                 <CardTitle
-                  className={`text-xl flex items-center gap-2 ${data.netCashChange >= 0 ? "text-green-600" : "text-red-600"}`}
+                  className={`text-xl flex items-center gap-2 ${data.netCashChange >= 0 ? "text-success" : "text-destructive"}`}
                 >
                   <Banknote className="h-5 w-5" />
                   {formatCurrency(data.netCashChange, "AED", locale)}

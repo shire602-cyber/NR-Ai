@@ -85,7 +85,7 @@ const tiers: PricingTier[] = [
     ctaVariant: "outline",
     highlight: false,
     gradient: "from-slate-500/10 to-slate-600/5",
-    iconColor: "text-slate-600",
+    iconColor: "text-muted-foreground",
   },
   {
     id: "starter",
@@ -99,7 +99,7 @@ const tiers: PricingTier[] = [
     ctaVariant: "default",
     highlight: false,
     gradient: "from-blue-500/10 to-blue-600/5",
-    iconColor: "text-blue-600",
+    iconColor: "text-info",
   },
   {
     id: "professional",
@@ -113,7 +113,7 @@ const tiers: PricingTier[] = [
     ctaVariant: "default",
     highlight: true,
     gradient: "from-emerald-500/10 to-emerald-600/5",
-    iconColor: "text-emerald-600",
+    iconColor: "text-success",
   },
   {
     id: "enterprise",
@@ -125,7 +125,7 @@ const tiers: PricingTier[] = [
     ctaVariant: "outline",
     highlight: false,
     gradient: "from-purple-500/10 to-purple-600/5",
-    iconColor: "text-purple-600",
+    iconColor: "text-chart-5",
   },
 ];
 
@@ -629,8 +629,8 @@ export default function Pricing() {
     if (included) {
       return (
         <div className="flex justify-center">
-          <div className="h-6 w-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-            <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          <div className="h-6 w-6 rounded-full bg-success-subtle flex items-center justify-center">
+            <Check className="h-3.5 w-3.5 text-success " />
           </div>
         </div>
       );
@@ -713,7 +713,7 @@ export default function Pricing() {
               <Switch
                 checked={isYearly}
                 onCheckedChange={setIsYearly}
-                className="data-[state=checked]:bg-emerald-600"
+                className="data-[state=checked]:bg-success"
               />
               <span
                 className={`text-sm font-medium transition-colors ${isYearly ? "text-foreground" : "text-muted-foreground"}`}
@@ -728,7 +728,7 @@ export default function Pricing() {
                     exit={{ opacity: 0, scale: 0.8, x: -10 }}
                     transition={{ type: "spring", stiffness: 400, damping: 20 }}
                   >
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800">
+                    <Badge className="bg-success-subtle text-success border-success/30 ">
                       {t.header.save20}
                     </Badge>
                   </motion.div>
@@ -756,7 +756,7 @@ export default function Pricing() {
                     <Card
                       className={`relative h-full flex flex-col overflow-hidden transition-all duration-300 ${
                         tier.highlight
-                          ? "border-emerald-500 dark:border-emerald-400 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/20 scale-[1.02] lg:scale-105"
+                          ? "border-success shadow-lg shadow-emerald-500/10 ring-1 ring-success/20 scale-[1.02] lg:scale-105"
                           : "hover:border-foreground/20"
                       }`}
                     >
@@ -781,7 +781,7 @@ export default function Pricing() {
                               variant={tier.badgeVariant}
                               className={
                                 tier.badge === "mostPopular"
-                                  ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600"
+                                  ? "bg-success text-white border-success hover:bg-success"
                                   : ""
                               }
                             >
@@ -845,7 +845,7 @@ export default function Pricing() {
                               <Check
                                 className={`h-4 w-4 mt-0.5 shrink-0 ${
                                   tier.highlight
-                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    ? "text-success "
                                     : "text-muted-foreground"
                                 }`}
                               />
@@ -866,7 +866,7 @@ export default function Pricing() {
                               tier.highlight
                                 ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-500/25"
                                 : tier.id === "starter"
-                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  ? "bg-info text-white hover:bg-info"
                                   : ""
                             }`}
                             size="lg"
@@ -908,7 +908,7 @@ export default function Pricing() {
                         <TableHead key={tier.id} className="text-center min-w-[120px]">
                           <div className="flex flex-col items-center gap-1">
                             <span
-                              className={`font-semibold text-foreground ${tier.highlight ? "text-emerald-600 dark:text-emerald-400" : ""}`}
+                              className={`font-semibold text-foreground ${tier.highlight ? "text-success " : ""}`}
                             >
                               {t.tiers[tier.id as keyof typeof t.tiers].name}
                             </span>
@@ -985,7 +985,7 @@ export default function Pricing() {
                       </TableHead>
                       <TableHead className="text-center min-w-[130px]">
                         <div className="flex flex-col items-center">
-                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className="font-bold text-success ">
                             {t.competitor.muhasib}
                           </span>
                         </div>
@@ -1021,7 +1021,7 @@ export default function Pricing() {
                           <TableCell key={col} className="text-center">
                             {typeof row[col] === "string" ? (
                               <span
-                                className={`text-sm font-semibold ${col === "muhasib" ? "text-emerald-600 dark:text-emerald-400" : ""}`}
+                                className={`text-sm font-semibold ${col === "muhasib" ? "text-success " : ""}`}
                               >
                                 {row[col] as string}
                               </span>
@@ -1076,20 +1076,20 @@ export default function Pricing() {
             <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-0">
               {/* Decorative background elements */}
               <div className="absolute inset-0 opacity-10">
-                <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-white" />
-                <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-white" />
+                <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-card" />
+                <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-card" />
               </div>
 
               <CardContent className="relative py-12 md:py-16 text-center">
                 <h2 className="text-3xl md:text-4xl font-bold mb-4">{t.footerCta.title}</h2>
-                <p className="text-emerald-100 text-lg mb-8 max-w-xl mx-auto">
+                <p className="text-success-foreground text-lg mb-8 max-w-xl mx-auto">
                   {t.footerCta.subtitle}
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
                   <Link href="/register">
                     <Button
                       size="lg"
-                      className="bg-white text-emerald-700 hover:bg-emerald-50 shadow-xl min-w-[180px]"
+                      className="bg-card text-success hover:bg-success-subtle shadow-xl min-w-[180px]"
                     >
                       {t.footerCta.startFree}
                       <ArrowRight className="h-4 w-4 ms-2" />
@@ -1099,14 +1099,14 @@ export default function Pricing() {
                     <Button
                       size="lg"
                       variant="outline"
-                      className="border-white/30 text-white hover:bg-white/10 min-w-[180px]"
+                      className="border-white/30 text-white hover:bg-card/10 min-w-[180px]"
                     >
                       <Phone className="h-4 w-4 me-2" />
                       {t.footerCta.bookDemo}
                     </Button>
                   </a>
                 </div>
-                <p className="text-emerald-200 text-sm flex items-center justify-center gap-2">
+                <p className="text-success-foreground text-sm flex items-center justify-center gap-2">
                   <Shield className="h-4 w-4" />
                   {t.footerCta.guarantee}
                 </p>

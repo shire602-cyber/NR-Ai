@@ -215,7 +215,7 @@ export default function Companies() {
                       </CardDescription>
                     </div>
                   </div>
-                  <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
                 </div>
               </CardHeader>
             </Card>

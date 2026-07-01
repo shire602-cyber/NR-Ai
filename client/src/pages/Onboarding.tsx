@@ -422,13 +422,13 @@ function CustomerOnboarding() {
       {/* Fixed background blobs */}
       <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/8 rounded-full blur-[128px]" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
       </div>
 
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-lg">Muhasib.ai</span>
@@ -937,14 +937,14 @@ function AccountsStep({
         description="Your UAE-standard chart of accounts has been pre-configured and is ready to use."
       />
 
-      <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-900">
+      <Card className="border-success/30 bg-success-subtle ">
         <CardContent className="p-4 flex items-center gap-3">
-          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+          <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
           <div>
-            <p className="text-sm font-medium text-green-800 dark:text-green-200">
+            <p className="text-sm font-medium text-success-subtle-foreground ">
               {accountCount > 0 ? `${accountCount} accounts configured` : "UAE preset applied"}
             </p>
-            <p className="text-xs text-green-600 dark:text-green-400">
+            <p className="text-xs text-success ">
               All standard categories with VAT input/output accounts are included.
             </p>
           </div>
@@ -1012,11 +1012,11 @@ function BankStep({
           title="Bank Account"
           description="Your bank account is already connected for reconciliation."
         />
-        <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-900">
+        <Card className="border-success/30 bg-success-subtle ">
           <CardContent className="p-4 space-y-2">
             {existingAccounts.map((a) => (
               <div key={a.id} className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                <CheckCircle2 className="w-4 h-4 text-success" />
                 <span className="text-sm font-medium">{a.nameEn}</span>
                 <span className="text-xs text-muted-foreground">— {a.bankName}</span>
               </div>
@@ -1263,8 +1263,8 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         transition={{ type: "spring", stiffness: 200, damping: 15 }}
         className="flex justify-center"
       >
-        <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-          <CheckCircle2 className="w-12 h-12 text-green-600" />
+        <div className="w-24 h-24 rounded-full bg-success-subtle flex items-center justify-center">
+          <CheckCircle2 className="w-12 h-12 text-success" />
         </div>
       </motion.div>
 
@@ -1853,12 +1853,12 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
     <div className="min-h-screen bg-background flex flex-col">
       <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/8 rounded-full blur-[128px]" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
       </div>
 
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-lg">Muhasib.ai</span>
@@ -1938,7 +1938,7 @@ function FirmWelcomeStep({
   return (
     <div className="text-center space-y-8">
       <div className="flex justify-center">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-lg">
+        <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg">
           <Briefcase className="w-10 h-10 text-white" />
         </div>
       </div>
@@ -2122,8 +2122,8 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
         transition={{ type: "spring", stiffness: 200, damping: 15 }}
         className="flex justify-center"
       >
-        <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-          <CheckCircle2 className="w-12 h-12 text-green-600" />
+        <div className="w-24 h-24 rounded-full bg-success-subtle flex items-center justify-center">
+          <CheckCircle2 className="w-12 h-12 text-success" />
         </div>
       </motion.div>
       <div className="space-y-3">

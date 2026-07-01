@@ -496,17 +496,17 @@ export default function Budgets() {
       case "draft":
         return <Badge variant="secondary">Draft</Badge>;
       case "approved":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Approved</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
       case "closed":
-        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Closed</Badge>;
+        return <Badge className="bg-muted text-foreground hover:bg-muted">Closed</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
   const getVarianceColor = (variance: number) => {
-    if (variance > 0) return "text-green-600";
-    if (variance < 0) return "text-red-600";
+    if (variance > 0) return "text-success";
+    if (variance < 0) return "text-destructive";
     return "";
   };
 
@@ -661,7 +661,7 @@ export default function Budgets() {
                                   size="sm"
                                   onClick={() => approveBudgetMutation.mutate(budget.id)}
                                   title="Approve"
-                                  className="text-green-600 hover:text-green-700"
+                                  className="text-success hover:text-success"
                                 >
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>

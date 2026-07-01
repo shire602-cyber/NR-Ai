@@ -338,7 +338,7 @@ export function OnboardingProgress() {
   const progress = (currentStep / totalSteps) * 100;
 
   return (
-    <Card className="mb-6 bg-gradient-to-r from-primary/5 to-primary/10">
+    <Card className="mb-6 ">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -366,12 +366,12 @@ export function OnboardingProgress() {
                   setLocation(step.path);
                 }}
                 className={`flex items-center gap-2 p-2 rounded-lg text-sm transition-colors ${
-                  isCompleted ? "bg-green-500/10 text-green-700" : "bg-background hover:bg-accent"
+                  isCompleted ? "bg-success/10 text-success" : "bg-background hover:bg-accent"
                 }`}
                 data-testid={`onboarding-step-${step.key}`}
               >
                 {isCompleted ? (
-                  <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                  <CheckCircle className="w-4 h-4 text-success shrink-0" />
                 ) : (
                   <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                 )}

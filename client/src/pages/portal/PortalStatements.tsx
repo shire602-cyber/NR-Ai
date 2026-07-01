@@ -22,13 +22,13 @@ function StatRow({
 }) {
   return (
     <div className={["flex justify-between items-center py-1.5", indent ? "pl-4" : ""].join(" ")}>
-      <span className={["text-sm", indent ? "text-gray-500" : "text-gray-700"].join(" ")}>
+      <span className={["text-sm", indent ? "text-muted-foreground" : "text-foreground"].join(" ")}>
         {label}
       </span>
       <span
         className={[
           "text-sm tabular-nums",
-          indent ? "text-gray-500" : "font-medium text-gray-900",
+          indent ? "text-muted-foreground" : "font-medium text-foreground",
         ].join(" ")}
       >
         {formatAed(amount)}
@@ -47,10 +47,10 @@ function SectionTotal({
   positive?: boolean;
 }) {
   const color =
-    positive === undefined ? "text-gray-900" : amount >= 0 ? "text-green-700" : "text-red-600";
+    positive === undefined ? "text-foreground" : amount >= 0 ? "text-success" : "text-destructive";
   return (
-    <div className="flex justify-between items-center py-2 border-t border-gray-200 mt-1">
-      <span className="text-sm font-semibold text-gray-900">{label}</span>
+    <div className="flex justify-between items-center py-2 border-t border-border mt-1">
+      <span className="text-sm font-semibold text-foreground">{label}</span>
       <span className={["text-sm font-bold tabular-nums", color].join(" ")}>
         {formatAed(amount)}
       </span>
@@ -84,8 +84,8 @@ export default function PortalStatements() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Financial Statements</h2>
-        <p className="text-sm text-gray-500 mt-1">Read-only view of your company's financials.</p>
+        <h2 className="text-xl font-semibold text-foreground">Financial Statements</h2>
+        <p className="text-sm text-muted-foreground mt-1">Read-only view of your company's financials.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -94,20 +94,20 @@ export default function PortalStatements() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               {pnl.netProfit >= 0 ? (
-                <TrendingUp className="w-4 h-4 text-green-500" />
+                <TrendingUp className="w-4 h-4 text-success" />
               ) : (
-                <TrendingDown className="w-4 h-4 text-red-500" />
+                <TrendingDown className="w-4 h-4 text-destructive" />
               )}
               Profit & Loss
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+              <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
                 Revenue
               </p>
               {revenueItems.length === 0 ? (
-                <p className="text-xs text-gray-400 py-1">No revenue recorded</p>
+                <p className="text-xs text-muted-foreground/70 py-1">No revenue recorded</p>
               ) : (
                 revenueItems.map((i: any) => (
                   <StatRow key={i.name} label={i.name} amount={i.balance} indent />
@@ -116,11 +116,11 @@ export default function PortalStatements() {
               <SectionTotal label="Total Revenue" amount={pnl.revenue} />
 
               <div className="pt-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
                   Expenses
                 </p>
                 {expenseItems.length === 0 ? (
-                  <p className="text-xs text-gray-400 py-1">No expenses recorded</p>
+                  <p className="text-xs text-muted-foreground/70 py-1">No expenses recorded</p>
                 ) : (
                   expenseItems.map((i: any) => (
                     <StatRow key={i.name} label={i.name} amount={i.balance} indent />
@@ -140,17 +140,17 @@ export default function PortalStatements() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <Minus className="w-4 h-4 text-blue-500" />
+              <Minus className="w-4 h-4 text-info" />
               Balance Sheet
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+              <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
                 Assets
               </p>
               {assetItems.length === 0 ? (
-                <p className="text-xs text-gray-400 py-1">No assets recorded</p>
+                <p className="text-xs text-muted-foreground/70 py-1">No assets recorded</p>
               ) : (
                 assetItems.map((i: any) => (
                   <StatRow key={i.name} label={i.name} amount={i.balance} indent />
@@ -159,11 +159,11 @@ export default function PortalStatements() {
               <SectionTotal label="Total Assets" amount={bs.assets} />
 
               <div className="pt-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
                   Liabilities
                 </p>
                 {liabilityItems.length === 0 ? (
-                  <p className="text-xs text-gray-400 py-1">No liabilities recorded</p>
+                  <p className="text-xs text-muted-foreground/70 py-1">No liabilities recorded</p>
                 ) : (
                   liabilityItems.map((i: any) => (
                     <StatRow key={i.name} label={i.name} amount={i.balance} indent />
@@ -173,11 +173,11 @@ export default function PortalStatements() {
               </div>
 
               <div className="pt-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide mb-1">
                   Equity
                 </p>
                 {equityItems.length === 0 ? (
-                  <p className="text-xs text-gray-400 py-1">No equity recorded</p>
+                  <p className="text-xs text-muted-foreground/70 py-1">No equity recorded</p>
                 ) : (
                   equityItems.map((i: any) => (
                     <StatRow key={i.name} label={i.name} amount={i.balance} indent />

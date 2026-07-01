@@ -249,9 +249,9 @@ export default function Integrations() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Google Sheets Integration */}
           <Card className="relative overflow-hidden" data-testid="integration-google-sheets">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
+            <div className="absolute top-0 right-0 w-32 h-32 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg">
                 <SiGoogle className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
@@ -259,7 +259,7 @@ export default function Integrations() {
                   <CardTitle className="text-lg">Google Sheets</CardTitle>
                   <Badge
                     variant={integrationStatus?.googleSheets?.connected ? "default" : "secondary"}
-                    className={integrationStatus?.googleSheets?.connected ? "bg-green-500" : ""}
+                    className={integrationStatus?.googleSheets?.connected ? "bg-success" : ""}
                     data-testid="google-sheets-status"
                   >
                     {integrationStatus?.googleSheets?.connected ? (
@@ -444,9 +444,9 @@ export default function Integrations() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Xero */}
           <Card className="relative overflow-hidden opacity-75" data-testid="integration-xero">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-bl-full" />
+            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4 pb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-sm">X</span>
               </div>
               <div className="flex-1">
@@ -464,9 +464,9 @@ export default function Integrations() {
             className="relative overflow-hidden opacity-75"
             data-testid="integration-quickbooks"
           >
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
+            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
             <CardHeader className="flex flex-row items-start gap-4 pb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-600 to-green-700 flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
                 <SiQuickbooks className="w-5 h-5 text-white" />
               </div>
               <div className="flex-1">
@@ -508,8 +508,8 @@ export default function Integrations() {
                     data-testid={`sync-history-${sync.id}`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                        <SiGoogle className="w-5 h-5 text-green-600" />
+                      <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                        <SiGoogle className="w-5 h-5 text-success" />
                       </div>
                       <div>
                         <div className="font-medium flex items-center gap-2">

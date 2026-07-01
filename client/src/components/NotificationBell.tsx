@@ -22,9 +22,9 @@ function timeAgo(iso: string): string {
 }
 
 function priorityDot(priority: string) {
-  if (priority === "urgent") return "bg-red-500";
-  if (priority === "high") return "bg-orange-400";
-  return "bg-blue-400";
+  if (priority === "urgent") return "bg-destructive";
+  if (priority === "high") return "bg-warning/60";
+  return "bg-info/60";
 }
 
 export function NotificationBell() {

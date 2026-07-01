@@ -119,9 +119,9 @@ function getConfidenceLevel(confidence: number): {
   variant: "default" | "secondary" | "destructive";
   color: string;
 } {
-  if (confidence >= 0.85) return { label: "High", variant: "default", color: "text-green-600" };
-  if (confidence >= 0.6) return { label: "Medium", variant: "secondary", color: "text-orange-500" };
-  return { label: "Low", variant: "destructive", color: "text-red-500" };
+  if (confidence >= 0.85) return { label: "High", variant: "default", color: "text-success" };
+  if (confidence >= 0.6) return { label: "Medium", variant: "secondary", color: "text-warning" };
+  return { label: "Low", variant: "destructive", color: "text-destructive" };
 }
 
 function getStatusBadge(status: string): {
@@ -389,37 +389,37 @@ export default function AIInbox() {
               <div className="text-3xl font-bold">{stats.totalProcessed}</div>
             </CardContent>
           </Card>
-          <Card className="border-blue-200">
+          <Card className="border-info/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Zap className="h-3 w-3 text-blue-500" />
+                <Zap className="h-3 w-3 text-info" />
                 Auto-Posted %
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-blue-600">{stats.autoPostedPercent}%</div>
+              <div className="text-3xl font-bold text-info">{stats.autoPostedPercent}%</div>
             </CardContent>
           </Card>
-          <Card className="border-green-200">
+          <Card className="border-success/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Target className="h-3 w-3 text-green-500" />
+                <Target className="h-3 w-3 text-success" />
                 Accuracy %
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-green-600">{stats.accuracy}%</div>
+              <div className="text-3xl font-bold text-success">{stats.accuracy}%</div>
             </CardContent>
           </Card>
-          <Card className="border-orange-200">
+          <Card className="border-warning/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Clock className="h-3 w-3 text-orange-500" />
+                <Clock className="h-3 w-3 text-warning" />
                 Pending Review
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-orange-600">{stats.pendingReview}</div>
+              <div className="text-3xl font-bold text-warning">{stats.pendingReview}</div>
             </CardContent>
           </Card>
           <Card>
@@ -483,7 +483,7 @@ export default function AIInbox() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center py-12 space-y-4">
-                  <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
+                  <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
                   <h3 className="text-lg font-semibold">All Clear</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
                     No transactions pending review. Click "Run Scan" to check for new unreconciled
@@ -560,7 +560,7 @@ export default function AIInbox() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  className="h-8 w-8 p-0 text-success hover:text-success hover:bg-success-subtle"
                                   onClick={() => acceptMutation.mutate(item.id)}
                                   disabled={acceptMutation.isPending || !item.suggested_account_id}
                                   title="Accept"
@@ -570,7 +570,7 @@ export default function AIInbox() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-danger-subtle"
                                   onClick={() => rejectMutation.mutate(item.id)}
                                   disabled={rejectMutation.isPending}
                                   title="Reject"
@@ -580,7 +580,7 @@ export default function AIInbox() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                  className="h-8 w-8 p-0 text-info hover:text-info hover:bg-info-subtle"
                                   onClick={() => openCorrectDialog(item)}
                                   title="Correct"
                                 >

@@ -163,7 +163,7 @@ function UsageMeter({
           <span className="text-sm font-medium">{label}</span>
         </div>
         <span
-          className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-amber-500" : "text-muted-foreground"}`}
+          className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
         >
           {isUnlimited ? `${used} used` : `${used} / ${limit}`}
         </span>
@@ -171,12 +171,12 @@ function UsageMeter({
       {!isUnlimited && (
         <Progress
           value={percentage}
-          className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-amber-500" : ""}`}
+          className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-warning" : ""}`}
         />
       )}
       {isUnlimited && (
         <div className="h-2 rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-green-500/40 w-full" />
+          <div className="h-full rounded-full bg-success/40 w-full" />
         </div>
       )}
     </div>
@@ -242,7 +242,7 @@ export default function Subscription() {
               <CardTitle className="text-lg">Current Plan</CardTitle>
               <Badge
                 variant={tierName === "free" ? "secondary" : "default"}
-                className={tierName !== "free" ? "bg-gradient-to-r from-primary to-violet-600" : ""}
+                className={tierName !== "free" ? "" : ""}
               >
                 <Star className="w-3 h-3 mr-1" />
                 {currentPlan.name}
@@ -353,7 +353,7 @@ export default function Subscription() {
           Yearly
         </span>
         {billingCycle === "yearly" && (
-          <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-500/20">
+          <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
             Save up to 23%
           </Badge>
         )}
@@ -371,14 +371,14 @@ export default function Subscription() {
               key={plan.id}
               className={`relative overflow-hidden transition-all duration-300 hover:-translate-y-1 ${
                 plan.popular
-                  ? "border-primary/50 bg-gradient-to-b from-primary/5 to-transparent shadow-lg shadow-primary/10"
+                  ? "border-primary/50 shadow-lg shadow-primary/10"
                   : isCurrent
                     ? "border-primary/30 bg-primary/5"
                     : "border-border"
               }`}
             >
               {plan.popular && (
-                <div className="absolute top-0 right-0 px-3 py-1 bg-gradient-to-r from-primary to-violet-600 text-white text-xs font-medium rounded-bl-lg">
+                <div className="absolute top-0 right-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
                   Most Popular
                 </div>
               )}
@@ -386,7 +386,7 @@ export default function Subscription() {
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3 mb-2">
                   <div
-                    className={`w-10 h-10 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center`}
+                    className={`w-10 h-10 rounded-lg ${plan.color} flex items-center justify-center`}
                   >
                     <PlanIcon className="w-5 h-5 text-white" />
                   </div>
@@ -416,7 +416,7 @@ export default function Subscription() {
                 <ul className="space-y-2.5">
                   {plan.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm">
-                      <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
                       <span>{feature}</span>
                     </li>
                   ))}
@@ -431,7 +431,7 @@ export default function Subscription() {
                     <Button
                       className={`w-full ${
                         plan.popular
-                          ? "bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90"
+                          ? "hover:"
                           : ""
                       }`}
                       variant={plan.popular ? "default" : "outline"}
@@ -507,7 +507,7 @@ export default function Subscription() {
                       <td key={i} className="text-center py-3 px-4">
                         {typeof value === "boolean" ? (
                           value ? (
-                            <Check className="w-4 h-4 text-green-500 mx-auto" />
+                            <Check className="w-4 h-4 text-success mx-auto" />
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )

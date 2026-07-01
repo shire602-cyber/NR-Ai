@@ -95,7 +95,7 @@ function MetricCard({
         <div className="text-2xl font-bold">{value}</div>
         {trend !== undefined && (
           <div
-            className={`flex items-center gap-1 text-xs mt-1 ${trend >= 0 ? "text-green-600" : "text-red-600"}`}
+            className={`flex items-center gap-1 text-xs mt-1 ${trend >= 0 ? "text-success" : "text-destructive"}`}
           >
             {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             <span>{Math.abs(trend)}% vs last month</span>
@@ -294,7 +294,7 @@ export default function FirmAnalytics() {
                 </p>
                 {health!.topIssues.map((issue) => (
                   <div key={issue.type} className="flex items-start gap-2 text-xs">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                    <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
                     <span>
                       <span className="font-medium">{ISSUE_LABELS[issue.type] ?? issue.type}</span>
                       <span className="text-muted-foreground ml-1">
@@ -319,7 +319,7 @@ export default function FirmAnalytics() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="text-3xl font-bold text-amber-600">
+              <div className="text-3xl font-bold text-warning">
                 {utilization?.staffCount ?? 0}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
@@ -327,7 +327,7 @@ export default function FirmAnalytics() {
               </div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-amber-600">
+              <div className="text-3xl font-bold text-warning">
                 {utilization?.clientsPerStaff ?? 0}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
@@ -335,7 +335,7 @@ export default function FirmAnalytics() {
               </div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-amber-600">
+              <div className="text-3xl font-bold text-warning">
                 {utilization?.avgClientsPerAdmin ?? 0}
               </div>
               <div className="text-sm text-muted-foreground mt-1">

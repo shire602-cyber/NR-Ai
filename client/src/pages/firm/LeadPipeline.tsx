@@ -81,39 +81,39 @@ const STAGES: { key: Stage; label: string; color: string; bg: string }[] = [
   {
     key: "prospect",
     label: "Prospect",
-    color: "text-slate-600",
-    bg: "bg-slate-50 dark:bg-slate-900/50 border-slate-200",
+    color: "text-muted-foreground",
+    bg: "bg-muted border-border",
   },
   {
     key: "contacted",
     label: "Contacted",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-900/20 border-blue-200",
+    color: "text-info",
+    bg: "bg-info-subtle border-info/30",
   },
   {
     key: "interested",
     label: "Interested",
-    color: "text-amber-600",
-    bg: "bg-amber-50 dark:bg-amber-900/20 border-amber-200",
+    color: "text-warning",
+    bg: "bg-warning-subtle border-warning/30",
   },
   {
     key: "converted",
     label: "Converted",
-    color: "text-green-600",
-    bg: "bg-green-50 dark:bg-green-900/20 border-green-200",
+    color: "text-success",
+    bg: "bg-success-subtle border-success/30",
   },
   {
     key: "lost",
     label: "Lost",
-    color: "text-red-500",
-    bg: "bg-red-50 dark:bg-red-900/20 border-red-200",
+    color: "text-destructive",
+    bg: "bg-danger-subtle border-destructive/30",
   },
 ];
 
 const SCORE_COLOR = (score: number) => {
-  if (score >= 70) return "bg-green-100 text-green-800 border-green-200";
-  if (score >= 40) return "bg-amber-100 text-amber-800 border-amber-200";
-  return "bg-red-100 text-red-800 border-red-200";
+  if (score >= 70) return "bg-success-subtle text-success-subtle-foreground border-success/30";
+  if (score >= 40) return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
+  return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
 };
 
 const SOURCE_LABELS: Record<Source, string> = {
@@ -461,10 +461,10 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <Card className="border-amber-200 bg-amber-50/40 dark:bg-amber-900/10">
+    <Card className="border-warning/30 bg-warning-subtle/40 ">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2 text-amber-700">
+          <CardTitle className="text-sm flex items-center gap-2 text-warning">
             <Sparkles className="w-4 h-4" />
             Auto-discovered SaaS Prospects
           </CardTitle>
@@ -595,7 +595,7 @@ export default function LeadPipeline() {
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowDiscover((v) => !v)}>
-              <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
+              <Sparkles className="w-4 h-4 mr-1.5 text-warning" />
               Auto-discover
               {showDiscover ? (
                 <ChevronUp className="w-3.5 h-3.5 ml-1" />

@@ -572,19 +572,19 @@ export default function Payroll() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Active</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Active</Badge>;
       case "inactive":
         return <Badge variant="secondary">Inactive</Badge>;
       case "draft":
         return <Badge variant="outline">Draft</Badge>;
       case "calculated":
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Calculated</Badge>;
+        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Calculated</Badge>;
       case "approved":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Approved</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
       case "pending":
         return <Badge variant="outline">Pending</Badge>;
       case "paid":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
+        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Paid</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -671,7 +671,7 @@ export default function Payroll() {
                     <Button
                       onClick={() => approvePayrollMutation.mutate(viewingRunId)}
                       disabled={approvePayrollMutation.isPending}
-                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                      className="flex items-center gap-2 bg-success hover:bg-success"
                     >
                       <CheckCircle className="w-4 h-4" />
                       {approvePayrollMutation.isPending ? "Approving..." : "Approve"}
@@ -709,13 +709,13 @@ export default function Payroll() {
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Deductions</div>
-                <div className="text-lg font-semibold text-red-600">
+                <div className="text-lg font-semibold text-destructive">
                   {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Net Pay</div>
-                <div className="text-lg font-semibold text-green-600">
+                <div className="text-lg font-semibold text-success">
                   {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
                 </div>
               </div>
@@ -776,7 +776,7 @@ export default function Payroll() {
                           <TableCell className="text-right">
                             {formatCurrency(parseFloat(item.overtime) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right text-red-600">
+                          <TableCell className="text-right text-destructive">
                             {formatCurrency(parseFloat(item.deductions) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell className="text-right font-semibold">
@@ -1105,7 +1105,7 @@ export default function Payroll() {
                                   onClick={() => approvePayrollMutation.mutate(run.id)}
                                   disabled={approvePayrollMutation.isPending}
                                   title="Approve"
-                                  className="text-green-600 hover:text-green-700"
+                                  className="text-success hover:text-success"
                                 >
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
@@ -1201,7 +1201,7 @@ export default function Payroll() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {gratuityResult.note ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    <div className="rounded-lg border border-warning/30 bg-warning-subtle p-4 text-sm text-warning-subtle-foreground">
                       {gratuityResult.note}
                     </div>
                   ) : (
@@ -1255,13 +1255,13 @@ export default function Payroll() {
 
                       <div className="grid grid-cols-2 gap-2">
                         <div className="text-lg font-semibold">Total Gratuity</div>
-                        <div className="text-lg font-bold text-green-600">
+                        <div className="text-lg font-bold text-success">
                           {formatCurrency(gratuityResult.totalGratuity, "AED", locale)}
                         </div>
                       </div>
 
                       {gratuityResult.isCapped && (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                        <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-xs text-warning-subtle-foreground">
                           Gratuity capped at 2 years total salary (
                           {formatCurrency(gratuityResult.maxGratuity || 0, "AED", locale)}).
                           Uncapped amount:{" "}

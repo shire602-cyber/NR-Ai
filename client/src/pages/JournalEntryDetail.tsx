@@ -71,7 +71,7 @@ export default function JournalEntryDetail() {
     switch (status) {
       case "posted":
         return (
-          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+          <Badge className="bg-success-subtle text-success-subtle-foreground ">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             Posted
           </Badge>
@@ -199,7 +199,7 @@ export default function JournalEntryDetail() {
             <CardTitle className="text-sm font-medium">Total Debits</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600" data-testid="text-total-debits">
+            <div className="text-2xl font-bold text-success" data-testid="text-total-debits">
               {formatCurrency(totalDebit, "AED", locale)}
             </div>
           </CardContent>
@@ -210,7 +210,7 @@ export default function JournalEntryDetail() {
             <CardTitle className="text-sm font-medium">Total Credits</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600" data-testid="text-total-credits">
+            <div className="text-2xl font-bold text-info" data-testid="text-total-credits">
               {formatCurrency(totalCredit, "AED", locale)}
             </div>
           </CardContent>
@@ -222,7 +222,7 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-green-600" : "text-red-600"}`}
+              className={`text-2xl font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-success" : "text-destructive"}`}
               data-testid="text-balance"
             >
               {Math.abs(totalDebit - totalCredit) < 0.01
@@ -305,9 +305,9 @@ export default function JournalEntryDetail() {
       </Card>
 
       {entry.reversedEntryId && (
-        <Card className="border-orange-200 dark:border-orange-800">
+        <Card className="border-warning/30 ">
           <CardHeader>
-            <CardTitle className="text-lg text-orange-600">Reversal Information</CardTitle>
+            <CardTitle className="text-lg text-warning">Reversal Information</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">

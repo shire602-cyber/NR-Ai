@@ -296,8 +296,8 @@ export default function MonthEndClose() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-100 rounded-lg">
-            <CalendarCheck className="h-6 w-6 text-indigo-600" />
+          <div className="p-2 bg-info-subtle rounded-lg">
+            <CalendarCheck className="h-6 w-6 text-info" />
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Month-End Close</h1>
@@ -388,15 +388,15 @@ export default function MonthEndClose() {
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-lg border ${
                     item.status === "complete"
-                      ? "bg-green-50 border-green-200"
-                      : "bg-red-50 border-red-200"
+                      ? "bg-success-subtle border-success/30"
+                      : "bg-danger-subtle border-destructive/30"
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     {item.status === "complete" ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
                     ) : (
-                      <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+                      <XCircle className="h-5 w-5 text-destructive shrink-0" />
                     )}
                     <div>
                       <p className="text-sm font-medium">{item.title}</p>
@@ -407,7 +407,7 @@ export default function MonthEndClose() {
                   </div>
                   {item.status === "incomplete" && fixRoutes[item.id] && (
                     <a href={fixRoutes[item.id]}>
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
                         Fix <ArrowRight className="h-3 w-3 ml-1" />
                       </Button>
                     </a>
@@ -428,7 +428,7 @@ export default function MonthEndClose() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-amber-500" />
+              <Sparkles className="h-5 w-5 text-warning" />
               <CardTitle className="text-lg">AI Validation</CardTitle>
             </div>
             <Button
@@ -450,15 +450,15 @@ export default function MonthEndClose() {
             <div
               className={`p-4 rounded-lg border ${
                 validationMutation.data.ready
-                  ? "bg-green-50 border-green-200"
-                  : "bg-amber-50 border-amber-200"
+                  ? "bg-success-subtle border-success/30"
+                  : "bg-warning-subtle border-warning/30"
               }`}
             >
               <div className="flex items-start gap-3">
                 {validationMutation.data.ready ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                  <CheckCircle2 className="h-5 w-5 text-success mt-0.5 shrink-0" />
                 ) : (
-                  <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                  <AlertTriangle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
                 )}
                 <div className="space-y-1">
                   <p className="font-medium text-sm">
@@ -490,7 +490,7 @@ export default function MonthEndClose() {
           <AlertDialogTrigger asChild>
             <Button
               disabled={closingEntriesMutation.isPending || isCurrentPeriodLocked}
-              className="bg-indigo-600 hover:bg-indigo-700"
+              className="bg-info hover:bg-info"
             >
               {closingEntriesMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -546,7 +546,7 @@ export default function MonthEndClose() {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => lockPeriodMutation.mutate()}
-                className="bg-red-600 hover:bg-red-700"
+                className="bg-destructive hover:bg-destructive"
               >
                 Lock Period
               </AlertDialogAction>
@@ -560,7 +560,7 @@ export default function MonthEndClose() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-indigo-600" />
+              <BookOpen className="h-5 w-5 text-info" />
               <CardTitle className="text-lg">Closing Entry Created</CardTitle>
             </div>
             <CardDescription>

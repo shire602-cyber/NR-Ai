@@ -20,9 +20,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 function fileIcon(mime: string) {
-  if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-blue-400" />;
-  if (mime === "application/pdf") return <FileText className="w-5 h-5 text-red-400" />;
-  return <File className="w-5 h-5 text-gray-400" />;
+  if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-info" />;
+  if (mime === "application/pdf") return <FileText className="w-5 h-5 text-destructive" />;
+  return <File className="w-5 h-5 text-muted-foreground/70" />;
 }
 
 function formatBytes(bytes: number | null) {
@@ -77,8 +77,8 @@ export default function PortalDocuments() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Documents</h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <h2 className="text-xl font-semibold text-foreground">Documents</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Upload receipts and documents for NR Accounting to process.
           </p>
         </div>
@@ -93,7 +93,7 @@ export default function PortalDocuments() {
           <Button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-info hover:bg-info text-white"
           >
             {uploading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -113,23 +113,23 @@ export default function PortalDocuments() {
             </div>
           ) : documents.length === 0 ? (
             <div className="text-center py-14">
-              <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm font-medium text-gray-500">No documents yet</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No documents yet</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
                 Upload receipts or files for your accountant.
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-border">
               {documents.map((doc: any) => (
                 <div
                   key={doc.id}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-4 px-4 py-3 hover:bg-muted transition-colors"
                 >
                   <div className="flex-shrink-0">{fileIcon(doc.mimeType)}</div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
+                    <p className="text-xs text-muted-foreground/70">
                       {doc.createdAt ? format(new Date(doc.createdAt), "MMM d, yyyy") : "—"}
                       {doc.fileSize ? ` · ${formatBytes(doc.fileSize)}` : ""}
                     </p>
@@ -140,7 +140,7 @@ export default function PortalDocuments() {
                     </Badge>
                     {doc.uploadedBy && (
                       <CheckCircle2
-                        className="w-4 h-4 text-green-500"
+                        className="w-4 h-4 text-success"
                         aria-label="Received by NRA"
                       />
                     )}

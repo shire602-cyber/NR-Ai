@@ -81,10 +81,10 @@ const CATEGORIES = [
 ];
 
 const PRIORITIES = [
-  { value: "low", label: "Low", color: "bg-gray-100 text-gray-800" },
-  { value: "medium", label: "Medium", color: "bg-blue-100 text-blue-800" },
-  { value: "high", label: "High", color: "bg-orange-100 text-orange-800" },
-  { value: "urgent", label: "Urgent", color: "bg-red-100 text-red-800" },
+  { value: "low", label: "Low", color: "bg-muted text-foreground" },
+  { value: "medium", label: "Medium", color: "bg-info-subtle text-info-subtle-foreground" },
+  { value: "high", label: "High", color: "bg-warning-subtle text-warning-subtle-foreground" },
+  { value: "urgent", label: "Urgent", color: "bg-danger-subtle text-danger-subtle-foreground" },
 ];
 
 export default function ClientTasks() {
@@ -277,30 +277,30 @@ export default function ClientTasks() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <Clock className="w-4 h-4 text-blue-500" />
+            <Clock className="w-4 h-4 text-info" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.pending}</div>
+            <div className="text-2xl font-bold text-info">{stats.pending}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
+            <CheckCircle2 className="w-4 h-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
+            <div className="text-2xl font-bold text-success">{stats.completed}</div>
           </CardContent>
         </Card>
 
-        <Card className={stats.overdue > 0 ? "border-red-500" : ""}>
+        <Card className={stats.overdue > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.overdue}</div>
+            <div className="text-2xl font-bold text-destructive">{stats.overdue}</div>
           </CardContent>
         </Card>
       </div>
@@ -368,7 +368,7 @@ export default function ClientTasks() {
                     key={task.id}
                     className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
                       task.status === "completed" ? "opacity-60 bg-muted/50" : "hover-elevate"
-                    } ${status === "overdue" ? "border-red-300 bg-red-50 dark:bg-red-950/20" : ""}`}
+                    } ${status === "overdue" ? "border-destructive/30 bg-danger-subtle " : ""}`}
                     data-testid={`task-${task.id}`}
                   >
                     <Checkbox

@@ -419,9 +419,9 @@ async function readEvidenceText(file: File) {
 
 function priorityClass(priority: BookkeeperPriority | "filed") {
   if (priority === "filed" || priority === "on_track")
-    return "bg-green-100 text-green-800 border-green-200";
-  if (priority === "critical") return "bg-red-100 text-red-800 border-red-200";
-  return "bg-amber-100 text-amber-800 border-amber-200";
+    return "bg-success-subtle text-success-subtle-foreground border-success/30";
+  if (priority === "critical") return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
+  return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
 }
 
 function priorityLabel(priority: BookkeeperPriority | "filed") {
@@ -481,9 +481,9 @@ function ServiceScopeBadges({
 }
 
 function interventionClass(level: BookkeeperInterventionLevel) {
-  if (level === "high") return "bg-red-100 text-red-800 border-red-200";
-  if (level === "medium") return "bg-amber-100 text-amber-800 border-amber-200";
-  return "bg-green-100 text-green-800 border-green-200";
+  if (level === "high") return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
+  if (level === "medium") return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
+  return "bg-success-subtle text-success-subtle-foreground border-success/30";
 }
 
 function fallbackIntervention(
@@ -758,7 +758,7 @@ function OperationsBriefDialog({
                       ) : (
                         lane.blockers.slice(0, 4).map((blocker) => (
                           <div key={blocker} className="flex items-start gap-2 text-xs">
-                            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-600 shrink-0" />
+                            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-warning shrink-0" />
                             <span>{blocker}</span>
                           </div>
                         ))
@@ -1109,7 +1109,7 @@ function BookkeeperCommandCenter({
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Critical</p>
-              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <AlertTriangle className="w-4 h-4 text-destructive" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.critical ?? 0}</p>
           </CardContent>
@@ -1118,7 +1118,7 @@ function BookkeeperCommandCenter({
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 28d</p>
-              <Calendar className="w-4 h-4 text-amber-600" />
+              <Calendar className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.vatDue28Days ?? 0}</p>
           </CardContent>
@@ -1127,7 +1127,7 @@ function BookkeeperCommandCenter({
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">CT due 90d</p>
-              <Calculator className="w-4 h-4 text-blue-600" />
+              <Calculator className="w-4 h-4 text-info" />
             </div>
             <p className="text-2xl font-bold mt-1">
               {dashboard?.summary.corporateTaxDue90Days ?? 0}
@@ -1138,7 +1138,7 @@ function BookkeeperCommandCenter({
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Close blocked</p>
-              <FileText className="w-4 h-4 text-orange-600" />
+              <FileText className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.bookkeepingBlocked ?? 0}</p>
           </CardContent>
@@ -1791,7 +1791,7 @@ function BookkeeperCommandCenter({
                   </div>
                   <div className="flex gap-1">
                     {cohort.dueSoon > 0 && (
-                      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+                      <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
                         {cohort.dueSoon} due
                       </Badge>
                     )}
@@ -1838,7 +1838,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <AlertTriangle className="w-4 h-4 text-destructive" />
               Priority Queue
             </CardTitle>
           </CardHeader>
@@ -1868,7 +1868,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-blue-600" />
+              <Calculator className="w-4 h-4 text-info" />
               Corporate Tax
             </CardTitle>
           </CardHeader>
@@ -1895,7 +1895,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-orange-600" />
+              <TrendingUp className="w-4 h-4 text-warning" />
               Bookkeeping Close
             </CardTitle>
           </CardHeader>
@@ -1926,7 +1926,7 @@ function BookkeeperCommandCenter({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-600" />
+              <CheckCircle2 className="w-4 h-4 text-success" />
               Accounting Review
             </CardTitle>
           </CardHeader>
@@ -3252,7 +3252,7 @@ function VatWorkspaceDialog({
                                       {row.journalEntryId ? (
                                         <Badge
                                           variant="outline"
-                                          className="gap-1 text-emerald-600 border-emerald-600/40"
+                                          className="gap-1 text-success border-success/40"
                                           title="Posted to the general ledger"
                                         >
                                           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -3760,14 +3760,14 @@ function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"]
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
-    return <Badge className="bg-green-100 text-green-800 border-green-200">Filed</Badge>;
+    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Filed</Badge>;
   }
   if (daysUntilDue < 0) {
     return <Badge variant="destructive">Overdue</Badge>;
   }
   if (daysUntilDue <= 14) {
     return (
-      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+      <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
         Due {format(due, "MMM d")}
       </Badge>
     );
@@ -3777,7 +3777,7 @@ function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"]
 
 function StatusBadge({ active }: { active: boolean }) {
   return active ? (
-    <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
+    <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Active</Badge>
   ) : (
     <Badge variant="secondary">Inactive</Badge>
   );
@@ -4096,7 +4096,7 @@ export default function ClientPortfolio() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 30d</p>
-              <Calendar className="w-4 h-4 text-amber-600" />
+              <Calendar className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.vatDueThisMonth ?? 0}</p>
           </CardContent>
@@ -4105,7 +4105,7 @@ export default function ClientPortfolio() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Overdue AR</p>
-              <Receipt className="w-4 h-4 text-red-600" />
+              <Receipt className="w-4 h-4 text-destructive" />
             </div>
             <p className="text-2xl font-bold mt-1">{formatAed(overview?.overdueAr ?? 0)}</p>
           </CardContent>
@@ -4116,7 +4116,7 @@ export default function ClientPortfolio() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide">
                 Needs Attention
               </p>
-              <AlertTriangle className="w-4 h-4 text-orange-600" />
+              <AlertTriangle className="w-4 h-4 text-warning" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
           </CardContent>
@@ -4961,11 +4961,11 @@ export default function ClientPortfolio() {
               <div className="rounded border p-3 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Imported</span>
-                  <span className="text-green-700">{importResult.created.length}</span>
+                  <span className="text-success">{importResult.created.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Errors</span>
-                  <span className={importResult.errors.length > 0 ? "text-red-700" : ""}>
+                  <span className={importResult.errors.length > 0 ? "text-destructive" : ""}>
                     {importResult.errors.length}
                   </span>
                 </div>

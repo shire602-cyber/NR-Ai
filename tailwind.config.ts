@@ -83,6 +83,35 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        // Semantic status families — single source of truth for "paid green",
+        // "overdue red", etc. Backed by the CSS variables in index.css so
+        // light/dark both work without dark: overrides.
+        success: {
+          DEFAULT: "hsl(var(--success) / <alpha-value>)",
+          foreground: "hsl(var(--success-foreground) / <alpha-value>)",
+          subtle: "hsl(var(--success-subtle) / <alpha-value>)",
+          "subtle-foreground": "hsl(var(--success-subtle-foreground) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning) / <alpha-value>)",
+          foreground: "hsl(var(--warning-foreground) / <alpha-value>)",
+          subtle: "hsl(var(--warning-subtle) / <alpha-value>)",
+          "subtle-foreground": "hsl(var(--warning-subtle-foreground) / <alpha-value>)",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info) / <alpha-value>)",
+          foreground: "hsl(var(--info-foreground) / <alpha-value>)",
+          subtle: "hsl(var(--info-subtle) / <alpha-value>)",
+          "subtle-foreground": "hsl(var(--info-subtle-foreground) / <alpha-value>)",
+        },
+        danger: {
+          subtle: "hsl(var(--danger-subtle) / <alpha-value>)",
+          "subtle-foreground": "hsl(var(--danger-subtle-foreground) / <alpha-value>)",
+        },
+        neutral: {
+          subtle: "hsl(var(--neutral-subtle) / <alpha-value>)",
+          "subtle-foreground": "hsl(var(--neutral-subtle-foreground) / <alpha-value>)",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],

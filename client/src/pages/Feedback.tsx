@@ -108,21 +108,21 @@ export default function Feedback() {
     switch (status) {
       case "resolved":
         return (
-          <Badge className="bg-green-500">
+          <Badge className="bg-success">
             <CheckCircle className="w-3 h-3 mr-1" />
             Resolved
           </Badge>
         );
       case "in_progress":
         return (
-          <Badge className="bg-blue-500">
+          <Badge className="bg-info">
             <Clock className="w-3 h-3 mr-1" />
             In Progress
           </Badge>
         );
       case "reviewed":
         return (
-          <Badge className="bg-amber-500">
+          <Badge className="bg-warning">
             <AlertCircle className="w-3 h-3 mr-1" />
             Reviewed
           </Badge>
@@ -236,7 +236,7 @@ export default function Feedback() {
                         <Star
                           className={`w-8 h-8 ${
                             star <= formData.rating
-                              ? "fill-amber-400 text-amber-400"
+                              ? "fill-amber-400 text-warning"
                               : "text-muted-foreground"
                           }`}
                         />
@@ -350,7 +350,7 @@ export default function Feedback() {
                                 key={star}
                                 className={`w-4 h-4 ${
                                   star <= feedback.rating!
-                                    ? "fill-amber-400 text-amber-400"
+                                    ? "fill-amber-400 text-warning"
                                     : "text-muted-foreground"
                                 }`}
                               />

@@ -394,7 +394,7 @@ export default function AccountLedger() {
                 {locale === "ar" ? "إجمالي المدين" : "Total Debit"}
               </p>
               <p
-                className="text-2xl font-mono font-bold text-emerald-600"
+                className="text-2xl font-mono font-bold text-success"
                 data-testid="text-total-debit"
               >
                 {formatCurrency(ledger.totalDebit)}
@@ -407,7 +407,7 @@ export default function AccountLedger() {
                 {locale === "ar" ? "إجمالي الدائن" : "Total Credit"}
               </p>
               <p
-                className="text-2xl font-mono font-bold text-rose-600"
+                className="text-2xl font-mono font-bold text-destructive"
                 data-testid="text-total-credit"
               >
                 {formatCurrency(ledger.totalCredit)}
@@ -534,10 +534,10 @@ export default function AccountLedger() {
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-emerald-600">
+                        <TableCell className="text-right font-mono text-success">
                           {entry.debit > 0 ? formatCurrency(entry.debit) : "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-rose-600">
+                        <TableCell className="text-right font-mono text-destructive">
                           {entry.credit > 0 ? formatCurrency(entry.credit) : "-"}
                         </TableCell>
                         <TableCell

@@ -396,7 +396,7 @@ export default function CostCenters() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Income
                   </p>
-                  <p className="mt-1 text-2xl font-semibold text-green-700">
+                  <p className="mt-1 text-2xl font-semibold text-success">
                     {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
                   </p>
                 </div>
@@ -404,7 +404,7 @@ export default function CostCenters() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Expenses
                   </p>
-                  <p className="mt-1 text-2xl font-semibold text-red-700">
+                  <p className="mt-1 text-2xl font-semibold text-destructive">
                     {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
                   </p>
                 </div>
@@ -414,7 +414,7 @@ export default function CostCenters() {
                   </p>
                   <p
                     className={`mt-1 text-2xl font-semibold ${
-                      profitabilityTotals.netIncome >= 0 ? "text-green-700" : "text-red-700"
+                      profitabilityTotals.netIncome >= 0 ? "text-success" : "text-destructive"
                     }`}
                   >
                     {formatCurrency(profitabilityTotals.netIncome, "AED", locale)}
@@ -460,7 +460,7 @@ export default function CostCenters() {
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono ${
-                              row.netIncome >= 0 ? "text-green-700" : "text-red-700"
+                              row.netIncome >= 0 ? "text-success" : "text-destructive"
                             }`}
                           >
                             {formatCurrency(row.netIncome, "AED", locale)}
@@ -493,7 +493,7 @@ export default function CostCenters() {
             <CardTitle className="text-sm font-medium">Active</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{activeCount}</div>
+            <div className="text-2xl font-bold text-success">{activeCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -501,7 +501,7 @@ export default function CostCenters() {
             <CardTitle className="text-sm font-medium">Inactive</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-500">{inactiveCount}</div>
+            <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
           </CardContent>
         </Card>
       </div>
@@ -563,11 +563,11 @@ export default function CostCenters() {
                     <TableCell>{getParentName(cc.parentId)}</TableCell>
                     <TableCell>
                       {cc.isActive ? (
-                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                        <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
                           Active
                         </Badge>
                       ) : (
-                        <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+                        <Badge className="bg-muted text-foreground hover:bg-muted">
                           Inactive
                         </Badge>
                       )}
@@ -619,24 +619,24 @@ export default function CostCenters() {
           <CardContent>
             {report ? (
               <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-green-50 border-green-200">
+                <Card className="bg-success-subtle border-success/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-green-700">Income</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-green-600" />
+                    <CardTitle className="text-sm font-medium text-success">Income</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-success" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-green-700 font-mono">
+                    <div className="text-2xl font-bold text-success font-mono">
                       {formatCurrency(report.totalIncome ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="bg-red-50 border-red-200">
+                <Card className="bg-danger-subtle border-destructive/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-red-700">Expenses</CardTitle>
-                    <TrendingDown className="h-4 w-4 text-red-600" />
+                    <CardTitle className="text-sm font-medium text-destructive">Expenses</CardTitle>
+                    <TrendingDown className="h-4 w-4 text-destructive" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-red-700 font-mono">
+                    <div className="text-2xl font-bold text-destructive font-mono">
                       {formatCurrency(report.totalExpenses ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
@@ -644,23 +644,23 @@ export default function CostCenters() {
                 <Card
                   className={
                     (report.netIncome ?? 0) >= 0
-                      ? "bg-blue-50 border-blue-200"
-                      : "bg-orange-50 border-orange-200"
+                      ? "bg-info-subtle border-info/30"
+                      : "bg-warning-subtle border-warning/30"
                   }
                 >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle
-                      className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                      className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
                     >
                       Net
                     </CardTitle>
                     <DollarSign
-                      className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-blue-600" : "text-orange-600"}`}
+                      className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
                     />
                   </CardHeader>
                   <CardContent>
                     <div
-                      className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                      className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
                     >
                       {formatCurrency(report.netIncome ?? 0, "AED", locale)}
                     </div>

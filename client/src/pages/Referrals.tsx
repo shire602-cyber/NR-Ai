@@ -24,6 +24,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { ReferralCode, Referral } from "@shared/schema";
+import { formatCurrency } from "@/lib/format";
 
 interface ReferralStats {
   code: string | null;
@@ -79,21 +80,21 @@ export default function Referrals() {
     switch (status) {
       case "rewarded":
         return (
-          <Badge className="bg-green-500">
+          <Badge className="bg-success">
             <Trophy className="w-3 h-3 mr-1" />
             Rewarded
           </Badge>
         );
       case "qualified":
         return (
-          <Badge className="bg-blue-500">
+          <Badge className="bg-info">
             <CheckCircle className="w-3 h-3 mr-1" />
             Qualified
           </Badge>
         );
       case "signed_up":
         return (
-          <Badge className="bg-amber-500">
+          <Badge className="bg-warning">
             <Users className="w-3 h-3 mr-1" />
             Signed Up
           </Badge>
@@ -145,7 +146,7 @@ export default function Referrals() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Successful</CardTitle>
-                <CheckCircle className="h-4 w-4 text-green-500" />
+                <CheckCircle className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-successful">
@@ -158,7 +159,7 @@ export default function Referrals() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Pending</CardTitle>
-                <Clock className="h-4 w-4 text-amber-500" />
+                <Clock className="h-4 w-4 text-warning" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-pending">
@@ -171,18 +172,18 @@ export default function Referrals() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Rewards Earned</CardTitle>
-                <DollarSign className="h-4 w-4 text-green-500" />
+                <DollarSign className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-rewards">
-                  AED {(stats?.totalRewardsEarned || 0).toFixed(2)}
+                  {formatCurrency(stats?.totalRewardsEarned || 0)}
                 </div>
                 <p className="text-xs text-muted-foreground">Total credits earned</p>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="bg-gradient-to-r from-primary/10 to-primary/5">
+          <Card className="">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />

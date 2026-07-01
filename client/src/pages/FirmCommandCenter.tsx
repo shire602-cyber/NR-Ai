@@ -149,26 +149,26 @@ function formatAed(n: number): string {
 function ratingColor(rating: ClientHealthRow["rating"]): string {
   switch (rating) {
     case "excellent":
-      return "bg-emerald-100 text-emerald-800";
+      return "bg-success-subtle text-success-subtle-foreground";
     case "good":
-      return "bg-green-100 text-green-800";
+      return "bg-success-subtle text-success-subtle-foreground";
     case "fair":
-      return "bg-amber-100 text-amber-800";
+      return "bg-warning-subtle text-warning-subtle-foreground";
     case "poor":
-      return "bg-orange-100 text-orange-800";
+      return "bg-warning-subtle text-warning-subtle-foreground";
     case "critical":
-      return "bg-red-100 text-red-800";
+      return "bg-danger-subtle text-danger-subtle-foreground";
   }
 }
 
 function severityColor(s: Severity): string {
   switch (s) {
     case "critical":
-      return "bg-red-100 text-red-800 border-red-300";
+      return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
     case "warning":
-      return "bg-amber-100 text-amber-800 border-amber-300";
+      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
     case "info":
-      return "bg-blue-100 text-blue-800 border-blue-300";
+      return "bg-info-subtle text-info-subtle-foreground border-info/30";
   }
 }
 
@@ -200,7 +200,7 @@ function MetricCard({
         {trend && (
           <div
             className={`text-xs mt-2 flex items-center gap-1 ${
-              isUp ? "text-emerald-600" : "text-red-600"
+              isUp ? "text-success" : "text-destructive"
             }`}
           >
             {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
@@ -392,7 +392,7 @@ export default function FirmCommandCenter() {
     return (
       <div
         role="alert"
-        className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-900 p-6 text-sm"
+        className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="firm-command-center-error"
       >
         <div className="font-medium mb-1">Failed to load firm dashboard.</div>
@@ -478,12 +478,12 @@ export default function FirmCommandCenter() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <AlertTriangle className="w-4 h-4 text-destructive" />
               Critical alerts
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold text-red-600">
+            <div className="text-4xl font-bold text-destructive">
               {summary?.criticalAlertCount ?? "—"}
             </div>
           </CardContent>
@@ -491,12 +491,12 @@ export default function FirmCommandCenter() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
-              <Bell className="w-4 h-4 text-amber-600" />
+              <Bell className="w-4 h-4 text-warning" />
               Warnings
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold text-amber-600">
+            <div className="text-4xl font-bold text-warning">
               {summary?.warningAlertCount ?? "—"}
             </div>
           </CardContent>
@@ -822,7 +822,7 @@ function DeltaCard({ label, value }: { label: string; value: number }) {
         <div className="text-sm text-muted-foreground">{label}</div>
         <div
           className={`text-2xl font-bold flex items-center gap-1 ${
-            positive ? "text-emerald-600" : "text-red-600"
+            positive ? "text-success" : "text-destructive"
           }`}
         >
           {positive ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}

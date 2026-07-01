@@ -145,7 +145,7 @@ export default function MigrationGuides() {
             <div className="grid gap-3">
               {checklist.map((item) => (
                 <div key={item} className="flex gap-3 rounded-lg border bg-background p-4 text-sm">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                   <span className="text-muted-foreground">{item}</span>
                 </div>
               ))}

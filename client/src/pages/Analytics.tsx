@@ -126,7 +126,7 @@ export default function Analytics() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Errors</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-errors">
@@ -293,12 +293,12 @@ export default function Analytics() {
                           <div
                             className={`w-2 h-2 rounded-full ${
                               event.eventType === "error"
-                                ? "bg-red-500"
+                                ? "bg-destructive"
                                 : event.eventType === "page_view"
-                                  ? "bg-blue-500"
+                                  ? "bg-info"
                                   : event.eventType === "feature_use"
-                                    ? "bg-green-500"
-                                    : "bg-gray-500"
+                                    ? "bg-success"
+                                    : "bg-muted-foreground"
                             }`}
                           />
                           <div>

@@ -419,8 +419,8 @@ export default function ClientProfile() {
                 <Badge
                   className={
                     stats.vatStatus.status === "filed"
-                      ? "bg-green-100 text-green-800 border-green-200"
-                      : "bg-amber-100 text-amber-800 border-amber-200"
+                      ? "bg-success-subtle text-success-subtle-foreground border-success/30"
+                      : "bg-warning-subtle text-warning-subtle-foreground border-warning/30"
                   }
                 >
                   {stats.vatStatus.status.replace(/_/g, " ")}

@@ -142,7 +142,7 @@ export default function Services() {
           ? "Complete VAT registration with FTA and ongoing quarterly/monthly filing support."
           : "تسجيل كامل لضريبة القيمة المضافة مع الهيئة الاتحادية للضرائب ودعم التقديم الربعي/الشهري.",
       color: "from-blue-500 to-cyan-600",
-      bgColor: "bg-blue-500/10",
+      bgColor: "bg-info/10",
     },
     {
       icon: Building2,
@@ -152,7 +152,7 @@ export default function Services() {
           ? "UAE Corporate Tax registration and compliance setup for businesses over AED 375,000."
           : "تسجيل ضريبة الشركات الإماراتية وإعداد الامتثال للشركات التي تزيد عن 375,000 درهم.",
       color: "from-purple-500 to-violet-600",
-      bgColor: "bg-purple-500/10",
+      bgColor: "bg-chart-5/10",
     },
     {
       icon: FileX,
@@ -162,7 +162,7 @@ export default function Services() {
           ? "Smooth VAT deregistration process when your business no longer meets thresholds."
           : "عملية إلغاء تسجيل سلسة عندما لم يعد نشاطك يستوفي الحدود.",
       color: "from-red-500 to-rose-600",
-      bgColor: "bg-red-500/10",
+      bgColor: "bg-destructive/10",
     },
     {
       icon: FileCheck,
@@ -172,7 +172,7 @@ export default function Services() {
           ? "Complete corporate tax deregistration for business closures or restructuring."
           : "إلغاء تسجيل ضريبة الشركات الكامل لإغلاق الأعمال أو إعادة الهيكلة.",
       color: "from-orange-500 to-amber-600",
-      bgColor: "bg-orange-500/10",
+      bgColor: "bg-warning/10",
     },
     {
       icon: Calculator,
@@ -183,7 +183,7 @@ export default function Services() {
           ? "Accurate and timely VAT and Corporate Tax return preparation and submission."
           : "إعداد وتقديم إقرارات ضريبة القيمة المضافة وضريبة الشركات بدقة وفي الوقت المحدد.",
       color: "from-green-500 to-emerald-600",
-      bgColor: "bg-green-500/10",
+      bgColor: "bg-success/10",
     },
     {
       icon: BookOpen,
@@ -193,7 +193,7 @@ export default function Services() {
           ? "Bring your books up to date with historical data entry and reconciliation."
           : "قم بتحديث دفاترك مع إدخال البيانات التاريخية والمطابقة.",
       color: "from-teal-500 to-cyan-600",
-      bgColor: "bg-teal-500/10",
+      bgColor: "bg-success/10",
     },
     {
       icon: Sparkles,
@@ -203,7 +203,7 @@ export default function Services() {
           ? "Modern bookkeeping with AI automation for expense categorization and data entry."
           : "مسك دفاتر حديث مع أتمتة الذكاء الاصطناعي لتصنيف المصروفات وإدخال البيانات.",
       color: "from-violet-500 to-purple-600",
-      bgColor: "bg-violet-500/10",
+      bgColor: "bg-chart-5/10",
     },
     {
       icon: BarChart3,
@@ -213,7 +213,7 @@ export default function Services() {
           ? "Professional P&L statements, balance sheets, and cash flow reports."
           : "قوائم الأرباح والخسائر والميزانيات وتقارير التدفق النقدي الاحترافية.",
       color: "from-indigo-500 to-blue-600",
-      bgColor: "bg-indigo-500/10",
+      bgColor: "bg-info/10",
     },
     {
       icon: Shield,
@@ -223,7 +223,7 @@ export default function Services() {
           ? "Pre-audit reviews and support during FTA audits and compliance checks."
           : "مراجعات ما قبل التدقيق والدعم أثناء تدقيقات الهيئة وفحوصات الامتثال.",
       color: "from-emerald-500 to-green-600",
-      bgColor: "bg-emerald-500/10",
+      bgColor: "bg-success/10",
     },
   ];
 
@@ -279,8 +279,8 @@ export default function Services() {
         locale === "en"
           ? "Instantly extract merchant, amount, date, and VAT from receipts using advanced OCR technology."
           : "استخراج فوري للتاجر والمبلغ والتاريخ وضريبة القيمة المضافة من الإيصالات باستخدام تقنية التعرف الضوئي المتقدمة.",
-      bgColor: "bg-blue-500/10",
-      iconColor: "text-blue-500",
+      bgColor: "bg-info/10",
+      iconColor: "text-info",
     },
     {
       icon: Brain,
@@ -289,8 +289,8 @@ export default function Services() {
         locale === "en"
           ? "AI-assisted categorisation prompts help your team review expenses against the chart of accounts."
           : "تساعد تنبيهات التصنيف المدعومة بالذكاء الاصطناعي فريقك على مراجعة المصروفات مقابل دليل الحسابات.",
-      bgColor: "bg-purple-500/10",
-      iconColor: "text-purple-500",
+      bgColor: "bg-chart-5/10",
+      iconColor: "text-chart-5",
     },
     {
       icon: Zap,
@@ -299,8 +299,8 @@ export default function Services() {
         locale === "en"
           ? "Upload multiple receipts at once. Our AI processes them in parallel for maximum efficiency."
           : "ارفع عدة إيصالات دفعة واحدة. الذكاء الاصطناعي يعالجها بالتوازي لأقصى كفاءة.",
-      bgColor: "bg-amber-500/10",
-      iconColor: "text-amber-500",
+      bgColor: "bg-warning/10",
+      iconColor: "text-warning",
     },
     {
       icon: FileSearch,
@@ -309,8 +309,8 @@ export default function Services() {
         locale === "en"
           ? "Automatically extract and validate TRN numbers, invoice details, and payment terms."
           : "استخراج والتحقق تلقائياً من أرقام التسجيل الضريبي وتفاصيل الفواتير وشروط الدفع.",
-      bgColor: "bg-green-500/10",
-      iconColor: "text-green-500",
+      bgColor: "bg-success/10",
+      iconColor: "text-success",
     },
   ];
 
@@ -322,8 +322,8 @@ export default function Services() {
         locale === "en"
           ? "Get personalized financial advice, cash flow predictions, and strategic recommendations from your AI advisor."
           : "احصل على نصائح مالية مخصصة وتنبؤات التدفق النقدي وتوصيات استراتيجية من مستشارك الذكي.",
-      bgColor: "bg-violet-500/10",
-      iconColor: "text-violet-500",
+      bgColor: "bg-chart-5/10",
+      iconColor: "text-chart-5",
     },
     {
       icon: LineChart,
@@ -332,8 +332,8 @@ export default function Services() {
         locale === "en"
           ? "AI-powered forecasting for revenue, expenses, and cash flow based on historical patterns."
           : "تنبؤات مدعومة بالذكاء الاصطناعي للإيرادات والمصروفات والتدفق النقدي بناءً على الأنماط التاريخية.",
-      bgColor: "bg-cyan-500/10",
-      iconColor: "text-cyan-500",
+      bgColor: "bg-info/10",
+      iconColor: "text-info",
     },
     {
       icon: AlertTriangle,
@@ -342,8 +342,8 @@ export default function Services() {
         locale === "en"
           ? "Automatically flag unusual transactions, duplicate payments, and potential fraud."
           : "تحديد تلقائي للمعاملات غير العادية والمدفوعات المكررة والاحتيال المحتمل.",
-      bgColor: "bg-red-500/10",
-      iconColor: "text-red-500",
+      bgColor: "bg-destructive/10",
+      iconColor: "text-destructive",
     },
     {
       icon: Mic,
@@ -352,8 +352,8 @@ export default function Services() {
         locale === "en"
           ? "Create invoices, log expenses, and query reports using natural voice commands in English or Arabic."
           : "إنشاء الفواتير وتسجيل المصروفات والاستعلام عن التقارير باستخدام الأوامر الصوتية بالإنجليزية أو العربية.",
-      bgColor: "bg-pink-500/10",
-      iconColor: "text-pink-500",
+      bgColor: "bg-chart-5/10",
+      iconColor: "text-chart-5",
     },
     {
       icon: Target,
@@ -362,8 +362,8 @@ export default function Services() {
         locale === "en"
           ? "AI-assisted tax review prompts that help accountants spot planning and documentation gaps."
           : "تنبيهات مراجعة ضريبية مدعومة بالذكاء الاصطناعي تساعد المحاسبين على اكتشاف فجوات التخطيط والتوثيق.",
-      bgColor: "bg-emerald-500/10",
-      iconColor: "text-emerald-500",
+      bgColor: "bg-success/10",
+      iconColor: "text-success",
     },
     {
       icon: Workflow,
@@ -372,8 +372,8 @@ export default function Services() {
         locale === "en"
           ? "Set up automated rules for recurring transactions, approvals, and reminders."
           : "إعداد قواعد آلية للمعاملات المتكررة والموافقات والتذكيرات.",
-      bgColor: "bg-indigo-500/10",
-      iconColor: "text-indigo-500",
+      bgColor: "bg-info/10",
+      iconColor: "text-info",
     },
   ];
 
@@ -395,7 +395,7 @@ export default function Services() {
           <div className="flex items-center justify-between h-16">
             <Link href="/">
               <span
-                className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent cursor-pointer"
+                className="text-xl font-bold text-primary cursor-pointer"
                 data-testid="link-logo"
               >
                 Muhasib.ai
@@ -428,7 +428,7 @@ export default function Services() {
 
       {/* Hero Section - Two Column Layout */}
       <section className="relative overflow-hidden pt-32 pb-20 lg:pb-32 min-h-screen flex items-center">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5 dark:from-primary/10 dark:via-transparent dark:to-accent/10" />
+        <div className="absolute inset-0 dark:dark:dark:" />
         <div
           className="absolute inset-0 bg-grid-white/5 dark:bg-grid-white/5"
           style={{ backgroundSize: "40px 40px" }}
@@ -455,7 +455,7 @@ export default function Services() {
                 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight"
                 data-testid="text-hero-headline"
               >
-                <span className="bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent">
+                <span className="text-primary">
                   {t.hero.headline}
                 </span>
                 <br />
@@ -512,26 +512,26 @@ export default function Services() {
               <div className="relative">
                 {/* Glassmorphic Card */}
                 <div
-                  className="relative backdrop-blur-xl bg-white/10 dark:bg-white/5 border border-white/20 dark:border-white/10 rounded-3xl p-8 shadow-2xl"
+                  className="relative backdrop-blur-xl bg-card/10 dark:bg-card/5 border border-white/20 dark:border-white/10 rounded-3xl p-8 shadow-2xl"
                   data-testid="hero-visual-card"
                 >
                   {/* Gradient Glow */}
-                  <div className="absolute -inset-4 bg-gradient-to-br from-primary/30 via-accent/20 to-primary/30 rounded-3xl blur-2xl opacity-60" />
+                  <div className="absolute -inset-4 rounded-3xl blur-2xl opacity-60" />
 
                   <div className="relative z-10 space-y-6">
                     {/* Service Icons Grid */}
                     <div className="grid grid-cols-3 gap-4">
                       {[
-                        { icon: FileText, color: "bg-blue-500/20", iconColor: "text-blue-500" },
-                        { icon: Calculator, color: "bg-green-500/20", iconColor: "text-green-500" },
+                        { icon: FileText, color: "bg-info/20", iconColor: "text-info" },
+                        { icon: Calculator, color: "bg-success/20", iconColor: "text-success" },
                         {
                           icon: BarChart3,
-                          color: "bg-purple-500/20",
-                          iconColor: "text-purple-500",
+                          color: "bg-chart-5/20",
+                          iconColor: "text-chart-5",
                         },
-                        { icon: Shield, color: "bg-amber-500/20", iconColor: "text-amber-500" },
-                        { icon: Sparkles, color: "bg-violet-500/20", iconColor: "text-violet-500" },
-                        { icon: Building2, color: "bg-teal-500/20", iconColor: "text-teal-500" },
+                        { icon: Shield, color: "bg-warning/20", iconColor: "text-warning" },
+                        { icon: Sparkles, color: "bg-chart-5/20", iconColor: "text-chart-5" },
+                        { icon: Building2, color: "bg-success/20", iconColor: "text-success" },
                       ].map((item, index) => (
                         <div
                           key={index}
@@ -546,7 +546,7 @@ export default function Services() {
                     {/* Trust Indicators */}
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 text-sm" data-testid="hero-trust-1">
-                        <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
                         <span className="text-foreground/80">
                           {locale === "en"
                             ? "UAE Tax Workflow Support"
@@ -554,13 +554,13 @@ export default function Services() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-sm" data-testid="hero-trust-2">
-                        <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
                         <span className="text-foreground/80">
                           {locale === "en" ? "AI-Powered Automation" : "أتمتة بالذكاء الاصطناعي"}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-sm" data-testid="hero-trust-3">
-                        <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
                         <span className="text-foreground/80">
                           {locale === "en"
                             ? "Bilingual Support (EN/AR)"
@@ -572,7 +572,7 @@ export default function Services() {
                     {/* Floating Badge */}
                     <div className="flex justify-center">
                       <Badge
-                        className="bg-gradient-to-r from-primary to-accent text-white border-0 px-4 py-2 text-sm font-semibold"
+                        className="bg-primary text-primary-foreground border-0 px-4 py-2 text-sm font-semibold"
                         data-testid="hero-badge-cta"
                       >
                         <Star className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -583,8 +583,8 @@ export default function Services() {
                 </div>
 
                 {/* Decorative Elements */}
-                <div className="absolute -top-4 -right-4 w-24 h-24 bg-gradient-to-br from-primary/40 to-accent/40 rounded-full blur-2xl" />
-                <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-gradient-to-tr from-accent/30 to-primary/30 rounded-full blur-2xl" />
+                <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full blur-2xl" />
+                <div className="absolute -bottom-4 -left-4 w-32 h-32 rounded-full blur-2xl" />
               </div>
             </div>
           </div>
@@ -656,7 +656,7 @@ export default function Services() {
                 style={{ animationDelay: `${150 + index * 50}ms`, animationDuration: "600ms" }}
                 data-testid={`card-service-${index}`}
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-white/0 via-white/0 to-white/5 dark:from-white/0 dark:via-white/0 dark:to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="absolute inset-0 dark:dark:dark:opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
                 <div
                   className={`w-14 h-14 rounded-xl ${service.bgColor} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform relative z-10`}
@@ -691,7 +691,7 @@ export default function Services() {
             style={{ animationDelay: "200ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 px-4 py-1.5"
+              className="mb-4 bg-success/10 text-success border-success/20 px-4 py-1.5"
               data-testid="badge-why-choose"
             >
               <CheckCircle2 className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -739,7 +739,7 @@ export default function Services() {
 
       {/* AI Capabilities Section */}
       <section className="py-20 lg:py-28 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-blue-500/5 dark:from-violet-500/10 dark:via-transparent dark:to-blue-500/10" />
+        <div className="absolute inset-0 dark:" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-8">
           <div
@@ -747,7 +747,7 @@ export default function Services() {
             style={{ animationDelay: "250ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20 px-4 py-1.5"
+              className="mb-4 bg-chart-5/10 text-chart-5 border-chart-5/20 px-4 py-1.5"
               data-testid="badge-ai"
             >
               <Brain className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -771,7 +771,7 @@ export default function Services() {
               style={{ animationDelay: "300ms", animationDuration: "600ms" }}
             >
               <Badge
-                className="bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30 px-4 py-2 text-sm font-semibold"
+                className="bg-success/20 text-success border-success/30 px-4 py-2 text-sm font-semibold"
                 data-testid="badge-ai-current"
               >
                 <CheckCircle2 className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -816,7 +816,7 @@ export default function Services() {
               style={{ animationDelay: "500ms", animationDuration: "600ms" }}
             >
               <Badge
-                className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 px-4 py-2 text-sm font-semibold"
+                className="bg-warning/20 text-warning border-warning/30 px-4 py-2 text-sm font-semibold"
                 data-testid="badge-ai-future"
               >
                 <Rocket className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -868,7 +868,7 @@ export default function Services() {
             style={{ animationDelay: "300ms", animationDuration: "600ms" }}
           >
             <Badge
-              className="mb-4 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 px-4 py-1.5"
+              className="mb-4 bg-info/10 text-info border-info/20 px-4 py-1.5"
               data-testid="badge-clients"
             >
               <Users className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
@@ -910,7 +910,7 @@ export default function Services() {
 
       {/* Final CTA Section */}
       <section className="py-20 lg:py-28 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/5 to-primary/10 dark:from-primary/20 dark:via-accent/10 dark:to-primary/20" />
+        <div className="absolute inset-0 dark:dark:dark:" />
         <div
           className="absolute inset-0 bg-grid-white/5 dark:bg-grid-white/5"
           style={{ backgroundSize: "40px 40px" }}
@@ -956,15 +956,15 @@ export default function Services() {
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
             <span className="flex items-center gap-2" data-testid="text-cta-free">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
+              <CheckCircle2 className="w-4 h-4 text-success" />
               {t.cta.freeConsult}
             </span>
             <span className="flex items-center gap-2" data-testid="text-cta-response">
-              <Clock className="w-4 h-4 text-blue-500" />
+              <Clock className="w-4 h-4 text-info" />
               {t.cta.response}
             </span>
             <span className="flex items-center gap-2" data-testid="text-cta-commitment">
-              <Handshake className="w-4 h-4 text-purple-500" />
+              <Handshake className="w-4 h-4 text-chart-5" />
               {t.cta.noCommitment}
             </span>
           </div>

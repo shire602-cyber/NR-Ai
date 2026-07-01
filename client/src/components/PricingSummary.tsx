@@ -49,7 +49,7 @@ export function PricingSummary() {
       highlight: false,
       badge: null,
       gradient: "from-slate-400 to-slate-500",
-      iconColor: "text-slate-600",
+      iconColor: "text-muted-foreground",
       iconBg: "from-slate-500/10 to-slate-600/5",
     },
     {
@@ -67,7 +67,7 @@ export function PricingSummary() {
       highlight: false,
       badge: "recommended",
       gradient: "from-blue-400 to-blue-600",
-      iconColor: "text-blue-600",
+      iconColor: "text-info",
       iconBg: "from-blue-500/10 to-blue-600/5",
     },
     {
@@ -95,7 +95,7 @@ export function PricingSummary() {
       highlight: true,
       badge: "mostPopular",
       gradient: "from-emerald-400 to-teal-600",
-      iconColor: "text-emerald-600",
+      iconColor: "text-success",
       iconBg: "from-emerald-500/10 to-emerald-600/5",
     },
     {
@@ -118,7 +118,7 @@ export function PricingSummary() {
       highlight: false,
       badge: null,
       gradient: "from-purple-400 to-purple-600",
-      iconColor: "text-purple-600",
+      iconColor: "text-chart-5",
       iconBg: "from-purple-500/10 to-purple-600/5",
     },
   ];
@@ -137,7 +137,7 @@ export function PricingSummary() {
         <Switch
           checked={isYearly}
           onCheckedChange={setIsYearly}
-          className="data-[state=checked]:bg-emerald-600"
+          className="data-[state=checked]:bg-success"
         />
         <span
           className={`text-sm font-medium transition-colors ${isYearly ? "text-foreground" : "text-muted-foreground"}`}
@@ -152,7 +152,7 @@ export function PricingSummary() {
               exit={{ opacity: 0, scale: 0.8, x: -10 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
             >
-              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800">
+              <Badge className="bg-success-subtle text-success border-success/30 ">
                 {t.save20}
               </Badge>
             </motion.div>
@@ -172,13 +172,13 @@ export function PricingSummary() {
                 <Card
                   className={`relative h-full flex flex-col overflow-hidden transition-all duration-300 ${
                     plan.highlight
-                      ? "border-emerald-500 dark:border-emerald-400 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/20 scale-[1.02] lg:scale-105"
+                      ? "border-success shadow-lg shadow-emerald-500/10 ring-1 ring-success/20 scale-[1.02] lg:scale-105"
                       : "hover:border-foreground/20"
                   }`}
                 >
                   {/* Top accent bar */}
                   <div
-                    className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${plan.gradient}`}
+                    className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`}
                   />
 
                   <CardHeader className="pb-3">
@@ -189,7 +189,7 @@ export function PricingSummary() {
                           variant={plan.badge === "mostPopular" ? "default" : "secondary"}
                           className={
                             plan.badge === "mostPopular"
-                              ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600"
+                              ? "bg-success text-white border-success hover:bg-success"
                               : ""
                           }
                         >
@@ -202,7 +202,7 @@ export function PricingSummary() {
                     {/* Icon + Name */}
                     <div className="flex items-center gap-2.5 mb-1">
                       <div
-                        className={`h-9 w-9 rounded-xl bg-gradient-to-br ${plan.iconBg} flex items-center justify-center`}
+                        className={`h-9 w-9 rounded-xl ${plan.iconBg} flex items-center justify-center`}
                       >
                         <PlanIcon className={`h-4.5 w-4.5 ${plan.iconColor}`} />
                       </div>
@@ -236,7 +236,7 @@ export function PricingSummary() {
                           <Check
                             className={`h-4 w-4 mt-0.5 shrink-0 ${
                               plan.highlight
-                                ? "text-emerald-600 dark:text-emerald-400"
+                                ? "text-success "
                                 : "text-muted-foreground"
                             }`}
                           />
@@ -255,9 +255,9 @@ export function PricingSummary() {
                         variant={plan.variant}
                         className={`w-full ${
                           plan.highlight
-                            ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-500/25"
+                            ? "bg-success text-success-foreground hover:bg-success/90 shadow-sm"
                             : plan.id === "starter"
-                              ? "bg-blue-600 text-white hover:bg-blue-700"
+                              ? "bg-info text-white hover:bg-info"
                               : ""
                         }`}
                       >
@@ -278,7 +278,7 @@ export function PricingSummary() {
         <Link href="/pricing">
           <Button
             variant="ghost"
-            className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+            className="text-success hover:text-success "
           >
             {t.viewAll}
             <ArrowRight className="h-4 w-4 ms-1" />

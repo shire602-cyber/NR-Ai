@@ -555,15 +555,15 @@ export default function Invoices() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case "paid":
-        return "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400";
+        return "bg-success-subtle text-success ";
       case "partial":
-        return "bg-teal-100 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400";
+        return "bg-success-subtle text-success ";
       case "sent":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400";
+        return "bg-info-subtle text-info ";
       case "void":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400";
+        return "bg-muted text-foreground ";
       default:
-        return "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400";
+        return "bg-warning-subtle text-warning ";
     }
   };
 
@@ -1260,7 +1260,7 @@ export default function Invoices() {
                             {(invoice as any).einvoiceStatus && (
                               <Badge
                                 variant="outline"
-                                className="ml-1 text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200"
+                                className="ml-1 text-[10px] px-1 py-0 bg-info-subtle text-info border-info/30"
                               >
                                 E
                               </Badge>
@@ -1391,7 +1391,7 @@ export default function Invoices() {
                                 title="Generate E-Invoice"
                                 data-testid={`button-einvoice-${invoice.id}`}
                               >
-                                <FileCode className="w-4 h-4 text-blue-500" />
+                                <FileCode className="w-4 h-4 text-info" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1408,7 +1408,7 @@ export default function Invoices() {
                                 }}
                                 data-testid={`button-add-payment-${invoice.id}`}
                               >
-                                <DollarSign className="w-4 h-4 text-green-600" />
+                                <DollarSign className="w-4 h-4 text-success" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1433,7 +1433,7 @@ export default function Invoices() {
                                 }}
                                 data-testid={`button-view-payments-${invoice.id}`}
                               >
-                                <FileText className="w-4 h-4 text-blue-500" />
+                                <FileText className="w-4 h-4 text-info" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1454,7 +1454,7 @@ export default function Invoices() {
                                 data-testid={`button-set-recurring-${invoice.id}`}
                               >
                                 <RefreshCw
-                                  className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-purple-500" : "text-muted-foreground"}`}
+                                  className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-chart-5" : "text-muted-foreground"}`}
                                 />
                               </Button>
                               {(invoice as any).invoiceType !== "credit_note" && (
@@ -1474,7 +1474,7 @@ export default function Invoices() {
                                   disabled={createCreditNoteMutation.isPending}
                                   data-testid={`button-credit-note-${invoice.id}`}
                                 >
-                                  <RotateCcw className="w-4 h-4 text-orange-500" />
+                                  <RotateCcw className="w-4 h-4 text-warning" />
                                 </Button>
                               )}
                               <AlertDialog>
@@ -1605,7 +1605,7 @@ export default function Invoices() {
                               <FormDescription>
                                 Display your company logo at the top of invoices
                                 {!company.logoUrl && (
-                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                  <span className="block text-xs text-warning mt-1">
                                     Note: Set your logo in Company Profile first
                                   </span>
                                 )}
@@ -1633,7 +1633,7 @@ export default function Invoices() {
                               <FormDescription>
                                 Display your business address on invoices
                                 {!company.businessAddress && (
-                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                  <span className="block text-xs text-warning mt-1">
                                     Note: Set your address in Company Profile first
                                   </span>
                                 )}
@@ -1661,7 +1661,7 @@ export default function Invoices() {
                               <FormDescription>
                                 Display your business phone number on invoices
                                 {!company.contactPhone && (
-                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                  <span className="block text-xs text-warning mt-1">
                                     Note: Set your phone in Company Profile first
                                   </span>
                                 )}
@@ -1689,7 +1689,7 @@ export default function Invoices() {
                               <FormDescription>
                                 Display your business email on invoices
                                 {!company.contactEmail && (
-                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                  <span className="block text-xs text-warning mt-1">
                                     Note: Set your email in Company Profile first
                                   </span>
                                 )}
@@ -1717,7 +1717,7 @@ export default function Invoices() {
                               <FormDescription>
                                 Display your website URL on invoices
                                 {!company.websiteUrl && (
-                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                  <span className="block text-xs text-warning mt-1">
                                     Note: Set your website in Company Profile first
                                   </span>
                                 )}
@@ -1818,7 +1818,7 @@ export default function Invoices() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="w-5 h-5 text-yellow-500" />
+              <XCircle className="w-5 h-5 text-warning" />
               Similar Invoices Found
             </DialogTitle>
             <DialogDescription>
@@ -1882,7 +1882,7 @@ export default function Invoices() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="w-5 h-5 text-purple-500" />
+              <RefreshCw className="w-5 h-5 text-chart-5" />
               Recurring Invoice Settings
             </DialogTitle>
             <DialogDescription>
@@ -2013,7 +2013,7 @@ export default function Invoices() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-600" />
+              <DollarSign className="w-5 h-5 text-success" />
               Record Payment
             </DialogTitle>
             <DialogDescription>
