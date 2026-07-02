@@ -118,6 +118,12 @@ export default {
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
       },
+      boxShadow: {
+        // Premium, dark-aware card elevation (defined in index.css). Every
+        // <Card> uses `shadow-card-soft`; interactive cards lift to `-hover`.
+        "card-soft": "var(--card-shadow)",
+        "card-hover": "var(--card-shadow-hover)",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

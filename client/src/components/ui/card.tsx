@@ -2,13 +2,19 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Affordant surface: lifts and deepens its shadow on hover. */
+  interactive?: boolean;
+}
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, interactive, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
         "shadcn-card relative rounded-xl border bg-card border-card-border text-card-foreground",
-        "shadow-card-soft transition-shadow duration-300",
+        "shadow-card-soft transition-[box-shadow,transform] duration-300 ease-out",
+        interactive && "cursor-pointer hover:-translate-y-0.5 hover:shadow-card-hover",
         className
       )}
       {...props}
