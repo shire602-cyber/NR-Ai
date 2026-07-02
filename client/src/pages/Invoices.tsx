@@ -718,18 +718,18 @@ export default function Invoices() {
       <PageHeader
         eyebrow="Sales"
         title={t.invoices}
-        description="Manage invoices and customize their appearance"
+        description={(t as any).manageInvoices ?? "Manage invoices and customize their appearance"}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="invoices" data-testid="tab-invoices">
             <FileText className="w-4 h-4 mr-2" />
-            Invoices
+            {t.invoices}
           </TabsTrigger>
           <TabsTrigger value="branding" data-testid="tab-branding">
             <Palette className="w-4 h-4 mr-2" />
-            Invoice Branding
+            {(t as any).invoiceBranding ?? "Invoice Branding"}
           </TabsTrigger>
         </TabsList>
 
@@ -738,7 +738,9 @@ export default function Invoices() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-4 flex-wrap">
-                  <span className="text-sm font-medium">Filter by date:</span>
+                  <span className="text-sm font-medium">
+                    {(t as any).filterByDate ?? "Filter by date:"}
+                  </span>
                   <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
                 </div>
                 <div className="flex items-center gap-2">
@@ -1196,7 +1198,7 @@ export default function Invoices() {
                         <TableHead className="font-semibold">{t.date}</TableHead>
                         <TableHead className="font-semibold text-right">{t.total}</TableHead>
                         <TableHead className="font-semibold text-center">{t.status}</TableHead>
-                        <TableHead className="font-semibold text-center">Actions</TableHead>
+                        <TableHead className="font-semibold text-center">{t.actions}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <VirtualizedInvoiceRows
@@ -1522,7 +1524,7 @@ export default function Invoices() {
                                 title={
                                   dateRange.from || dateRange.to
                                     ? "No invoices in this date range"
-                                    : "No invoices yet"
+                                    : ((t as any).noInvoicesYet ?? "No invoices yet")
                                 }
                                 description={
                                   dateRange.from || dateRange.to
@@ -1532,7 +1534,7 @@ export default function Invoices() {
                                 action={
                                   !dateRange.from && !dateRange.to
                                     ? {
-                                        label: "New invoice",
+                                        label: (t as any).newInvoiceCta ?? "New invoice",
                                         icon: Plus,
                                         onClick: () => setDialogOpen(true),
                                         testId: "button-create-first-invoice",
