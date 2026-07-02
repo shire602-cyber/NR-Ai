@@ -122,24 +122,28 @@ export function RTLProvider({ children }: RTLProviderProps) {
 
 let fontLoaded = false;
 
+/**
+ * Load the Arabic UI fonts (Cairo + Noto Sans Arabic) the first time RTL is
+ * activated. Self-hosted via Fontsource and dynamically imported so they add
+ * zero weight for English-only users and never hit an external font CDN.
+ */
 function loadArabicFont(): void {
   if (fontLoaded) return;
-
-  // Check if the Google Fonts link is already in the document
-  const existingLink = document.querySelector('link[href*="fonts.googleapis.com"][href*="Cairo"]');
-  if (existingLink) {
-    fontLoaded = true;
-    return;
-  }
-
-  // If the CSS import in rtl.css hasn't loaded yet (e.g., rtl.css hasn't
-  // been imported), inject a <link> as a fallback.
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href =
-    "https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap";
-  document.head.appendChild(link);
   fontLoaded = true;
+
+  void Promise.all([
+    import("@fontsource/cairo/400.css"),
+    import("@fontsource/cairo/500.css"),
+    import("@fontsource/cairo/600.css"),
+    import("@fontsource/cairo/700.css"),
+    import("@fontsource/noto-sans-arabic/400.css"),
+    import("@fontsource/noto-sans-arabic/500.css"),
+    import("@fontsource/noto-sans-arabic/600.css"),
+    import("@fontsource/noto-sans-arabic/700.css"),
+  ]).catch(() => {
+    // Best-effort: if a chunk fails, the RTL font stack falls back to system
+    // Arabic fonts (defined in rtl.css) — text stays readable.
+  });
 }
 
 export default RTLProvider;

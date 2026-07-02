@@ -19,6 +19,34 @@ interface State {
   error: Error | null;
 }
 
+const BOUNDARY_RELOAD_KEY = "chunk-reload:boundary";
+
+function isChunkLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /Failed to fetch dynamically imported module/i.test(message) ||
+    /error loading dynamically imported module/i.test(message) ||
+    /Importing a module script failed/i.test(message) ||
+    /is not a valid JavaScript MIME type/i.test(message)
+  );
+}
+
+function hasReloadedForBoundary(): boolean {
+  try {
+    return sessionStorage.getItem(BOUNDARY_RELOAD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markReloadedForBoundary(): void {
+  try {
+    sessionStorage.setItem(BOUNDARY_RELOAD_KEY, "1");
+  } catch {
+    /* best effort */
+  }
+}
+
 async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
   try {
     await fetch(apiUrl("/api/client-errors"), {
@@ -51,6 +79,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Error caught by boundary:", error, errorInfo);
+
+    // If a stale chunk failed to load and bubbled up to a boundary (rather than
+    // being recovered by lazyWithReload), attempt a one-time hard reload to pull
+    // a fresh asset manifest before falling back to the error UI.
+    if (isChunkLoadError(error) && !hasReloadedForBoundary()) {
+      markReloadedForBoundary();
+      window.location.reload();
+      return;
+    }
+
     void reportToServer(error, errorInfo, this.props.name);
   }
 

@@ -21,6 +21,12 @@ const CSRF_BEARER_EXEMPT = [
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
+  // Client-side error telemetry sink: a fire-and-forget endpoint that returns
+  // 204 and takes no state-changing action. It MUST accept reports even when
+  // the app is broken (e.g. a chunk failed to load before a CSRF token was
+  // ever fetched) — otherwise production errors are silently dropped exactly
+  // when we most need them.
+  /^\/api\/client-errors$/,
 ];
 
 function hasBearerAuth(req: Request): boolean {

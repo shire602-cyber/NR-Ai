@@ -44,6 +44,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@aws-sdk/client-s3": "^3.1075.0",
+    "@fontsource/cairo": "^5.2.7",
+    "@fontsource/geist-mono": "^5.2.8",
+    "@fontsource/geist-sans": "^5.2.5",
+    "@fontsource/instrument-serif": "^5.2.8",
+    "@fontsource/noto-sans-arabic": "^5.2.10",
     "@hookform/resolvers": "^3.10.0",
     "@neondatabase/serverless": "^0.10.4",
     "@pdfme/generator": "^5.4.6",
