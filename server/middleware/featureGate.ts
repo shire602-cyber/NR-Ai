@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { isStripeConfigured } from "../services/stripe.service";
 
 const log = createLogger("feature-gate");
 
@@ -153,25 +154,50 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
  * Returns 403 with structured error if feature is locked.
  */
 // Tier enforcement policy:
-// - Production: ENFORCED by default. Running open in production requires an
-//   explicit BILLING_ENFORCEMENT=false (e.g. during the pre-billing beta) and
-//   logs a loud startup warning (see logBillingEnforcementStatus).
-// - Non-production: fails open unless BILLING_ENFORCEMENT=true, so dev/test
-//   environments don't hit dead paywalls while the billing module is pending.
+// - Explicit BILLING_ENFORCEMENT=true/false always wins, in any environment.
+// - Otherwise, production enforces tiers only when billing is actually usable
+//   (Stripe configured) — enforcing without a live checkout would paywall
+//   features behind a dead upgrade button, and running open with checkout
+//   live would give paid features away. Both states are logged at startup.
+// - Non-production without a flag fails open so dev/test never hit paywalls.
+// Memoized: env and Stripe config are fixed for the process lifetime, and
+// billingEnforced() runs on every gated request — without this, an
+// unconfigured Stripe would log a warning per request via getStripe().
+let stripeConfiguredCache: boolean | null = null;
+
 export function billingEnforced(): boolean {
   const flag = process.env.BILLING_ENFORCEMENT;
+  if (flag === "true") return true;
+  if (flag === "false") return false;
   if (process.env.NODE_ENV === "production") {
-    return flag !== "false";
+    if (stripeConfiguredCache === null) stripeConfiguredCache = isStripeConfigured();
+    return stripeConfiguredCache;
   }
-  return flag === "true";
+  return false;
 }
 
-/** Call once at startup so an intentionally-open production deploy is loud. */
+/** Test hook: clear the memoized Stripe-configured probe. */
+export function __resetBillingEnforcementCacheForTests(): void {
+  stripeConfiguredCache = null;
+}
+
+/** Call once at startup so the effective billing posture is loud and explicit. */
 export function logBillingEnforcementStatus(): void {
-  if (process.env.NODE_ENV === "production" && !billingEnforced()) {
+  if (process.env.NODE_ENV !== "production") return;
+  const flag = process.env.BILLING_ENFORCEMENT;
+  if (billingEnforced()) {
+    log.info(
+      { source: flag === "true" ? "BILLING_ENFORCEMENT=true" : "Stripe configured" },
+      "Billing tier enforcement is ACTIVE — free-tier tenants are gated from paid features."
+    );
+  } else {
     log.warn(
-      "BILLING_ENFORCEMENT=false in production — ALL paid features are free for every tenant. " +
-        "This must be a deliberate pre-billing decision; remove the flag to enforce tiers."
+      {
+        source:
+          flag === "false" ? "BILLING_ENFORCEMENT=false" : "Stripe not configured (auto-open)",
+      },
+      "Billing tier enforcement is OFF in production — ALL paid features are free for every tenant. " +
+        "This is expected only during the pre-billing beta; it activates automatically once Stripe is configured."
     );
   }
 }

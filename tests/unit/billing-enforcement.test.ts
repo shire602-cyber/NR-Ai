@@ -17,7 +17,16 @@ vi.mock("../../server/storage", () => ({
   },
 }));
 
-import { requireFeature, requireTier } from "../../server/middleware/featureGate";
+let stripeConfigured = false;
+vi.mock("../../server/services/stripe.service", () => ({
+  isStripeConfigured: () => stripeConfigured,
+}));
+
+import {
+  requireFeature,
+  requireTier,
+  __resetBillingEnforcementCacheForTests,
+} from "../../server/middleware/featureGate";
 
 function appWithGates() {
   const app = express();
@@ -68,25 +77,49 @@ describe("BILLING_ENFORCEMENT off (non-production default)", () => {
 describe("production defaults", () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
+  beforeEach(() => {
+    __resetBillingEnforcementCacheForTests();
+  });
+
   afterEach(() => {
+    stripeConfigured = false;
+    __resetBillingEnforcementCacheForTests();
     if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = originalNodeEnv;
   });
 
-  it("is ENFORCED by default in production (no flag set)", async () => {
+  it("auto-ENFORCES in production once Stripe is configured (no flag set)", async () => {
     process.env.NODE_ENV = "production";
     delete process.env.BILLING_ENFORCEMENT;
+    stripeConfigured = true;
     const app = appWithGates();
     const res = await get(app, "/api/companies/co-free/quotes");
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TIER_LOCKED");
   });
 
-  it("only an explicit BILLING_ENFORCEMENT=false opens production", async () => {
+  it("fails open in production while Stripe is NOT configured (no dead paywalls)", async () => {
     process.env.NODE_ENV = "production";
-    process.env.BILLING_ENFORCEMENT = "false";
+    delete process.env.BILLING_ENFORCEMENT;
+    stripeConfigured = false;
     const app = appWithGates();
     expect((await get(app, "/api/companies/co-free/quotes")).status).toBe(200);
+  });
+
+  it("explicit BILLING_ENFORCEMENT=false overrides even with Stripe configured", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.BILLING_ENFORCEMENT = "false";
+    stripeConfigured = true;
+    const app = appWithGates();
+    expect((await get(app, "/api/companies/co-free/quotes")).status).toBe(200);
+  });
+
+  it("explicit BILLING_ENFORCEMENT=true enforces even without Stripe", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.BILLING_ENFORCEMENT = "true";
+    stripeConfigured = false;
+    const app = appWithGates();
+    expect((await get(app, "/api/companies/co-free/quotes")).status).toBe(403);
   });
 });
 
