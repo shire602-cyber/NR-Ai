@@ -2083,8 +2083,8 @@ function CustomerDashboard() {
                   </div>
                   <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
                     {(compliance.auditReadiness?.issues?.length ?? 0) === 0
-                      ? "No open items — audit-ready books."
-                      : `${compliance.auditReadiness.issues.length} open item${compliance.auditReadiness.issues.length === 1 ? "" : "s"} to resolve`}
+                      ? ((t as any).auditReadyBooks ?? "No open items — audit-ready books.")
+                      : `${compliance.auditReadiness.issues.length} ${(t as any).openItemsToResolve ?? "open items to resolve"}`}
                   </div>
                 </div>
               </div>
