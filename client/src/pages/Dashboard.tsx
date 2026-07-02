@@ -1930,10 +1930,12 @@ function CustomerDashboard() {
               <span className="font-mono">{monthLabel}</span>
             </div>
             <h1 className="font-display text-[28px] md:text-[34px] leading-[1.05] tracking-tight text-foreground">
-              Welcome back<span className="text-accent">.</span>
+              {(t as any).welcomeBack ?? "Welcome back"}
+              <span className="text-accent">.</span>
             </h1>
             <p className="mt-2 max-w-xl text-[13.5px] text-muted-foreground leading-relaxed">
-              Your financial overview — revenue, expenses, and outstanding receivables.
+              {(t as any).financialOverview ??
+                "Your financial overview — revenue, expenses, and outstanding receivables."}
             </p>
           </div>
 
@@ -1941,10 +1943,12 @@ function CustomerDashboard() {
             <div className="rounded-2xl border border-card-border bg-card/70 p-5 backdrop-blur-xl shadow-lg">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                  Net Profit · This Month
+                  {(t as any).netProfitThisMonth ?? "Net Profit · This Month"}
                 </div>
                 <Badge variant={profit >= 0 ? "success" : "danger"} dot>
-                  {profit >= 0 ? "Positive" : "Negative"}
+                  {profit >= 0
+                    ? ((t as any).positive ?? "Positive")
+                    : ((t as any).negative ?? "Negative")}
                 </Badge>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
@@ -1961,11 +1965,11 @@ function CustomerDashboard() {
               <div className="mt-2 text-[12px] text-muted-foreground">
                 {statsLoading ? null : (
                   <>
-                    Margin{" "}
+                    {(t as any).margin ?? "Margin"}{" "}
                     <span className="font-mono tabular-nums font-medium text-foreground">
                       {margin.toFixed(1)}%
                     </span>{" "}
-                    · Revenue{" "}
+                    · {(t as any).revenue ?? "Revenue"}{" "}
                     <span className="font-mono tabular-nums">
                       {formatCurrency(stats?.revenue || 0, "AED", locale)}
                     </span>
@@ -1976,13 +1980,13 @@ function CustomerDashboard() {
                 <Link href="/invoices">
                   <Button size="sm" variant="default" data-testid="button-quick-invoice">
                     <FileText className="w-3.5 h-3.5" />
-                    New Invoice
+                    {(t as any).newInvoice ?? "New Invoice"}
                   </Button>
                 </Link>
                 <Link href="/receipts">
                   <Button size="sm" variant="outline" data-testid="button-quick-receipt">
                     <Receipt className="w-3.5 h-3.5" />
-                    Scan Receipt
+                    {(t as any).scanReceipt ?? "Scan Receipt"}
                   </Button>
                 </Link>
               </div>
@@ -1994,7 +1998,7 @@ function CustomerDashboard() {
       {/* ── KPI strip ─────────────────────────────────────────────────────── */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
-          label="Revenue"
+          label={(t as any).revenue ?? "Revenue"}
           value={formatCurrency(stats?.revenue || 0, "AED", locale)}
           delta={sparks.revenue.delta}
           trend={
@@ -2010,7 +2014,7 @@ function CustomerDashboard() {
           delay={0.05}
         />
         <KpiCard
-          label="Expenses"
+          label={(t as any).expenses ?? "Expenses"}
           value={formatCurrency(stats?.expenses || 0, "AED", locale)}
           delta={sparks.expenses.delta}
           trend={
@@ -2026,7 +2030,7 @@ function CustomerDashboard() {
           delay={0.1}
         />
         <KpiCard
-          label="Profit"
+          label={(t as any).profit ?? "Profit"}
           value={formatCurrency(profit, "AED", locale)}
           delta={sparks.profit.delta}
           trend={
@@ -2038,7 +2042,7 @@ function CustomerDashboard() {
           delay={0.15}
         />
         <KpiCard
-          label="Outstanding"
+          label={(t as any).outstanding ?? "Outstanding"}
           value={formatCurrency(stats?.outstanding || 0, "AED", locale)}
           accent="info"
           isLoading={statsLoading}
@@ -2253,7 +2257,8 @@ function CustomerDashboard() {
             <FileText className="h-4 w-4 text-accent" strokeWidth={1.75} />
             Reports workspace
             <span className="font-normal text-muted-foreground">
-              · {preferredReportQuickAccess.readyReports}/{preferredReportQuickAccess.reports.length} ready
+              · {preferredReportQuickAccess.readyReports}/
+              {preferredReportQuickAccess.reports.length} ready
             </span>
           </span>
           <ChevronRight
@@ -2262,652 +2267,1432 @@ function CustomerDashboard() {
         </button>
       </section>
       {showReportWorkspace && (
-      <section data-testid="dashboard-report-workspace">
-        <SectionHeader
-          eyebrow="Reports"
-          title={preferredReportWorkspace.navLabel}
-          action={
-            <Link href={reportWorkspaceHref(preferredReportWorkspace)}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-accent hover:text-accent -me-2"
-                data-testid="dashboard-open-report-workspace"
+        <section data-testid="dashboard-report-workspace">
+          <SectionHeader
+            eyebrow="Reports"
+            title={preferredReportWorkspace.navLabel}
+            action={
+              <Link href={reportWorkspaceHref(preferredReportWorkspace)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-accent hover:text-accent -me-2"
+                  data-testid="dashboard-open-report-workspace"
+                >
+                  Open workspace <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            }
+          />
+          <Card className="border-card-border overflow-hidden">
+            <CardContent className="p-0">
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-role-switcher"
               >
-                Open workspace <ArrowRight className="w-3.5 h-3.5" />
-              </Button>
-            </Link>
-          }
-        />
-        <Card className="border-card-border overflow-hidden">
-          <CardContent className="p-0">
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-role-switcher"
-            >
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Reporting mode
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    Switch the daily report workspace for owner, solo entrepreneur, freelancer, or
-                    accountant workflows.
-                  </p>
-                </div>
-                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-3xl">
-                  {dashboardReportWorkspaces.map((workspace) => (
-                    <button
-                      key={workspace.persona}
-                      type="button"
-                      onClick={() => selectDashboardReportPersona(workspace.persona)}
-                      className={`rounded-md border p-3 text-left transition-colors ${
-                        workspace.isSelected
-                          ? "border-accent bg-accent/5"
-                          : "border-border/70 hover:border-accent hover:bg-accent/5"
-                      }`}
-                      data-testid={`dashboard-report-mode-${workspace.persona}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-foreground">
-                            {workspace.navLabel}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {workspace.readyReports}/{workspace.totalReports} reports ready
-                          </div>
-                        </div>
-                        <Badge variant={workspace.isSelected ? "info" : "outline"}>
-                          {workspace.readinessPercent}%
-                        </Badge>
-                      </div>
-                      <div className="mt-2 text-[11px] text-muted-foreground">
-                        {workspace.automations.length} lanes · {workspace.automationStarterCount}{" "}
-                        starters
-                      </div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {workspace.packTemplateCount} packs · {workspace.comparisonPresetCount}{" "}
-                        comparisons
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-role-setup"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Role setup path
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    Follow the workspace path from first report review to scheduled automation for{" "}
-                    {preferredReportWorkspace.navLabel}.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "role-setup")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open setup path <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
-                {preferredReportSetupSteps.map((step, index) => (
-                  <Link key={step.id} href={step.href}>
-                    <div
-                      className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
-                      data-testid={`dashboard-report-role-setup-step-${step.id}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-[11px] font-semibold text-accent">
-                          {index + 1}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-foreground">{step.title}</div>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {step.outcome}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        <Badge variant="outline">{step.reports.length} reports</Badge>
-                        <Badge variant="outline">{step.command}</Badge>
-                      </div>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Reporting mode
                     </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-role-workday-path"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    {dashboardRoleWorkdayPath.eyebrow}
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      Switch the daily report workspace for owner, solo entrepreneur, freelancer, or
+                      accountant workflows.
+                    </p>
                   </div>
-                  <h3 className="mt-2 text-base font-semibold text-foreground">
-                    {dashboardRoleWorkdayPath.title}
-                  </h3>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    {dashboardRoleWorkdayPath.description}
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "workflow-finder")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open workflow finder <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {dashboardRoleWorkdayPath.actions.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <Link key={action.id} href={action.href}>
-                      <div
-                        className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
-                        data-testid={`dashboard-report-role-workday-action-${action.id}`}
+                  <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-3xl">
+                    {dashboardReportWorkspaces.map((workspace) => (
+                      <button
+                        key={workspace.persona}
+                        type="button"
+                        onClick={() => selectDashboardReportPersona(workspace.persona)}
+                        className={`rounded-md border p-3 text-left transition-colors ${
+                          workspace.isSelected
+                            ? "border-accent bg-accent/5"
+                            : "border-border/70 hover:border-accent hover:bg-accent/5"
+                        }`}
+                        data-testid={`dashboard-report-mode-${workspace.persona}`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
-                            <Icon className="h-4 w-4" />
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-foreground">
+                              {workspace.navLabel}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {workspace.readyReports}/{workspace.totalReports} reports ready
+                            </div>
                           </div>
-                          <Badge variant="outline">{action.cta}</Badge>
+                          <Badge variant={workspace.isSelected ? "info" : "outline"}>
+                            {workspace.readinessPercent}%
+                          </Badge>
                         </div>
-                        <div className="mt-3 text-sm font-semibold text-foreground">
-                          {action.title}
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          {workspace.automations.length} lanes · {workspace.automationStarterCount}{" "}
+                          starters
                         </div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {action.description}
-                        </p>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="border-b border-border/60 p-5" data-testid="dashboard-report-suites">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Report suites
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    Role-based bundles that connect reports, comparisons, saved views, packs, and
-                    autopilots for this workspace.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "report-suites")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open suites <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportSuites.map((suite) => (
-                  <div
-                    key={suite.id}
-                    className="rounded-md border border-border/70 p-3"
-                    data-testid={`dashboard-report-suite-${suite.id}`}
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-foreground">
-                          {suite.title}
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {workspace.packTemplateCount} packs · {workspace.comparisonPresetCount}{" "}
+                          comparisons
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">{suite.workflow}</div>
-                      </div>
-                      <Badge
-                        variant={
-                          suite.readyReports === suite.reports.length ? "success" : "warning"
-                        }
-                        dot
-                      >
-                        {suite.readyReports}/{suite.reports.length}
-                      </Badge>
-                    </div>
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      {suite.outcome}
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Trigger rules</div>
-                        <div className="mt-1 font-mono font-semibold text-foreground">
-                          {suite.triggerRules.length}
-                        </div>
-                      </div>
-                      <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Delivery</div>
-                        <div className="mt-1 truncate font-medium text-foreground">
-                          {suite.deliverySubscription?.channel ?? "Open setup"}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {suite.reports.slice(0, 4).map((report) => (
-                        <Badge key={report.id} variant="outline">
-                          {report.name}
-                        </Badge>
-                      ))}
-                      {suite.reports.length > 4 ? (
-                        <Badge variant="neutral">+{suite.reports.length - 4}</Badge>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4">
-                      <Link href={suite.comparisonHref}>
-                        <Button variant="outline" size="sm" className="w-full justify-start">
-                          <BarChart3 className="w-3.5 h-3.5" />
-                          Compare
-                        </Button>
-                      </Link>
-                      <Link href={suite.packHref}>
-                        <Button variant="outline" size="sm" className="w-full justify-start">
-                          <FileText className="w-3.5 h-3.5" />
-                          Pack
-                        </Button>
-                      </Link>
-                      <Link href={suite.automationHref}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="w-full justify-start text-accent hover:text-accent"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Autopilot
-                        </Button>
-                      </Link>
-                      <Link href={suite.deliveryHref}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="w-full justify-start text-accent hover:text-accent"
-                        >
-                          <Clock className="w-3.5 h-3.5" />
-                          Delivery
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-quick-access"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Quick access reports
-                    </div>
-                    <Badge variant="info" dot>
-                      {preferredReportQuickAccess.readyReports}/
-                      {preferredReportQuickAccess.reports.length} ready
-                    </Badge>
-                  </div>
-                  <h3 className="mt-2 text-base font-semibold text-foreground">
-                    {preferredReportQuickAccess.profile.title}
-                  </h3>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    {preferredReportQuickAccess.profile.outcome}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Link href={preferredReportQuickAccess.comparisonHref}>
-                    <Button variant="outline" size="sm">
-                      <BarChart3 className="w-3.5 h-3.5" />
-                      Comparison
-                    </Button>
-                  </Link>
-                  <Link href={preferredReportQuickAccess.automationHref}>
-                    <Button variant="outline" size="sm">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Autopilot
-                    </Button>
-                  </Link>
-                  <Link href={preferredReportQuickAccess.deliveryHref}>
-                    <Button variant="outline" size="sm">
-                      <Clock className="w-3.5 h-3.5" />
-                      Delivery
-                    </Button>
-                  </Link>
-                  <Link href={preferredReportQuickAccess.href}>
-                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open board <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {preferredReportQuickAccess.primaryReports.map(
-                  ({ report, href, workflowHref, comparisonHref, deliveryHref }) => (
-                    <div
-                      key={report.id}
-                      className="rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
-                      data-testid={`dashboard-report-quick-access-${report.id}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-foreground">
-                            {report.name}
-                          </div>
-                          <div className="mt-1 truncate text-xs text-muted-foreground">
-                            {report.category} · {report.comparison}
-                          </div>
-                        </div>
-                        <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Link href={href}>
-                          <Button size="sm" variant="outline" className="h-7 px-2">
-                            Open
-                          </Button>
-                        </Link>
-                        <Link href={workflowHref}>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2"
-                            data-testid={`dashboard-report-quick-access-automation-${report.id}`}
-                          >
-                            Automate
-                          </Button>
-                        </Link>
-                        {comparisonHref ? (
-                          <Link href={comparisonHref}>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2"
-                              data-testid={`dashboard-report-quick-access-comparison-${report.id}`}
-                            >
-                              Compare
-                            </Button>
-                          </Link>
-                        ) : null}
-                        {deliveryHref ? (
-                          <Link href={deliveryHref}>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2"
-                              data-testid={`dashboard-report-quick-access-delivery-${report.id}`}
-                            >
-                              Schedule
-                            </Button>
-                          </Link>
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-
-              {preferredReportQuickAccess.additionalReports.length > 0 ? (
-                <div
-                  className="mt-4 rounded-md border border-border/70 bg-muted/20 p-3"
-                  data-testid="dashboard-report-quick-access-more"
-                >
-                  <div className="text-[11px] font-semibold uppercase text-muted-foreground">
-                    More reports
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {preferredReportQuickAccess.additionalReports.map(({ report, href }) => (
-                      <Link key={report.id} href={href}>
-                        <Badge variant="outline" className="max-w-[220px] truncate">
-                          {report.name}
-                        </Badge>
-                      </Link>
+                      </button>
                     ))}
                   </div>
                 </div>
-              ) : null}
-            </div>
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-saved-views"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Saved report views
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
-                    Preset views with date range, comparison period, basis, currency, dimension,
-                    export format, and automation trigger for this workspace.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "saved-views")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open saved views <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
               </div>
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-role-setup"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Role setup path
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      Follow the workspace path from first report review to scheduled automation for{" "}
+                      {preferredReportWorkspace.navLabel}.
+                    </p>
+                  </div>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "role-setup")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open setup path <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportSavedViews.map((view) => (
-                  <div
-                    key={view.id}
-                    className="rounded-md border border-border/70 p-3"
-                    data-testid={`dashboard-report-saved-view-${view.id}`}
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-foreground">
-                          {view.title}
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+                  {preferredReportSetupSteps.map((step, index) => (
+                    <Link key={step.id} href={step.href}>
+                      <div
+                        className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                        data-testid={`dashboard-report-role-setup-step-${step.id}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-[11px] font-semibold text-accent">
+                            {index + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-foreground">
+                              {step.title}
+                            </div>
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              {step.outcome}
+                            </p>
+                          </div>
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {view.dateRangePreset} · {view.comparisonPeriod} · {view.currency}
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          <Badge variant="outline">{step.reports.length} reports</Badge>
+                          <Badge variant="outline">{step.command}</Badge>
                         </div>
                       </div>
-                      <Badge variant="outline">{view.dimension}</Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={view.reportHref}>
-                        <Button variant="outline" size="sm">
-                          Open report
-                        </Button>
-                      </Link>
-                      <Link href={view.comparisonHref}>
-                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                          Comparison
-                        </Button>
-                      </Link>
-                      <Link href={view.workflowHref}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-accent hover:text-accent"
-                          data-testid={`dashboard-report-saved-view-automation-${view.id}`}
-                        >
-                          Automation
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
+                    </Link>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-automation-health"
-            >
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-role-workday-path"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Automation health
+                      {dashboardRoleWorkdayPath.eyebrow}
                     </div>
-                    <Badge variant={reportAutomationHealth.variant} dot>
-                      {reportAutomationHealth.label}
-                    </Badge>
-                    <Badge
-                      variant={reportCatalogDiscoveryQuery.isError ? "warning" : "info"}
-                      data-testid="dashboard-report-catalog-sync"
-                    >
-                      {reportCatalogDiscoveryQuery.isLoading
-                        ? "Syncing catalog"
-                        : reportCatalogDiscoveryQuery.isError
-                          ? "Local catalog"
-                          : `${preferredReportPackReadiness.syncedReadyReports} synced reports`}
-                    </Badge>
-                    <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
-                      {preferredReportPackReadiness.syncedPackTemplates} packs
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      data-testid="dashboard-report-catalog-comparison-count"
-                    >
-                      {preferredReportPackReadiness.syncedComparisonPresets} comparisons
-                    </Badge>
+                    <h3 className="mt-2 text-base font-semibold text-foreground">
+                      {dashboardRoleWorkdayPath.title}
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      {dashboardRoleWorkdayPath.description}
+                    </p>
                   </div>
-                  <div className="mt-2 flex items-baseline gap-2">
-                    <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
-                      {reportAutomationHealth.score}
-                    </span>
-                    <span className="text-xs text-muted-foreground">/ 100</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Blends pack readiness, automation lanes, and current-vs-prior movement for the
-                    selected workspace.
-                  </p>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "workflow-finder")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open workflow finder <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 md:min-w-[420px]">
-                  <div className="rounded-md border border-border/70 p-3">
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {dashboardRoleWorkdayPath.actions.map((action) => {
+                    const Icon = action.icon;
+                    return (
+                      <Link key={action.id} href={action.href}>
+                        <div
+                          className="h-full rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                          data-testid={`dashboard-report-role-workday-action-${action.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <Badge variant="outline">{action.cta}</Badge>
+                          </div>
+                          <div className="mt-3 text-sm font-semibold text-foreground">
+                            {action.title}
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {action.description}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="border-b border-border/60 p-5" data-testid="dashboard-report-suites">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Pack
+                      Report suites
                     </div>
-                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
-                      {preferredReportPackReadiness.readinessPercent}%
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      Role-based bundles that connect reports, comparisons, saved views, packs, and
+                      autopilots for this workspace.
+                    </p>
+                  </div>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "report-suites")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open suites <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportSuites.map((suite) => (
+                    <div
+                      key={suite.id}
+                      className="rounded-md border border-border/70 p-3"
+                      data-testid={`dashboard-report-suite-${suite.id}`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-foreground">
+                            {suite.title}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">{suite.workflow}</div>
+                        </div>
+                        <Badge
+                          variant={
+                            suite.readyReports === suite.reports.length ? "success" : "warning"
+                          }
+                          dot
+                        >
+                          {suite.readyReports}/{suite.reports.length}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                        {suite.outcome}
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">Trigger rules</div>
+                          <div className="mt-1 font-mono font-semibold text-foreground">
+                            {suite.triggerRules.length}
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">Delivery</div>
+                          <div className="mt-1 truncate font-medium text-foreground">
+                            {suite.deliverySubscription?.channel ?? "Open setup"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {suite.reports.slice(0, 4).map((report) => (
+                          <Badge key={report.id} variant="outline">
+                            {report.name}
+                          </Badge>
+                        ))}
+                        {suite.reports.length > 4 ? (
+                          <Badge variant="neutral">+{suite.reports.length - 4}</Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4">
+                        <Link href={suite.comparisonHref}>
+                          <Button variant="outline" size="sm" className="w-full justify-start">
+                            <BarChart3 className="w-3.5 h-3.5" />
+                            Compare
+                          </Button>
+                        </Link>
+                        <Link href={suite.packHref}>
+                          <Button variant="outline" size="sm" className="w-full justify-start">
+                            <FileText className="w-3.5 h-3.5" />
+                            Pack
+                          </Button>
+                        </Link>
+                        <Link href={suite.automationHref}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start text-accent hover:text-accent"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Autopilot
+                          </Button>
+                        </Link>
+                        <Link href={suite.deliveryHref}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start text-accent hover:text-accent"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            Delivery
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-quick-access"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Quick access reports
+                      </div>
+                      <Badge variant="info" dot>
+                        {preferredReportQuickAccess.readyReports}/
+                        {preferredReportQuickAccess.reports.length} ready
+                      </Badge>
+                    </div>
+                    <h3 className="mt-2 text-base font-semibold text-foreground">
+                      {preferredReportQuickAccess.profile.title}
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      {preferredReportQuickAccess.profile.outcome}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Link href={preferredReportQuickAccess.comparisonHref}>
+                      <Button variant="outline" size="sm">
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        Comparison
+                      </Button>
+                    </Link>
+                    <Link href={preferredReportQuickAccess.automationHref}>
+                      <Button variant="outline" size="sm">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Autopilot
+                      </Button>
+                    </Link>
+                    <Link href={preferredReportQuickAccess.deliveryHref}>
+                      <Button variant="outline" size="sm">
+                        <Clock className="w-3.5 h-3.5" />
+                        Delivery
+                      </Button>
+                    </Link>
+                    <Link href={preferredReportQuickAccess.href}>
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open board <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {preferredReportQuickAccess.primaryReports.map(
+                    ({ report, href, workflowHref, comparisonHref, deliveryHref }) => (
+                      <div
+                        key={report.id}
+                        className="rounded-md border border-border/70 p-3 transition-colors hover:bg-accent/5"
+                        data-testid={`dashboard-report-quick-access-${report.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-foreground">
+                              {report.name}
+                            </div>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                              {report.category} · {report.comparison}
+                            </div>
+                          </div>
+                          <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link href={href}>
+                            <Button size="sm" variant="outline" className="h-7 px-2">
+                              Open
+                            </Button>
+                          </Link>
+                          <Link href={workflowHref}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              data-testid={`dashboard-report-quick-access-automation-${report.id}`}
+                            >
+                              Automate
+                            </Button>
+                          </Link>
+                          {comparisonHref ? (
+                            <Link href={comparisonHref}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                data-testid={`dashboard-report-quick-access-comparison-${report.id}`}
+                              >
+                                Compare
+                              </Button>
+                            </Link>
+                          ) : null}
+                          {deliveryHref ? (
+                            <Link href={deliveryHref}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                data-testid={`dashboard-report-quick-access-delivery-${report.id}`}
+                              >
+                                Schedule
+                              </Button>
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {preferredReportQuickAccess.additionalReports.length > 0 ? (
+                  <div
+                    className="mt-4 rounded-md border border-border/70 bg-muted/20 p-3"
+                    data-testid="dashboard-report-quick-access-more"
+                  >
+                    <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+                      More reports
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {preferredReportQuickAccess.additionalReports.map(({ report, href }) => (
+                        <Link key={report.id} href={href}>
+                          <Badge variant="outline" className="max-w-[220px] truncate">
+                            {report.name}
+                          </Badge>
+                        </Link>
+                      ))}
                     </div>
                   </div>
-                  <div className="rounded-md border border-border/70 p-3">
+                ) : null}
+              </div>
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-saved-views"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Lanes
+                      Saved report views
                     </div>
-                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
-                      {preferredReportPackReadiness.syncedAutomationLanes}
+                    <p className="mt-1 max-w-2xl text-xs text-muted-foreground leading-relaxed">
+                      Preset views with date range, comparison period, basis, currency, dimension,
+                      export format, and automation trigger for this workspace.
+                    </p>
+                  </div>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "saved-views")}>
+                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                      Open saved views <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportSavedViews.map((view) => (
+                    <div
+                      key={view.id}
+                      className="rounded-md border border-border/70 p-3"
+                      data-testid={`dashboard-report-saved-view-${view.id}`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-foreground">
+                            {view.title}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {view.dateRangePreset} · {view.comparisonPeriod} · {view.currency}
+                          </div>
+                        </div>
+                        <Badge variant="outline">{view.dimension}</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={view.reportHref}>
+                          <Button variant="outline" size="sm">
+                            Open report
+                          </Button>
+                        </Link>
+                        <Link href={view.comparisonHref}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-accent hover:text-accent"
+                          >
+                            Comparison
+                          </Button>
+                        </Link>
+                        <Link href={view.workflowHref}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-accent hover:text-accent"
+                            data-testid={`dashboard-report-saved-view-automation-${view.id}`}
+                          >
+                            Automation
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-automation-health"
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Automation health
+                      </div>
+                      <Badge variant={reportAutomationHealth.variant} dot>
+                        {reportAutomationHealth.label}
+                      </Badge>
+                      <Badge
+                        variant={reportCatalogDiscoveryQuery.isError ? "warning" : "info"}
+                        data-testid="dashboard-report-catalog-sync"
+                      >
+                        {reportCatalogDiscoveryQuery.isLoading
+                          ? "Syncing catalog"
+                          : reportCatalogDiscoveryQuery.isError
+                            ? "Local catalog"
+                            : `${preferredReportPackReadiness.syncedReadyReports} synced reports`}
+                      </Badge>
+                      <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
+                        {preferredReportPackReadiness.syncedPackTemplates} packs
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        data-testid="dashboard-report-catalog-comparison-count"
+                      >
+                        {preferredReportPackReadiness.syncedComparisonPresets} comparisons
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
+                        {reportAutomationHealth.score}
+                      </span>
+                      <span className="text-xs text-muted-foreground">/ 100</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Blends pack readiness, automation lanes, and current-vs-prior movement for the
+                      selected workspace.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 md:min-w-[420px]">
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Pack
+                      </div>
+                      <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                        {preferredReportPackReadiness.readinessPercent}%
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Lanes
+                      </div>
+                      <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                        {preferredReportPackReadiness.syncedAutomationLanes}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Review
+                      </div>
+                      <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
+                        {reportAutomationHealth.reviewSignals}
+                      </div>
                     </div>
                   </div>
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Review
+                </div>
+
+                <div
+                  className="mt-4 rounded-md border border-border/70 p-4"
+                  data-testid="dashboard-report-automation-impact"
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Automation impact
+                        </div>
+                        <Badge
+                          variant={
+                            preferredReportAutomationImpact.estimate.status === "compounding"
+                              ? "success"
+                              : preferredReportAutomationImpact.estimate.status === "review"
+                                ? "warning"
+                                : "neutral"
+                          }
+                          dot
+                        >
+                          {preferredReportAutomationImpact.estimate.statusLabel}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {preferredReportAutomationImpact.profile.manualWorkLabel}.{" "}
+                        {preferredReportAutomationImpact.estimate.summary}
+                      </p>
                     </div>
-                    <div className="mt-1 font-mono text-sm font-semibold tabular-nums">
-                      {reportAutomationHealth.reviewSignals}
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+                      <div className="rounded-md bg-muted/30 p-3">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Hours saved
+                        </div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {preferredReportAutomationImpact.estimate.estimatedMonthlyHoursSaved}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-3">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Items handled
+                        </div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {preferredReportAutomationImpact.estimate.estimatedAutomatedItemCount}
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-3">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Coverage
+                        </div>
+                        <div className="mt-1 font-mono text-lg font-semibold">
+                          {preferredReportAutomationImpact.estimate.coverageScore}%
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-muted/30 p-3">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Watched
+                        </div>
+                        <div className="mt-1 truncate font-mono text-sm font-semibold">
+                          {formatCurrency(
+                            preferredReportAutomationImpact.estimate.amountAtRisk,
+                            "AED",
+                            locale
+                          )}
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={reportSectionHref(preferredReportWorkspace, "automation-operations")}
+                    >
+                      <Button variant="outline" size="sm">
+                        Open operations <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link
+                      href={reportSectionHref(
+                        preferredReportWorkspace,
+                        "automation-command-center"
+                      )}
+                    >
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open automation center <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link href={preferredReportAutomationImpact.href}>
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open automation impact <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link href={reportSectionHref(preferredReportWorkspace, "automation-starters")}>
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open automation starters <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link
+                      href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}
+                    >
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open delivery subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Open automation rules <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                      <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
+                        Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+
+                <div
+                  className="mt-4 rounded-md border border-border/70 p-4"
+                  data-testid="dashboard-next-automation-action"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Next automation action
+                        </div>
+                        <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
+                          {preferredAutomationNextAction.badge}
+                        </Badge>
+                        {preferredAutomationNextAction.command ? (
+                          <Badge
+                            variant="outline"
+                            data-testid={`dashboard-next-automation-command-${preferredAutomationNextAction.command}`}
+                          >
+                            Pinned command
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-foreground">
+                        {preferredAutomationNextAction.title}
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {preferredAutomationNextAction.detail}
+                      </p>
+                      {dashboardDeliveryRunStatusSummary && dashboardLatestDeliveryRun ? (
+                        <div
+                          className="mt-3 rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground"
+                          data-testid="dashboard-report-delivery-run-feedback"
+                        >
+                          <div
+                            className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+                            data-testid="dashboard-next-automation-run-status"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant={dashboardDeliveryRunStatusSummary.statusVariant}
+                                  dot
+                                  data-testid={`dashboard-next-automation-run-status-${dashboardDeliveryRunStatusSummary.status}`}
+                                >
+                                  {dashboardDeliveryRunStatusSummary.statusLabel}
+                                </Badge>
+                                <Badge
+                                  variant={dashboardDeliveryRunReadinessVariant(
+                                    dashboardLatestDeliveryRun.readinessStatus
+                                  )}
+                                  data-testid="dashboard-report-delivery-run-readiness"
+                                >
+                                  {dashboardLatestDeliveryRun.readinessStatus}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 min-w-0 break-words">
+                                {dashboardDeliveryRunStatusSummary.detail}
+                              </p>
+                            </div>
+                            <Link
+                              href={
+                                dashboardLatestDeliveryRunSubscription?.href ??
+                                reportSectionHref(
+                                  preferredReportWorkspace,
+                                  "delivery-subscriptions"
+                                )
+                              }
+                            >
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 shrink-0 px-2 text-accent hover:text-accent"
+                                data-testid="dashboard-report-delivery-run-open"
+                              >
+                                Open delivery <ArrowRight className="w-3.5 h-3.5" />
+                              </Button>
+                            </Link>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                            <div className="rounded-md bg-background/70 p-2">
+                              <div className="text-muted-foreground">Scheduled</div>
+                              <div
+                                className="mt-1 font-medium text-foreground"
+                                data-testid="dashboard-report-delivery-run-scheduled"
+                              >
+                                {formatDashboardDeliveryRunTime(
+                                  dashboardLatestDeliveryRun.scheduledFor,
+                                  locale
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-md bg-background/70 p-2">
+                              <div className="text-muted-foreground">Reports</div>
+                              <div
+                                className="mt-1 font-mono font-semibold text-foreground"
+                                data-testid="dashboard-report-delivery-run-report-count"
+                              >
+                                {dashboardLatestDeliveryRun.readyReportCount}/
+                                {dashboardLatestDeliveryRun.reportCount}
+                              </div>
+                            </div>
+                            <div className="rounded-md bg-background/70 p-2">
+                              <div className="text-muted-foreground">Channel</div>
+                              <div
+                                className="mt-1 font-medium text-foreground"
+                                data-testid="dashboard-report-delivery-run-channel"
+                              >
+                                {dashboardLatestDeliveryRun.channel}
+                              </div>
+                            </div>
+                          </div>
+                          <p
+                            className="mt-3 leading-relaxed"
+                            data-testid="dashboard-report-delivery-run-guardrail"
+                          >
+                            {dashboardLatestDeliveryRun.deliveryGuardrail}
+                          </p>
+                          {dashboardLatestDeliveryRun.errorMessage ? (
+                            <p
+                              className="mt-2 text-destructive"
+                              data-testid="dashboard-report-delivery-run-error"
+                            >
+                              {dashboardLatestDeliveryRun.errorMessage}
+                            </p>
+                          ) : null}
+                          {dashboardLatestDeliveryRun.retriedFromRunId ? (
+                            <p
+                              className="mt-2 text-muted-foreground"
+                              data-testid="dashboard-report-delivery-run-retried-from"
+                            >
+                              Requeued from a failed delivery run.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    {preferredAutomationNextAction.actionType === "queue" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={
+                          !selectedCompanyId ||
+                          queueDashboardReportDeliverySubscription.isPending ||
+                          !preferredAutomationNextAction.subscriptionId
+                        }
+                        onClick={() => {
+                          const subscriptionId = preferredAutomationNextAction.subscriptionId;
+                          if (!subscriptionId) return;
+                          queueDashboardReportDeliverySubscriptionWithHandoffGuard(subscriptionId);
+                        }}
+                        data-testid="dashboard-next-automation-queue"
+                      >
+                        {queueDashboardReportDeliverySubscription.isPending
+                          ? "Queueing"
+                          : preferredAutomationQueueRequiresHandoffAcknowledgement
+                            ? "Acknowledge handoff"
+                            : preferredAutomationNextAction.cta}
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    ) : preferredAutomationNextAction.actionType === "retry" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={
+                          !selectedCompanyId ||
+                          retryDashboardReportDeliveryRun.isPending ||
+                          !preferredAutomationNextAction.runId
+                        }
+                        onClick={() => {
+                          const runId = preferredAutomationNextAction.runId;
+                          if (!runId) return;
+                          retryDashboardReportDeliveryRun.mutate(runId);
+                        }}
+                        data-testid="dashboard-next-automation-retry"
+                      >
+                        {retryDashboardReportDeliveryRun.isPending
+                          ? "Retrying"
+                          : preferredAutomationNextAction.cta}
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    ) : (
+                      <Link href={preferredAutomationNextAction.href}>
+                        <Button variant="outline" size="sm" className="shrink-0">
+                          {preferredAutomationNextAction.cta}
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div
-                className="mt-4 rounded-md border border-border/70 p-4"
-                data-testid="dashboard-report-automation-impact"
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-trigger-rules"
               >
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Automation impact
-                      </div>
-                      <Badge
-                        variant={
-                          preferredReportAutomationImpact.estimate.status === "compounding"
-                            ? "success"
-                            : preferredReportAutomationImpact.estimate.status === "review"
-                              ? "warning"
-                              : "neutral"
-                        }
-                        dot
-                      >
-                        {preferredReportAutomationImpact.estimate.statusLabel}
-                      </Badge>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Trigger rules
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {preferredReportAutomationImpact.profile.manualWorkLabel}.{" "}
-                      {preferredReportAutomationImpact.estimate.summary}
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Thresholds that turn {preferredReportWorkspace.navLabel} report movement into
+                      automated follow-up.
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
-                    <div className="rounded-md bg-muted/30 p-3">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Hours saved
+                  <Link href={reportSectionHref(preferredReportWorkspace, "trigger-rules")}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-accent hover:text-accent"
+                    >
+                      Open trigger rules <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  {preferredReportTriggerRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-trigger-rule-${rule.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">{rule.title}</div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {rule.threshold}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={
+                            rule.severity === "critical"
+                              ? "danger"
+                              : rule.severity === "review"
+                                ? "warning"
+                                : "info"
+                          }
+                          dot
+                        >
+                          {rule.severity === "critical"
+                            ? "Critical"
+                            : rule.severity === "review"
+                              ? "Review"
+                              : "Monitor"}
+                        </Badge>
                       </div>
-                      <div className="mt-1 font-mono text-lg font-semibold">
-                        {preferredReportAutomationImpact.estimate.estimatedMonthlyHoursSaved}
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <Badge variant="outline">{rule.reports.length} reports</Badge>
+                        <Badge variant="outline">{rule.cadence}</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={rule.primaryReportHref}>
+                          <Button variant="outline" size="sm">
+                            {rule.actionLabel}
+                          </Button>
+                        </Link>
+                        <Link href={rule.href}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-accent hover:text-accent"
+                          >
+                            View rule <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
                       </div>
                     </div>
-                    <div className="rounded-md bg-muted/30 p-3">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Items handled
+                  ))}
+                </div>
+              </div>
+
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-delivery-subscriptions"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Delivery subscriptions
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Scheduled packs for {preferredReportWorkspace.navLabel} with recipients,
+                      channels, and delivery guardrails.
+                    </p>
+                  </div>
+                  <Link
+                    href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-accent hover:text-accent"
+                    >
+                      Open subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportDeliverySubscriptions.map((subscription) => (
+                    <div
+                      key={subscription.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-delivery-subscription-${subscription.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            {subscription.title}
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {subscription.cadence}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{subscription.channel}</Badge>
                       </div>
-                      <div className="mt-1 font-mono text-lg font-semibold">
-                        {preferredReportAutomationImpact.estimate.estimatedAutomatedItemCount}
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">Ready reports</div>
+                          <div className="mt-1 font-mono font-semibold text-foreground">
+                            {subscription.readyReports}/{subscription.reports.length}
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-muted/30 p-2">
+                          <div className="text-muted-foreground">Trigger rules</div>
+                          <div className="mt-1 font-mono font-semibold text-foreground">
+                            {subscription.triggerRules.length}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                        {subscription.deliveryGuardrail}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={subscription.href}>
+                          <Button variant="outline" size="sm">
+                            Open subscription
+                          </Button>
+                        </Link>
+                        <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-accent hover:text-accent"
+                          >
+                            Review pack <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
                       </div>
                     </div>
-                    <div className="rounded-md bg-muted/30 p-3">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Coverage
+                  ))}
+                </div>
+              </div>
+
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-decision-shortcuts"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Business questions
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Start with practical questions for {preferredReportWorkspace.navLabel}, then
+                      open the matching report bundle.
+                    </p>
+                  </div>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "decision-shortcuts")}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-accent hover:text-accent"
+                    >
+                      Open decision shortcuts <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  {preferredReportDecisionShortcuts.map((shortcut) => (
+                    <div
+                      key={shortcut.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-decision-shortcut-${shortcut.id}`}
+                    >
+                      <div className="text-sm font-semibold text-foreground">
+                        {shortcut.question}
                       </div>
-                      <div className="mt-1 font-mono text-lg font-semibold">
-                        {preferredReportAutomationImpact.estimate.coverageScore}%
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                        {shortcut.answer}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        <Badge variant="outline">{shortcut.reports.length} reports</Badge>
+                        {shortcut.primaryReport ? (
+                          <Badge variant="outline">{shortcut.primaryReport.name}</Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={shortcut.primaryReportHref}>
+                          <Button variant="outline" size="sm">
+                            Open report
+                          </Button>
+                        </Link>
+                        <Link href={shortcut.workflowHref}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`dashboard-report-decision-shortcut-automation-${shortcut.id}`}
+                          >
+                            Automate
+                          </Button>
+                        </Link>
+                        <Link href={shortcut.href}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-accent hover:text-accent"
+                          >
+                            View shortcut <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
                       </div>
                     </div>
-                    <div className="rounded-md bg-muted/30 p-3">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Watched
+                  ))}
+                </div>
+              </div>
+
+              <div
+                className="border-b border-border/60 p-5"
+                data-testid="dashboard-report-comparison-presets"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Comparison presets
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Current-vs-prior review paths for {preferredReportWorkspace.navLabel}, with
+                      the report bundle and automation trigger already matched.
+                    </p>
+                  </div>
+                  <Link href={reportSectionHref(preferredReportWorkspace, "recommendations")}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-accent hover:text-accent"
+                    >
+                      Open comparison center <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportComparisonPresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-comparison-preset-${preset.id}`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            {preset.title}
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {preset.question}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <Badge variant="outline">{preset.metricIds.length} metrics</Badge>
+                            <Badge variant="outline">{preset.reports.length} reports</Badge>
+                            <Badge variant="outline">{preset.baseline}</Badge>
+                          </div>
+                        </div>
+                        <Link href={preset.href}>
+                          <Button variant="outline" size="sm" className="shrink-0">
+                            Open comparison
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
                       </div>
-                      <div className="mt-1 truncate font-mono text-sm font-semibold">
-                        {formatCurrency(
-                          preferredReportAutomationImpact.estimate.amountAtRisk,
-                          "AED",
-                          locale
-                        )}
+                      <div className="mt-3 rounded-md bg-muted/30 p-2 text-xs leading-relaxed text-muted-foreground">
+                        <span className="font-semibold text-foreground">Automation:</span>{" "}
+                        {preset.automationTrigger}
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border/60">
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Workspace focus
+                      </div>
+                      <p className="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">
+                        {preferredReportWorkspace.focus}
+                      </p>
+                      <div className="mt-3 rounded-md border border-border/70 p-3 text-xs leading-relaxed text-muted-foreground">
+                        <span className="font-semibold text-foreground">Automation outcome:</span>{" "}
+                        {preferredReportWorkspace.automationOutcome}
+                      </div>
+                      <div
+                        className="mt-3 rounded-md border border-border/70 bg-muted/20 p-3"
+                        data-testid="dashboard-report-context-summary"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                              Saved reporting context
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge variant="info" data-testid="dashboard-report-role-context">
+                                Role: {preferredReportWorkspace.navLabel}
+                              </Badge>
+                              {preferredReportWorkflowSearch ? (
+                                <Badge
+                                  variant="outline"
+                                  data-testid="dashboard-report-search-context"
+                                >
+                                  <span className="max-w-[12rem] truncate">
+                                    Search: {preferredReportWorkflowSearch}
+                                  </span>
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">No saved search</Badge>
+                              )}
+                              {preferredReportWorkflowGapLabel ? (
+                                <Badge variant="outline" data-testid="dashboard-report-gap-context">
+                                  Gap: {preferredReportWorkflowGapLabel}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">No gap filter</Badge>
+                              )}
+                            </div>
+                          </div>
+                          {hasDashboardReportWorkflowContext ? (
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              <Link href={dashboardReportWorkflowContextHref}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  data-testid="button-open-dashboard-report-context-link"
+                                >
+                                  Open shared view
+                                  <ArrowRight className="h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={clearDashboardReportWorkflowContext}
+                                data-testid="button-clear-dashboard-report-context"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Clear saved filters
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <Badge variant="info" dot>
+                        {preferredWorkspaceReports.length} ready reports
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {preferredWorkspaceReports.map((report) => (
+                      <Link
+                        key={report.id}
+                        href={
+                          reportPersonaHref(report, preferredReportWorkspace.persona) ??
+                          reportWorkspaceHref(preferredReportWorkspace)
+                        }
+                      >
+                        <div className="rounded-md border border-border/70 p-3 hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium text-foreground">{report.name}</div>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {report.comparison} · {report.automation}
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+
+                  <div
+                    className="mt-5 rounded-md border border-border/70 p-4"
+                    data-testid="dashboard-comparison-snapshot"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                          Comparison snapshot
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Current vs prior month for this workspace.
+                        </div>
+                      </div>
+                      <Badge variant="outline">Current vs prior</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {dashboardComparisonRows.map((row) => (
+                        <Link key={row.id} href={row.href}>
+                          <div className="rounded-md bg-muted/30 p-3 transition-colors hover:bg-accent/5">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs font-medium text-foreground">{row.label}</div>
+                              <Badge variant={dashboardComparisonBadgeVariant(row)}>
+                                {formatDashboardComparisonPercent(row.percentChange)}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
+                              {formatCurrency(row.current, "AED", locale)}
+                            </div>
+                            <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                              <span>Prior {formatCurrency(row.previous, "AED", locale)}</span>
+                              <span className="inline-flex items-center gap-1 text-accent">
+                                Open <ArrowUpRight className="w-3 h-3" />
+                              </span>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                    Automation lanes
+                  </div>
+                  <div className="mt-3 divide-y divide-border/50">
+                    {preferredReportWorkspace.automations.map((playbook) => (
+                      <div key={playbook.id} className="py-3 first:pt-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-foreground">
+                              {playbook.title}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                              {playbook.trigger}
+                            </div>
+                          </div>
+                          <Link
+                            href={reportAutomationPlaybookHref(
+                              playbook,
+                              preferredReportWorkspace.persona
+                            )}
+                          >
+                            <Button variant="outline" size="sm" className="shrink-0">
+                              {playbook.cta}
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4">
-                <div className="flex flex-wrap gap-2">
-                  <Link href={reportSectionHref(preferredReportWorkspace, "automation-operations")}>
+              <div
+                className="border-t border-border/60 p-5"
+                data-testid="dashboard-report-pack-readiness"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Report pack readiness
+                    </div>
+                    <div className="mt-2 text-2xl font-mono font-semibold tabular-nums text-foreground">
+                      {preferredReportPackReadiness.readinessPercent}%
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                      {preferredReportPackReadiness.readyReports} of{" "}
+                      {preferredReportPackReadiness.totalReports} workspace reports are ready/API
+                      backed. {preferredReportPackReadiness.plannedReports} planned report
+                      {preferredReportPackReadiness.plannedReports === 1 ? "" : "s"} need review
+                      before fully automated sending.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Cadence
+                      </div>
+                      <div className="mt-1 text-xs leading-relaxed text-foreground">
+                        {preferredReportWorkspace.packSchedule.cadence}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Delivery
+                      </div>
+                      <div className="mt-1 text-xs leading-relaxed text-foreground">
+                        {preferredReportWorkspace.packSchedule.delivery}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-3">
+                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                        Automations
+                      </div>
+                      <div className="mt-1 text-xs leading-relaxed text-foreground">
+                        {preferredReportPackReadiness.automationLanes} lanes ·{" "}
+                        {preferredReportWorkspace.packSchedule.automation}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
+                  data-testid="dashboard-report-workflow-gap-filters"
+                >
+                  {preferredReportWorkflowGapLinks.map((link) => (
+                    <Link key={link.gap} href={link.href}>
+                      <Button
+                        variant={link.isPreferred ? "default" : "outline"}
+                        size="sm"
+                        className="h-auto w-full justify-between gap-2 px-3 py-2 text-left"
+                        onClick={() => {
+                          setPreferredReportWorkflowGapFilter(
+                            preferredReportWorkspace.persona,
+                            link.gap
+                          );
+                          setReportWorkflowPreferenceRevision((revision) => revision + 1);
+                        }}
+                        data-testid={`dashboard-report-workflow-gap-${link.gap}`}
+                      >
+                        <span className="truncate">{link.label}</span>
+                        <Badge variant={link.count > 0 ? "warning" : "success"}>{link.count}</Badge>
+                      </Button>
+                    </Link>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link href={reportSectionHref(preferredReportWorkspace, "pack-readiness")}>
                     <Button variant="outline" size="sm">
-                      Open operations <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                  <Link
-                    href={reportSectionHref(preferredReportWorkspace, "automation-command-center")}
-                  >
-                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open automation center <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                  <Link href={preferredReportAutomationImpact.href}>
-                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open automation impact <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                  <Link href={reportSectionHref(preferredReportWorkspace, "automation-starters")}>
-                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open automation starters <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                  <Link
-                    href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}
-                  >
-                    <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Open delivery subscriptions <ArrowRight className="w-3.5 h-3.5" />
+                      Review pack readiness
                     </Button>
                   </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
@@ -2917,640 +3702,122 @@ function CustomerDashboard() {
                   </Link>
                   <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
                     <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                      Review automation health <ArrowRight className="w-3.5 h-3.5" />
+                      Open pack automation <ArrowRight className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
               </div>
 
               <div
-                className="mt-4 rounded-md border border-border/70 p-4"
-                data-testid="dashboard-next-automation-action"
+                className="border-t border-border/60 p-5"
+                data-testid="dashboard-report-automation-starters"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Next automation action
-                      </div>
-                      <Badge variant={preferredAutomationNextAction.badgeVariant} dot>
-                        {preferredAutomationNextAction.badge}
-                      </Badge>
-                      {preferredAutomationNextAction.command ? (
-                        <Badge
-                          variant="outline"
-                          data-testid={`dashboard-next-automation-command-${preferredAutomationNextAction.command}`}
-                        >
-                          Pinned command
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-foreground">
-                      {preferredAutomationNextAction.title}
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      {preferredAutomationNextAction.detail}
-                    </p>
-                    {dashboardDeliveryRunStatusSummary && dashboardLatestDeliveryRun ? (
-                      <div
-                        className="mt-3 rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground"
-                        data-testid="dashboard-report-delivery-run-feedback"
-                      >
-                        <div
-                          className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
-                          data-testid="dashboard-next-automation-run-status"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant={dashboardDeliveryRunStatusSummary.statusVariant}
-                                dot
-                                data-testid={`dashboard-next-automation-run-status-${dashboardDeliveryRunStatusSummary.status}`}
-                              >
-                                {dashboardDeliveryRunStatusSummary.statusLabel}
-                              </Badge>
-                              <Badge
-                                variant={dashboardDeliveryRunReadinessVariant(
-                                  dashboardLatestDeliveryRun.readinessStatus
-                                )}
-                                data-testid="dashboard-report-delivery-run-readiness"
-                              >
-                                {dashboardLatestDeliveryRun.readinessStatus}
-                              </Badge>
-                            </div>
-                            <p className="mt-2 min-w-0 break-words">
-                              {dashboardDeliveryRunStatusSummary.detail}
-                            </p>
-                          </div>
-                          <Link
-                            href={
-                              dashboardLatestDeliveryRunSubscription?.href ??
-                              reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")
-                            }
-                          >
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 shrink-0 px-2 text-accent hover:text-accent"
-                              data-testid="dashboard-report-delivery-run-open"
-                            >
-                              Open delivery <ArrowRight className="w-3.5 h-3.5" />
-                            </Button>
-                          </Link>
-                        </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                          <div className="rounded-md bg-background/70 p-2">
-                            <div className="text-muted-foreground">Scheduled</div>
-                            <div
-                              className="mt-1 font-medium text-foreground"
-                              data-testid="dashboard-report-delivery-run-scheduled"
-                            >
-                              {formatDashboardDeliveryRunTime(
-                                dashboardLatestDeliveryRun.scheduledFor,
-                                locale
-                              )}
-                            </div>
-                          </div>
-                          <div className="rounded-md bg-background/70 p-2">
-                            <div className="text-muted-foreground">Reports</div>
-                            <div
-                              className="mt-1 font-mono font-semibold text-foreground"
-                              data-testid="dashboard-report-delivery-run-report-count"
-                            >
-                              {dashboardLatestDeliveryRun.readyReportCount}/
-                              {dashboardLatestDeliveryRun.reportCount}
-                            </div>
-                          </div>
-                          <div className="rounded-md bg-background/70 p-2">
-                            <div className="text-muted-foreground">Channel</div>
-                            <div
-                              className="mt-1 font-medium text-foreground"
-                              data-testid="dashboard-report-delivery-run-channel"
-                            >
-                              {dashboardLatestDeliveryRun.channel}
-                            </div>
-                          </div>
-                        </div>
-                        <p
-                          className="mt-3 leading-relaxed"
-                          data-testid="dashboard-report-delivery-run-guardrail"
-                        >
-                          {dashboardLatestDeliveryRun.deliveryGuardrail}
-                        </p>
-                        {dashboardLatestDeliveryRun.errorMessage ? (
-                          <p
-                            className="mt-2 text-destructive"
-                            data-testid="dashboard-report-delivery-run-error"
-                          >
-                            {dashboardLatestDeliveryRun.errorMessage}
-                          </p>
-                        ) : null}
-                        {dashboardLatestDeliveryRun.retriedFromRunId ? (
-                          <p
-                            className="mt-2 text-muted-foreground"
-                            data-testid="dashboard-report-delivery-run-retried-from"
-                          >
-                            Requeued from a failed delivery run.
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  {preferredAutomationNextAction.actionType === "queue" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      disabled={
-                        !selectedCompanyId ||
-                        queueDashboardReportDeliverySubscription.isPending ||
-                        !preferredAutomationNextAction.subscriptionId
-                      }
-                      onClick={() => {
-                        const subscriptionId = preferredAutomationNextAction.subscriptionId;
-                        if (!subscriptionId) return;
-                        queueDashboardReportDeliverySubscriptionWithHandoffGuard(subscriptionId);
-                      }}
-                      data-testid="dashboard-next-automation-queue"
-                    >
-                      {queueDashboardReportDeliverySubscription.isPending
-                        ? "Queueing"
-                        : preferredAutomationQueueRequiresHandoffAcknowledgement
-                          ? "Acknowledge handoff"
-                          : preferredAutomationNextAction.cta}
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : preferredAutomationNextAction.actionType === "retry" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      disabled={
-                        !selectedCompanyId ||
-                        retryDashboardReportDeliveryRun.isPending ||
-                        !preferredAutomationNextAction.runId
-                      }
-                      onClick={() => {
-                        const runId = preferredAutomationNextAction.runId;
-                        if (!runId) return;
-                        retryDashboardReportDeliveryRun.mutate(runId);
-                      }}
-                      data-testid="dashboard-next-automation-retry"
-                    >
-                      {retryDashboardReportDeliveryRun.isPending
-                        ? "Retrying"
-                        : preferredAutomationNextAction.cta}
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : (
-                    <Link href={preferredAutomationNextAction.href}>
-                      <Button variant="outline" size="sm" className="shrink-0">
-                        {preferredAutomationNextAction.cta}
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-trigger-rules"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Trigger rules
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Thresholds that turn {preferredReportWorkspace.navLabel} report movement into
-                    automated follow-up.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "trigger-rules")}>
-                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
-                    Open trigger rules <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                {preferredReportTriggerRules.map((rule) => (
-                  <div
-                    key={rule.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-trigger-rule-${rule.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-foreground">{rule.title}</div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {rule.threshold}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={
-                          rule.severity === "critical"
-                            ? "danger"
-                            : rule.severity === "review"
-                              ? "warning"
-                              : "info"
-                        }
-                        dot
-                      >
-                        {rule.severity === "critical"
-                          ? "Critical"
-                          : rule.severity === "review"
-                            ? "Review"
-                            : "Monitor"}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      <Badge variant="outline">{rule.reports.length} reports</Badge>
-                      <Badge variant="outline">{rule.cadence}</Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={rule.primaryReportHref}>
-                        <Button variant="outline" size="sm">
-                          {rule.actionLabel}
-                        </Button>
-                      </Link>
-                      <Link href={rule.href}>
-                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                          View rule <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-delivery-subscriptions"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Delivery subscriptions
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Scheduled packs for {preferredReportWorkspace.navLabel} with recipients,
-                    channels, and delivery guardrails.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "delivery-subscriptions")}>
-                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
-                    Open subscriptions <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportDeliverySubscriptions.map((subscription) => (
-                  <div
-                    key={subscription.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-delivery-subscription-${subscription.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-foreground">
-                          {subscription.title}
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {subscription.cadence}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{subscription.channel}</Badge>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Ready reports</div>
-                        <div className="mt-1 font-mono font-semibold text-foreground">
-                          {subscription.readyReports}/{subscription.reports.length}
-                        </div>
-                      </div>
-                      <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Trigger rules</div>
-                        <div className="mt-1 font-mono font-semibold text-foreground">
-                          {subscription.triggerRules.length}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      {subscription.deliveryGuardrail}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={subscription.href}>
-                        <Button variant="outline" size="sm">
-                          Open subscription
-                        </Button>
-                      </Link>
-                      <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
-                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                          Review pack <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-decision-shortcuts"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Business questions
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Start with practical questions for {preferredReportWorkspace.navLabel}, then
-                    open the matching report bundle.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "decision-shortcuts")}>
-                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
-                    Open decision shortcuts <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                {preferredReportDecisionShortcuts.map((shortcut) => (
-                  <div
-                    key={shortcut.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-decision-shortcut-${shortcut.id}`}
-                  >
-                    <div className="text-sm font-semibold text-foreground">{shortcut.question}</div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                      {shortcut.answer}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      <Badge variant="outline">{shortcut.reports.length} reports</Badge>
-                      {shortcut.primaryReport ? (
-                        <Badge variant="outline">{shortcut.primaryReport.name}</Badge>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={shortcut.primaryReportHref}>
-                        <Button variant="outline" size="sm">
-                          Open report
-                        </Button>
-                      </Link>
-                      <Link href={shortcut.workflowHref}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          data-testid={`dashboard-report-decision-shortcut-automation-${shortcut.id}`}
-                        >
-                          Automate
-                        </Button>
-                      </Link>
-                      <Link href={shortcut.href}>
-                        <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                          View shortcut <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="border-b border-border/60 p-5"
-              data-testid="dashboard-report-comparison-presets"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Comparison presets
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Current-vs-prior review paths for {preferredReportWorkspace.navLabel}, with the
-                    report bundle and automation trigger already matched.
-                  </p>
-                </div>
-                <Link href={reportSectionHref(preferredReportWorkspace, "recommendations")}>
-                  <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent">
-                    Open comparison center <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportComparisonPresets.map((preset) => (
-                  <div
-                    key={preset.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-comparison-preset-${preset.id}`}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-foreground">{preset.title}</div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {preset.question}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="outline">{preset.metricIds.length} metrics</Badge>
-                          <Badge variant="outline">{preset.reports.length} reports</Badge>
-                          <Badge variant="outline">{preset.baseline}</Badge>
-                        </div>
-                      </div>
-                      <Link href={preset.href}>
-                        <Button variant="outline" size="sm" className="shrink-0">
-                          Open comparison
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                    <div className="mt-3 rounded-md bg-muted/30 p-2 text-xs leading-relaxed text-muted-foreground">
-                      <span className="font-semibold text-foreground">Automation:</span>{" "}
-                      {preset.automationTrigger}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border/60">
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Workspace focus
+                      Automation starters
                     </div>
-                    <p className="mt-2 text-[13.5px] text-muted-foreground leading-relaxed">
-                      {preferredReportWorkspace.focus}
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Launch setup checklists for the workflows that fit{" "}
+                      {preferredReportWorkspace.navLabel}.
                     </p>
-                    <div className="mt-3 rounded-md border border-border/70 p-3 text-xs leading-relaxed text-muted-foreground">
-                      <span className="font-semibold text-foreground">Automation outcome:</span>{" "}
-                      {preferredReportWorkspace.automationOutcome}
-                    </div>
+                  </div>
+                  <Badge variant="outline">
+                    {preferredReportAutomationStarters.length} starters
+                  </Badge>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportAutomationStarters.map((starter) => (
                     <div
-                      className="mt-3 rounded-md border border-border/70 bg-muted/20 p-3"
-                      data-testid="dashboard-report-context-summary"
+                      key={starter.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-automation-starter-${starter.id}`}
                     >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                            Saved reporting context
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-foreground">
+                              {starter.title}
+                            </div>
+                            <Badge variant="info">{starter.setupTime}</Badge>
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Badge variant="info" data-testid="dashboard-report-role-context">
-                              Role: {preferredReportWorkspace.navLabel}
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {starter.outcome}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <Badge variant="outline">
+                              {starter.readyReports}/{starter.reports.length} reports
                             </Badge>
-                            {preferredReportWorkflowSearch ? (
-                              <Badge
-                                variant="outline"
-                                data-testid="dashboard-report-search-context"
-                              >
-                                <span className="max-w-[12rem] truncate">
-                                  Search: {preferredReportWorkflowSearch}
-                                </span>
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">No saved search</Badge>
-                            )}
-                            {preferredReportWorkflowGapLabel ? (
-                              <Badge variant="outline" data-testid="dashboard-report-gap-context">
-                                Gap: {preferredReportWorkflowGapLabel}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">No gap filter</Badge>
-                            )}
+                            <Badge variant="outline">{starter.playbooks.length} playbooks</Badge>
+                            <Badge variant="outline">{starter.setupSteps.length} steps</Badge>
                           </div>
                         </div>
-                        {hasDashboardReportWorkflowContext ? (
-                          <div className="flex shrink-0 flex-wrap gap-2">
-                            <Link href={dashboardReportWorkflowContextHref}>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                data-testid="button-open-dashboard-report-context-link"
-                              >
-                                Open shared view
-                                <ArrowRight className="h-3.5 w-3.5" />
-                              </Button>
-                            </Link>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={clearDashboardReportWorkflowContext}
-                              data-testid="button-clear-dashboard-report-context"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Clear saved filters
-                            </Button>
+                        <Link href={starter.href}>
+                          <Button variant="outline" size="sm" className="shrink-0">
+                            {starter.primaryAction}
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {starter.setupSteps.map((step) => (
+                          <div
+                            key={step}
+                            className="flex gap-2 rounded-md bg-muted/30 p-2 text-xs text-muted-foreground"
+                          >
+                            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                            <span>{step}</span>
                           </div>
-                        ) : null}
+                        ))}
                       </div>
                     </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                    <Badge variant="info" dot>
-                      {preferredWorkspaceReports.length} ready reports
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {preferredWorkspaceReports.map((report) => (
-                    <Link
-                      key={report.id}
-                      href={
-                        reportPersonaHref(report, preferredReportWorkspace.persona) ??
-                        reportWorkspaceHref(preferredReportWorkspace)
-                      }
-                    >
-                      <div className="rounded-md border border-border/70 p-3 hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium text-foreground">{report.name}</div>
-                          <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground" />
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {report.comparison} · {report.automation}
-                        </div>
-                      </div>
-                    </Link>
                   ))}
-                </div>
-
-                <div
-                  className="mt-5 rounded-md border border-border/70 p-4"
-                  data-testid="dashboard-comparison-snapshot"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                        Comparison snapshot
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        Current vs prior month for this workspace.
-                      </div>
-                    </div>
-                    <Badge variant="outline">Current vs prior</Badge>
-                  </div>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {dashboardComparisonRows.map((row) => (
-                      <Link key={row.id} href={row.href}>
-                        <div className="rounded-md bg-muted/30 p-3 transition-colors hover:bg-accent/5">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs font-medium text-foreground">{row.label}</div>
-                            <Badge variant={dashboardComparisonBadgeVariant(row)}>
-                              {formatDashboardComparisonPercent(row.percentChange)}
-                            </Badge>
-                          </div>
-                          <div className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
-                            {formatCurrency(row.current, "AED", locale)}
-                          </div>
-                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                            <span>Prior {formatCurrency(row.previous, "AED", locale)}</span>
-                            <span className="inline-flex items-center gap-1 text-accent">
-                              Open <ArrowUpRight className="w-3 h-3" />
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
                 </div>
               </div>
 
-              <div className="p-5">
-                <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                  Automation lanes
+              <div
+                className="border-t border-border/60 p-5"
+                data-testid="dashboard-report-pack-templates"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
+                      Ready-made report packs
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Start from recurring packs tailored to {preferredReportWorkspace.navLabel}.
+                    </p>
+                  </div>
+                  <Badge variant="outline">{preferredReportPackTemplates.length} templates</Badge>
                 </div>
-                <div className="mt-3 divide-y divide-border/50">
-                  {preferredReportWorkspace.automations.map((playbook) => (
-                    <div key={playbook.id} className="py-3 first:pt-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-3">
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {preferredReportPackTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="rounded-md border border-border/70 p-4"
+                      data-testid={`dashboard-report-pack-template-${template.id}`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-foreground">
-                            {playbook.title}
+                          <div className="text-sm font-semibold text-foreground">
+                            {template.title}
                           </div>
-                          <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                            {playbook.trigger}
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {template.outcome}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <Badge variant="outline">{template.cadence}</Badge>
+                            <Badge variant="outline">
+                              {template.readyReports}/{template.reports.length} reports
+                            </Badge>
                           </div>
                         </div>
-                        <Link
-                          href={reportAutomationPlaybookHref(
-                            playbook,
-                            preferredReportWorkspace.persona
-                          )}
-                        >
+                        <Link href={template.href}>
                           <Button variant="outline" size="sm" className="shrink-0">
-                            {playbook.cta}
+                            Open template
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
                         </Link>
                       </div>
@@ -3558,221 +3825,9 @@ function CustomerDashboard() {
                   ))}
                 </div>
               </div>
-            </div>
-
-            <div
-              className="border-t border-border/60 p-5"
-              data-testid="dashboard-report-pack-readiness"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Report pack readiness
-                  </div>
-                  <div className="mt-2 text-2xl font-mono font-semibold tabular-nums text-foreground">
-                    {preferredReportPackReadiness.readinessPercent}%
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                    {preferredReportPackReadiness.readyReports} of{" "}
-                    {preferredReportPackReadiness.totalReports} workspace reports are ready/API
-                    backed. {preferredReportPackReadiness.plannedReports} planned report
-                    {preferredReportPackReadiness.plannedReports === 1 ? "" : "s"} need review
-                    before fully automated sending.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Cadence
-                    </div>
-                    <div className="mt-1 text-xs leading-relaxed text-foreground">
-                      {preferredReportWorkspace.packSchedule.cadence}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Delivery
-                    </div>
-                    <div className="mt-1 text-xs leading-relaxed text-foreground">
-                      {preferredReportWorkspace.packSchedule.delivery}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                      Automations
-                    </div>
-                    <div className="mt-1 text-xs leading-relaxed text-foreground">
-                      {preferredReportPackReadiness.automationLanes} lanes ·{" "}
-                      {preferredReportWorkspace.packSchedule.automation}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
-                data-testid="dashboard-report-workflow-gap-filters"
-              >
-                {preferredReportWorkflowGapLinks.map((link) => (
-                  <Link key={link.gap} href={link.href}>
-                    <Button
-                      variant={link.isPreferred ? "default" : "outline"}
-                      size="sm"
-                      className="h-auto w-full justify-between gap-2 px-3 py-2 text-left"
-                      onClick={() => {
-                        setPreferredReportWorkflowGapFilter(
-                          preferredReportWorkspace.persona,
-                          link.gap
-                        );
-                        setReportWorkflowPreferenceRevision((revision) => revision + 1);
-                      }}
-                      data-testid={`dashboard-report-workflow-gap-${link.gap}`}
-                    >
-                      <span className="truncate">{link.label}</span>
-                      <Badge variant={link.count > 0 ? "warning" : "success"}>{link.count}</Badge>
-                    </Button>
-                  </Link>
-                ))}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link href={reportSectionHref(preferredReportWorkspace, "pack-readiness")}>
-                  <Button variant="outline" size="sm">
-                    Review pack readiness
-                  </Button>
-                </Link>
-                <Link href={reportSectionHref(preferredReportWorkspace, "automation-rules")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open automation rules <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-                <Link href={reportSectionHref(preferredReportWorkspace, "pack-automation")}>
-                  <Button variant="ghost" size="sm" className="text-accent hover:text-accent">
-                    Open pack automation <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-            </div>
-
-            <div
-              className="border-t border-border/60 p-5"
-              data-testid="dashboard-report-automation-starters"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Automation starters
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Launch setup checklists for the workflows that fit{" "}
-                    {preferredReportWorkspace.navLabel}.
-                  </p>
-                </div>
-                <Badge variant="outline">{preferredReportAutomationStarters.length} starters</Badge>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportAutomationStarters.map((starter) => (
-                  <div
-                    key={starter.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-automation-starter-${starter.id}`}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-semibold text-foreground">
-                            {starter.title}
-                          </div>
-                          <Badge variant="info">{starter.setupTime}</Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {starter.outcome}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="outline">
-                            {starter.readyReports}/{starter.reports.length} reports
-                          </Badge>
-                          <Badge variant="outline">{starter.playbooks.length} playbooks</Badge>
-                          <Badge variant="outline">{starter.setupSteps.length} steps</Badge>
-                        </div>
-                      </div>
-                      <Link href={starter.href}>
-                        <Button variant="outline" size="sm" className="shrink-0">
-                          {starter.primaryAction}
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {starter.setupSteps.map((step) => (
-                        <div
-                          key={step}
-                          className="flex gap-2 rounded-md bg-muted/30 p-2 text-xs text-muted-foreground"
-                        >
-                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                          <span>{step}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="border-t border-border/60 p-5"
-              data-testid="dashboard-report-pack-templates"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Ready-made report packs
-                  </div>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                    Start from recurring packs tailored to {preferredReportWorkspace.navLabel}.
-                  </p>
-                </div>
-                <Badge variant="outline">{preferredReportPackTemplates.length} templates</Badge>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {preferredReportPackTemplates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="rounded-md border border-border/70 p-4"
-                    data-testid={`dashboard-report-pack-template-${template.id}`}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-foreground">
-                          {template.title}
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {template.outcome}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="outline">{template.cadence}</Badge>
-                          <Badge variant="outline">
-                            {template.readyReports}/{template.reports.length} reports
-                          </Badge>
-                        </div>
-                      </div>
-                      <Link href={template.href}>
-                        <Button variant="outline" size="sm" className="shrink-0">
-                          Open template
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+            </CardContent>
+          </Card>
+        </section>
       )}
 
       {/* ── Charts row ───────────────────────────────────────────────────── */}
