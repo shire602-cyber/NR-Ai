@@ -2643,16 +2643,19 @@ export default function Reports() {
   const hasFocusedReportSelection = Boolean(activeReportId && selectedReportId);
   const reportViewerTitle = hasFocusedReportSelection
     ? (activeReportViewerOption?.label ?? "Reports")
-    : "Report Center";
+    : ((t as any).reportCenter ?? "Report Center");
   const reportViewerDescription = hasFocusedReportSelection
     ? (activeReportViewerOption?.description ?? "Review this report for the selected period.")
-    : "Choose one report from a category. Reports open one at a time with the right period, export, and review context.";
+    : ((t as any).chooseOneReport ??
+      "Choose one report from a category. Reports open one at a time with the right period, export, and review context.");
   const reportViewerMenuLabel = hasFocusedReportSelection
-    ? (activeReportViewerOption?.label ?? "Choose a report")
-    : "Choose a report";
+    ? (activeReportViewerOption?.label ?? (t as any).chooseAReport ?? "Choose a report")
+    : ((t as any).chooseAReport ?? "Choose a report");
   const reportViewerMenuDescription = hasFocusedReportSelection
-    ? (activeReportViewerOption?.categoryLabel ?? "Grouped by category")
-    : "Grouped by category";
+    ? (activeReportViewerOption?.categoryLabel ??
+      (t as any).groupedByCategory ??
+      "Grouped by category")
+    : ((t as any).groupedByCategory ?? "Grouped by category");
 
   const openReportViewerOption = useCallback(
     (optionId: string) => {
@@ -11835,13 +11838,16 @@ export default function Reports() {
       <PageHeader
         eyebrow="Insights"
         title={t.reports}
-        description="Financial reports, comparisons, and automation-ready workspaces"
+        description={
+          (t as any).financialReportsSubtitle ??
+          "Financial reports, comparisons, and automation-ready workspaces"
+        }
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" data-testid="button-report-proof-trail">
               <Link href={evidenceSectionHref("proof-drilldown")}>
                 <FileText className="w-4 h-4 mr-2" />
-                View proof
+                {(t as any).viewProof ?? "View proof"}
               </Link>
             </Button>
             <DropdownMenu>
@@ -11908,7 +11914,7 @@ export default function Reports() {
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
-              <Label>Report Center</Label>
+              <Label>{(t as any).reportCenter ?? "Report Center"}</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -11933,7 +11939,9 @@ export default function Reports() {
                   className="w-72"
                   data-testid="menu-report-viewer"
                 >
-                  <DropdownMenuLabel>Report Center</DropdownMenuLabel>
+                  <DropdownMenuLabel>
+                    {(t as any).reportCenter ?? "Report Center"}
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {reportViewerGroups.map((group) => (
                     <DropdownMenuSub key={group.category}>
@@ -11967,7 +11975,7 @@ export default function Reports() {
               </DropdownMenu>
             </div>
             <div className="space-y-1.5">
-              <Label>Period</Label>
+              <Label>{(t as any).period ?? "Period"}</Label>
               <div className="rounded-md border bg-background p-2">
                 <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
               </div>
@@ -18046,9 +18054,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-success ">
-                          Revenue
-                        </h3>
+                        <h3 className="font-semibold mb-3 text-success ">Revenue</h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.revenue?.map((item, index) => (
@@ -18075,9 +18081,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">
-                          Expenses
-                        </h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">Expenses</h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.expenses?.map((item, index) => (
@@ -18135,9 +18139,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-info ">
-                          Assets
-                        </h3>
+                        <h3 className="font-semibold mb-3 text-info ">Assets</h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.assets?.map((item, index) => (
@@ -18164,9 +18166,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">
-                          Liabilities
-                        </h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">Liabilities</h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.liabilities?.map((item, index) => (
@@ -18193,9 +18193,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-chart-5 ">
-                          Equity
-                        </h3>
+                        <h3 className="font-semibold mb-3 text-chart-5 ">Equity</h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.equity?.map((item, index) => (
@@ -18243,9 +18241,7 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-success ">
-                            Sales (Output VAT)
-                          </h3>
+                          <h3 className="font-semibold text-success ">Sales (Output VAT)</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Subtotal</span>
@@ -18263,9 +18259,7 @@ export default function Reports() {
                         </div>
 
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-info ">
-                            Purchases (Input VAT)
-                          </h3>
+                          <h3 className="font-semibold text-info ">Purchases (Input VAT)</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Subtotal</span>
