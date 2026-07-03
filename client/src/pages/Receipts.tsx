@@ -1341,8 +1341,10 @@ export default function Receipts() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Purchases"
-        title="Receipt Scanner"
-        description="Upload receipts for AI extraction or enter manually"
+        title={t.receiptScanner}
+        description={
+          (t as any).receiptScannerSubtitle ?? "Upload receipts for AI extraction or enter manually"
+        }
         actions={
           <Button
             onClick={() => setManualExpenseDialogOpen(true)}

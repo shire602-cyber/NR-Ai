@@ -189,46 +189,31 @@ function getStatusBadge(status: string) {
   switch (status) {
     case "pending":
       return (
-        <Badge
-          variant="outline"
-          className="bg-muted text-foreground "
-        >
+        <Badge variant="outline" className="bg-muted text-foreground ">
           Pending
         </Badge>
       );
     case "approved":
       return (
-        <Badge
-          variant="outline"
-          className="bg-info-subtle text-info "
-        >
+        <Badge variant="outline" className="bg-info-subtle text-info ">
           Approved
         </Badge>
       );
     case "partial":
       return (
-        <Badge
-          variant="outline"
-          className="bg-warning-subtle text-warning "
-        >
+        <Badge variant="outline" className="bg-warning-subtle text-warning ">
           Partial
         </Badge>
       );
     case "paid":
       return (
-        <Badge
-          variant="outline"
-          className="bg-success-subtle text-success "
-        >
+        <Badge variant="outline" className="bg-success-subtle text-success ">
           Paid
         </Badge>
       );
     case "overdue":
       return (
-        <Badge
-          variant="outline"
-          className="bg-danger-subtle text-destructive "
-        >
+        <Badge variant="outline" className="bg-danger-subtle text-destructive ">
           Overdue
         </Badge>
       );
@@ -633,8 +618,8 @@ export default function BillPay() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Purchases"
-        title="Bill Pay"
-        description="Manage vendor bills, approvals, and payments"
+        title={t.billPay}
+        description={(t as any).billPaySubtitle ?? "Manage vendor bills, approvals, and payments"}
       />
 
       <Tabs

@@ -551,8 +551,12 @@ export default function ExpenseClaims() {
       return (
         <EmptyState
           icon={Receipt}
-          title={emptyTitle ?? "No expense claims yet"}
-          description={emptyDescription ?? "Submit your first reimbursement to get started."}
+          title={emptyTitle ?? (t as any).noExpenseClaimsYet ?? "No expense claims yet"}
+          description={
+            emptyDescription ??
+            (t as any).expenseClaimsEmptyDesc ??
+            "Submit your first reimbursement to get started."
+          }
           action={
             emptyAction
               ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
