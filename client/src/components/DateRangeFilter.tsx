@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { CalendarIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 interface DateRange {
   from: Date | undefined;
@@ -35,18 +36,20 @@ interface DateRangeFilterProps {
   className?: string;
 }
 
-const presetRanges = [
-  { label: "This Month", value: "this-month" },
-  { label: "Last Month", value: "last-month" },
-  { label: "This Quarter", value: "this-quarter" },
-  { label: "Last Quarter", value: "last-quarter" },
-  { label: "This Year", value: "this-year" },
-  { label: "Last Year", value: "last-year" },
-  { label: "Custom", value: "custom" },
-];
-
 export function DateRangeFilter({ dateRange, onDateRangeChange, className }: DateRangeFilterProps) {
+  const { t } = useTranslation();
+  const tt = t as Record<string, string>;
   const [preset, setPreset] = useState<string>("");
+
+  const presetRanges = [
+    { label: tt.thisMonth ?? "This Month", value: "this-month" },
+    { label: tt.lastMonth ?? "Last Month", value: "last-month" },
+    { label: tt.thisQuarter ?? "This Quarter", value: "this-quarter" },
+    { label: tt.lastQuarter ?? "Last Quarter", value: "last-quarter" },
+    { label: tt.thisYear ?? "This Year", value: "this-year" },
+    { label: tt.lastYear ?? "Last Year", value: "last-year" },
+    { label: tt.custom ?? "Custom", value: "custom" },
+  ];
 
   const handlePresetChange = (value: string) => {
     setPreset(value);
@@ -93,7 +96,7 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <Select value={preset} onValueChange={handlePresetChange}>
         <SelectTrigger className="w-[140px]" data-testid="select-date-preset">
-          <SelectValue placeholder="Date range" />
+          <SelectValue placeholder={tt.dateRange ?? "Date range"} />
         </SelectTrigger>
         <SelectContent>
           {presetRanges.map((range) => (
@@ -115,7 +118,9 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
             data-testid="button-date-from"
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {dateRange.from ? format(dateRange.from, "MMM dd, yyyy") : "Start date"}
+            {dateRange.from
+              ? format(dateRange.from, "MMM dd, yyyy")
+              : (tt.startDate ?? "Start date")}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
@@ -131,7 +136,7 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
         </PopoverContent>
       </Popover>
 
-      <span className="text-muted-foreground">to</span>
+      <span className="text-muted-foreground">{tt.dateTo ?? "to"}</span>
 
       <Popover>
         <PopoverTrigger asChild>
@@ -144,7 +149,7 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
             data-testid="button-date-to"
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : "End date"}
+            {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : (tt.endDate ?? "End date")}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">

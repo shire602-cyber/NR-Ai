@@ -1529,7 +1529,8 @@ export default function Invoices() {
                                 description={
                                   dateRange.from || dateRange.to
                                     ? "Try widening the date filter or clearing it to see all invoices."
-                                    : "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically."
+                                    : ((t as any).createFirstInvoice ??
+                                      "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.")
                                 }
                                 action={
                                   !dateRange.from && !dateRange.to
