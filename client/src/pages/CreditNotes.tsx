@@ -116,7 +116,7 @@ interface Invoice {
 }
 
 export default function CreditNotes() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
@@ -362,8 +362,8 @@ export default function CreditNotes() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Sales"
-        title="Credit Notes"
-        description="View credit notes created from invoices"
+        title={t.creditNotes}
+        description={(t as any).creditNotesSubtitle ?? "View credit notes created from invoices"}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -794,9 +794,15 @@ export default function CreditNotes() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={FileText}
-                        title="No credit notes yet"
-                        description="Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically."
-                        action={{ label: "New Credit Note", onClick: () => setDialogOpen(true) }}
+                        title={(t as any).noCreditNotesYet ?? "No credit notes yet"}
+                        description={
+                          (t as any).creditNotesEmptyDesc ??
+                          "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically."
+                        }
+                        action={{
+                          label: (t as any).newCreditNote ?? "New Credit Note",
+                          onClick: () => setDialogOpen(true),
+                        }}
                         testId="empty-credit-notes"
                       />
                     </TableCell>

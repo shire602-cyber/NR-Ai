@@ -109,7 +109,7 @@ interface Quote {
 }
 
 export default function Quotes() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -315,8 +315,8 @@ export default function Quotes() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Sales"
-        title="Quotes"
-        description="Create and manage quotes for your customers"
+        title={t.quotes}
+        description={(t as any).quotesSubtitle ?? "Create and manage quotes for your customers"}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -765,9 +765,15 @@ export default function Quotes() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={FileText}
-                        title="No quotes yet"
-                        description="Send a professional quote in minutes — accepted quotes convert to invoices with one click."
-                        action={{ label: "New Quote", onClick: () => setDialogOpen(true) }}
+                        title={(t as any).noQuotesYet ?? "No quotes yet"}
+                        description={
+                          (t as any).quotesEmptyDesc ??
+                          "Send a professional quote in minutes — accepted quotes convert to invoices with one click."
+                        }
+                        action={{
+                          label: (t as any).newQuote ?? "New Quote",
+                          onClick: () => setDialogOpen(true),
+                        }}
                         testId="empty-quotes"
                       />
                     </TableCell>

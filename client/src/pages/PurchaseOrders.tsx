@@ -112,7 +112,7 @@ interface PurchaseOrder {
 }
 
 export default function PurchaseOrders() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
@@ -353,8 +353,10 @@ export default function PurchaseOrders() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Purchases"
-        title="Purchase Orders"
-        description="Create and manage purchase orders for your vendors"
+        title={t.purchaseOrders}
+        description={
+          (t as any).purchaseOrdersSubtitle ?? "Create and manage purchase orders for your vendors"
+        }
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -835,9 +837,15 @@ export default function PurchaseOrders() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={ShoppingCart}
-                        title="No purchase orders yet"
-                        description="Track what you've ordered from suppliers and match deliveries to bills when they arrive."
-                        action={{ label: "New Purchase Order", onClick: () => setDialogOpen(true) }}
+                        title={(t as any).noPurchaseOrdersYet ?? "No purchase orders yet"}
+                        description={
+                          (t as any).purchaseOrdersEmptyDesc ??
+                          "Track what you've ordered from suppliers and match deliveries to bills when they arrive."
+                        }
+                        action={{
+                          label: (t as any).newPurchaseOrder ?? "New Purchase Order",
+                          onClick: () => setDialogOpen(true),
+                        }}
                         testId="empty-purchase-orders"
                       />
                     </TableCell>
