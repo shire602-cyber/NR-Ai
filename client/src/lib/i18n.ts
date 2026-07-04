@@ -93,6 +93,11 @@ export const t = {
     receiptScannerSubtitle: "Upload receipts for AI extraction or enter manually",
     noExpenseClaimsYet: "No expense claims yet",
     expenseClaimsEmptyDesc: "Submit your first reimbursement to get started.",
+    financialStatementsCenter: "Financial Statements Center",
+    financialStatementsCenterDesc:
+      "Open the clean statement workspace for P&L, Balance Sheet, and Cash Flow.",
+    reportCategoryCardDesc:
+      "Open a report from this category. Persona ranking changes recommendations, not report names.",
     eyebrowSettings: "Settings",
     eyebrowAccounting: "Accounting",
     eyebrowFirm: "Firm",
@@ -529,6 +534,11 @@ export const t = {
     receiptScannerSubtitle: "ارفع الإيصالات لاستخراجها بالذكاء الاصطناعي أو أدخلها يدويًا",
     noExpenseClaimsYet: "لا توجد مطالبات مصروفات بعد",
     expenseClaimsEmptyDesc: "قدّم أول مطالبة استرداد للبدء.",
+    financialStatementsCenter: "مركز البيانات المالية",
+    financialStatementsCenterDesc:
+      "افتح مساحة عمل البيانات النظيفة للأرباح والخسائر والميزانية والتدفقات النقدية.",
+    reportCategoryCardDesc:
+      "افتح تقريرًا من هذه الفئة. ترتيب الشخصية يغيّر التوصيات وليس أسماء التقارير.",
     eyebrowSettings: "الإعدادات",
     eyebrowAccounting: "المحاسبة",
     eyebrowFirm: "المكتب",

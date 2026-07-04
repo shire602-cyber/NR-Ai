@@ -35,6 +35,7 @@ import {
   type ReportLaunchDeliveryPreview,
 } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
+import { reportNameAr, reportQuestionAr, reportCategoryAr } from "@/lib/reportCatalogI18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
@@ -2562,12 +2563,20 @@ export default function Reports() {
   const effectiveReportPersona: ReportPersona =
     personaFilter === "all" ? (preferredReportPersona ?? "owner") : personaFilter;
   const reportViewerOptions = useMemo(() => {
+    const isAr = locale === "ar";
+    const catLabel = (category: string) =>
+      isAr
+        ? (reportCategoryAr[category] ?? reportViewerCategoryLabel(category))
+        : reportViewerCategoryLabel(category);
+
     const statementCenterOption: ReportViewerOption = {
       id: "financial-statements-center",
-      label: "Financial Statements Center",
-      description: "Open the clean statement workspace for P&L, Balance Sheet, and Cash Flow.",
+      label: isAr ? (t as any).financialStatementsCenter : "Financial Statements Center",
+      description: isAr
+        ? (t as any).financialStatementsCenterDesc
+        : "Open the clean statement workspace for P&L, Balance Sheet, and Cash Flow.",
       category: "Financial Statements",
-      categoryLabel: "Financial Statements",
+      categoryLabel: catLabel("Financial Statements"),
       status: "live",
       order: -1,
       href: "/financial-statements",
@@ -2590,10 +2599,12 @@ export default function Reports() {
       return {
         id: report.id,
         reportId: report.id,
-        label: report.name,
-        description: report.decisionQuestion,
+        label: isAr ? (reportNameAr[report.id] ?? report.name) : report.name,
+        description: isAr
+          ? (reportQuestionAr[report.id] ?? report.decisionQuestion)
+          : report.decisionQuestion,
         category,
-        categoryLabel: reportViewerCategoryLabel(category),
+        categoryLabel: catLabel(category),
         status: report.status,
         order: index,
         tab: report.tab,
@@ -2609,7 +2620,7 @@ export default function Reports() {
       if (a.order !== b.order) return a.order - b.order;
       return a.label.localeCompare(b.label);
     });
-  }, [effectiveReportPersona]);
+  }, [effectiveReportPersona, locale, t]);
   const reportViewerOptionById = useMemo(
     () => new Map(reportViewerOptions.map((option) => [option.id, option])),
     [reportViewerOptions]
@@ -17904,8 +17915,8 @@ export default function Reports() {
                     <Badge variant="outline">{group.options.length}</Badge>
                   </div>
                   <CardDescription className="line-clamp-2">
-                    Open a report from this category. Persona ranking changes recommendations, not
-                    report names.
+                    {(t as any).reportCategoryCardDesc ??
+                      "Open a report from this category. Persona ranking changes recommendations, not report names."}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y p-0">
