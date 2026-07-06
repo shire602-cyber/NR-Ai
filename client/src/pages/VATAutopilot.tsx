@@ -35,8 +35,8 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 import {
-  Calculator,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -202,7 +202,9 @@ export default function VATAutopilot() {
       return apiRequest("GET", calculationPath(companyId, period));
     },
     onSuccess: (calc) => {
-      setSelectedPeriodKey(periodKey({ periodStart: calc.period.start, periodEnd: calc.period.end }));
+      setSelectedPeriodKey(
+        periodKey({ periodStart: calc.period.start, periodEnd: calc.period.end })
+      );
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/periods", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat/autopilot/due-dates", companyId] });
       toast({
@@ -309,30 +311,28 @@ export default function VATAutopilot() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Calculator className="h-6 w-6" />
-            VAT Autopilot
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Auto-calculated UAE FTA VAT 201 return. Review, adjust, and submit when ready.
-          </p>
-        </div>
-        <Button
-          onClick={() => selectedPeriod && calcMutation.mutate(selectedPeriod)}
-          disabled={calcMutation.isPending || !selectedPeriod}
-          data-testid="button-calculate-now"
-        >
-          {calcMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          {selectedPeriod ? "Calculate selected period" : "Choose period first"}
-        </Button>
-      </div>
+    <div className="space-y-6 p-6">
+      <PageHeader
+        eyebrow="Compliance"
+        title="VAT Autopilot"
+        description="Auto-calculate the UAE FTA VAT 201 for any filing period — review, adjust, and hand off to filing."
+        backHref="/vat-filing"
+        backLabel="Back to VAT filing"
+        actions={
+          <Button
+            onClick={() => selectedPeriod && calcMutation.mutate(selectedPeriod)}
+            disabled={calcMutation.isPending || !selectedPeriod}
+            data-testid="button-calculate-now"
+          >
+            {calcMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            {selectedPeriod ? "Calculate selected period" : "Choose period first"}
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -368,7 +368,9 @@ export default function VATAutopilot() {
               className="flex flex-wrap items-center gap-3 text-sm"
               data-testid="selected-vat-filing-period"
             >
-              <span className="text-muted-foreground">Due {formatDate(selectedPeriod.dueDate)}</span>
+              <span className="text-muted-foreground">
+                Due {formatDate(selectedPeriod.dueDate)}
+              </span>
               <Badge className={LEVEL_BADGE[selectedPeriod.deadline.level].className}>
                 {LEVEL_BADGE[selectedPeriod.deadline.level].label}
               </Badge>
