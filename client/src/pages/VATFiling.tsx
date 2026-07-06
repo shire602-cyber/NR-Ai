@@ -1,12 +1,20 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO, startOfQuarter, endOfQuarter } from "date-fns";
+import {
+  format,
+  parseISO,
+  startOfQuarter,
+  endOfQuarter,
+  addDays,
+  differenceInCalendarDays,
+} from "date-fns";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -47,6 +55,7 @@ import {
   Loader2,
   Eye,
   Edit3,
+  ChevronDown,
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -280,6 +289,48 @@ export default function VATFiling() {
   }, []);
   const canGenerateVatReturn = Boolean(company?.trnVatNumber);
   const hasVatReturns = (vatReturns?.length ?? 0) > 0;
+
+  // The filing users care about right now: the return for the current quarter
+  // if one exists, otherwise the most recently created one. Drives the hero.
+  const currentFiling = useMemo(() => {
+    const returns = vatReturns ?? [];
+    const match = returns.find((r) => {
+      try {
+        return (
+          format(parseISO(r.periodStart), "yyyy-MM") === format(currentQuarter.start, "yyyy-MM") &&
+          format(parseISO(r.periodEnd), "yyyy-MM") === format(currentQuarter.end, "yyyy-MM")
+        );
+      } catch {
+        return false;
+      }
+    });
+    const active =
+      match ??
+      [...returns].sort(
+        (a, b) => parseISO(b.periodEnd).getTime() - parseISO(a.periodEnd).getTime()
+      )[0];
+
+    const periodStart = active ? parseISO(active.periodStart) : currentQuarter.start;
+    const periodEnd = active ? parseISO(active.periodEnd) : currentQuarter.end;
+    const dueDate = active?.dueDate ? parseISO(active.dueDate) : addDays(periodEnd, 28);
+    const daysUntilDue = differenceInCalendarDays(dueDate, new Date());
+    const net = active?.box14PayableTax ?? 0;
+
+    return {
+      hasReturn: Boolean(active),
+      matchesCurrentQuarter: Boolean(match),
+      return: active,
+      periodStart,
+      periodEnd,
+      dueDate,
+      daysUntilDue,
+      net,
+      isRefund: net < 0,
+      output: active?.box12TotalDueTax ?? active?.box8TotalVat ?? 0,
+      input: active?.box13RecoverableTax ?? active?.box11TotalVat ?? 0,
+      status: active?.status ?? "none",
+    };
+  }, [vatReturns, currentQuarter]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -772,13 +823,7 @@ export default function VATFiling() {
         backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" data-testid="button-vat-proof-trail">
-              <Link href={evidenceSectionHref("proof-drilldown")}>
-                <Eye className="w-4 h-4 mr-2" />
-                {locale === "ar" ? "عرض أدلة الضريبة" : "View VAT proof"}
-              </Link>
-            </Button>
-            <Button asChild variant="outline" data-testid="button-vat-refund-support">
+            <Button asChild variant="outline" size="sm" data-testid="button-vat-refund-support">
               <Link href={evidenceSectionHref("refund-pack-export")}>
                 <FileText className="w-4 h-4 mr-2" />
                 {locale === "ar" ? "حزمة دعم الاسترداد" : "Refund support"}
@@ -787,7 +832,7 @@ export default function VATFiling() {
             {canGenerateVatReturn ? (
               <Button onClick={handleCreateReturn} data-testid="button-create-return">
                 <Calculator className="w-4 h-4 mr-2" />
-                {locale === "ar" ? "إنشاء مسودة رسمية" : "Create official draft"}
+                {locale === "ar" ? "إنشاء مسودة رسمية" : "New VAT draft"}
               </Button>
             ) : (
               <Button asChild data-testid="button-add-trn-header">
@@ -799,14 +844,6 @@ export default function VATFiling() {
             )}
           </div>
         }
-      />
-
-      <VatWorkpaperPanel
-        companyId={companyId}
-        canGenerateVatReturn={canGenerateVatReturn}
-        defaultPeriodStart={currentQuarter.start}
-        defaultPeriodEnd={currentQuarter.end}
-        defaultEmirate={company?.emirate}
       />
 
       {!company?.trnVatNumber && (
@@ -836,52 +873,197 @@ export default function VATFiling() {
         </Card>
       )}
 
-      {hasVatReturns && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {locale === "ar" ? "إجمالي الإقرارات" : "Total Returns"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {locale === "ar" ? "قيد المراجعة" : "Pending Review"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-warning">{stats.pending}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {locale === "ar" ? "مؤرشفة كإقرارات مقدمة" : "Marked Filed"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-success">{stats.filed}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {locale === "ar" ? "إجمالي المستحق" : "Total Payable"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-2xl font-bold ${stats.totalPayable >= 0 ? "text-destructive" : "text-success"}`}
+      {/* ── Current filing hero — lead with the answer, not the spreadsheet ── */}
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr]">
+          {/* Left: period + net VAT position */}
+          <div className="p-6 lg:p-7">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+              <span aria-hidden className="inline-block h-px w-5 bg-accent/60" />
+              {locale === "ar" ? "فترة التقديم الحالية" : "Current filing period"}
+            </div>
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
+                {format(currentFiling.periodStart, "d MMM")} –{" "}
+                {format(currentFiling.periodEnd, "d MMM yyyy")}
+              </h2>
+              {currentFiling.hasReturn && getStatusBadge(currentFiling.status)}
+            </div>
+
+            <div className="mt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {currentFiling.isRefund
+                  ? locale === "ar"
+                    ? "استرداد ضريبي مستحق"
+                    : "VAT refund due"
+                  : locale === "ar"
+                    ? "صافي ضريبة القيمة المضافة المستحقة"
+                    : "Net VAT payable"}
+              </p>
+              <p
+                className={`mt-1 font-display text-[2.5rem] leading-none tracking-tight tabular-nums ${
+                  !currentFiling.hasReturn
+                    ? "text-muted-foreground"
+                    : currentFiling.isRefund
+                      ? "text-success"
+                      : "text-foreground"
+                }`}
+                data-testid="text-vat-net-hero"
               >
-                {formatCurrency(Math.abs(stats.totalPayable))}
-              </div>
-            </CardContent>
-          </Card>
+                {currentFiling.hasReturn
+                  ? formatCurrency(Math.abs(currentFiling.net))
+                  : locale === "ar"
+                    ? "لم تُحتسب بعد"
+                    : "Not yet calculated"}
+              </p>
+              {currentFiling.hasReturn && (
+                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-muted-foreground tabular-nums">
+                  <span>
+                    {locale === "ar" ? "المخرجات" : "Output VAT"}:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(currentFiling.output)}
+                    </span>
+                  </span>
+                  <span>
+                    {locale === "ar" ? "المدخلات" : "Input VAT"}:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(currentFiling.input)}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              {currentFiling.hasReturn ? (
+                <>
+                  <Button
+                    onClick={() => handleViewReturn(currentFiling.return)}
+                    data-testid="button-hero-view-return"
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    {locale === "ar" ? "عرض الإقرار" : "Review return"}
+                  </Button>
+                  {(currentFiling.status === "draft" ||
+                    currentFiling.status === "pending_review") && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleEditReturn(currentFiling.return)}
+                      data-testid="button-hero-edit-return"
+                    >
+                      <Edit3 className="mr-2 h-4 w-4" />
+                      {locale === "ar" ? "تعديل" : "Edit"}
+                    </Button>
+                  )}
+                </>
+              ) : canGenerateVatReturn ? (
+                <Button onClick={handleCreateReturn} data-testid="button-hero-generate">
+                  <Calculator className="mr-2 h-4 w-4" />
+                  {locale === "ar" ? "احتساب الإقرار" : "Generate return"}
+                </Button>
+              ) : (
+                <Button asChild>
+                  <Link href="/company-profile">
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                    {locale === "ar" ? "إضافة رقم التسجيل" : "Add TRN"}
+                  </Link>
+                </Button>
+              )}
+              <Button asChild variant="ghost" size="sm" data-testid="button-vat-proof-trail">
+                <Link href={evidenceSectionHref("proof-drilldown")}>
+                  {locale === "ar" ? "عرض الأدلة" : "View proof"}
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          {/* Right: due-date countdown */}
+          <div className="flex flex-col justify-center gap-1 border-t border-card-border bg-muted/30 p-6 lg:border-l lg:border-t-0 lg:p-7">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {locale === "ar" ? "آخر موعد للتقديم" : "Filing deadline"}
+            </p>
+            <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
+              {format(currentFiling.dueDate, "d MMMM yyyy")}
+            </p>
+            {(() => {
+              const d = currentFiling.daysUntilDue;
+              const filed =
+                currentFiling.status === "filed" || currentFiling.status === "submitted";
+              const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
+              const label = filed
+                ? locale === "ar"
+                  ? "تم التقديم"
+                  : "Filed"
+                : d < 0
+                  ? locale === "ar"
+                    ? `متأخر بـ ${Math.abs(d)} يوم`
+                    : `Overdue by ${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"}`
+                  : d === 0
+                    ? locale === "ar"
+                      ? "مستحق اليوم"
+                      : "Due today"
+                    : locale === "ar"
+                      ? `باقٍ ${d} يوم`
+                      : `Due in ${d} day${d === 1 ? "" : "s"}`;
+              return (
+                <div className="mt-3">
+                  <StatusBadge tone={tone as any}>{label}</StatusBadge>
+                </div>
+              );
+            })()}
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              {locale === "ar"
+                ? "يجب تقديم الإقرار وسداد الضريبة خلال 28 يومًا من نهاية الفترة الضريبية."
+                : "Returns and payment are due within 28 days of the tax period end (FTA)."}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {hasVatReturns && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {(
+            [
+              {
+                label: locale === "ar" ? "إجمالي الإقرارات" : "Total returns",
+                value: String(stats.total),
+                tone: "text-foreground",
+              },
+              {
+                label: locale === "ar" ? "قيد المراجعة" : "Pending review",
+                value: String(stats.pending),
+                tone: stats.pending > 0 ? "text-warning" : "text-foreground",
+              },
+              {
+                label: locale === "ar" ? "مقدَّمة" : "Filed",
+                value: String(stats.filed),
+                tone: "text-success",
+              },
+              {
+                label:
+                  stats.totalPayable >= 0
+                    ? locale === "ar"
+                      ? "إجمالي المستحق"
+                      : "Total payable"
+                    : locale === "ar"
+                      ? "إجمالي الاسترداد"
+                      : "Total refundable",
+                value: formatCurrency(Math.abs(stats.totalPayable)),
+                tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
+              },
+            ] as const
+          ).map((s) => (
+            <Card key={s.label} className="p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {s.label}
+              </p>
+              <p
+                className={`mt-2 font-display text-2xl leading-none tracking-tight tabular-nums ${s.tone}`}
+              >
+                {s.value}
+              </p>
+            </Card>
+          ))}
         </div>
       )}
 
@@ -1101,6 +1283,32 @@ export default function VATFiling() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Evidence workpaper — power-user tooling, demoted below the outcome ── */}
+      <details className="group rounded-xl border border-card-border bg-card shadow-card-soft">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 [&::-webkit-details-marker]:hidden">
+          <div>
+            <p className="font-semibold tracking-tight text-foreground">
+              {locale === "ar" ? "ورقة عمل الأدلة الضريبية" : "VAT evidence workpaper"}
+            </p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              {locale === "ar"
+                ? "منطقة عمل متقدمة: أدخل أو الصق أو اسحب البنود من الدفاتر لبناء إجماليات VAT 201."
+                : "Advanced workspace — enter, paste, or pull lines from your books to build the VAT 201 totals."}
+            </p>
+          </div>
+          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-card-border p-5">
+          <VatWorkpaperPanel
+            companyId={companyId}
+            canGenerateVatReturn={canGenerateVatReturn}
+            defaultPeriodStart={currentQuarter.start}
+            defaultPeriodEnd={currentQuarter.end}
+            defaultEmirate={company?.emirate}
+          />
+        </div>
+      </details>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-md">
