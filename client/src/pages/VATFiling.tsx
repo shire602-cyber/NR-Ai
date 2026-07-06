@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +56,8 @@ import {
   Loader2,
   Eye,
   Edit3,
-  ChevronDown,
+  ListChecks,
+  FileSpreadsheet,
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -1020,227 +1022,152 @@ export default function VATFiling() {
         </div>
       </Card>
 
-      {hasVatReturns && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {(
-            [
-              {
-                label: locale === "ar" ? "إجمالي الإقرارات" : "Total returns",
-                value: String(stats.total),
-                tone: "text-foreground",
-              },
-              {
-                label: locale === "ar" ? "قيد المراجعة" : "Pending review",
-                value: String(stats.pending),
-                tone: stats.pending > 0 ? "text-warning" : "text-foreground",
-              },
-              {
-                label: locale === "ar" ? "مقدَّمة" : "Filed",
-                value: String(stats.filed),
-                tone: "text-success",
-              },
-              {
-                label:
-                  stats.totalPayable >= 0
-                    ? locale === "ar"
-                      ? "إجمالي المستحق"
-                      : "Total payable"
-                    : locale === "ar"
-                      ? "إجمالي الاسترداد"
-                      : "Total refundable",
-                value: formatCurrency(Math.abs(stats.totalPayable)),
-                tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
-              },
-            ] as const
-          ).map((s) => (
-            <Card key={s.label} className="p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {s.label}
-              </p>
-              <p
-                className={`mt-2 font-display text-2xl leading-none tracking-tight tabular-nums ${s.tone}`}
-              >
-                {s.value}
-              </p>
-            </Card>
-          ))}
-        </div>
-      )}
+      <Tabs defaultValue="returns" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="returns" data-testid="tab-vat-returns">
+            <ListChecks className="mr-2 h-4 w-4" />
+            {locale === "ar" ? "الإقرارات" : "Returns"}
+          </TabsTrigger>
+          <TabsTrigger value="workpaper" data-testid="tab-vat-workpaper">
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            {locale === "ar" ? "ورقة العمل" : "Workpaper"}
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{locale === "ar" ? "سجل الإقرارات" : "VAT Returns History"}</CardTitle>
-          <CardDescription>
-            {locale === "ar"
-              ? "جميع إقرارات ضريبة القيمة المضافة المسجلة"
-              : "All your VAT return submissions and drafts"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingReturns ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-16" />
+        <TabsContent value="returns" className="mt-0 space-y-6">
+          {hasVatReturns && (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {(
+                [
+                  {
+                    label: locale === "ar" ? "إجمالي الإقرارات" : "Total returns",
+                    value: String(stats.total),
+                    tone: "text-foreground",
+                  },
+                  {
+                    label: locale === "ar" ? "قيد المراجعة" : "Pending review",
+                    value: String(stats.pending),
+                    tone: stats.pending > 0 ? "text-warning" : "text-foreground",
+                  },
+                  {
+                    label: locale === "ar" ? "مقدَّمة" : "Filed",
+                    value: String(stats.filed),
+                    tone: "text-success",
+                  },
+                  {
+                    label:
+                      stats.totalPayable >= 0
+                        ? locale === "ar"
+                          ? "إجمالي المستحق"
+                          : "Total payable"
+                        : locale === "ar"
+                          ? "إجمالي الاسترداد"
+                          : "Total refundable",
+                    value: formatCurrency(Math.abs(stats.totalPayable)),
+                    tone: stats.totalPayable >= 0 ? "text-destructive" : "text-success",
+                  },
+                ] as const
+              ).map((s) => (
+                <Card key={s.label} className="p-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {s.label}
+                  </p>
+                  <p
+                    className={`mt-2 font-display text-2xl leading-none tracking-tight tabular-nums ${s.tone}`}
+                  >
+                    {s.value}
+                  </p>
+                </Card>
               ))}
             </div>
-          ) : !vatReturns || vatReturns.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{locale === "ar" ? "سجل الإقرارات" : "VAT Returns History"}</CardTitle>
+              <CardDescription>
                 {locale === "ar"
-                  ? "لا توجد إقرارات ضريبية بعد."
-                  : canGenerateVatReturn
-                    ? "No VAT returns yet. Create your first official VAT draft when you are ready."
-                    : "No VAT returns yet. Add the company TRN before creating official VAT drafts."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-3 md:hidden" data-testid="mobile-vat-return-list">
-                {vatReturns.map((vatReturn) => (
-                  <Card key={vatReturn.id}>
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">
-                            {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                            {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Due {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
-                          </p>
-                        </div>
-                        {getStatusBadge(vatReturn.status)}
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            {locale === "ar" ? "المخرجات" : "Output"}
-                          </p>
-                          <p className="font-mono">
-                            {formatCurrency(
-                              vatReturn.box12TotalDueTax || vatReturn.box8TotalVat || 0
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            {locale === "ar" ? "المدخلات" : "Input"}
-                          </p>
-                          <p className="font-mono">
-                            {formatCurrency(
-                              vatReturn.box13RecoverableTax || vatReturn.box11TotalVat || 0
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            {locale === "ar" ? "الصافي" : "Net"}
-                          </p>
-                          <p
-                            className={`font-mono font-semibold ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
-                          >
-                            {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleViewReturn(vatReturn)}
-                          data-testid={`mobile-button-view-vat-${vatReturn.id}`}
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          View
-                        </Button>
-                        {(vatReturn.status === "draft" ||
-                          vatReturn.status === "pending_review") && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEditReturn(vatReturn)}
-                            data-testid={`mobile-button-edit-vat-${vatReturn.id}`}
-                          >
-                            <Edit3 className="w-4 h-4 mr-1" />
-                            Edit
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleExportPDF(vatReturn)}
-                        >
-                          PDF
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void handleExportExcel(vatReturn)}
-                        >
-                          XLSX
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <div className="hidden rounded-md border overflow-x-auto md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
-                      <TableHead>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"}</TableHead>
-                      <TableHead className="text-right">
-                        {locale === "ar" ? "ضريبة المخرجات" : "Output Tax"}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {locale === "ar" ? "ضريبة المدخلات" : "Input Tax"}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {locale === "ar" ? "صافي الضريبة" : "Net Tax"}
-                      </TableHead>
-                      <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
-                      <TableHead className="text-right">
-                        {locale === "ar" ? "الإجراءات" : "Actions"}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                  ? "جميع إقرارات ضريبة القيمة المضافة المسجلة"
+                  : "All your VAT return submissions and drafts"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoadingReturns ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16" />
+                  ))}
+                </div>
+              ) : !vatReturns || vatReturns.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">
+                    {locale === "ar"
+                      ? "لا توجد إقرارات ضريبية بعد."
+                      : canGenerateVatReturn
+                        ? "No VAT returns yet. Create your first official VAT draft when you are ready."
+                        : "No VAT returns yet. Add the company TRN before creating official VAT drafts."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-3 md:hidden" data-testid="mobile-vat-return-list">
                     {vatReturns.map((vatReturn) => (
-                      <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
-                        <TableCell className="font-medium">
-                          {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                          {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
-                        </TableCell>
-                        <TableCell>{format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(
-                            vatReturn.box12TotalDueTax || vatReturn.box8TotalVat || 0
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(
-                            vatReturn.box13RecoverableTax || vatReturn.box11TotalVat || 0
-                          )}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-mono font-medium ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
-                        >
-                          {(vatReturn.box14PayableTax || 0) >= 0 ? "" : "("}
-                          {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
-                          {(vatReturn.box14PayableTax || 0) >= 0 ? "" : ")"}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(vatReturn.status)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
+                      <Card key={vatReturn.id}>
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium">
+                                {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Due {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                              </p>
+                            </div>
+                            {getStatusBadge(vatReturn.status)}
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                {locale === "ar" ? "المخرجات" : "Output"}
+                              </p>
+                              <p className="font-mono">
+                                {formatCurrency(
+                                  vatReturn.box12TotalDueTax || vatReturn.box8TotalVat || 0
+                                )}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                {locale === "ar" ? "المدخلات" : "Input"}
+                              </p>
+                              <p className="font-mono">
+                                {formatCurrency(
+                                  vatReturn.box13RecoverableTax || vatReturn.box11TotalVat || 0
+                                )}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                {locale === "ar" ? "الصافي" : "Net"}
+                              </p>
+                              <p
+                                className={`font-mono font-semibold ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
+                              >
+                                {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="outline"
                               onClick={() => handleViewReturn(vatReturn)}
-                              data-testid={`button-view-${vatReturn.id}`}
+                              data-testid={`mobile-button-view-vat-${vatReturn.id}`}
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4 mr-1" />
+                              View
                             </Button>
                             {(vatReturn.status === "draft" ||
                               vatReturn.status === "pending_review") && (
@@ -1248,58 +1175,145 @@ export default function VATFiling() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleEditReturn(vatReturn)}
-                                data-testid={`button-edit-${vatReturn.id}`}
+                                data-testid={`mobile-button-edit-vat-${vatReturn.id}`}
                               >
                                 <Edit3 className="w-4 h-4 mr-1" />
-                                {locale === "ar" ? "تحرير" : "Edit"}
+                                Edit
                               </Button>
                             )}
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => handleExportPDF(vatReturn)}
-                              title="Download PDF"
-                              data-testid={`button-export-pdf-${vatReturn.id}`}
                             >
-                              <Download className="w-4 h-4" />
+                              PDF
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="ghost"
                               onClick={() => void handleExportExcel(vatReturn)}
-                              title="Download Excel workbook"
-                              data-testid={`button-export-vat201-excel-${vatReturn.id}`}
                             >
                               XLSX
                             </Button>
                           </div>
-                        </TableCell>
-                      </TableRow>
+                        </CardContent>
+                      </Card>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                  </div>
+                  <div className="hidden rounded-md border overflow-x-auto md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
+                          <TableHead>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"}</TableHead>
+                          <TableHead className="text-right">
+                            {locale === "ar" ? "ضريبة المخرجات" : "Output Tax"}
+                          </TableHead>
+                          <TableHead className="text-right">
+                            {locale === "ar" ? "ضريبة المدخلات" : "Input Tax"}
+                          </TableHead>
+                          <TableHead className="text-right">
+                            {locale === "ar" ? "صافي الضريبة" : "Net Tax"}
+                          </TableHead>
+                          <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
+                          <TableHead className="text-right">
+                            {locale === "ar" ? "الإجراءات" : "Actions"}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {vatReturns.map((vatReturn) => (
+                          <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
+                            <TableCell className="font-medium">
+                              {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                              {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                            </TableCell>
+                            <TableCell>
+                              {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(
+                                vatReturn.box12TotalDueTax || vatReturn.box8TotalVat || 0
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(
+                                vatReturn.box13RecoverableTax || vatReturn.box11TotalVat || 0
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-mono font-medium ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
+                            >
+                              {(vatReturn.box14PayableTax || 0) >= 0 ? "" : "("}
+                              {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
+                              {(vatReturn.box14PayableTax || 0) >= 0 ? "" : ")"}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(vatReturn.status)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleViewReturn(vatReturn)}
+                                  data-testid={`button-view-${vatReturn.id}`}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                {(vatReturn.status === "draft" ||
+                                  vatReturn.status === "pending_review") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleEditReturn(vatReturn)}
+                                    data-testid={`button-edit-${vatReturn.id}`}
+                                  >
+                                    <Edit3 className="w-4 h-4 mr-1" />
+                                    {locale === "ar" ? "تحرير" : "Edit"}
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleExportPDF(vatReturn)}
+                                  title="Download PDF"
+                                  data-testid={`button-export-pdf-${vatReturn.id}`}
+                                >
+                                  <Download className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void handleExportExcel(vatReturn)}
+                                  title="Download Excel workbook"
+                                  data-testid={`button-export-vat201-excel-${vatReturn.id}`}
+                                >
+                                  XLSX
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* ── Evidence workpaper — power-user tooling, demoted below the outcome ── */}
-      <details className="group rounded-xl border border-card-border bg-card shadow-card-soft">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 [&::-webkit-details-marker]:hidden">
-          <div>
+        {/* ── Workpaper — the accountant's Excel-like workbook, first-class ── */}
+        <TabsContent value="workpaper" className="mt-0">
+          <div className="mb-4">
             <p className="font-semibold tracking-tight text-foreground">
               {locale === "ar" ? "ورقة عمل الأدلة الضريبية" : "VAT evidence workpaper"}
             </p>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
               {locale === "ar"
-                ? "منطقة عمل متقدمة: أدخل أو الصق أو اسحب البنود من الدفاتر لبناء إجماليات VAT 201."
-                : "Advanced workspace — enter, paste, or pull lines from your books to build the VAT 201 totals."}
+                ? "أدخل أو الصق أو اسحب البنود من الدفاتر لبناء إجماليات VAT 201 مع الأدلة."
+                : "Enter, paste, or pull lines from your books to build the VAT 201 totals with evidence."}
             </p>
           </div>
-          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
-        </summary>
-        <div className="border-t border-card-border p-5">
           <VatWorkpaperPanel
             companyId={companyId}
             canGenerateVatReturn={canGenerateVatReturn}
@@ -1307,8 +1321,8 @@ export default function VATFiling() {
             defaultPeriodEnd={currentQuarter.end}
             defaultEmirate={company?.emirate}
           />
-        </div>
-      </details>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-md">
