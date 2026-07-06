@@ -143,14 +143,14 @@ export default function VAT201Form({
   };
 
   return (
-    <div className="space-y-6 font-mono text-sm">
-      <Card className="border-2">
-        <CardHeader className="bg-success text-success-foreground py-3">
-          <CardTitle className="text-center text-lg">
-            <div className="flex justify-between items-center">
-              <span>VAT 201 Return</span>
-              <span dir="rtl">إقرار ضريبة القيمة المضافة</span>
-            </div>
+    <div className="space-y-5 text-sm tabular-nums">
+      <Card>
+        <CardHeader className="border-b py-4">
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="font-display text-xl tracking-tight">VAT 201 Return</span>
+            <span dir="rtl" className="font-display text-lg text-muted-foreground">
+              إقرار ضريبة القيمة المضافة
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4 space-y-4">
@@ -241,7 +241,7 @@ export default function VAT201Form({
         </CardContent>
       </Card>
 
-      <Card className="border-2">
+      <Card>
         <CardHeader className="bg-muted py-2">
           <CardTitle className="text-sm flex justify-between">
             <span>VAT on Sales and All Other Outputs</span>
@@ -524,7 +524,7 @@ export default function VAT201Form({
         </CardContent>
       </Card>
 
-      <Card className="border-2">
+      <Card>
         <CardHeader className="bg-muted py-2">
           <CardTitle className="text-sm flex justify-between">
             <span>VAT on Expenses and All Other Inputs</span>
@@ -647,7 +647,7 @@ export default function VAT201Form({
         </CardContent>
       </Card>
 
-      <Card className="border-2 border-success">
+      <Card className="border-accent/40 bg-accent/[0.03]">
         <CardHeader className="bg-success-subtle py-2">
           <CardTitle className="text-sm flex justify-between text-success-subtle-foreground ">
             <span>Net VAT Due</span>
