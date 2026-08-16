@@ -66,8 +66,15 @@ Defenses now in place even before you move: `.gitignore` blocks `* 2.*`, `.fuse_
 In order. Items 1–2 are afternoons; 3–5 are the real gate.
 
 1. **Move the repo** (Part 1). ~15 min. Everything else is unsafe until this is done.
-2. **Configure object storage** — set `S3_BUCKET` (+ AWS creds) or `BLOB_READ_WRITE_TOKEN` in production. Right now receipt images sit on ephemeral disk and vanish on redeploy; the server warns about this on every boot. ~1 hour.
-3. **Provision an OpenAI API key and open the black box.** Set `OPENAI_API_KEY` in production, then run 100 real receipts through categorization. Measure: Is the suggested account right? What does each transaction cost? Does the 0.9 autopilot threshold hold? You are selling AI — this is the first time anyone will have watched it work. ~1 week of light usage.
+2. **Configure object storage (Vercel Blob — you already use Vercel/Neon).** ~15 minutes:
+   - Vercel dashboard → your project → **Storage** tab → **Create Database** → **Blob** → create a store.
+   - It generates `BLOB_READ_WRITE_TOKEN` — copy it.
+   - Add `BLOB_READ_WRITE_TOKEN` to your production host's environment variables (Railway → your service → Variables, if that's where the server runs) and redeploy.
+   - Verify: the boot log warning "Receipt image storage is EPHEMERAL" disappears. Done.
+3. **Turn on the AI (you have the key).** ~10 minutes to wire, then a week of watching:
+   - Add to production env: `OPENAI_API_KEY=sk-...` (and optionally `AI_MODEL` to pin a model). Redeploy.
+   - Verify: boot log no longer says "AI routes registered without OpenAI"; `/api/ai/*` stops returning 503.
+   - Then the real test: run ~100 real receipts through categorization. Is the suggested account right? What does each cost? Does the 0.9 autopilot threshold hold? You're selling AI — this is the first time anyone watches it work.
 4. **Sign the accredited ASP contract.** The e-invoice adapter is written and tested; without the contract you legally cannot transmit. The <AED 50m filer deadline is **31 Mar 2027** — this is the only item with an external clock.
 5. **File one real VAT 201 with a real accountant** and reconcile Muhasib's figures against what was actually submitted to the FTA. All 130 integration assertions verify the engine against fixtures we wrote — one real return is worth all of them.
 6. *(post-launch)* Consolidate 113 screens → ~20. Do this after a design partner tells you which 20 they live in — not before.
