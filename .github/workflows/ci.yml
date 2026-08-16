@@ -28,7 +28,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
-      - name: Typecheck
+      - name: Typecheck + guards (money-types, migration-journal)
+        # tsc OOMs on the default heap; pin it so this never goes red without a
+        # code change. `npm run check` also runs the money-type and migration
+        # journal guards added in the correctness pass.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run check
 
       - name: Unit tests
@@ -113,6 +118,78 @@ jobs:
           name: e2e-failure-screenshots
           path: tests/e2e/.artifacts/
           if-no-files-found: ignore
+
+  boot-and-fixes:
+    name: Boot gate + correctness integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: muhasib
+          POSTGRES_DB: muhasib
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muhasib"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
+      NODE_ENV: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Generate ephemeral secrets
+        run: |
+          echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      # Boot gate: migrations must apply from a clean database and the server
+      # must answer /api/version. This is what "the app does not boot from a
+      # clean checkout" would have caught.
+      - name: Run migrations (clean DB)
+        run: npx tsx server/migrate.ts
+
+      - name: Build server + client
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: npm run build
+
+      - name: Start server
+        run: |
+          npm start > /tmp/server.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5000/api/version > /dev/null; then echo "up"; exit 0; fi
+            sleep 2
+          done
+          echo "Server failed to boot"; tail -80 /tmp/server.log; exit 1
+
+      # Real HTTP against the built server + a real Postgres. Covers the
+      # criticals (boot, overpayment, period lock, money precision) and the
+      # highs (emirate attribution, honest filing status, VAT periods, bank
+      # validation) — the classes of bug the unit suite structurally cannot see.
+      - name: Correctness integration tests
+        run: npm run test:integration
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -120 /tmp/server.log || true
 
   db-integration:
     name: DB integration · credit-note consolidation

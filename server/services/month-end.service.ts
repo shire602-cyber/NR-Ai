@@ -43,24 +43,17 @@ interface MonthEndCloseRecord {
 }
 
 /**
- * Ensure the month_end_close table exists.
+ * Previously created month_end_close at query time, which (a) ran DDL on the
+ * request path and (b) silently diverged from the migration-defined table,
+ * causing "column closing_entry_id does not exist" and a 500 on lock-period.
+ *
+ * The table and its columns/constraint are now owned solely by migrations
+ * (0014/0073 create it; 0087 reconciles column names + unique constraint).
+ * This is retained as a no-op so the six call sites need not change, and so
+ * that DDL never runs on a user request again.
  */
 async function ensureMonthEndTable(): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS month_end_close (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      company_id UUID NOT NULL,
-      period_end DATE NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      closed_by UUID,
-      closed_at TIMESTAMPTZ,
-      closing_entry_id UUID,
-      notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE(company_id, period_end)
-    )
-  `);
+  // Intentionally empty — schema is owned by migrations. See 0087.
 }
 
 /**

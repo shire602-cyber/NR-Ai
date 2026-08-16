@@ -67,16 +67,36 @@ export function classifyCounterpart(acct: CFAccount | undefined): CashFlowCatego
  * destination section. Income/expense are returned so the caller can roll them
  * into retained earnings (amount = creditTotal - debitTotal).
  */
+/**
+ * Contra-asset accounts NORMALLY carry a credit balance — that is their whole
+ * purpose. They reduce the carrying value of the asset they relate to and must
+ * be presented inside the asset section as a negative, never reclassified as a
+ * liability.
+ *
+ * Accumulated Depreciation (1240) reclassified as a liability made a company
+ * with a 36,000 asset and 1,000 of depreciation report assets 36,000 /
+ * liabilities 37,000 — overstating both sides and hiding the 35,000 net book
+ * value an accountant actually needs.
+ */
+const CONTRA_ASSET_CODES = new Set(["1240"]); // Accumulated Depreciation
+
 export function classifyBalanceSheetAccount(args: {
   type: string;
   debitTotal: number;
   creditTotal: number;
+  /** Account code — used to detect contra accounts. */
+  code?: string;
 }): { section: "asset" | "liability" | "equity" | "income" | "expense"; amount: number } {
   const { type } = args;
   const debit = args.debitTotal || 0;
   const credit = args.creditTotal || 0;
   if (type === "asset") {
     const net = round2(debit - credit); // positive = normal debit balance
+    // Contra-asset: stay in assets and carry the (usually negative) net so the
+    // section total reports net book value.
+    if (args.code && CONTRA_ASSET_CODES.has(args.code)) {
+      return { section: "asset", amount: net };
+    }
     if (net >= 0) return { section: "asset", amount: net };
     return { section: "liability", amount: round2(-net) }; // credit-balance asset -> liability
   }

@@ -169,11 +169,17 @@ export const limiterProfiles = {
     message: "AI rate limit exceeded. Please try again later.",
   } as RouteLimit,
   read: {
-    // Relaxed for GET-heavy dashboards: each page view fires 8-15 GETs and
-    // shared office IPs multiply that, so the ceiling must stay far above
-    // legitimate navigation/report review crawls while still capping abuse.
+    // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
+    // must sit well above real navigation and report review.
+    //
+    // D3: the key is `ip:userId` for authenticated traffic (see compositeKey),
+    // so this budget is per user, not per office. The old default of 3000/min
+    // (50 req/sec sustained, per user) was effectively no limit at all. 600/min
+    // is 10 req/sec — still ~40 full page loads a minute — while actually
+    // capping scripted abuse. Unauthenticated traffic keys on IP alone and is
+    // dominated by the tighter auth limiter above.
     windowMs: envInt("RL_READ_WINDOW_MS", 60_000),
-    max: envInt("RL_READ_MAX", 3000),
+    max: envInt("RL_READ_MAX", 600),
     message: "Too many requests. Please try again later.",
   } as RouteLimit,
 };

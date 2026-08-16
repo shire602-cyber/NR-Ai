@@ -449,6 +449,44 @@ export function registerVATRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Validate the period before doing anything else. A UAE VAT period is a
+      // month or a quarter; absurd spans (e.g. 1900-01-01 → 2999-12-31) must be
+      // rejected rather than generating a nonsense return with a due date
+      // centuries away.
+      const startMs = Date.parse(periodStart);
+      const endMs = Date.parse(periodEnd);
+      if (!periodStart || !periodEnd || Number.isNaN(startMs) || Number.isNaN(endMs)) {
+        return res.status(422).json({
+          message: "periodStart and periodEnd are required and must be valid dates (YYYY-MM-DD).",
+          code: "INVALID_PERIOD",
+        });
+      }
+      if (startMs > endMs) {
+        return res.status(422).json({
+          message: "periodStart must be on or before periodEnd.",
+          code: "INVALID_PERIOD",
+        });
+      }
+      // A quarter is ~92 days; allow up to 366 to cover an annual filing, and
+      // reject anything longer as not a real FTA period.
+      const spanDays = (endMs - startMs) / 86_400_000;
+      if (spanDays > 366) {
+        return res.status(422).json({
+          message: `A VAT return period cannot exceed one year (got ${Math.round(spanDays)} days). Use a monthly or quarterly period.`,
+          code: "PERIOD_TOO_LONG",
+        });
+      }
+      // The period cannot end in the future — you cannot file a period that has
+      // not finished. Allow the current day for same-day quarter-end filing.
+      const endOfToday = new Date();
+      endOfToday.setUTCHours(23, 59, 59, 999);
+      if (endMs > endOfToday.getTime()) {
+        return res.status(422).json({
+          message: "A VAT return period cannot end in the future.",
+          code: "PERIOD_IN_FUTURE",
+        });
+      }
+
       // Generating a VAT return for a period that is already closed would
       // produce numbers that disagree with the locked-period books. Block it.
       if (periodEnd) {
@@ -470,7 +508,19 @@ export function registerVATRoutes(app: Express) {
         });
       }
 
-      const companyEmirate = company.emirate || "dubai";
+      // H1 — never guess the emirate. Box 1a–1g attributes supplies to a
+      // specific emirate; defaulting to Dubai silently files a Sharjah (or Abu
+      // Dhabi, or RAK) company's entire turnover under the wrong box. If the
+      // company has not stated its emirate, refuse rather than guess.
+      if (!company.emirate) {
+        return res.status(422).json({
+          message:
+            "Set your company's emirate before generating a VAT return. Box 1 of the VAT 201 " +
+            "attributes supplies by emirate and must not be guessed.",
+          code: "EMIRATE_NOT_SET",
+        });
+      }
+      const companyEmirate = company.emirate;
 
       // Calculate VAT from invoices and receipts
       const invoices = await storage.getInvoicesByCompanyId(companyId);
@@ -555,15 +605,35 @@ export function registerVATRoutes(app: Express) {
       const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
       const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
 
-      let totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-      let inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+      // FTA reporting is in AED. A receipt stores its DOCUMENT-currency amount
+      // plus the transaction-date rate, so both the expense base and the input
+      // VAT must be converted before they reach Boxes 9/10/11 — exactly as the
+      // invoice lines above and the vendor bills below already do.
+      //
+      // Without this, a USD 1,000 receipt (VAT USD 50) at 3.6725 reported AED
+      // 1,000 of expenses and AED 50 of recoverable input VAT instead of AED
+      // 3,672.50 and AED 183.63 — the business under-claims and OVERPAYS the
+      // FTA. For AED receipts the rate is 1, so this is a no-op.
+      const recRate = (rec: { exchangeRate?: number | string | null }): number => {
+        const r = Number(rec.exchangeRate);
+        return Number.isFinite(r) && r > 0 ? r : 1;
+      };
+
+      let totalExpenses = ordinaryReceipts.reduce(
+        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
+        0
+      );
+      let inputTaxGross = ordinaryReceipts.reduce(
+        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
+        0
+      );
 
       let reverseChargeAmount = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.amount || 0),
+        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
         0
       );
       let reverseChargeVatGross = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.vatAmount || 0),
+        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
         0
       );
 
@@ -796,7 +866,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { id } = req.params;
-      const { adjustmentAmount, adjustmentReason, notes } = req.body;
+      const { adjustmentAmount, adjustmentReason, notes, ftaReferenceNumber } = req.body;
 
       const existing = await storage.getVatReturn(id);
       if (!existing) {
@@ -812,16 +882,44 @@ export function registerVATRoutes(app: Express) {
       // refuse if the underlying period is already closed.
       await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
 
+      // H2 — HONEST FILING STATUS.
+      //
+      // This application does NOT transmit anything to the FTA. There is no
+      // EmaraTax integration. Two distinct things must never be conflated:
+      //
+      //   "submitted" = internally finalised and locked for review. Nothing was
+      //                 sent anywhere. The user still has to file via EmaraTax.
+      //   "filed"     = the user has filed through the official channel and is
+      //                 recording the FTA's acknowledgement reference here.
+      //
+      // A reference number is the only evidence that a real filing happened, so
+      // it is what promotes the return to "filed". Without it we must not use
+      // any wording that implies the return reached the FTA.
+      const reference =
+        typeof ftaReferenceNumber === "string" && ftaReferenceNumber.trim() !== ""
+          ? ftaReferenceNumber.trim()
+          : null;
+
       const vatReturn = await storage.updateVatReturn(id, {
-        status: "submitted",
+        status: reference ? "filed" : "submitted",
         adjustmentAmount: adjustmentAmount || 0,
         adjustmentReason: adjustmentReason || null,
         notes: notes || null,
+        ftaReferenceNumber: reference,
         submittedBy: userId,
         submittedAt: new Date(),
       });
 
-      res.json(vatReturn);
+      res.json({
+        ...vatReturn,
+        filing: {
+          transmittedByMuhasib: false,
+          channel: reference ? "manual-emaratax" : "none",
+          message: reference
+            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
+            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+        },
+      });
     })
   );
 

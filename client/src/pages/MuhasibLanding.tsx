@@ -1335,63 +1335,11 @@ export default function MuhasibLanding() {
         <ComparisonTable />
       </section>
 
-      {/* ─── Testimonial ─────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <figure
-            className="relative overflow-hidden rounded-3xl border p-12 lg:p-16"
-            style={{ background: C.midnight, borderColor: "rgba(255,255,255,0.06)" }}
-          >
-            {/* soft glow */}
-            <div
-              className="pointer-events-none absolute -right-32 -top-32 h-72 w-72 rounded-full blur-3xl"
-              style={{ background: "rgba(13,92,61,0.4)" }}
-            />
-            <div
-              className="pointer-events-none absolute -bottom-32 -left-32 h-72 w-72 rounded-full blur-3xl"
-              style={{ background: "rgba(193,158,80,0.25)" }}
-            />
+      {/* Testimonial section removed: fabricated quote from a named individual/company
+          on a pre-launch product with zero customers. Do not re-add a testimonial
+          until it is real, attributable, and the customer has approved the wording. */}
 
-            <div className="relative">
-              <div
-                className="mb-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-                style={{ color: C.gold }}
-              >
-                <span className="h-px w-8" style={{ background: C.gold }} />
-                Customer
-              </div>
-              <blockquote
-                className="max-w-3xl font-serif text-3xl leading-tight md:text-4xl lg:text-5xl"
-                style={{ color: "#F4F2EC" }}
-              >
-                "Our close went from 11 days to{" "}
-                <span className="italic" style={{ color: C.gold }}>
-                  under two
-                </span>
-                . The VAT 201 is drafted before our accountant even looks at it."
-              </blockquote>
-              <figcaption className="mt-10 flex items-center gap-4 text-sm">
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-full font-serif text-lg font-semibold"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "#F4F2EC" }}
-                >
-                  HM
-                </div>
-                <div>
-                  <div className="font-semibold" style={{ color: "#F4F2EC" }}>
-                    Hassan Mansour
-                  </div>
-                  <div className="text-[12px]" style={{ color: "rgba(244,242,236,0.6)" }}>
-                    Group CFO · Madar Holdings (Dubai)
-                  </div>
-                </div>
-              </figcaption>
-            </div>
-          </figure>
-        </Reveal>
-      </section>
-
-      {/* ─── Insight rail (Big Four trust signal) ────────────────────── */}
+      {/* ─── Insight rail ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-6 py-24">
         <Reveal>
           <div className="flex items-end justify-between gap-6">

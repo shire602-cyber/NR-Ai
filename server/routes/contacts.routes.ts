@@ -107,6 +107,20 @@ export function registerContactRoutes(app: Express) {
         companyId,
       };
 
+      // H7: a UAE TRN is exactly 15 digits. Reject a malformed non-empty TRN so
+      // a bad value (e.g. "123") cannot land on a contact and later break a tax
+      // invoice or the VAT return. Empty/absent is allowed (TRN is optional).
+      if (contactData.trnNumber != null && String(contactData.trnNumber).trim() !== "") {
+        const trn = String(contactData.trnNumber).trim();
+        if (!/^[0-9]{15}$/.test(trn)) {
+          return res.status(422).json({
+            message: "UAE TRN must be exactly 15 digits.",
+            code: "INVALID_TRN",
+          });
+        }
+        contactData.trnNumber = trn;
+      }
+
       // Check for duplicate email within company
       if (contactData.email) {
         const existing = await storage.getCustomerContactByEmail(companyId, contactData.email);

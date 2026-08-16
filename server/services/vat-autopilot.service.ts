@@ -609,7 +609,10 @@ interface CompanyVatConfig {
 
 async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | null> {
   const res = await pool.query(
-    `SELECT id, name, company_type, COALESCE(emirate, 'dubai') AS emirate, trn_vat_number,
+    // H1: emirate is returned as stored. It must NOT be coalesced to 'dubai' —
+    // Box 1a–1g attributes supplies by emirate, and guessing misfiles every
+    // non-Dubai company. Callers surface the unset case to the user.
+    `SELECT id, name, company_type, emirate, trn_vat_number,
             vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS vat_period_start_month,
             COALESCE(vat_auto_calculate, true) AS vat_auto_calculate,
@@ -622,7 +625,7 @@ async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | 
   const r = res.rows[0] as Record<string, unknown>;
   return {
     id: String(r.id),
-    emirate: String(r.emirate),
+    emirate: r.emirate == null ? "" : String(r.emirate),
     trnVatNumber: (r.trn_vat_number as string | null) ?? null,
     vatFilingFrequency: (r.vat_filing_frequency as string | null) ?? null,
     vatPeriodStartMonth: resolveNrClientVatPeriodStartMonth(
@@ -660,6 +663,14 @@ export async function calculateVatReturn(
   }
   if (!company.trnVatNumber) {
     throw new Error("Company must have a TRN/VAT number to calculate a VAT return");
+  }
+  // H1: Box 1a–1g attributes standard-rated supplies to a named emirate. With
+  // no emirate set, the box mapping would silently fall through to Dubai and
+  // misfile a non-Dubai company's entire turnover. Refuse instead of guessing.
+  if (!company.emirate) {
+    throw new Error(
+      "Set your company's emirate before calculating a VAT return. Box 1 of the VAT 201 attributes supplies by emirate and must not be guessed."
+    );
   }
 
   const frequency = frequencyFromCompany(company.vatFilingFrequency);

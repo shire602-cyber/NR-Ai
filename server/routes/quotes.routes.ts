@@ -85,9 +85,20 @@ export function registerQuoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // `quotes.number` is NOT NULL and this route never set it, so any caller
+      // that did not hand-type a number got an HTTP 500 from Postgres. Allocate
+      // one server-side (QT-YYYY-00001) when the client omits it; an explicit
+      // number is still honoured for imports and migrations.
+      const suppliedNumber =
+        typeof quoteData.number === "string" && quoteData.number.trim() !== ""
+          ? quoteData.number.trim()
+          : null;
+      const quoteNumber =
+        suppliedNumber ?? (await allocateInvoiceNumber(companyId, "quote", new Date()));
+
       const totals = calculateDocumentTotals(lines);
       const quote = await storage.createQuote(
-        normalizeQuoteDates({ ...quoteData, ...totals, companyId })
+        normalizeQuoteDates({ ...quoteData, ...totals, number: quoteNumber, companyId })
       );
 
       if (lines && Array.isArray(lines)) {

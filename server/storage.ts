@@ -4832,6 +4832,11 @@ export class DatabaseStorage implements IStorage {
     paymentExchangeRate?: number | null;
     receivableAccountId: string;
     createdBy: string;
+    /** Guard against silent overpayment. An amount exceeding the outstanding
+     *  balance is only booked as a customer advance when the caller explicitly
+     *  opts in. Without this flag, an over-balance payment is rejected so a
+     *  fat-fingered figure cannot post a phantom liability. */
+    allowCredit?: boolean;
   }): Promise<{
     payment: InvoicePayment;
     invoice: Invoice;
@@ -4914,6 +4919,19 @@ export class DatabaseStorage implements IStorage {
         remaining: remainingD.toNumber(),
         tolerance: 0.005,
       });
+      // Guard: refuse to turn an over-balance payment into a customer advance
+      // unless the caller explicitly opted in. This stops a mistyped amount
+      // (e.g. 100000 instead of 1000.00) from silently posting a large,
+      // unrecoverable liability with a success response.
+      if (allocation.customerCredit > 0 && !input.allowCredit) {
+        const e: any = new Error(
+          `Payment ${amountD.toFixed(2)} exceeds the outstanding balance ${remainingD.toFixed(2)}. ` +
+            `Re-send with allowCredit=true to record the excess as a customer advance.`
+        );
+        e.code = "PAYMENT_EXCEEDS_BALANCE";
+        e.details = { balance: remainingD.toNumber(), attempted: amountD.toNumber() };
+        throw e;
+      }
       let customerCreditAccountId: string | null = null;
       if (allocation.customerCredit > 0) {
         const advanceRows = await tx

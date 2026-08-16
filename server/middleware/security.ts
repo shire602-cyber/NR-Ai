@@ -4,7 +4,12 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { buildLimiter, limiterProfiles } from "./rateLimit";
-import { cspNonce, buildCspDirectives, cspReportHandler } from "./csp";
+import {
+  cspNonce,
+  buildCspDirectives,
+  buildCspReportOnlyDirectives,
+  cspReportHandler,
+} from "./csp";
 
 /**
  * Paths under /api/auth/ that accept credentials or tokens an attacker could
@@ -100,6 +105,14 @@ export function applySecurityMiddleware(app: Express): void {
       contentSecurityPolicy: buildCspDirectives(),
       crossOriginEmbedderPolicy: false, // Allow embedding (PDF viewers, etc.)
     })
+  );
+
+  // D4 — second, TIGHTER style policy served as Content-Security-Policy-Report-Only.
+  // It blocks nothing; browsers just report what *would* have been blocked to
+  // /api/csp-report. Once the logs are clean, promote these directives into the
+  // enforced policy above. See buildCspReportOnlyDirectives for the runbook.
+  app.use(
+    helmet.contentSecurityPolicy(buildCspReportOnlyDirectives() as Parameters<typeof helmet.contentSecurityPolicy>[0])
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────

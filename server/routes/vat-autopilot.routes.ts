@@ -96,6 +96,7 @@ function badRequest(res: Response, err: z.ZodError) {
 function mapCalculationError(err: unknown): { status: number; code: string; message: string } {
   const message = (err as { message?: string })?.message || "Failed to calculate VAT return";
   if (/TRN/.test(message)) return { status: 400, code: "NO_TRN", message };
+  if (/emirate/i.test(message)) return { status: 422, code: "EMIRATE_NOT_SET", message };
   if (/not found/i.test(message)) return { status: 404, code: "NOT_FOUND", message };
   return { status: 500, code: "CALCULATION_FAILED", message };
 }

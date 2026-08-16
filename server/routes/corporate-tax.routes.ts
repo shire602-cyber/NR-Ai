@@ -517,6 +517,23 @@ export function registerCorporateTaxRoutes(app: Express) {
         taxRate: 0.09,
       });
 
+      // Small Business Relief (Ministerial Decision 73 of 2023). A resident
+      // taxable person with revenue at or below AED 3,000,000 in the tax period
+      // — and in every prior period since 1 June 2023 — may ELECT to be treated
+      // as having no taxable income, i.e. 0% corporate tax.
+      //
+      // It is an election, not an automatic exemption: the business chooses it
+      // on the return, and electing forfeits the use of tax losses and certain
+      // reliefs. So we surface eligibility and BOTH outcomes, and let the user
+      // decide. `sbrElected=true` on the query applies it.
+      //
+      // This matters commercially: the overwhelming majority of UAE SMEs sit
+      // under the threshold, and none of the mainstream competitors model it.
+      const SBR_REVENUE_CAP = 3_000_000;
+      const sbrEligible = totalRevenue <= SBR_REVENUE_CAP;
+      const sbrElected = String(req.query.sbrElected ?? "").toLowerCase() === "true";
+      const sbrApplied = sbrEligible && sbrElected;
+
       res.json({
         periodStart: startDate.toISOString(),
         periodEnd: endDate.toISOString(),
@@ -526,9 +543,20 @@ export function registerCorporateTaxRoutes(app: Express) {
         totalDeductions,
         taxableIncome: liability.taxableIncome,
         exemptionThreshold: liability.exemptionThreshold,
-        taxableAmount: liability.taxableAmount,
-        taxRate: liability.taxRate,
-        taxPayable: liability.taxPayable,
+        taxableAmount: sbrApplied ? 0 : liability.taxableAmount,
+        taxRate: sbrApplied ? 0 : liability.taxRate,
+        taxPayable: sbrApplied ? 0 : liability.taxPayable,
+        smallBusinessRelief: {
+          eligible: sbrEligible,
+          elected: sbrElected,
+          applied: sbrApplied,
+          revenueCap: SBR_REVENUE_CAP,
+          taxPayableWithRelief: 0,
+          taxPayableWithoutRelief: liability.taxPayable,
+          note: sbrEligible
+            ? "Revenue is at or below AED 3,000,000, so Small Business Relief may be elected (Ministerial Decision 73 of 2023). Electing treats taxable income as nil, but forfeits the use of tax losses for the period. Eligibility also requires revenue to have stayed below the cap in every prior period since 1 June 2023 — confirm your history before electing."
+            : "Revenue exceeds AED 3,000,000, so Small Business Relief is not available for this period.",
+        },
         journalEntriesProcessed: periodEntries.length,
       });
     })

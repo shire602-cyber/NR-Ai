@@ -723,6 +723,35 @@ export function registerFixedAssetRoutes(app: Express) {
         return res.status(400).json({ message: "Can only depreciate active assets" });
       }
 
+      // The asset must be ON the books before it can be written down.
+      //
+      // Capitalization only posts when the asset is created with a
+      // paymentAccountId. Without it the asset exists in the register but never
+      // reaches the general ledger — and depreciating it then produced
+      // accumulated depreciation against an asset worth nothing: assets 0,
+      // liabilities 333.33, equity -333.33. A balance sheet that says the
+      // company owns nothing and owes the depreciation it just charged itself.
+      //
+      // Refuse, and tell the user the two legitimate ways to fix it. We do not
+      // silently invent an opening-balance entry — that would post to equity on
+      // the user's behalf without their knowledge.
+      const capitalized = await pool.query(
+        `SELECT 1 FROM journal_entries
+          WHERE company_id = $1 AND source = 'system' AND source_id = $2 AND status = 'posted'
+          LIMIT 1`,
+        [asset.company_id, asset.id]
+      );
+      if (capitalized.rows.length === 0) {
+        return res.status(422).json({
+          message:
+            "This asset is not on the general ledger, so it cannot be depreciated — doing so would " +
+            "charge depreciation against an asset the books say you do not own. Either record the " +
+            "purchase (recreate the asset with a payment account), or post an opening-balance " +
+            "journal debiting Fixed Assets at Cost (1290).",
+          code: "ASSET_NOT_CAPITALIZED",
+        });
+      }
+
       // Resolve target period — body wins, otherwise current UTC month.
       const now = new Date();
       const reqMonth =

@@ -45,7 +45,16 @@ const inventoryMovementSchema = z.object({
   unitCost: decimalString.optional().nullable(),
   reference: z.string().max(255).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
-});
+})
+  // Direction is carried by `type`, not by the sign of the quantity: the handler
+  // applies Math.abs() for purchase/sale/return, so a negative quantity there was
+  // silently accepted and then ignored — "purchase -50" increased stock by 50.
+  // Only an explicit stock adjustment may be signed.
+  .refine((v) => v.type === "adjustment" || v.quantity > 0, {
+    message:
+      "Quantity must be positive — the movement type sets the direction. Use type 'adjustment' for a signed stock-take correction.",
+    path: ["quantity"],
+  });
 
 export function registerInventoryRoutes(app: Express) {
   // =====================================
@@ -230,6 +239,20 @@ export function registerInventoryRoutes(app: Express) {
       }
 
       const newStock = product.currentStock + stockChange;
+
+      // You cannot sell stock you do not hold. Selling 999 units of a product
+      // with 10 on hand used to return 200 and leave currentStock at -989 —
+      // which then flows into inventory valuation and cost of goods sold as a
+      // negative asset. An explicit stock-take correction is what `adjustment`
+      // is for, so only that type may drive the balance negative.
+      if (newStock < 0 && type !== "adjustment") {
+        return res.status(422).json({
+          message: `Insufficient stock: ${product.currentStock} on hand, ${Math.abs(stockChange)} requested. Record a stock adjustment if the on-hand figure is wrong.`,
+          code: "INSUFFICIENT_STOCK",
+          details: { onHand: product.currentStock, requested: Math.abs(stockChange) },
+        });
+      }
+
       await storage.updateProduct(id, { currentStock: newStock });
 
       log.info({ productId: id, type, quantity, newStock }, "Inventory movement recorded");

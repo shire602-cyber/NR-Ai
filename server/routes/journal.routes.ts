@@ -130,8 +130,29 @@ export function registerJournalRoutes(app: Express) {
       let totalCredit = 0;
 
       for (const line of lines) {
-        totalDebit += Number(line.debit) || 0;
-        totalCredit += Number(line.credit) || 0;
+        const d = Number(line.debit) || 0;
+        const c = Number(line.credit) || 0;
+        // Double entry has no concept of a negative debit or credit — you move
+        // the amount to the other side instead. Allowing them let a caller post
+        // { debit: -100 } / { credit: -100 }, which "balanced" arithmetically
+        // but silently inverted the direction of the entry and corrupted every
+        // downstream total (trial balance, P&L, VAT).
+        if (d < 0 || c < 0) {
+          return res.status(422).json({
+            message:
+              "Journal line amounts cannot be negative. To move an amount to the other side, put it in the opposite column.",
+            code: "NEGATIVE_JOURNAL_AMOUNT",
+          });
+        }
+        // A single line is a debit OR a credit, never both.
+        if (d > 0 && c > 0) {
+          return res.status(422).json({
+            message: "A journal line cannot carry both a debit and a credit. Split it into two lines.",
+            code: "LINE_HAS_BOTH_SIDES",
+          });
+        }
+        totalDebit += d;
+        totalCredit += c;
       }
 
       // Ensure at least one debit and one credit
@@ -302,8 +323,29 @@ export function registerJournalRoutes(app: Express) {
       let totalCredit = 0;
 
       for (const line of lines) {
-        totalDebit += Number(line.debit) || 0;
-        totalCredit += Number(line.credit) || 0;
+        const d = Number(line.debit) || 0;
+        const c = Number(line.credit) || 0;
+        // Double entry has no concept of a negative debit or credit — you move
+        // the amount to the other side instead. Allowing them let a caller post
+        // { debit: -100 } / { credit: -100 }, which "balanced" arithmetically
+        // but silently inverted the direction of the entry and corrupted every
+        // downstream total (trial balance, P&L, VAT).
+        if (d < 0 || c < 0) {
+          return res.status(422).json({
+            message:
+              "Journal line amounts cannot be negative. To move an amount to the other side, put it in the opposite column.",
+            code: "NEGATIVE_JOURNAL_AMOUNT",
+          });
+        }
+        // A single line is a debit OR a credit, never both.
+        if (d > 0 && c > 0) {
+          return res.status(422).json({
+            message: "A journal line cannot carry both a debit and a credit. Split it into two lines.",
+            code: "LINE_HAS_BOTH_SIDES",
+          });
+        }
+        totalDebit += d;
+        totalCredit += c;
       }
 
       // Ensure at least one debit and one credit

@@ -48,7 +48,6 @@ import {
   FileText,
   Calculator,
   Briefcase,
-  TrendingUp,
   Bot,
   Gem,
 } from "lucide-react";
@@ -274,34 +273,6 @@ const featureMatrix: FeatureCategory[] = [
   },
 ];
 
-// ── Competitor comparison data ─────────────────────────────────────────
-
-interface CompetitorRow {
-  featureKey: string;
-  muhasib: string | boolean;
-  digits: string | boolean;
-  wafeq: string | boolean;
-  zoho: string | boolean;
-}
-
-const competitorData: CompetitorRow[] = [
-  {
-    featureKey: "startingPrice",
-    muhasib: "AED 0",
-    digits: "$29/mo",
-    wafeq: "AED 99/mo",
-    zoho: "$15/mo",
-  },
-  { featureKey: "arabicSupport", muhasib: true, digits: false, wafeq: true, zoho: false },
-  { featureKey: "uaeVATBuiltIn", muhasib: true, digits: false, wafeq: true, zoho: false },
-  { featureKey: "corporateTaxComp", muhasib: true, digits: false, wafeq: false, zoho: false },
-  { featureKey: "aiCategorization", muhasib: true, digits: true, wafeq: false, zoho: false },
-  { featureKey: "aiCFOComp", muhasib: true, digits: false, wafeq: false, zoho: false },
-  { featureKey: "eInvoicingComp", muhasib: true, digits: false, wafeq: true, zoho: false },
-  { featureKey: "wpsPayroll", muhasib: true, digits: false, wafeq: false, zoho: false },
-  { featureKey: "freeTier", muhasib: true, digits: false, wafeq: false, zoho: true },
-];
-
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function Pricing() {
@@ -525,29 +496,6 @@ export default function Pricing() {
       advancedAnalytics: locale === "en" ? "Advanced Analytics" : "تحليلات متقدمة",
       multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
       apiAccess: locale === "en" ? "API Access" : "وصول API",
-    },
-    competitor: {
-      title: locale === "en" ? "How We Compare" : "كيف نقارن",
-      subtitle:
-        locale === "en"
-          ? "See why UAE businesses choose Muhasib.ai over the competition"
-          : "اكتشف لماذا تختار الشركات الإماراتية محاسب.ai",
-      feature: locale === "en" ? "Feature" : "الميزة",
-      muhasib: "Muhasib.ai",
-      digits: "Digits",
-      wafeq: "Wafeq",
-      zoho: "Zoho Books",
-    },
-    competitorFeatures: {
-      startingPrice: locale === "en" ? "Starting Price" : "السعر المبدئي",
-      arabicSupport: locale === "en" ? "Arabic UI & Reports" : "واجهة وتقارير عربية",
-      uaeVATBuiltIn: locale === "en" ? "UAE VAT Built-in" : "ضريبة القيمة المضافة مدمجة",
-      corporateTaxComp: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
-      aiCategorization: locale === "en" ? "AI Categorization" : "تصنيف ذكي",
-      aiCFOComp: locale === "en" ? "AI CFO Advisor" : "مستشار مالي ذكي",
-      eInvoicingComp: locale === "en" ? "E-Invoicing (FTA)" : "الفوترة الإلكترونية (الهيئة)",
-      wpsPayroll: locale === "en" ? "WPS Payroll" : "رواتب حماية الأجور",
-      freeTier: locale === "en" ? "Free Tier Available" : "خطة مجانية متاحة",
     },
     faq: {
       title: locale === "en" ? "Frequently Asked Questions" : "الأسئلة الشائعة",
@@ -960,85 +908,11 @@ export default function Pricing() {
         </div>
       </section>
 
-      {/* ── Competitor Comparison ─────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="container mx-auto max-w-5xl">
-          <ScrollReveal>
-            <div className="text-center mb-12">
-              <Badge variant="outline" className="mb-4 px-4 py-1.5">
-                <TrendingUp className="h-3.5 w-3.5 me-1.5" />
-                {locale === "en" ? "Competitive Edge" : "الميزة التنافسية"}
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-3">{t.competitor.title}</h2>
-              <p className="text-muted-foreground text-lg">{t.competitor.subtitle}</p>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal delay={0.15}>
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="w-[200px] font-semibold text-foreground">
-                        {t.competitor.feature}
-                      </TableHead>
-                      <TableHead className="text-center min-w-[130px]">
-                        <div className="flex flex-col items-center">
-                          <span className="font-bold text-success ">
-                            {t.competitor.muhasib}
-                          </span>
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-center min-w-[110px]">
-                        <span className="font-semibold text-muted-foreground">
-                          {t.competitor.digits}
-                        </span>
-                      </TableHead>
-                      <TableHead className="text-center min-w-[110px]">
-                        <span className="font-semibold text-muted-foreground">
-                          {t.competitor.wafeq}
-                        </span>
-                      </TableHead>
-                      <TableHead className="text-center min-w-[110px]">
-                        <span className="font-semibold text-muted-foreground">
-                          {t.competitor.zoho}
-                        </span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {competitorData.map((row) => (
-                      <TableRow key={row.featureKey}>
-                        <TableCell className="font-medium text-sm">
-                          {
-                            t.competitorFeatures[
-                              row.featureKey as keyof typeof t.competitorFeatures
-                            ]
-                          }
-                        </TableCell>
-                        {(["muhasib", "digits", "wafeq", "zoho"] as const).map((col) => (
-                          <TableCell key={col} className="text-center">
-                            {typeof row[col] === "string" ? (
-                              <span
-                                className={`text-sm font-semibold ${col === "muhasib" ? "text-success " : ""}`}
-                              >
-                                {row[col] as string}
-                              </span>
-                            ) : (
-                              renderCheckOrDash(row[col] as boolean)
-                            )}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
-          </ScrollReveal>
-        </div>
-      </section>
+      {/* Competitor comparison table removed: it made specific, unverified and
+          in several cases false claims about named competitors (e.g. that Zoho Books
+          lacks UAE VAT, corporate tax, Arabic and e-invoicing — all of which it has).
+          Do not re-add a comparison unless every cell is backed by a dated screenshot
+          from the competitor's own public documentation, with the verification date shown. */}
 
       {/* ── FAQ Section ──────────────────────────────────────────────── */}
       <section className="py-20 px-4 bg-muted/30">

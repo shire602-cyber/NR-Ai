@@ -11,6 +11,7 @@
 // EInvoiceProvider against their REST API and register it in getEInvoiceProvider.
 
 import type { EInvoiceStatus } from "./einvoice-status";
+import { HttpEInvoiceProvider } from "./einvoice-provider-http";
 
 export interface EInvoiceSubmission {
   invoiceId: string;
@@ -87,11 +88,28 @@ export class MockEInvoiceProvider implements EInvoiceProvider {
  */
 export function getEInvoiceProvider(env: NodeJS.ProcessEnv = process.env): EInvoiceProvider {
   const name = (env.EINVOICE_PROVIDER || "mock").toLowerCase();
+
+  // H2/H3 — the mock provider fabricates an "accepted" acknowledgement. That is
+  // fine in dev and tests, and catastrophic in production: a UAE business would
+  // believe its invoices had been transmitted to the FTA via an Accredited
+  // Service Provider when nothing left the building, and is fined per
+  // untransmitted invoice. Refuse to serve the mock in production.
+  if (name === "mock" && env.NODE_ENV === "production") {
+    throw new Error(
+      "E-invoicing is not configured. The mock provider cannot be used in production because it " +
+        "fabricates acceptance responses. Set EINVOICE_PROVIDER to a real, MoF-accredited service " +
+        "provider adapter before enabling e-invoicing."
+    );
+  }
+
   switch (name) {
     case "mock":
       return new MockEInvoiceProvider();
-    // case "cleartax": return new ClearTaxEInvoiceProvider(env);
-    // case "complyance": return new ComplyanceEInvoiceProvider(env);
+    case "http":
+      // Generic REST adapter for an MoF-accredited service provider. Going live
+      // is configuration, not code: set EINVOICE_API_BASE_URL + EINVOICE_API_KEY
+      // and flip EINVOICE_PROVIDER to "http". See einvoice-provider-http.ts.
+      return new HttpEInvoiceProvider(env);
     default:
       throw new Error(
         `Unknown EINVOICE_PROVIDER "${name}". Implement an EInvoiceProvider adapter and register it in getEInvoiceProvider.`

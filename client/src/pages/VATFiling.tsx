@@ -254,8 +254,9 @@ export default function VATFiling() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
-        title: "VAT Return Submitted",
-        description: "Your VAT return is ready for review before official-channel filing.",
+        title: "Finalised for review — not yet filed",
+        description:
+          "Muhasib does not file with the FTA. Submit this return through EmaraTax, then record the FTA reference number against it.",
       });
       setEditDialogOpen(false);
       setSelectedReturn(null);

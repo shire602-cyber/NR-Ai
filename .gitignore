@@ -1,5 +1,11 @@
-# Dependencies
+# Dependencies (and any quarantined copy, e.g. node_modules.corrupt-sync-backup)
 node_modules
+node_modules.*/
+
+# Local session/scratch artifacts
+tmp/
+outputs/
+.codex-artifacts/
 
 # Build output
 dist

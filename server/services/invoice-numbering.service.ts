@@ -1,11 +1,16 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 
-export type InvoiceDocType = "invoice" | "credit_note";
+export type InvoiceDocType = "invoice" | "credit_note" | "quote";
 
 const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
   credit_note: "CN",
+  // Quotes are not tax documents, so FTA gap-free numbering does not apply to
+  // them — but they still need a unique, sequential, server-allocated number.
+  // `quotes.number` is NOT NULL, and the create route used to leave it unset,
+  // which made every API-created quote fail with a 500.
+  quote: "QT",
 };
 
 export function formatInvoiceNumber(docType: InvoiceDocType, year: number, n: number): string {

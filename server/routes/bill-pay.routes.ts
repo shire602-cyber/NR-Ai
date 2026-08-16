@@ -258,10 +258,23 @@ export function registerBillPayRoutes(app: Express) {
       // one inside a closed period.
       await assertPeriodNotLocked(companyId, bill_date);
 
-      // Reverse charge: when the vendor has no TRN (typically a foreign supplier or
-      // unregistered domestic supplier), the buyer self-assesses VAT. Auto-flag when
-      // not explicitly provided and TRN is absent — gives accountants a default.
-      const billReverseCharge = typeof reverse_charge === "boolean" ? reverse_charge : !vendor_trn;
+      // Reverse charge is a specific legal treatment (imports of goods and
+      // services, designated zones) — it must be chosen, never guessed.
+      //
+      // This used to default to `!vendor_trn`, i.e. ON whenever the vendor's TRN
+      // field was blank. A blank TRN overwhelmingly means "not typed in yet",
+      // not "foreign supplier". The consequences were severe and silent:
+      //   * the bill self-assessed output VAT into Box 3 and claimed input VAT
+      //     in Box 10, instead of ordinary recoverable input VAT in Box 9 —
+      //     materially changing the VAT return in both directions;
+      //   * total_amount excluded the VAT (correct FOR reverse charge), so the
+      //     payable to the vendor was understated by the VAT and A/P was wrong.
+      //
+      // Default is now OFF. A missing TRN raises an advisory flag on the
+      // response so an accountant can review it, rather than silently changing
+      // the tax treatment.
+      const billReverseCharge = reverse_charge === true;
+      const missingVendorTrn = !vendor_trn;
 
       // Calculate totals from line items
       let subtotal = 0;
@@ -328,8 +341,24 @@ export function registerBillPayRoutes(app: Express) {
         );
       }
 
-      log.info({ billId: bill.id, companyId }, "Vendor bill created");
-      res.json(bill);
+      log.info({ billId: bill.id, companyId, reverseCharge: billReverseCharge }, "Vendor bill created");
+      res.json({
+        ...bill,
+        // Advisory only — never a silent change of tax treatment.
+        ...(missingVendorTrn && !billReverseCharge
+          ? {
+              warnings: [
+                {
+                  code: "VENDOR_TRN_MISSING",
+                  message:
+                    "No vendor TRN recorded. This bill is treated as an ordinary domestic purchase " +
+                    "(input VAT recoverable in Box 9). If this supply is subject to the reverse charge " +
+                    "(imports, designated zones), set reverse_charge explicitly.",
+                },
+              ],
+            }
+          : {}),
+      });
     })
   );
 

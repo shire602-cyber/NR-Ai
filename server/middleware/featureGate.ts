@@ -358,6 +358,75 @@ export function checkUsageLimit(resource: "invoices" | "receipts" | "aiCredits")
 }
 
 /**
+ * H8 — enforce the per-user company quota.
+ *
+ * `maxCompanies` was declared in every tier and read nowhere, so the free-tier
+ * caps (1 user, 20 invoices/month) were trivially bypassed: create another
+ * company and get another quota, indefinitely.
+ *
+ * Deliberate carve-outs, because the limit must not break real work:
+ *   - Platform admins are exempt.
+ *   - Firm users (any firmRole) are exempt — managing many client companies is
+ *     the entire product for them, and firm seats are priced separately.
+ *   - Skipped entirely when billing enforcement is off (pre-billing / dev),
+ *     matching checkUsageLimit's behaviour.
+ *
+ * The user's entitlement is the HIGHEST tier across the companies they own, so
+ * upgrading any one company lifts the cap rather than trapping them.
+ */
+export function checkCompanyQuota() {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!billingEnforced()) {
+      next();
+      return;
+    }
+    const user = (req as any).user;
+    if (!user?.id || user.isAdmin === true || user.firmRole) {
+      next();
+      return;
+    }
+
+    try {
+      const { storage } = await import("../storage");
+      const owned = await storage.getCompaniesByUserId(user.id);
+      if (!Array.isArray(owned) || owned.length === 0) {
+        next();
+        return;
+      }
+
+      // Highest tier the user holds across owned companies.
+      let bestTierIdx = 0;
+      for (const c of owned) {
+        try {
+          const sub = await storage.getSubscription((c as any).id);
+          const idx = TIER_ORDER.indexOf(sub?.planId || "free");
+          if (idx > bestTierIdx) bestTierIdx = idx;
+        } catch {
+          /* a missing subscription just means free */
+        }
+      }
+      const planId = TIER_ORDER[bestTierIdx] || "free";
+      const limit = (TIER_LIMITS[planId] || TIER_LIMITS.free).maxCompanies;
+
+      if (limit === -1 || owned.length < limit) {
+        next();
+        return;
+      }
+
+      res.status(403).json({
+        message: `Your ${planId} plan allows ${limit} ${limit === 1 ? "company" : "companies"}. You already have ${owned.length}. Upgrade to add more.`,
+        code: "COMPANY_LIMIT_REACHED",
+        details: { planId, limit, current: owned.length },
+      });
+    } catch (err) {
+      // Never let quota accounting break company creation.
+      log.warn({ err }, "Company quota check failed open");
+      next();
+    }
+  };
+}
+
+/**
  * Get tier limits for a given plan.
  */
 export function getTierLimits(planId: string) {

@@ -9,6 +9,7 @@ import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
 import { getEInvoiceProvider } from "../services/einvoice-provider";
+import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
 import {
   hasSmtpConfig,
@@ -51,10 +52,27 @@ async function findInvoiceForUser(userId: string, invoiceId: string): Promise<In
   return hasAccess ? invoice : undefined;
 }
 
+// Money columns are numeric(15,2): the largest representable value is
+// 9,999,999,999,999.99. A line that overflows that used to reach Postgres and
+// come back as an HTTP 500 ("numeric field overflow"). Bound it here so an
+// absurd amount is a clean 400 with a field-level message instead of a server
+// error. 1e12 per line leaves headroom for quantity x price and the VAT uplift.
+const MAX_LINE_VALUE = 1_000_000_000_000; // 1 trillion, per factor
+// The document total must fit numeric(15,2) with room for the VAT uplift.
+const MAX_DOCUMENT_TOTAL = 9_000_000_000_000; // 9 trillion
+
 const invoiceLineInputSchema = z.object({
   description: z.string().trim().min(1, "Line description is required").max(1000),
-  quantity: z.coerce.number().finite().positive("Line quantity must be greater than 0"),
-  unitPrice: z.coerce.number().finite().positive("Line unit price must be greater than 0"),
+  quantity: z.coerce
+    .number()
+    .finite()
+    .positive("Line quantity must be greater than 0")
+    .max(MAX_LINE_VALUE, "Line quantity is too large"),
+  unitPrice: z.coerce
+    .number()
+    .finite()
+    .positive("Line unit price must be greater than 0")
+    .max(MAX_LINE_VALUE, "Line unit price is too large"),
   // UAE has exactly two VAT rates: 0% (zero-rated/exempt lines) and 5%
   // (standard). Accept either decimal (0.05) or percent (5) form — a typo
   // like 0.5 must be rejected, not silently baked into a tax invoice.
@@ -266,10 +284,35 @@ export function registerInvoiceRoutes(app: Express) {
       // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
       const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
 
+      // The per-line caps above bound each factor; this bounds their product,
+      // which is what actually has to fit numeric(15,2). Without it, a large
+      // quantity x price overflowed the column and surfaced as an HTTP 500.
+      if (!Number.isFinite(total) || Math.abs(total) > MAX_DOCUMENT_TOTAL) {
+        return res.status(422).json({
+          message: `Invoice total is too large to record (limit ${MAX_DOCUMENT_TOTAL.toLocaleString()}).`,
+          code: "AMOUNT_OUT_OF_RANGE",
+        });
+      }
+
       // Convert date string to Date object if it's a string
       const invoiceDate = typeof date === "string" ? new Date(date) : date;
       if (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime())) {
         return res.status(400).json({ message: "Invalid invoice date" });
+      }
+      // A tax invoice records a supply that has happened. Forward-dating pushes
+      // revenue and output VAT into a period that has not occurred, so the
+      // figure lands in a future VAT return and silently disappears from the
+      // current one. Backdating into a locked period was already blocked; this
+      // closes the other end. One day of tolerance covers timezone skew between
+      // the client's clock and the server.
+      const invoiceDayEnd = new Date();
+      invoiceDayEnd.setUTCHours(23, 59, 59, 999);
+      invoiceDayEnd.setUTCDate(invoiceDayEnd.getUTCDate() + 1);
+      if (invoiceDate.getTime() > invoiceDayEnd.getTime()) {
+        return res.status(422).json({
+          message: "An invoice cannot be dated in the future — it would report a supply that has not happened yet.",
+          code: "INVOICE_DATE_IN_FUTURE",
+        });
       }
       const dueDateResult = normalizeOptionalInvoiceDateField(invoiceData, "dueDate");
       if (!dueDateResult.ok) {
@@ -387,8 +430,18 @@ export function registerInvoiceRoutes(app: Express) {
     })
   );
 
-  // Post invoice journal entries
-  // Customer-only: Post invoice to journal
+  // REPAIR ONLY — not the issue path.
+  //
+  // The normal way to recognise revenue is PATCH /api/invoices/:id/status with
+  // status "sent", which posts the revenue journal entry. This endpoint exists
+  // to repair an *already issued* invoice whose journal entry is missing (e.g.
+  // legacy data, or a chart of accounts that was incomplete at issue time).
+  //
+  // It deliberately returns 400 "No draft entries to post" when there is
+  // nothing to repair — that is success-by-no-op, not a failure. Do not call it
+  // to issue an invoice.
+  //
+  // Customer-only.
   app.post(
     "/api/invoices/:id/post",
     authMiddleware,
@@ -979,7 +1032,17 @@ export function registerInvoiceRoutes(app: Express) {
       const company = await storage.getCompany(invoice.companyId);
       if (!company) return res.status(404).json({ message: "Company not found" });
 
-      const provider = getEInvoiceProvider();
+      let provider;
+      try {
+        provider = getEInvoiceProvider();
+      } catch (err: any) {
+        // No accredited provider configured. Report this honestly as
+        // "not available" rather than letting a mock fabricate an acceptance.
+        return res.status(503).json({
+          message: err?.message || "E-invoicing is not configured.",
+          code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
+        });
+      }
       const result = await submitEInvoice({ invoice, lines, company, provider });
       if (!result.ok) {
         return res
@@ -1021,7 +1084,17 @@ export function registerInvoiceRoutes(app: Express) {
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
-      const provider = getEInvoiceProvider();
+      let provider;
+      try {
+        provider = getEInvoiceProvider();
+      } catch (err: any) {
+        // No accredited provider configured. Report this honestly as
+        // "not available" rather than letting a mock fabricate an acceptance.
+        return res.status(503).json({
+          message: err?.message || "E-invoicing is not configured.",
+          code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
+        });
+      }
       const result = await refreshEInvoiceStatus({ invoice, provider });
       if (!result.ok) {
         return res.status(result.status).json({ message: result.message, code: result.code });
@@ -1291,9 +1364,13 @@ export function registerInvoiceRoutes(app: Express) {
           paymentExchangeRate,
           receivableAccountId: accountsReceivable.id,
           createdBy: userId,
+          allowCredit: req.body.allowCredit === true,
         });
       } catch (err: any) {
         const code = err?.code;
+        if (code === "PAYMENT_EXCEEDS_BALANCE") {
+          return res.status(422).json({ message: err.message, code, details: err.details });
+        }
         if (code === "OVERPAYMENT" || code === "INVOICE_TERMINAL" || code === "CURRENCY_MISMATCH") {
           return res.status(422).json({ message: err.message, code });
         }
@@ -1352,10 +1429,46 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
+      // PARTIAL CREDIT NOTES.
+      //
+      // Previously this endpoint accepted a `lines` payload and silently threw
+      // it away, always crediting the FULL original. Asking to credit 400 of a
+      // 1,050 invoice returned 201 with a credit note for 1,050 — reversing all
+      // the output VAT when only part of the supply was returned, which
+      // UNDER-DECLARES VAT to the FTA.
+      //
+      // Now: supply `lines` to credit exactly those lines; omit them for a full
+      // reversal (the UI sends `{}` and keeps that behaviour). The amount is
+      // capped against the remaining uncredited balance below.
+      const requestedLines = (req.body as any)?.lines;
+      let creditLines: InvoiceLineInput[] | null = null;
+      let creditAmounts: { subtotal: number; vatAmount: number; total: number } | null = null;
+      if (requestedLines !== undefined && requestedLines !== null) {
+        if (!Array.isArray(requestedLines) || requestedLines.length === 0) {
+          return res.status(422).json({
+            message: "Credit note `lines` must be a non-empty array. Omit it entirely to credit the full invoice.",
+            code: "INVALID_CREDIT_LINES",
+          });
+        }
+        creditLines = invoiceLinesInputSchema.parse(requestedLines);
+        creditAmounts = calculateInvoiceTotals(creditLines);
+      }
+
+      // The signed amounts that will be written to the credit note document and
+      // used to build the reversing journal entry.
+      const creditSubtotal = creditAmounts ? creditAmounts.subtotal : Number(original.subtotal);
+      const creditVat = creditAmounts ? creditAmounts.vatAmount : Number(original.vatAmount);
+      const creditTotal = creditAmounts ? creditAmounts.total : Number(original.total);
+
       // A-B3: de-duplicate and cap credit notes. Without this, issuing two
       // full credit notes double-reverses AR and drives it negative. We sum the
       // absolute totals of any existing credit notes for this invoice and
       // refuse to credit beyond the original total.
+      // Concurrency: the cap below is a check-then-write. Five parallel credit
+      // notes each read "nothing credited yet" and all five posted, crediting
+      // one invoice 5x and driving A/R negative. Serialise per invoice so the
+      // cap is evaluated against committed state.
+      return await withDocumentLock(invoiceId, LOCK_NS.CREDIT_NOTE, async () => {
       const companyInvoices = await storage.getInvoicesByCompanyId(companyId);
       const existingCreditNotes = companyInvoices.filter(
         (i) => i.originalInvoiceId === invoiceId && i.invoiceType === "credit_note"
@@ -1368,6 +1481,9 @@ export function registerInvoiceRoutes(app: Express) {
         invoiceType: original.invoiceType ?? "invoice",
         originalTotal: Number(original.total),
         alreadyCreditedTotal,
+        // Cap a partial credit at what is still uncreditable. Omitted (full
+        // reversal) defaults to the whole remaining balance.
+        requestedAmount: creditAmounts ? creditTotal : undefined,
       });
       if (!cnDecision.ok) {
         return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
@@ -1394,11 +1510,7 @@ export function registerInvoiceRoutes(app: Express) {
         (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
       );
       const cnPreflight = buildReversalLines({
-        amounts: {
-          subtotal: Number(original.subtotal),
-          vatAmount: Number(original.vatAmount),
-          total: Number(original.total),
-        },
+        amounts: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
         accounts: {
           accountsReceivableId: cnReceivable?.id,
           salesRevenueId: cnRevenue?.id,
@@ -1429,24 +1541,38 @@ export function registerInvoiceRoutes(app: Express) {
             customerTrn: original.customerTrn || undefined,
             date: new Date(),
             currency: original.currency,
-            subtotal: -original.subtotal,
-            vatAmount: -original.vatAmount,
-            total: -original.total,
+            subtotal: -creditSubtotal,
+            vatAmount: -creditVat,
+            total: -creditTotal,
             status: "sent",
             invoiceType: "credit_note",
             originalInvoiceId: invoiceId,
           } as any)
           .returning();
 
-        for (const line of originalLines) {
-          await tx.insert(invoiceLinesTable).values({
-            invoiceId: insertedCreditNote.id,
-            description: `[Credit] ${line.description}`,
-            quantity: -line.quantity,
-            unitPrice: line.unitPrice,
-            vatRate: line.vatRate,
-            vatSupplyType: line.vatSupplyType || undefined,
-          } as any);
+        if (creditLines) {
+          // Partial credit: write exactly the lines the caller asked to credit.
+          for (const line of creditLines) {
+            await tx.insert(invoiceLinesTable).values({
+              invoiceId: insertedCreditNote.id,
+              description: `[Credit] ${line.description}`,
+              quantity: -line.quantity,
+              unitPrice: line.unitPrice,
+              vatRate: line.vatRate,
+            } as any);
+          }
+        } else {
+          // Full reversal: mirror every original line.
+          for (const line of originalLines) {
+            await tx.insert(invoiceLinesTable).values({
+              invoiceId: insertedCreditNote.id,
+              description: `[Credit] ${line.description}`,
+              quantity: -line.quantity,
+              unitPrice: line.unitPrice,
+              vatRate: line.vatRate,
+              vatSupplyType: line.vatSupplyType || undefined,
+            } as any);
+          }
         }
 
         return { cnNumber: number, creditNote: insertedCreditNote };
@@ -1457,11 +1583,7 @@ export function registerInvoiceRoutes(app: Express) {
       // before the credit note was inserted; reuse them and attach the real
       // credit-note number to the leg descriptions.
       const cnBuilt = buildReversalLines({
-        amounts: {
-          subtotal: Number(original.subtotal),
-          vatAmount: Number(original.vatAmount),
-          total: Number(original.total),
-        },
+        amounts: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
         accounts: {
           accountsReceivableId: cnReceivable?.id,
           salesRevenueId: cnRevenue?.id,
@@ -1492,7 +1614,9 @@ export function registerInvoiceRoutes(app: Express) {
           {
             companyId,
             date: now,
-            memo: `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
+            memo: creditLines
+              ? `Credit Note ${cnNumber} - partial credit of Invoice ${original.number}`
+              : `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
             entryNumber,
             status: "posted",
             source: "invoice",
@@ -1522,7 +1646,8 @@ export function registerInvoiceRoutes(app: Express) {
         req,
       });
 
-      res.status(201).json(creditNote);
+      return res.status(201).json(creditNote);
+      }); // end withDocumentLock
     })
   );
 

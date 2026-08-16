@@ -167,3 +167,38 @@ describe("computeCashFlow (A-3: direct method ties to cash movement)", () => {
     expect(cf.netCashChange).toBe(-1000);
   });
 });
+
+describe("contra-asset presentation", () => {
+  it("keeps Accumulated Depreciation inside assets as a negative, not as a liability", () => {
+    // 1240 normally carries a credit balance. Presenting it as a liability
+    // overstated assets AND liabilities and hid net book value.
+    const r = classifyBalanceSheetAccount({
+      type: "asset",
+      code: "1240",
+      debitTotal: 0,
+      creditTotal: 1000,
+    });
+    expect(r.section).toBe("asset");
+    expect(r.amount).toBe(-1000);
+  });
+
+  it("still reclassifies a genuinely abnormal asset balance as a liability", () => {
+    // A receivable in credit really is a customer-credit liability.
+    const r = classifyBalanceSheetAccount({
+      type: "asset",
+      code: "1040",
+      debitTotal: 0,
+      creditTotal: 500,
+    });
+    expect(r.section).toBe("liability");
+    expect(r.amount).toBe(500);
+  });
+
+  it("nets fixed assets against accumulated depreciation to book value", () => {
+    const cost = classifyBalanceSheetAccount({ type: "asset", code: "1290", debitTotal: 36000, creditTotal: 0 });
+    const accDep = classifyBalanceSheetAccount({ type: "asset", code: "1240", debitTotal: 0, creditTotal: 1000 });
+    expect(cost.section).toBe("asset");
+    expect(accDep.section).toBe("asset");
+    expect(cost.amount + accDep.amount).toBe(35000); // net book value
+  });
+});

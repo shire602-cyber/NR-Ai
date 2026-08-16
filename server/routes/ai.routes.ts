@@ -197,7 +197,7 @@ Amount: ${validated.amount} ${validated.currency}`,
         });
       } catch (error: any) {
         log.error({ err: error }, "AI categorization error");
-        res.status(500).json({ message: error.message || "AI categorization failed" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "AI categorization failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -275,7 +275,7 @@ If no valid transactions can be found, return { "transactions": [] }`,
         res.json({ transactions: validTransactions });
       } catch (error: any) {
         log.error({ err: error }, "AI bank statement parsing error");
-        res.status(500).json({ message: error.message || "Failed to parse bank statement" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to parse bank statement", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -363,7 +363,7 @@ Keep your tone professional but friendly, like a trusted advisor.`,
         });
       } catch (error: any) {
         log.error({ err: error }, "AI CFO advice error");
-        res.status(500).json({ message: error.message || "Failed to get AI advice" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to get AI advice", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -577,7 +577,7 @@ Respond with a JSON object:
         res.json({ classifications: allClassifications });
       } catch (error: any) {
         log.error({ err: error }, "Batch categorization error");
-        res.status(500).json({ message: error.message || "Batch categorization failed" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Batch categorization failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -745,7 +745,7 @@ Respond with JSON:
         res.json(aiResponse);
       } catch (error: any) {
         log.error({ err: error }, "Anomaly detection error");
-        res.status(500).json({ message: error.message || "Anomaly detection failed" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Anomaly detection failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -776,7 +776,7 @@ Respond with JSON:
 
         res.json(alerts);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -806,7 +806,7 @@ Respond with JSON:
         const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
         res.json(resolvedAlert);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -929,7 +929,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         res.json(aiResponse);
       } catch (error: any) {
         log.error({ err: error }, "Reconciliation error");
-        res.status(500).json({ message: error.message || "Reconciliation failed" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Reconciliation failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -969,7 +969,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         );
         res.json(transaction);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -993,7 +993,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         const transactions = await storage.getBankTransactionsByCompanyId(companyId);
         res.json(transactions);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1020,7 +1020,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
         } as any);
         res.json(transaction);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1061,7 +1061,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
 
         res.json({ imported: imported.length, transactions: imported });
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1213,7 +1213,7 @@ Respond with JSON:
         });
       } catch (error: any) {
         log.error({ err: error }, "Cash flow forecast error");
-        res.status(500).json({ message: error.message || "Forecasting failed" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Forecasting failed", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1229,7 +1229,7 @@ Respond with JSON:
         const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
         res.json(forecasts);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1298,7 +1298,7 @@ Respond with JSON:
         const classification = await storage.getTransactionClassification(classificationId);
         res.json(classification);
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1723,7 +1723,7 @@ Company: ${company.name}`;
         });
       } catch (error: any) {
         log.error({ err: error }, "NL Gateway error");
-        res.status(500).json({ message: error.message || "Failed to process query" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to process query", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -1762,9 +1762,13 @@ Company: ${company.name}`;
           }
         }
 
-        // Check if OpenAI API key is configured
+        // Check if OpenAI API key is configured. "Not configured" is a 503
+        // (service unavailable), never a 500 — an unconfigured AI feature is an
+        // expected state, not a server fault.
         if (!process.env.OPENAI_API_KEY) {
-          return res.status(500).json({ message: "OpenAI API key is not configured" });
+          return res
+            .status(503)
+            .json({ message: "AI service not configured — set OPENAI_API_KEY", code: "AI_NOT_CONFIGURED" });
         }
 
         const askSupportName = getEnv().SUPPORT_CONTACT_NAME;
@@ -1973,7 +1977,7 @@ ${askGuidanceBlock}`;
           });
         }
 
-        res.status(500).json({ message: error.message || "Failed to process request" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to process request", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2004,7 +2008,7 @@ ${askGuidanceBlock}`;
         res.json(conversations);
       } catch (error: any) {
         log.error({ err: error }, "/api/ask/history error");
-        res.status(500).json({ message: error.message || "Failed to fetch history" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to fetch history", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2062,7 +2066,7 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2124,7 +2128,7 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2192,7 +2196,7 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2258,7 +2262,7 @@ ${askGuidanceBlock}`;
           }))
         );
       } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );
@@ -2433,7 +2437,7 @@ Respond with just the category name, nothing else.`;
         res.json({ suggestions });
       } catch (error: any) {
         log.error({ err: error }, "Smart suggest error");
-        res.status(500).json({ message: error.message || "Failed to generate suggestions" });
+        res.status(error?.status || error?.statusCode || 500).json({ message: error.message || "Failed to generate suggestions", ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }
     })
   );

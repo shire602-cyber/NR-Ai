@@ -37,6 +37,17 @@ export default defineConfig({
     cssMinify: "esbuild",
     minify: "esbuild",
     target: "es2020",
+    // A5: don't spend a first-time visitor's bandwidth preloading heavy
+    // document-workflow vendors. They are only reachable from lazy routes
+    // (invoice PDF, VAT filing, receipt OCR) and still load on demand the
+    // moment such a route is entered — this drops the hint, not the code.
+    modulePreload: {
+      resolveDependencies: (_filename, deps) =>
+        deps.filter(
+          (d) =>
+            !/vendor-pdfjs|vendor-pdf-worker|vendor-pdf|vendor-tesseract|vendor-html2canvas/.test(d)
+        ),
+    },
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -44,7 +55,6 @@ export default defineConfig({
           if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
           if (id.includes("pdfjs-dist/build/pdf.worker")) return "vendor-pdf-worker";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
-          if (id.includes("html2canvas")) return "vendor-html2canvas";
           if (id.includes("framer-motion")) return "vendor-motion";
           if (id.includes("@radix-ui")) return "vendor-radix";
           if (id.includes("react-day-picker") || id.includes("date-fns")) return "vendor-dates";

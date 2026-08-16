@@ -226,6 +226,9 @@ export function registerFinancialStatementRoutes(app: Express) {
           type: account.type,
           debitTotal: data.debitTotal,
           creditTotal: data.creditTotal,
+          // Needed so contra-asset accounts (accumulated depreciation) are not
+          // reclassified into liabilities on their normal credit balance.
+          code: account.code,
         });
 
         if (classified.section === "asset") {

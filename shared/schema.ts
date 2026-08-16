@@ -307,7 +307,10 @@ export const companies = pgTable("companies", {
   vatFilingFrequency: text("vat_filing_frequency"), // Monthly, Quarterly, Annually
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
-  emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+  // No default: Box 1a–1g of the VAT 201 attributes supplies by emirate, so a
+  // guessed value silently misfiles a non-Dubai company's whole turnover.
+  // Onboarding asks for this; VAT 201 generation refuses until it is set.
+  emirate: text("emirate"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
 
   // WPS / Payroll — MOHRE establishment ID and employer bank fields used to
   // build the SCR (Salary Control Record) line of the SIF file. Distinct from

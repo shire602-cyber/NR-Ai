@@ -31,7 +31,9 @@ describe("WhatsApp surface boundary", () => {
       "client/src/pages/CustomerContacts.tsx",
       "client/src/pages/Integrations.tsx",
       "client/src/pages/Invoices.tsx",
-      "client/src/pages/LandingPage.tsx",
+      // LandingPage.tsx was an unrouted alternative landing page and has been
+      // deleted; MuhasibLanding.tsx is the live one.
+      "client/src/pages/MuhasibLanding.tsx",
       "client/src/pages/PaymentChasing.tsx",
       "client/src/pages/Pricing.tsx",
       "client/src/pages/Reminders.tsx",

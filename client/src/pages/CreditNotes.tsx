@@ -61,10 +61,7 @@ import {
   CalendarIcon,
   Trash2,
   Download,
-  Edit,
   MoreHorizontal,
-  CheckCircle,
-  XCircle,
   FileText,
   Loader2,
 } from "lucide-react";
@@ -206,59 +203,12 @@ export default function CreditNotes() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/credit-notes/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
-      });
-      toast({ title: "Credit note deleted", description: "The credit note has been deleted." });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to delete credit note",
-        description: error?.message || "Please try again.",
-      });
-    },
-  });
-
-  const issueMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/credit-notes/${id}/issue`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
-      });
-      toast({
-        title: "Credit note issued",
-        description: "The credit note has been issued successfully.",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to issue credit note",
-        description: error?.message || "Please try again.",
-      });
-    },
-  });
-
-  const voidMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/credit-notes/${id}/void`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
-      });
-      toast({ title: "Credit note voided", description: "The credit note has been voided." });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to void credit note",
-        description: error?.message || "Please try again.",
-      });
-    },
-  });
+  // The delete / issue / void mutations that used to live here targeted the
+  // retired standalone credit-note endpoints (the server answers 410 — credit
+  // notes are created from the original invoice so VAT, FX and journal entries
+  // stay unified). Their UI triggers were permanently disabled and have been
+  // removed, so the mutations had no callers left. Removed rather than kept as
+  // dead code that reads like working functionality.
 
   const resetForm = () => {
     form.reset({
@@ -733,33 +683,13 @@ export default function CreditNotes() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleEditCreditNote(creditNote)}
-                              disabled
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => issueMutation.mutate(creditNote.id)}
-                              disabled
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Issue
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                if (
-                                  window.confirm("Are you sure you want to void this credit note?")
-                                ) {
-                                  voidMutation.mutate(creditNote.id);
-                                }
-                              }}
-                              disabled
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Void
-                            </DropdownMenuItem>
+                            {/* Edit / Issue / Void / Delete were permanently
+                                disabled: standalone credit-note writes are
+                                retired (the server answers 410). Credit notes
+                                are created from the original invoice so VAT,
+                                FX and journal entries stay unified. Showing
+                                four un-clickable items was pure noise, so they
+                                are removed rather than left greyed out. */}
                             <DropdownMenuItem
                               onClick={() =>
                                 window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")
@@ -767,22 +697,6 @@ export default function CreditNotes() {
                             >
                               <Download className="w-4 h-4 mr-2" />
                               Download PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    "Are you sure you want to delete this credit note?"
-                                  )
-                                ) {
-                                  deleteMutation.mutate(creditNote.id);
-                                }
-                              }}
-                              disabled
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

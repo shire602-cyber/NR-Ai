@@ -8,6 +8,7 @@ import {
   insertBankAccountSchema,
 } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
+import { checkCompanyQuota } from "../middleware/featureGate";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
@@ -177,6 +178,9 @@ export function registerCompanyRoutes(app: Express) {
   app.post(
     "/api/companies",
     authMiddleware,
+    // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
+    // simply creating another company. maxCompanies is now actually enforced.
+    checkCompanyQuota(),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const validated = insertCompanySchema.parse(req.body);
@@ -294,6 +298,16 @@ export function registerCompanyRoutes(app: Express) {
       // S-M1: allowlist columns before the spread (see PUT handler above).
       const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
 
+      // PRIVILEGE ESCALATION GUARD.
+      // `companyType` decides whether a company is a self-serve customer or an
+      // accounting-firm/NRA tenant, which gates entire route families. It was in
+      // the allowlist, so any customer could PATCH their own company to
+      // companyType: "nra" and self-promote. It is set at creation and may only
+      // be changed by a platform admin.
+      if ("companyType" in updateData && (req as any).user?.isAdmin !== true) {
+        delete updateData.companyType;
+      }
+
       // Convert taxRegistrationDate to Date if it exists and is not already a Date
       if (updateData.taxRegistrationDate) {
         if (typeof updateData.taxRegistrationDate === "string") {
@@ -305,6 +319,16 @@ export function registerCompanyRoutes(app: Express) {
       } else {
         // If taxRegistrationDate is undefined or null, ensure it's properly set
         delete updateData.taxRegistrationDate;
+      }
+
+      // Nothing updatable survived the allowlist (e.g. the body contained only
+      // fields the caller is not permitted to change). Return the company
+      // unchanged rather than issuing an UPDATE with no columns, which the
+      // driver rejects and which surfaced as a 500.
+      if (Object.keys(updateData).length === 0) {
+        const unchanged = await storage.getCompany(id);
+        if (!unchanged) return res.status(404).json({ message: "Company not found" });
+        return res.json(withNrClientVatGroup(unchanged));
       }
 
       try {
@@ -382,46 +406,17 @@ export function registerCompanyRoutes(app: Express) {
     })
   );
 
-  // List bank accounts for a company
-  app.get(
-    "/api/companies/:id/bank-accounts",
-    authMiddleware,
-    requireCustomer,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const accounts = await storage.getBankAccountsByCompanyId(id);
-      res.json(accounts);
-    })
-  );
-
-  // Create a bank account for a company
-  app.post(
-    "/api/companies/:id/bank-accounts",
-    authMiddleware,
-    requireCustomer,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const account = await storage.createBankAccount({
-        ...pickAllowed(req.body, insertBankAccountSchema, ["companyId"]),
-        companyId: id,
-      } as any);
-      res.status(201).json(account);
-    })
-  );
+  // NOTE: GET/POST /api/companies/:id/bank-accounts used to be declared here.
+  //
+  // They were SHADOWING the richer handlers in bank-statements.routes.ts, which
+  // validate the bank against the UAE bank list and link a GL account. Express
+  // matches the first registration, and this module registers earlier, so the
+  // stricter handlers never ran and a bank account could be created with any
+  // bankName at all.
+  //
+  // The canonical handlers now live in bank-statements.routes.ts alongside the
+  // rest of the banking surface. `scripts/check-route-shadowing.mjs` fails the
+  // build if a duplicate is ever reintroduced.
 
   // Seed Chart of Accounts for company
   // Customer-only: Seed chart of accounts

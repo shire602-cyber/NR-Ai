@@ -15,6 +15,7 @@
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
+import { withDocumentLock, LOCK_NS } from "./document-lock";
 
 const log = createLogger("invoice-posting");
 
@@ -38,6 +39,20 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * an entry was created, false when one already existed (no-op).
  */
 export async function postInvoiceRevenueJournal(
+  invoice: InvoiceLike,
+  userId: string
+): Promise<boolean> {
+  // Concurrency: this is a check-then-write. Without serialisation, N parallel
+  // "mark as sent" calls each read "not yet posted" and each post a revenue
+  // entry — measured at 10 duplicate entries for 10 parallel requests, i.e.
+  // revenue and output VAT overstated 10x. Hold an advisory lock on the invoice
+  // so exactly one caller can pass the idempotency check.
+  return await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, async () =>
+    postInvoiceRevenueJournalLocked(invoice, userId)
+  );
+}
+
+async function postInvoiceRevenueJournalLocked(
   invoice: InvoiceLike,
   userId: string
 ): Promise<boolean> {

@@ -21,16 +21,30 @@ const log = createLogger("bank-statements");
 
 const UAE_BANKS = ["Emirates NBD", "ADCB", "FAB", "Mashreq", "Other"] as const;
 
-const bankAccountCreateSchema = z.object({
-  nameEn: z.string().min(1, "nameEn is required").max(255),
-  bankName: z.enum(UAE_BANKS, {
-    errorMap: () => ({ message: `bankName must be one of: ${UAE_BANKS.join(", ")}` }),
-  }),
-  accountNumber: z.string().max(64).optional().nullable(),
-  iban: z.string().max(64).optional().nullable(),
-  currency: z.string().length(3).optional(),
-  glAccountId: z.string().uuid().optional().nullable(),
-});
+// `name` is accepted as an alias for `nameEn` — it is the field name callers
+// reach for first, and sending it previously hit a NOT NULL column and returned
+// HTTP 500. Normalised before validation so the error messages stay accurate.
+const bankAccountCreateSchema = z.preprocess(
+  (value) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const v = { ...(value as Record<string, unknown>) };
+      if (v.nameEn == null && typeof v.name === "string") v.nameEn = v.name;
+      delete v.name;
+      return v;
+    }
+    return value;
+  },
+  z.object({
+    nameEn: z.string().min(1, "nameEn (or name) is required").max(255),
+    bankName: z.enum(UAE_BANKS, {
+      errorMap: () => ({ message: `bankName must be one of: ${UAE_BANKS.join(", ")}` }),
+    }),
+    accountNumber: z.string().max(64).optional().nullable(),
+    iban: z.string().max(64).optional().nullable(),
+    currency: z.string().length(3).optional(),
+    glAccountId: z.string().uuid().optional().nullable(),
+  })
+);
 
 const bankAccountUpdateSchema = z.object({
   nameEn: z.string().min(1).max(255).optional(),

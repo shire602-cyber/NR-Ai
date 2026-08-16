@@ -68,14 +68,18 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { customerName, customerTrn, currency, frequency, startDate, endDate, linesJson } =
-        req.body;
+      const { customerName, customerTrn, currency, frequency, startDate, endDate } = req.body;
+
+      // `linesJson` is the storage column name. Every other document endpoint in
+      // this API takes `lines`, so accept that too rather than making callers
+      // know the database schema.
+      const linesJson = req.body.linesJson ?? req.body.lines;
 
       // Validate required fields
       if (!customerName || !frequency || !startDate || !linesJson) {
-        return res
-          .status(400)
-          .json({ message: "customerName, frequency, startDate, and linesJson are required" });
+        return res.status(400).json({
+          message: "customerName, frequency, startDate, and lines are required",
+        });
       }
 
       // Validate frequency
