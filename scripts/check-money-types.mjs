@@ -10,7 +10,7 @@
 // Usage: node scripts/check-money-types.mjs
 // Exit 0 = clean, exit 1 = a money column is float.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 

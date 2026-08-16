@@ -125,6 +125,23 @@ describe("Error Handler Middleware", () => {
       );
     });
 
+    it("maps a pg 23505 unique violation to 409, not 500", () => {
+      const req = createMockReq();
+      const res = createMockRes();
+      const next = vi.fn() as NextFunction;
+      const pgError = Object.assign(
+        new Error('duplicate key value violates unique constraint "cost_centers_company_code_uq"'),
+        { code: "23505" }
+      );
+
+      globalErrorHandler(pgError, req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DUPLICATE_VALUE" })
+      );
+    });
+
     it("maps a Drizzle-wrapped 22P02 (code in cause chain) to 400", () => {
       const req = createMockReq();
       const res = createMockRes();

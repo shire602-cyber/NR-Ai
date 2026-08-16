@@ -18,6 +18,20 @@ export default tseslint.config(
       "package-lock.json",
       ".claude/**",
       ".claire/**",
+      // Vendored side projects and audit evidence — not product code.
+      // They were contributing 361 lint errors that drowned real signal.
+      "najma-al-raeda-website/**",
+      "najma-raeda-site/**",
+      "najma-raeda-logo/**",
+      "teardown-evidence/**",
+      "node_modules.*/**",
+      "brand/**",
+      "artifacts/**",
+      "tools/**",
+      "extensions/**",
+      "tmp/**",
+      "outputs/**",
+      ".codex-artifacts/**",
     ],
   },
 
@@ -83,6 +97,17 @@ export default tseslint.config(
     files: ["scripts/**/*.mjs", "*.config.js", "*.config.mjs"],
     languageOptions: {
       globals: { ...globals.node, fetch: "readonly" },
+    },
+  },
+
+  {
+    // Plain-JS scripts and live-server test harnesses use intentional
+    // empty catches (`try { json = JSON.parse(t) } catch {}`) — allow them,
+    // matching the TS rule above.
+    files: ["**/*.mjs"],
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
 

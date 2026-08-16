@@ -86,6 +86,19 @@ export function globalErrorHandler(
     return;
   }
 
+  // Postgres unique violation (23505) — e.g. creating a cost centre with a
+  // code that already exists. A conflict with existing data, not a server
+  // fault: answer 409, not 500.
+  if (hasPgErrorCode(err, "23505")) {
+    res.status(409).json(
+      withRequestId(
+        { message: "A record with this value already exists", code: "DUPLICATE_VALUE" },
+        req
+      )
+    );
+    return;
+  }
+
   // Any AppError (or subclass).
   if (err instanceof AppError) {
     if (!err.isOperational || err.statusCode >= 500) {

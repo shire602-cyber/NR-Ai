@@ -1455,10 +1455,16 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       // The signed amounts that will be written to the credit note document and
-      // used to build the reversing journal entry.
-      const creditSubtotal = creditAmounts ? creditAmounts.subtotal : Number(original.subtotal);
-      const creditVat = creditAmounts ? creditAmounts.vatAmount : Number(original.vatAmount);
-      const creditTotal = creditAmounts ? creditAmounts.total : Number(original.total);
+      // used to build the reversing journal entry. `let` because a full
+      // reversal after a partial credit is capped to the remaining balance
+      // below (inside the document lock, once the committed state is known).
+      let creditSubtotal = creditAmounts ? creditAmounts.subtotal : Number(original.subtotal);
+      let creditVat = creditAmounts ? creditAmounts.vatAmount : Number(original.vatAmount);
+      let creditTotal = creditAmounts ? creditAmounts.total : Number(original.total);
+      // Set when an omitted-lines "full reversal" was scaled down because part
+      // of the invoice had already been credited.
+      let creditWasCapped = false;
+      let creditCapFactor = 1;
 
       // A-B3: de-duplicate and cap credit notes. Without this, issuing two
       // full credit notes double-reverses AR and drives it negative. We sum the
@@ -1487,6 +1493,24 @@ export function registerInvoiceRoutes(app: Express) {
       });
       if (!cnDecision.ok) {
         return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
+      }
+
+      // TD4: an omitted-lines "full reversal" must credit only the REMAINING
+      // balance. The evaluator already computed that cap (`creditable`), but
+      // this handler previously ignored it and wrote the full original
+      // amounts — so a full CN issued after a partial CN over-credited the
+      // invoice (1,050 original, 420 partial, then another 1,050 instead of
+      // 630), driving A/R negative and over-reversing output VAT.
+      if (!creditAmounts && cnDecision.creditable != null) {
+        const originalAbs = Math.abs(Number(original.total));
+        if (originalAbs > 0 && cnDecision.creditable < originalAbs) {
+          creditWasCapped = true;
+          creditCapFactor = cnDecision.creditable / originalAbs;
+          creditTotal = Math.round(cnDecision.creditable * 100) / 100;
+          creditSubtotal = Math.round(Number(original.subtotal) * creditCapFactor * 100) / 100;
+          // Derive VAT from the difference so subtotal + VAT = total exactly.
+          creditVat = Math.round((creditTotal - creditSubtotal) * 100) / 100;
+        }
       }
 
       // Block credit note creation if today is in a locked period — the credit
@@ -1562,13 +1586,21 @@ export function registerInvoiceRoutes(app: Express) {
             } as any);
           }
         } else {
-          // Full reversal: mirror every original line.
+          // Full reversal: mirror every original line. If the reversal was
+          // capped to the remaining balance (part already credited), scale
+          // each line's unit price so the document lines sum to the capped
+          // amount rather than the full original.
           for (const line of originalLines) {
+            const scaledUnitPrice = creditWasCapped
+              ? Math.round(Number(line.unitPrice) * creditCapFactor * 10000) / 10000
+              : line.unitPrice;
             await tx.insert(invoiceLinesTable).values({
               invoiceId: insertedCreditNote.id,
-              description: `[Credit] ${line.description}`,
+              description: creditWasCapped
+                ? `[Credit] ${line.description} (remaining balance)`
+                : `[Credit] ${line.description}`,
               quantity: -line.quantity,
-              unitPrice: line.unitPrice,
+              unitPrice: scaledUnitPrice,
               vatRate: line.vatRate,
               vatSupplyType: line.vatSupplyType || undefined,
             } as any);
@@ -1614,9 +1646,10 @@ export function registerInvoiceRoutes(app: Express) {
           {
             companyId,
             date: now,
-            memo: creditLines
-              ? `Credit Note ${cnNumber} - partial credit of Invoice ${original.number}`
-              : `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
+            memo:
+              creditLines || creditWasCapped
+                ? `Credit Note ${cnNumber} - partial credit of Invoice ${original.number}`
+                : `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
             entryNumber,
             status: "posted",
             source: "invoice",
