@@ -64,3 +64,4 @@ docs/qa/*-benchmark-audit-local/
 .~lock.*
 *.tmp
 conflicted copy*
+.eslintcache
