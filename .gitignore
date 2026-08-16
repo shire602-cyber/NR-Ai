@@ -48,3 +48,13 @@ docs/qa/*-benchmark-audit-local/
 .e2e-company-id
 .e2e-server.log
 .e2e-server.pid
+
+# Cloud-sync artifacts — the repo must never track these.
+# (Conflict copies like "Foo 2.tsx" also fail `npm run check` via
+# scripts/check-no-stray-duplicates.mjs; this keeps them out of git too.)
+* 2.*
+* 3.*
+.fuse_hidden*
+.~lock.*
+*.tmp
+conflicted copy*

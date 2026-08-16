@@ -360,8 +360,12 @@ async function bootstrap() {
   });
 }
 
-bootstrap().catch((error) => {
-  log.fatal({ error }, "Failed to start server");
+bootstrap().catch((error: unknown) => {
+  // Use pino's `err` key so the std serializer emits message + stack.
+  // (`{ error }` serialized to an empty object — a blind fatal log.)
+  log.fatal({ err: error }, "Failed to start server");
+  // Belt and braces: if the logger itself is misconfigured, still say why.
+  console.error("Failed to start server:", error);
   process.exit(1);
 });
 

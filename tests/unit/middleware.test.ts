@@ -108,6 +108,40 @@ describe("Error Handler Middleware", () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it("maps a raw pg 22P02 (invalid uuid) to 400, not 500", () => {
+      const req = createMockReq();
+      const res = createMockRes();
+      const next = vi.fn() as NextFunction;
+      const pgError = Object.assign(new Error('invalid input syntax for type uuid: "not-a-uuid"'), {
+        code: "22P02",
+      });
+
+      globalErrorHandler(pgError, req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "INVALID_IDENTIFIER" })
+      );
+    });
+
+    it("maps a Drizzle-wrapped 22P02 (code in cause chain) to 400", () => {
+      const req = createMockReq();
+      const res = createMockRes();
+      const next = vi.fn() as NextFunction;
+      const wrapped = new Error("Failed query: SELECT ...");
+      (wrapped as Error & { cause?: unknown }).cause = Object.assign(
+        new Error('invalid input syntax for type uuid: "not-a-uuid"'),
+        { code: "22P02" }
+      );
+
+      globalErrorHandler(wrapped, req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "INVALID_IDENTIFIER" })
+      );
+    });
   });
 
   describe("asyncHandler", () => {

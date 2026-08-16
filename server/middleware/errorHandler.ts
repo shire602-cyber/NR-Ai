@@ -13,6 +13,20 @@ function withRequestId<T extends object>(body: T, req: Request): T & { requestId
 }
 
 /**
+ * Walk an error's `cause` chain (max 5 hops) looking for a Postgres
+ * SQLSTATE code. Drizzle wraps the underlying pg error in
+ * DrizzleQueryError, so the code usually lives one level down.
+ */
+function hasPgErrorCode(err: unknown, code: string): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
+    if ((current as { code?: unknown }).code === code) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
  * Global error handler middleware.
  * Must be registered AFTER all routes.
  *
@@ -55,6 +69,20 @@ export function globalErrorHandler(
   if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
     const ae = new AuthError("Invalid or expired token", "AUTH_INVALID_TOKEN");
     res.status(ae.statusCode).json(withRequestId(ae.toJSON(), req));
+    return;
+  }
+
+  // Postgres "invalid input syntax" (22P02) — e.g. a malformed UUID in a
+  // path param reaching a uuid column. This is bad *input*, not a server
+  // fault: answer 400, not 500. Drizzle wraps the pg error, so walk the
+  // cause chain looking for the SQLSTATE code.
+  if (hasPgErrorCode(err, "22P02")) {
+    res.status(400).json(
+      withRequestId(
+        { message: "Invalid identifier format", code: "INVALID_IDENTIFIER" },
+        req
+      )
+    );
     return;
   }
 

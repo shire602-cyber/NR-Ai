@@ -7,6 +7,14 @@ import pino from "pino";
  */
 export const logger = pino({
   level: process.env.LOG_LEVEL || "info",
+  // Serialize Error objects under both `err` (pino convention) and `error`
+  // (used widely in this codebase). Without this, `log.fatal({ error })`
+  // emitted `{}` — a fatal log with no message or stack, which made a
+  // failed production boot undiagnosable.
+  serializers: {
+    err: pino.stdSerializers.errWithCause,
+    error: pino.stdSerializers.errWithCause,
+  },
   transport:
     process.env.NODE_ENV !== "production"
       ? {
