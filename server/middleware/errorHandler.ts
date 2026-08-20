@@ -99,6 +99,19 @@ export function globalErrorHandler(
     return;
   }
 
+  // Postgres not-null violation (23502) — a required field the route-level
+  // validation missed (e.g. cost centre without `code`). Bad input, not a
+  // server fault: answer 400, not 500.
+  if (hasPgErrorCode(err, "23502")) {
+    res.status(400).json(
+      withRequestId(
+        { message: "A required field is missing", code: "REQUIRED_FIELD_MISSING" },
+        req
+      )
+    );
+    return;
+  }
+
   // Any AppError (or subclass).
   if (err instanceof AppError) {
     if (!err.isOperational || err.statusCode >= 500) {

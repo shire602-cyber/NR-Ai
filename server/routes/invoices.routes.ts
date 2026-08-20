@@ -1513,9 +1513,32 @@ export function registerInvoiceRoutes(app: Express) {
         }
       }
 
-      // Block credit note creation if today is in a locked period — the credit
-      // note posts a reversing JE on `now`.
-      await assertPeriodNotLocked(companyId, new Date());
+      // TD5: honour a caller-supplied credit-note date (previously silently
+      // ignored — CNs were always stamped "today", so a CN belonging to the
+      // period being filed could never enter that period's VAT 201 or P&L).
+      // Future dates are refused like invoices; the period lock is checked
+      // against the ACTUAL document date.
+      let cnDate = new Date();
+      const requestedCnDate = (req.body as any)?.date;
+      if (requestedCnDate !== undefined && requestedCnDate !== null) {
+        const parsed = new Date(requestedCnDate);
+        if (isNaN(parsed.getTime())) {
+          return res.status(422).json({
+            message: "Credit note `date` is not a valid date.",
+            code: "INVALID_CREDIT_NOTE_DATE",
+          });
+        }
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        if (parsed > tomorrow) {
+          return res.status(422).json({
+            message: "Credit note `date` cannot be in the future.",
+            code: "CREDIT_NOTE_DATE_IN_FUTURE",
+          });
+        }
+        cnDate = parsed;
+      }
+      await assertPeriodNotLocked(companyId, cnDate);
 
       // A-B2: validate that the accounts needed for the reversal JE exist
       // BEFORE inserting the credit-note document, so a missing-account error
@@ -1563,7 +1586,7 @@ export function registerInvoiceRoutes(app: Express) {
             number,
             customerName: original.customerName,
             customerTrn: original.customerTrn || undefined,
-            date: new Date(),
+            date: cnDate,
             currency: original.currency,
             subtotal: -creditSubtotal,
             vatAmount: -creditVat,
@@ -1631,7 +1654,9 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(cnBuilt.status).json({ message: cnBuilt.message, code: cnBuilt.code });
       }
       {
-        const now = new Date();
+        // JE dated to the credit-note date so the reversal lands in the same
+        // period as the document (TD5).
+        const now = cnDate;
         const entryNumber = await storage.generateEntryNumber(companyId, now);
 
         // Find the original invoice's journal entry to reverse

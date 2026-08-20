@@ -81,6 +81,9 @@ export function buildExpenseClaimJournalLines(args: {
   }
 
   // Aggregate net amounts per expense account, plus total recoverable VAT.
+  // TD5 (Art. 53, Cabinet Decision 52/2017): input VAT on entertainment is
+  // BLOCKED from recovery — it must be expensed gross, never debited to the
+  // Input VAT account. Previously every claim's VAT was posted as recoverable.
   const expenseByCode = new Map<string, number>();
   let totalVat = 0;
   let totalGross = 0;
@@ -88,8 +91,12 @@ export function buildExpenseClaimJournalLines(args: {
     const net = round2(num(item.amount));
     const vat = round2(num(item.vatAmount));
     const code = mapExpenseCategoryToCode(item.category);
-    expenseByCode.set(code, round2((expenseByCode.get(code) ?? 0) + net));
-    totalVat = round2(totalVat + vat);
+    const blocked = /entertain/.test((item.category ?? "").toLowerCase());
+    // Blocked input VAT is absorbed into the expense line (gross); recoverable
+    // VAT goes to the Input VAT control account.
+    const expensePortion = blocked ? round2(net + vat) : net;
+    expenseByCode.set(code, round2((expenseByCode.get(code) ?? 0) + expensePortion));
+    if (!blocked) totalVat = round2(totalVat + vat);
     totalGross = round2(totalGross + net + vat);
   }
 

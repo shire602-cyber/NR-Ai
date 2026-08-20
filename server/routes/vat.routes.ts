@@ -666,6 +666,32 @@ export function registerVATRoutes(app: Express) {
         // Bill-pay schema may not be installed in dev — fail open, log via parent.
       }
 
+      // Expense claims — TD5 (found by blind-accountant audit): approval posts
+      // net→expense and VAT→input VAT (1050) to the GL, but the return never
+      // read them, so box 9/13 under-claimed recoverable input VAT and the GL
+      // could never reconcile to the filed return. Approved/paid claims with
+      // item dates inside the period now feed Box 9 exactly like bills.
+      // Entertainment-category items are excluded from VAT recovery
+      // (Art. 53 blocked input tax) to mirror the posting service.
+      try {
+        const claimRes = await pool.query(
+          `SELECT
+             COALESCE(SUM(i.amount), 0) AS claim_amount,
+             COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
+           FROM expense_claim_items i
+           JOIN expense_claims c ON c.id = i.claim_id
+           WHERE c.company_id = $1
+             AND c.status IN ('approved','paid')
+             AND i.expense_date >= $2::date
+             AND i.expense_date <= $3::date`,
+          [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
+        );
+        totalExpenses += Number(claimRes.rows[0]?.claim_amount || 0);
+        inputTaxGross += Number(claimRes.rows[0]?.claim_vat || 0);
+      } catch (err) {
+        // Expense-claims schema may not be installed — fail open like bills.
+      }
+
       // Partial-exemption apportionment (FTA Article 55). When a company makes
       // both taxable and exempt supplies, only the taxable portion of input VAT
       // is recoverable. Output VAT (including reverse-charge output in Box 3) is

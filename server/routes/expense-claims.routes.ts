@@ -504,7 +504,35 @@ export function registerExpenseClaimRoutes(app: Express) {
       // Mark-paid stamps the payment with NOW() and posts a cash JE on that date.
       await assertPeriodNotLocked(claim.company_id, new Date());
 
-      const { payment_reference } = req.body;
+      const { payment_reference, payment_account_id } = req.body;
+
+      // TD5: this handler's own comment promised a cash JE but never posted
+      // one — the Employee Reimbursements Payable liability lived forever and
+      // cash was never credited. Post Dr 2045 / Cr <asset account> for the
+      // claim gross, idempotent on (source, sourceId).
+      const accounts = await storage.getAccountsByCompanyId(claim.company_id);
+      const payable = accounts.find((a) => a.code === "2045");
+      let paymentAccount = null;
+      if (payment_account_id) {
+        paymentAccount = accounts.find((a) => a.id === payment_account_id);
+        if (!paymentAccount || paymentAccount.type !== "asset") {
+          return res.status(400).json({
+            message: "payment_account_id must be an asset account (bank or cash) in this company's chart.",
+            code: "INVALID_PAYMENT_ACCOUNT",
+          });
+        }
+      } else {
+        paymentAccount =
+          accounts.find((a) => a.code === "1020") || accounts.find((a) => a.code === "1010");
+      }
+      const gross = Math.round(Number(claim.total_amount || 0) * 100) / 100;
+      if (!payable || !paymentAccount) {
+        return res.status(422).json({
+          message:
+            "Cannot post the reimbursement payment: Employee Reimbursements Payable (2045) or a bank/cash account is missing from the chart.",
+          code: "PAYMENT_ACCOUNTS_MISSING",
+        });
+      }
 
       const updatedResult = await pool.query(
         `UPDATE expense_claims
@@ -513,6 +541,46 @@ export function registerExpenseClaimRoutes(app: Express) {
        RETURNING *`,
         [payment_reference || null, id]
       );
+
+      if (gross > 0) {
+        const existingPayments = await storage.getJournalEntriesBySource(
+          claim.company_id,
+          "expense_claim_payment",
+          id
+        );
+        if (!existingPayments.some((e) => e.status === "posted")) {
+          const payDate = new Date();
+          const entryNumber = await storage.generateEntryNumber(claim.company_id, payDate);
+          await storage.createJournalEntry(
+            {
+              companyId: claim.company_id,
+              date: payDate,
+              memo: `Expense claim ${claim.claim_number || id} reimbursed${payment_reference ? ` (${payment_reference})` : ""}`,
+              entryNumber,
+              status: "posted",
+              source: "expense_claim_payment",
+              sourceId: id,
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: payDate,
+            } as any,
+            [
+              {
+                accountId: payable.id,
+                debit: gross,
+                credit: 0,
+                description: "Settle employee reimbursement",
+              },
+              {
+                accountId: paymentAccount.id,
+                debit: 0,
+                credit: gross,
+                description: `Reimbursement paid from ${paymentAccount.nameEn || paymentAccount.code}`,
+              },
+            ]
+          );
+        }
+      }
 
       log.info(
         { claimId: id, paymentReference: payment_reference },
