@@ -86,6 +86,13 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # The suites register many users and post in parallel against one server.
+      # Production rate limits would reject them, so raise the limits for this
+      # disposable test server only.
+      RL_API_MAX: "100000"
+      RL_AUTH_MAX: "100000"
+      RL_READ_MAX: "100000"
+      RL_AI_MAX: "100000"
 
     steps:
       - uses: actions/checkout@v4
@@ -157,6 +164,13 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # The suites register many users and post in parallel against one server.
+      # Production rate limits would reject them, so raise the limits for this
+      # disposable test server only.
+      RL_API_MAX: "100000"
+      RL_AUTH_MAX: "100000"
+      RL_READ_MAX: "100000"
+      RL_AI_MAX: "100000"
 
     steps:
       - uses: actions/checkout@v4

@@ -22,6 +22,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "../db";
+import { runExclusive } from "./document-queue";
 
 /** Stable 32-bit key from a document id (advisory locks take bigints). */
 function lockKey(id: string): number {
@@ -46,10 +47,14 @@ export async function withDocumentLock<T>(
   namespace: number,
   fn: (tx: typeof db) => Promise<T>
 ): Promise<T> {
-  return await db.transaction(async (tx: typeof db) => {
-    await acquireDocumentLock(tx, documentId, namespace);
-    return await fn(tx);
-  });
+  // Queue same-document callers in-process first, so waiters do not each hold
+  // a pooled connection while the holder needs more (see document-queue.ts).
+  return await runExclusive(`${namespace}:${documentId}`, () =>
+    db.transaction(async (tx: typeof db) => {
+      await acquireDocumentLock(tx, documentId, namespace);
+      return await fn(tx);
+    })
+  );
 }
 
 /**
