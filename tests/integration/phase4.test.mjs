@@ -413,25 +413,17 @@ async function section42() {
   r = await api("PATCH", `${ctBase}/${ctId}`, { token: C.token, body: { status: "filed" } });
   ok("4.2: PATCH status=filed is refused (409 CT_FILING_REQUIRES_RECORD)", r.status === 409 && r.json?.code === "CT_FILING_REQUIRES_RECORD", { s: r.status, j: r.json });
 
-  // the accounts are not in the default chart: 422 naming the missing account, nothing posted
+  // the accounts are in the default chart; a company whose chart lacks them (an older one) gets them
+  // created from the default template at filing time instead of a 422 (phase 4 review, defect 2)
   const fileUrl = `${ctBase}/${ctId}/file`;
   r = await api("POST", fileUrl, { token: C.token, body: { ftaReferenceNumber: "CT-1" } });
   ok("4.2: filing without a date -> 400 FILED_AT_REQUIRED", r.status === 400 && r.json?.code === "FILED_AT_REQUIRED", { s: r.status, j: r.json });
-  r = await api("POST", fileUrl, { token: C.token, body: { ftaReferenceNumber: `CT-${rnd}`, filedAt: today } });
-  ok("4.2: filing when the Corporate Tax accounts are missing -> 422 ACCOUNT_MISSING naming the account",
-    r.status === 422 && r.json?.code === "ACCOUNT_MISSING" && /Corporate Tax Expense/.test(r.json?.message ?? ""), { s: r.status, j: r.json });
-  const nothing = (await db.query("SELECT (SELECT count(*) FROM tax_filings WHERE return_id = $1) AS f, (SELECT status FROM corporate_tax_returns WHERE id = $1) AS s, (SELECT count(*) FROM journal_entries WHERE company_id = $2 AND source = 'corporate_tax_filing') AS j", [ctId, C.cid])).rows[0];
-  ok("4.2: the refused filing left no filing record, no journal and the return still draft", n(nothing.f) === 0 && n(nothing.j) === 0 && nothing.s === "draft", nothing);
-
-  // create the accounts (customer-created; not part of the default chart)
-  const mkAcc = (code, nameEn, type) => api("POST", `/api/companies/${C.cid}/accounts`, { token: C.token, body: { code, nameEn, nameAr: nameEn, type, subType: type === "liability" ? "current_liability" : null, isVatAccount: false, vatType: null, isSystemAccount: false } });
-  await mkAcc("5150", "Corporate Tax Expense", "expense");
-  r = await api("POST", fileUrl, { token: C.token, body: { ftaReferenceNumber: `CT-${rnd}`, filedAt: today } });
-  ok("4.2: with only the expense account the payable account is named as missing", r.status === 422 && /Corporate Tax Payable/.test(r.json?.message ?? ""), { s: r.status, j: r.json });
-  await mkAcc("2060", "Corporate Tax Payable", "liability");
+  await db.query("DELETE FROM accounts WHERE company_id = $1 AND code IN ('5150', '2060')", [C.cid]);
 
   r = await api("POST", fileUrl, { token: C.token, body: { ftaReferenceNumber: `CT-${rnd}`, filedAt: today, notes: "filed on EmaraTax", evidence: upload(PDF, "ct-ack.pdf", "application/pdf") } });
   ok("4.2: record the corporate tax filing (reference + date + acknowledgement) -> 201", r.status === 201 && /^[0-9a-f]{64}$/.test(r.json?.filing?.snapshotHash ?? ""), { s: r.status, t: r.text.slice(0, 300) });
+  const made = (await db.query("SELECT code, type FROM accounts WHERE company_id = $1 AND code IN ('5150', '2060') ORDER BY code", [C.cid])).rows;
+  ok("4.2: the missing Corporate Tax accounts were created on demand (2060 liability, 5150 expense)", made.length === 2 && made[0].type === "liability" && made[1].type === "expense", made);
   const cf = (await db.query("SELECT * FROM tax_filings WHERE return_id = $1", [ctId])).rows[0];
   ok("4.2: snapshot stored (tax payable 11,250, revenue 900,000) with the workpaper hash", cf && close(cf.snapshot?.boxes?.taxPayable, 11250) && close(cf.snapshot?.boxes?.totalRevenue, 900000) && /^[0-9a-f]{64}$/.test(cf.snapshot?.workpaperHash ?? ""), cf?.snapshot);
   const acc = (await db.query(`SELECT a.code, jl.debit, jl.credit, je.source, je.source_id FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND je.source = 'corporate_tax_filing'`, [C.cid])).rows;

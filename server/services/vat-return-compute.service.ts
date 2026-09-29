@@ -7,9 +7,10 @@
  * (c) building an amendment. Pure read: it never writes.
  */
 
-import { storage } from "../storage";
-import { pool } from "../db";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { db } from "../db";
 import { AppError } from "../errors";
+import { companies, invoiceLines as invoiceLinesTable, invoices as invoicesTable, receipts as receiptsTable } from "../../shared/schema";
 import { round2 } from "./financial-statements";
 import { aggregateReturnSalesLines } from "./vat-sales-lines";
 import { buildGeneratedVatReturnValues } from "./vat-return-payload.service";
@@ -19,10 +20,20 @@ export async function computeVatReturnForPeriod(args: {
   userId: string;
   periodStart: string;
   periodEnd: string;
+  /**
+   * Run every read on this transaction's connection (filing recomputes the return inside its
+   * transaction, after taking the month locks, and must not wait for a second pooled connection).
+   */
+  executor?: any;
 }) {
   const { companyId, userId, periodStart, periodEnd } = args;
+  const ex: any = args.executor ?? db;
+  const rowsOf = (res: any): any[] => (res?.rows ?? res) as any[];
   // Get company information for emirate and VAT registration
-  const company = await storage.getCompany(companyId);
+  const [company] = await ex
+    .select()
+    .from(companies)
+    .where(and(eq(companies.id, companyId), isNull(companies.deletedAt)));
   if (!company) {
     throw new AppError({ message: "Company not found", statusCode: 404, code: "COMPANY_NOT_FOUND" });
   }
@@ -53,8 +64,8 @@ export async function computeVatReturnForPeriod(args: {
   const companyEmirate = company.emirate;
 
   // Calculate VAT from invoices and receipts
-  const invoices = await storage.getInvoicesByCompanyId(companyId);
-  const receipts = await storage.getReceiptsByCompanyId(companyId);
+  const invoices: any[] = await ex.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId));
+  const receipts: any[] = await ex.select().from(receiptsTable).where(eq(receiptsTable.companyId, companyId));
 
   const startDate = new Date(periodStart);
   // periodEnd is a calendar date — include the entire final day so
@@ -86,9 +97,11 @@ export async function computeVatReturnForPeriod(args: {
   let zeroRatedAmount = 0;
   let exemptAmount = 0;
 
-  const periodLines = await storage.getInvoiceLinesByInvoiceIds(
-    periodInvoices.map((i) => i.id)
-  );
+  const periodInvoiceIds = periodInvoices.map((i) => i.id);
+  const periodLines: any[] =
+    periodInvoiceIds.length === 0
+      ? []
+      : await ex.select().from(invoiceLinesTable).where(inArray(invoiceLinesTable.invoiceId, periodInvoiceIds));
   // FTA reporting is AED — convert foreign-currency invoice lines at the
   // invoice's stored transaction-date rate.
   const rateByInvoiceId = new Map(
@@ -162,28 +175,32 @@ export async function computeVatReturnForPeriod(args: {
   // posted receipts. Pending bills are excluded: input VAT is only
   // claimable once the bill is approved (matching when it posts to GL).
   try {
-    const billRes = await pool.query(
-      `SELECT
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-     FROM vendor_bills
-     WHERE company_id = $1
-       AND bill_date >= $2::date
-       AND bill_date <= $3::date
-       AND status NOT IN ('void','cancelled','draft','pending')
-           AND COALESCE(is_opening_balance, false) = false`,
-      // Compare calendar dates, not timestamps — casting the JS Date to
-      // timestamptz shifts period boundaries in non-UTC server timezones.
-      [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
+    const fromDay = startDate.toISOString().slice(0, 10);
+    const toDay = endDate.toISOString().slice(0, 10);
+    const billRes = rowsOf(
+      await ex.execute(sql`
+        SELECT
+          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
+        FROM vendor_bills
+        WHERE company_id = ${companyId}
+          AND bill_date >= ${fromDay}::date
+          AND bill_date <= ${toDay}::date
+          AND status NOT IN ('void','cancelled','draft','pending')
+          AND COALESCE(is_opening_balance, false) = false`)
     );
-    reverseChargeAmount += Number(billRes.rows[0]?.rc_amount || 0);
-    reverseChargeVatGross += Number(billRes.rows[0]?.rc_vat || 0);
-    totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
-    inputTaxGross += Number(billRes.rows[0]?.std_vat || 0);
+    // Compare calendar dates, not timestamps — casting the JS Date to
+    // timestamptz shifts period boundaries in non-UTC server timezones.
+    reverseChargeAmount += Number(billRes[0]?.rc_amount || 0);
+    reverseChargeVatGross += Number(billRes[0]?.rc_vat || 0);
+    totalExpenses += Number(billRes[0]?.std_amount || 0);
+    inputTaxGross += Number(billRes[0]?.std_vat || 0);
   } catch (err) {
     // Bill-pay schema may not be installed in dev — fail open, log via parent.
+    // (Inside a caller's transaction a failed statement aborts it: propagate.)
+    if (args.executor) throw err;
   }
 
   // Expense claims — TD5 (found by blind-accountant audit): approval posts
@@ -194,22 +211,25 @@ export async function computeVatReturnForPeriod(args: {
   // Entertainment-category items are excluded from VAT recovery
   // (Art. 53 blocked input tax) to mirror the posting service.
   try {
-    const claimRes = await pool.query(
-      `SELECT
-         COALESCE(SUM(i.amount), 0) AS claim_amount,
-         COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
-       FROM expense_claim_items i
-       JOIN expense_claims c ON c.id = i.claim_id
-       WHERE c.company_id = $1
-         AND c.status IN ('approved','paid')
-         AND i.expense_date >= $2::date
-         AND i.expense_date <= $3::date`,
-      [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
+    const fromDay = startDate.toISOString().slice(0, 10);
+    const toDay = endDate.toISOString().slice(0, 10);
+    const claimRes = rowsOf(
+      await ex.execute(sql`
+        SELECT
+          COALESCE(SUM(i.amount), 0) AS claim_amount,
+          COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
+        FROM expense_claim_items i
+        JOIN expense_claims c ON c.id = i.claim_id
+        WHERE c.company_id = ${companyId}
+          AND c.status IN ('approved','paid')
+          AND i.expense_date >= ${fromDay}::date
+          AND i.expense_date <= ${toDay}::date`)
     );
-    totalExpenses += Number(claimRes.rows[0]?.claim_amount || 0);
-    inputTaxGross += Number(claimRes.rows[0]?.claim_vat || 0);
+    totalExpenses += Number(claimRes[0]?.claim_amount || 0);
+    inputTaxGross += Number(claimRes[0]?.claim_vat || 0);
   } catch (err) {
     // Expense-claims schema may not be installed — fail open like bills.
+    if (args.executor) throw err;
   }
 
   // Summing float line amounts leaves binary noise (3428.3300000000017);
@@ -344,6 +364,9 @@ export async function computeVatReturnForPeriod(args: {
     reverseChargeVatRecoverable,
     totalInputVat,
     netVatPayable: round2(totalOutputVat - totalInputVat),
+    // Input VAT the return does not recover by design (standard input plus the reverse-charge
+    // input): what the filing entry expects to find in the ledger beyond box 13.
+    expectedIrrecoverableInputVat: round2(irrecoverableInputTax + (reverseChargeVat - reverseChargeVatRecoverable)),
     partialExemption: {
       exemptSupplyRatio: exemptRatio,
       recoverableRatio,

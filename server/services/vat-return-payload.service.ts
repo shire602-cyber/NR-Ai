@@ -141,6 +141,8 @@ export const vatReturnPatchSchema = insertVatReturnSchema
     // Amendment links are created by the amendment endpoint only.
     amendsReturnId: true,
     isAmendment: true,
+    // The manual-edit log is written by this endpoint, never by the client.
+    manualEdits: true,
   })
   .extend({
     ...moneyOverrides,

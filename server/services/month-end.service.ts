@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { pool } from "../db";
+import { db, pool } from "../db";
+import { acquirePeriodLockExclusive } from "./posting-lock";
 import { storage } from "../storage";
 import { detectAnomalies } from "./anomaly-detection.service";
 
@@ -545,19 +546,23 @@ export async function lockPeriod(
 ): Promise<MonthEndCloseRecord> {
   await ensureMonthEndTable();
 
-  const result = await pool.query(
-    `INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at, closing_entry_id)
-     VALUES ($1, $2::date, 'locked', $3, now(), $4)
-     ON CONFLICT (company_id, period_end)
-     DO UPDATE SET
-       status = 'locked',
-       closed_by = EXCLUDED.closed_by,
-       closed_at = now(),
-       closing_entry_id = COALESCE(EXCLUDED.closing_entry_id, month_end_close.closing_entry_id),
-       updated_at = now()
-     RETURNING *`,
-    [companyId, periodEnd, userId, closingEntryId || null]
-  );
+  // Exclusive month lock first, in the same transaction as the upsert: postings in
+  // flight finish before the month is locked, later ones see it locked (posting-lock.ts).
+  const result: any = await db.transaction(async (tx: any) => {
+    await acquirePeriodLockExclusive(tx, companyId, [periodEnd]);
+    return await tx.execute(sql`
+      INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at, closing_entry_id)
+      VALUES (${companyId}, ${periodEnd}::date, 'locked', ${userId}, now(), ${closingEntryId || null})
+      ON CONFLICT (company_id, period_end)
+      DO UPDATE SET
+        status = 'locked',
+        closed_by = EXCLUDED.closed_by,
+        closed_at = now(),
+        closing_entry_id = COALESCE(EXCLUDED.closing_entry_id, month_end_close.closing_entry_id),
+        updated_at = now()
+      RETURNING *`);
+  });
+  result.rows = result.rows ?? result;
 
   return formatCloseRecord(result.rows[0]);
 }
@@ -572,6 +577,9 @@ export async function lockPeriodInTx(
   periodEnd: string,
   userId: string
 ): Promise<void> {
+  // Callers take the exclusive month locks FIRST (before any other work); repeating it
+  // here is free (the same session already holds it) and covers a caller that forgot.
+  await acquirePeriodLockExclusive(tx, companyId, [periodEnd]);
   await tx.execute(sql`
     INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at)
     VALUES (${companyId}, ${periodEnd}::date, 'locked', ${userId}, now())

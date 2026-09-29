@@ -51,9 +51,18 @@ describe("vatSettlementFromDifference (amendment)", () => {
   });
 });
 
+// The clearing is driven by the ledger; for these cases the ledger agrees with the return
+// (the ledger/return differences are covered in vat-clearing-ledger.test.ts).
+const ACCTS = { outputId: OUT, inputId: IN, controlId: CTRL, irrecoverableId: "acc-irr" };
+function clear(fig: { outputVat: number; inputVat: number; net: number }) {
+  const res = buildClearingLines({ outputVat: fig.outputVat, inputVat: fig.inputVat }, fig, ACCTS);
+  if (!res.ok) throw new Error("unexpected refusal: " + res.message);
+  return res.lines;
+}
+
 describe("buildClearingLines (posted at filing)", () => {
   it("payable return: Dr output, Cr input, Cr FTA control for the net", () => {
-    const lines = buildClearingLines({ outputVat: 150, inputVat: 40, net: 110 }, { outputId: OUT, inputId: IN, controlId: CTRL });
+    const lines = clear({ outputVat: 150, inputVat: 40, net: 110 });
     expect(balanced(lines)).toBe(true);
     expect(net(lines, OUT)).toBe(150);
     expect(net(lines, IN)).toBe(-40);
@@ -61,7 +70,7 @@ describe("buildClearingLines (posted at filing)", () => {
   });
 
   it("refundable return: the mirror, control account carries a debit (refund due)", () => {
-    const lines = buildClearingLines({ outputVat: 20, inputVat: 70, net: -50 }, { outputId: OUT, inputId: IN, controlId: CTRL });
+    const lines = clear({ outputVat: 20, inputVat: 70, net: -50 });
     expect(balanced(lines)).toBe(true);
     expect(net(lines, OUT)).toBe(20);
     expect(net(lines, IN)).toBe(-70);
@@ -69,23 +78,23 @@ describe("buildClearingLines (posted at filing)", () => {
   });
 
   it("zero net: output and input clear against each other, no control line", () => {
-    const lines = buildClearingLines({ outputVat: 40, inputVat: 40, net: 0 }, { outputId: OUT, inputId: IN, controlId: CTRL });
+    const lines = clear({ outputVat: 40, inputVat: 40, net: 0 });
     expect(balanced(lines)).toBe(true);
     expect(lines.map((l) => l.accountId).sort()).toEqual([IN, OUT]);
   });
 
   it("nothing to clear produces no lines", () => {
-    expect(buildClearingLines({ outputVat: 0, inputVat: 0, net: 0 }, { outputId: OUT, inputId: IN, controlId: CTRL })).toEqual([]);
+    expect(clear({ outputVat: 0, inputVat: 0, net: 0 })).toEqual([]);
   });
 
   it("a negative output total (credit notes exceed sales) is a credit to the output account", () => {
-    const lines = buildClearingLines({ outputVat: -10, inputVat: 5, net: -15 }, { outputId: OUT, inputId: IN, controlId: CTRL });
+    const lines = clear({ outputVat: -10, inputVat: 5, net: -15 });
     expect(balanced(lines)).toBe(true);
     expect(net(lines, OUT)).toBe(-10);
   });
 
   it("balances to the fils for awkward decimals", () => {
-    const lines = buildClearingLines({ outputVat: 1234.57, inputVat: 233.33, net: 1001.24 }, { outputId: OUT, inputId: IN, controlId: CTRL });
+    const lines = clear({ outputVat: 1234.57, inputVat: 233.33, net: 1001.24 });
     expect(balanced(lines)).toBe(true);
   });
 });

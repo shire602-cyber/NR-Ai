@@ -80,6 +80,8 @@ const fileBody = z.object({
   filedAt: z.string().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   evidence: evidenceBody.optional().nullable(),
+  /** VAT only: which figures to file when the draft differs from the books (see VAT_RETURN_STALE). */
+  acceptFigures: z.enum(["stored", "recomputed"]).optional().nullable(),
 });
 
 const paymentBody = z.object({
@@ -139,7 +141,7 @@ export function registerTaxFilingRoutes(app: Express) {
         if (!body.success) {
           return res.status(400).json({ message: "Invalid filing details", code: "VALIDATION_ERROR" });
         }
-        const filing = await cfg.file({
+        const result: any = await cfg.file({
           user: actorOf(req),
           returnId: ret.id,
           input: {
@@ -147,13 +149,20 @@ export function registerTaxFilingRoutes(app: Express) {
             filedAt: body.data.filedAt,
             notes: body.data.notes,
             evidence: body.data.evidence ?? null,
+            acceptFigures: cfg.kind === "vat" ? body.data.acceptFigures ?? null : null,
           },
           req,
         });
+        const filing = result.filing;
         const fresh = await cfg.load(ret.id);
         res.status(201).json({
           filing: { id: filing.id, referenceNumber: filing.referenceNumber, filedAt: filing.filedAt, snapshotHash: filing.snapshotHash },
           transmittedByMuhasib: false,
+          // VAT: true when the draft was replaced by figures recomputed from the books at filing,
+          // with the per-box differences so the client can show what changed.
+          recomputedAtFiling: result.recomputedAtFiling === true,
+          differences: result.differences ?? [],
+          clearing: result.clearing ?? null,
           message:
             "Recorded as filed. Muhasib did not transmit this return: this is your record of a filing you made on EmaraTax.",
           view: await cfg.view(fresh, (req as any).user.id),

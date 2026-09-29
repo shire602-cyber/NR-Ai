@@ -8,6 +8,7 @@ import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.servi
 import { pool } from "../db";
 import { round2 } from "../services/financial-statements";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { mergeManualEdits } from "../services/tax-filing-core";
 import {
   assertVatPeriodEnded,
   classifyVatPeriod,
@@ -552,7 +553,8 @@ export function registerVATRoutes(app: Express) {
       const persistVatReturn = (data: any) =>
         samePeriod ? storage.updateVatReturn(samePeriod.id, data) : storage.createVatReturn(data);
 
-      const vatReturn = await persistVatReturn(returnValues);
+      // Regenerating replaces every figure with the books' figures: hand edits are gone with them.
+      const vatReturn = await persistVatReturn({ ...returnValues, manualEdits: null });
 
       // Return with additional metadata for the UI
       res.status(201).json({
@@ -598,7 +600,7 @@ export function registerVATRoutes(app: Express) {
       // Kept on this endpoint for older clients; `filedAt` is now required.
       if (typeof ftaReferenceNumber === "string" && ftaReferenceNumber.trim() !== "") {
         const u = (req as any).user;
-        const filing = await recordVatFiling({
+        const { filing } = await recordVatFiling({
           user: { id: u.id, isAdmin: u.isAdmin === true, firmRole: u.firmRole ?? null },
           returnId: id,
           input: { ftaReferenceNumber, filedAt: req.body?.filedAt, notes },
@@ -697,8 +699,19 @@ export function registerVATRoutes(app: Express) {
           .json({ message: decision.message, code: decision.code });
       }
 
+      // Record which boxes were changed by hand: filing recomputes the return from the
+      // books and must not silently throw these away (VAT_RETURN_STALE).
+      const manualEdits = mergeManualEdits(
+        (existing as any).manualEdits ?? null,
+        existing as any,
+        cleanUpdate as any,
+        { userId }
+      );
+      const patchData: any = { ...cleanUpdate };
+      if (manualEdits || (existing as any).manualEdits) patchData.manualEdits = manualEdits;
+
       // storage.updateVatReturn stamps updatedAt itself.
-      const vatReturn = await storage.updateVatReturn(id, cleanUpdate);
+      const vatReturn = await storage.updateVatReturn(id, patchData);
 
       res.json(stripLegacyVatReturnFields(vatReturn));
     })

@@ -17,6 +17,7 @@ import { storage } from "../storage";
 import { AppError } from "../errors";
 import { yearEndCloses, type YearEndClose } from "../../shared/schema";
 import { lockPeriodInTx } from "./month-end.service";
+import { acquirePeriodLockExclusive } from "./posting-lock";
 import { recordAudit } from "./audit.service";
 import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, findAccountByCode, findAccountByName, missingAccountError, postSettlementJournal, type FilingActor } from "./tax-filing.service";
@@ -39,8 +40,8 @@ async function fiscalStartMonth(companyId: string): Promise<number> {
   return m >= 1 && m <= 12 ? m : 1;
 }
 
-async function yearBalances(companyId: string, yearStart: string, yearEnd: string) {
-  const res: any = await db.execute(sql`
+async function yearBalances(companyId: string, yearStart: string, yearEnd: string, executor: any = db) {
+  const res: any = await executor.execute(sql`
     SELECT a.id AS account_id, a.type, SUM(jl.credit - jl.debit) AS credit_net
       FROM journal_lines jl
       JOIN journal_entries je ON je.id = jl.entry_id
@@ -57,7 +58,7 @@ async function yearBalances(companyId: string, yearStart: string, yearEnd: strin
   };
 }
 
-async function resolveRetained(tx: Tx, companyId: string) {
+export async function resolveRetained(tx: Tx, companyId: string) {
   const found =
     (await findAccountByCode(tx, companyId, RETAINED.code, ["equity"])) ??
     (await findAccountByName(tx, companyId, RETAINED.name, ["equity"]));
@@ -141,12 +142,15 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
   let result: { id: string; closingEntryId: string | null; netIncome: number };
   try {
     result = await db.transaction(async (tx: Tx) => {
+      // FIRST: the exclusive lock of every month this close locks, so no posting can be in flight
+      // into the year while it is summed and closed; later postings find it locked (posting-lock.ts).
+      await acquirePeriodLockExclusive(tx, companyId, monthEndsOfFiscalYear(range.yearStart, range.yearEnd));
       // Claim the slot first: the partial unique index makes a concurrent second close fail.
       const [row] = await tx
         .insert(yearEndCloses)
         .values({ companyId, yearStart: range.yearStart, yearEnd: range.yearEnd, status: "closed", closedBy: user.id })
         .returning();
-      const balances = await yearBalances(companyId, range.yearStart, range.yearEnd);
+      const balances = await yearBalances(companyId, range.yearStart, range.yearEnd, tx);
       let entryId: string | null = null;
       let netIncome = 0;
       if (balances.income.length + balances.expense.length > 0) {
@@ -161,6 +165,8 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
           sourceId: row.id,
           userId: user.id,
           lines: built.lines,
+          // dated the year's last day, which a filed VAT return may already have locked
+          allowLockedPeriod: { reason: "year_end_close", closeId: row.id },
         });
         await tx.update(yearEndCloses).set({ closingEntryId: entryId }).where(eq(yearEndCloses.id, row.id));
       }
@@ -251,9 +257,40 @@ export async function reopenFinancialYear(args: { user: FilingActor; companyId: 
           credit: Number(l.debit),
           description: `Reversal - ${l.description ?? "year-end close"}`,
         })),
+        allowLockedPeriod: { reason: "year_end_reopen", closeId: close.id },
       });
       if (reversalId) {
         await tx.execute(sql`UPDATE journal_entries SET reversed_entry_id = ${close.closingEntryId}, reversal_reason = ${reason} WHERE id = ${reversalId}`);
+      }
+    }
+    // Corporate tax filed AFTER the close posted its own closing line into this year
+    // (Dr retained earnings / Cr corporate tax expense): reverse those too, or the reopened
+    // year would carry a closing line for an expense it no longer closes.
+    const taxClosings: any = await tx.execute(sql`
+      SELECT je.id, je.source_id FROM journal_entries je
+       WHERE je.company_id = ${companyId} AND je.source = ${YEAR_END_SOURCE} AND je.status = 'posted'
+         AND je.date::date >= ${yearStart}::date AND je.date::date <= ${yearEnd}::date
+         AND je.id IS DISTINCT FROM ${close.closingEntryId ?? null}::uuid
+         AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reversed_entry_id = je.id)`);
+    for (const closing of (taxClosings.rows ?? taxClosings) as Array<{ id: string; source_id: string | null }>) {
+      const lines: any = await tx.execute(sql`SELECT account_id, debit, credit, description FROM journal_lines WHERE entry_id = ${closing.id}`);
+      const reversal = await postSettlementJournal(tx, {
+        companyId,
+        ymd: yearEnd,
+        memo: `Reversal of corporate tax closing entry: ${reason}`,
+        source: YEAR_END_REVERSAL_SOURCE,
+        sourceId: closing.source_id ?? close.id,
+        userId: user.id,
+        lines: (lines.rows ?? lines).map((l: any) => ({
+          accountId: l.account_id,
+          debit: Number(l.credit),
+          credit: Number(l.debit),
+          description: `Reversal - ${l.description ?? "corporate tax closing"}`,
+        })),
+        allowLockedPeriod: { reason: "year_end_reopen", closeId: close.id },
+      });
+      if (reversal) {
+        await tx.execute(sql`UPDATE journal_entries SET reversed_entry_id = ${closing.id}, reversal_reason = ${reason} WHERE id = ${reversal}`);
       }
     }
     // Unlock the months this close locked, except months a filed VAT return covers.

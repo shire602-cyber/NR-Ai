@@ -22,8 +22,10 @@ return is fully paid, the three VAT accounts are back to zero. A refund works th
 current books, shows the difference per box, and that difference gets its own filing record, evidence and payment.
 
 **Corporate tax** gets the same filing record, evidence, amendment and payment flow. Filing posts the tax as an expense and
-a payable first. That needs two accounts in your chart: "Corporate Tax Expense" (5150) and "Corporate Tax Payable" (2060).
-If they are missing you get a clear error naming them; nothing is posted elsewhere.
+a payable, dated the last day of the tax year it belongs to (so it lands in that year's profit and loss, whenever you file).
+The accounts "Corporate Tax Expense" (5150) and "Corporate Tax Payable" (2060) are in the standard chart and are created
+automatically for older companies that lack them. You can create, compute and file a return for a year that is already
+locked or closed: if the year was closed, the tax expense is also closed to retained earnings in the same step.
 
 **FTA Audit File (FAF).** New download on the VAT Filing page (tab "FTA Audit File"): company details, purchase listing,
 supply listing and general ledger for a period (up to one financial year), streamed as a CSV.
@@ -41,7 +43,25 @@ year has filed returns or is closed. Profit and loss reports leave the closing e
 **E-invoice XML.** Credit notes are now a proper credit-note document; fuller seller/buyer details, payment means and terms;
 clearer, bilingual "fix this" errors before an invoice can be generated. No provider was added.
 
+## Filing corrections (review round)
+
+- **The VAT accounts clear to exactly zero at filing.** The journal is driven by what the ledger holds for the period. The FTA
+  control account gets the net on the return; input VAT the return does not recover (partial exemption) is expensed once on the
+  new "Irrecoverable VAT Expense" account (5160); rounding up to AED 1.00 goes to a rounding line there. A bigger gap between
+  books and return is refused (422 `VAT_LEDGER_MISMATCH`) with both figures: investigate it, it is not written off.
+- **Filing recomputes the return from the books.** If the draft is out of date it is replaced by the recomputed figures and the
+  response lists what changed. If someone edited boxes by hand, filing stops (409 `VAT_RETURN_STALE`) and asks: file the
+  stored figures or the recomputed ones (the Record filing dialog shows both, in English and Arabic).
+- **Month lock and posting cannot interleave.** Filing, year-end close and manual locks wait for postings already in flight;
+  a posting that starts afterwards is refused as "locked period".
+- **Invoice numbering cannot get stuck.** A number already taken (opening-balance or imported invoice, credit note, quote) is
+  skipped inside the same transaction, and opening invoices in the sequence's format move the counter past them.
+- **Returns filed before filing records existed** get a frozen snapshot on first read (flagged legacy, no journal posted; drift
+  and amendment work as usual). A filing record can no longer be deleted, except with its company.
+
 ## Database migration
+
+`0095_filing_review_fixes`: a column for hand-edited VAT boxes and a trigger that refuses deleting filing records. Safe to re-run.
 
 `0094_tax_filing_evidence_opening_year_end`: new tables (filings, evidence, payments, opening balances, year-end closes), amendment
 columns on both return tables, an "opening balance" flag on invoices and vendor bills. Safe to re-run. The stored snapshot of a
@@ -49,6 +69,8 @@ filing is protected by a database trigger against edits.
 
 ## Behaviour changes to know about
 
+- New companies get three more accounts (2060, 5150, 5160). Bills and receipts still post all input VAT to 1050; the irrecoverable
+  part moves to 5160 when the return is filed.
 - Marking a VAT or corporate tax return "filed" by editing its status no longer works: use Record filing (reference and date are required).
   The old submit-with-reference call now also needs a filing date.
 - A filed VAT return locks its months. Posting into them is refused until a firm owner unlocks them with a reason.

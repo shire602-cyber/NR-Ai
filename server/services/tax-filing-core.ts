@@ -119,6 +119,89 @@ export function diffBoxes(
   return out;
 }
 
+// ─── Stored draft vs the books, at filing time ───────────────────────────────
+
+export type AcceptFigures = "stored" | "recomputed";
+
+export type DraftAssessment =
+  | { action: "use_stored"; differences: BoxDifference[] }
+  | { action: "use_recomputed"; differences: BoxDifference[] }
+  | { action: "refuse"; code: "VAT_RETURN_STALE"; differences: BoxDifference[] };
+
+/**
+ * What to file when the stored draft and a fresh computation from the books differ.
+ * `differences` are stored (filed) vs recomputed (current), per box.
+ *
+ *   no difference                  -> the stored draft
+ *   never edited by hand           -> silently the recomputed figures (the draft was just stale)
+ *   hand-edited                    -> refuse (VAT_RETURN_STALE) until the user chooses
+ *   acceptFigures "stored"/"recomputed" -> that choice, always
+ */
+export function assessDraftFigures(input: {
+  stored: Record<string, number>;
+  recomputed: Record<string, number>;
+  hasManualEdits: boolean;
+  acceptFigures?: AcceptFigures | null;
+}): DraftAssessment {
+  const differences = diffBoxes(input.stored, input.recomputed);
+  if (differences.length === 0) return { action: "use_stored", differences };
+  if (input.acceptFigures === "stored") return { action: "use_stored", differences };
+  if (input.acceptFigures === "recomputed") return { action: "use_recomputed", differences };
+  if (input.hasManualEdits) return { action: "refuse", code: "VAT_RETURN_STALE", differences };
+  return { action: "use_recomputed", differences };
+}
+
+// ─── Manual box edits on a draft ─────────────────────────────────────────────
+
+export interface ManualEdits {
+  boxes: Record<string, { from: number; to: number }>;
+  at: string;
+  by: string | null;
+}
+
+/**
+ * The edit log after a PATCH: every canonical box whose value now differs from what it was when
+ * the log started keeps { from (first value), to (latest) }; a box put back to its original
+ * value drops out. Returns null when nothing has been edited (so a clean draft stays clean).
+ * Legacy aliases are not user-editable and are ignored.
+ */
+export function mergeManualEdits(
+  existingEdits: ManualEdits | null | undefined,
+  existingRow: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  ctx: { userId: string | null; now?: Date }
+): ManualEdits | null {
+  const boxes: Record<string, { from: number; to: number }> = { ...(existingEdits?.boxes ?? {}) };
+  let touched = false;
+  for (const key of Object.keys(patch)) {
+    if (!BOX_KEY.test(key) || LEGACY.has(key)) continue;
+    const before = toFils(Number(existingRow[key] ?? 0));
+    const after = toFils(Number(patch[key] ?? 0));
+    if (before === after) continue;
+    touched = true;
+    const from = boxes[key] ? toFils(boxes[key].from) : before;
+    if (from === after) delete boxes[key];
+    else boxes[key] = { from: fromFils(from), to: fromFils(after) };
+  }
+  if (!touched) return existingEdits && Object.keys(existingEdits.boxes ?? {}).length > 0 ? existingEdits : null;
+  if (Object.keys(boxes).length === 0) return null;
+  return { boxes, at: (ctx.now ?? new Date()).toISOString(), by: ctx.userId };
+}
+
+/** Signed change (stored minus computed) the log records on box 12 and box 13. */
+export function manualSettlementDelta(edits: ManualEdits | null | undefined): { outputVat: number; inputVat: number } {
+  const delta = (box: string) => {
+    const e = edits?.boxes?.[box];
+    return e ? fromFils(toFils(e.to) - toFils(e.from)) : 0;
+  };
+  return { outputVat: delta("box12TotalDueTax"), inputVat: delta("box13RecoverableTax") };
+}
+
+export const hasRecordedManualEdits = (
+  edits: ManualEdits | null | undefined,
+  adjustmentAmount: unknown
+): boolean => Object.keys(edits?.boxes ?? {}).length > 0 || toFils(Number(adjustmentAmount ?? 0)) !== 0;
+
 // ─── Filing input validation ─────────────────────────────────────────────────
 
 export type FilingInputResult =

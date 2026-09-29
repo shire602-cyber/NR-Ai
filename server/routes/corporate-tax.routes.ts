@@ -3,7 +3,6 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { UAE_CT_EXEMPTION_THRESHOLD } from "../constants";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import {
   buildCtReturnWorkbook,
   buildCtTemplateWorkbook,
@@ -19,7 +18,7 @@ import {
 import { insertCorporateTaxReturnSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { getFilingByReturn } from "../services/tax-filing.service";
-import { overlayCtReturns, overlayCtSnapshot } from "../services/ct-filing.service";
+import { CT_JOURNAL_SOURCE_FILING, overlayCtReturns, overlayCtSnapshot } from "../services/ct-filing.service";
 
 /**
  * Fields a client can never write on a corporate tax return: the tenant, and the
@@ -123,13 +122,9 @@ export function registerCorporateTaxRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // CT returns settle tax against periodEnd — block creation when the
-      // period is already locked, since the tax provision JE could not post.
-      const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
-      if (periodEnd) {
-        await assertPeriodNotLocked(companyId, periodEnd);
-      }
-
+      // Preparing a return is not a posting: it is allowed for a locked or closed year (the normal
+      // order is close the year, then prepare corporate tax). Only the accrual journal, posted when
+      // the return is filed, is subject to posting rules (ct-filing.service.ts).
       // S-M1: allowlist body fields (strips id/createdAt/unknown) before the
       // spread into the Drizzle write, then force the tenant scope.
       const taxReturn = await storage.createCorporateTaxReturn(
@@ -240,11 +235,6 @@ export function registerCorporateTaxRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
-      }
-
-      const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
-      if (periodEnd) {
-        await assertPeriodNotLocked(existing.companyId, periodEnd);
       }
 
       // S-M1: allowlist body fields and never let the tenant scope or the filing
@@ -426,7 +416,8 @@ export function registerCorporateTaxRoutes(app: Express) {
       const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
         const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
+        // the corporate tax accrual is dated in the tax period but is not part of the profit it taxes
+        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
       });
 
       const netByAccount = new Map<string, number>();
@@ -518,7 +509,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
         const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
+        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
       });
 
       let totalRevenue = 0;

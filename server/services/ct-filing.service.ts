@@ -3,12 +3,22 @@
  * (snapshot + hash, reference number, evidence, immutability, amendment as a
  * linked new record, payments) on top of the generic tax-filing service.
  *
- * Accounting: nothing accrues corporate tax before filing today, so filing posts
+ * Accounting: nothing accrues corporate tax before filing, so filing posts
  * Dr Corporate Tax Expense / Cr Corporate Tax Payable for the computed tax, dated
- * on the filing day. Payments are Dr Corporate Tax Payable / Cr Bank. An
- * amendment accrues (or reverses) only the difference. If either account is not
- * in the company's chart the request fails with 422 naming it; nothing is posted
- * to a different account. Corporate tax filing does not lock accounting months.
+ * the LAST DAY OF THE TAX PERIOD it relates to (so it lands in the right year's
+ * profit and loss, whenever the return is filed). Payments are Dr Corporate Tax
+ * Payable / Cr Bank, dated the payment day. An amendment accrues (or reverses)
+ * only the difference.
+ *
+ * Creating, computing and filing a return for a locked or closed year is normal
+ * (months are locked by VAT filing and by the year-end close), so the accrual is
+ * posted into the tax year even when its month is locked, through the narrow,
+ * audited `allowLockedPeriod` bypass that only this service constructs. If that
+ * year was already closed to retained earnings, the accrual is accompanied by a
+ * closing line (Dr Retained Earnings / Cr Corporate Tax Expense, same date, source
+ * year_end_close, same return) in the same transaction, so the closed year's income
+ * and expense accounts still net to zero and the balance sheet still balances.
+ * Missing 5150 / 2060 are created from the default chart. Filing does not lock months.
  */
 
 import { asc, eq, sql } from "drizzle-orm";
@@ -24,7 +34,10 @@ import {
   type TaxFiling,
 } from "../../shared/schema";
 import { CT_ACCOUNT_CODES } from "../constants";
-import { assertPeriodNotLocked } from "./period-lock.service";
+import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
+import { accounts } from "../../shared/schema";
+import { acquirePostingLockShared, assertMonthOpenInTx, type PostingBypass } from "./posting-lock";
+import { YEAR_END_SOURCE, resolveRetained } from "./year-end.service";
 import { removeStoredFile } from "./document-upload.service";
 import { classifyVatPeriod } from "./vat-period-status.service";
 import { recordAudit } from "./audit.service";
@@ -39,7 +52,7 @@ import {
   type BoxDifference,
   type CtSnapshot,
 } from "./tax-filing-core";
-import { buildCtAccrualLines } from "./tax-settlement";
+import { buildCtAccrualPosting } from "./tax-settlement";
 import {
   assertFilingPermission,
   buildFilingViewBase,
@@ -65,13 +78,45 @@ export const CT_JOURNAL_SOURCE_PAYMENT = "corporate_tax_payment";
 const CT_PAYABLE = { name: "Corporate Tax Payable", code: CT_ACCOUNT_CODES.PAYABLE, type: "liability" } as const;
 const CT_EXPENSE = { name: "Corporate Tax Expense", code: CT_ACCOUNT_CODES.EXPENSE, type: "expense" } as const;
 
-/** By code first, else by exact English name (a company may have created its own numbering). */
+/**
+ * By code first, else by exact English name (a company may have created its own numbering); an
+ * older chart that has neither gets the account from the default template instead of a 422.
+ */
 async function resolveCtAccount(tx: Tx, companyId: string, spec: typeof CT_PAYABLE | typeof CT_EXPENSE): Promise<AccountRef> {
   const byCode = await findAccountByCode(tx, companyId, spec.code, [spec.type]);
   if (byCode) return byCode;
   const byName = await findAccountByName(tx, companyId, spec.name, [spec.type]);
   if (byName) return byName;
-  throw missingAccountError(spec.name, spec.code, spec.type);
+  const template = defaultChartOfAccounts.find((a) => a.code === spec.code && a.type === spec.type);
+  if (!template) throw missingAccountError(spec.name, spec.code, spec.type);
+  const [created] = await tx
+    .insert(accounts)
+    .values({
+      companyId,
+      code: template.code,
+      nameEn: template.nameEn,
+      nameAr: template.nameAr,
+      description: template.description,
+      type: template.type,
+      subType: template.subType,
+      isVatAccount: template.isVatAccount,
+      vatType: template.vatType,
+      isSystemAccount: template.isSystemAccount,
+      isActive: true,
+      isArchived: false,
+    })
+    .returning({ id: accounts.id, code: accounts.code, nameEn: accounts.nameEn });
+  return created;
+}
+
+/** Is the financial year that contains `ymd` already closed to retained earnings? */
+async function isFinancialYearClosed(tx: Tx, companyId: string, ymd: string): Promise<boolean> {
+  const res: any = await tx.execute(sql`
+    SELECT 1 FROM year_end_closes
+     WHERE company_id = ${companyId} AND status = 'closed'
+       AND year_start <= ${ymd}::date AND year_end >= ${ymd}::date
+     LIMIT 1`);
+  return ((res.rows ?? res) as unknown[]).length > 0;
 }
 
 async function loadCtReturn(returnId: string): Promise<CorporateTaxReturn> {
@@ -114,7 +159,7 @@ export async function recordCtFiling(args: {
   returnId: string;
   input: { ftaReferenceNumber?: unknown; filedAt?: unknown; notes?: unknown; evidence?: EvidenceUploadInput | null };
   req?: Request;
-}) {
+}): Promise<{ filing: TaxFiling }> {
   const ret = await loadCtReturn(args.returnId);
   const { companyId } = ret;
   await assertFilingPermission(args.user, companyId, "write");
@@ -137,7 +182,6 @@ export async function recordCtFiling(args: {
     periodEnd: endYmd,
   });
   if (!checked.ok) throw new AppError({ message: checked.message, statusCode: checked.status, code: checked.code });
-  await assertPeriodNotLocked(companyId, checked.filedAt);
 
   const notes = typeof args.input.notes === "string" && args.input.notes.trim() ? args.input.notes.trim().slice(0, 2000) : null;
   const base = ret.isAmendment ? await baseFilingFor(ret) : null;
@@ -147,7 +191,7 @@ export async function recordCtFiling(args: {
   const stored = args.input.evidence?.fileData ? await storeEvidenceFile(companyId, args.user.id, args.input.evidence) : null;
 
   try {
-    const filing = await db.transaction(async (tx: Tx) => {
+    const outcome = await db.transaction(async (tx: Tx) => {
       const locked = await tx.execute(sql`SELECT status FROM corporate_tax_returns WHERE id = ${ret.id} FOR UPDATE`);
       const lockedRow = ((locked as any).rows ?? locked)[0];
       if (!lockedRow || lockedRow.status !== "draft") {
@@ -180,18 +224,51 @@ export async function recordCtFiling(args: {
       const net = fromFils(netFils);
 
       let clearingEntryId: string | null = null;
+      let lockedAccrual = false;
       if (netFils !== 0) {
         const expense = await resolveCtAccount(tx, companyId, CT_EXPENSE);
         const payable = await resolveCtAccount(tx, companyId, CT_PAYABLE);
+        // The accrual belongs to the tax year: dated its last day. Take the month lock first,
+        // and only then look at the year (a concurrent year-end close is either finished, and
+        // seen, or waits for this transaction and picks the accrual up).
+        await acquirePostingLockShared(tx, companyId, endYmd);
+        const yearClosed = await isFinancialYearClosed(tx, companyId, endYmd);
+        const retained = yearClosed ? await resolveRetained(tx, companyId) : null;
+        const posting = buildCtAccrualPosting(
+          net,
+          { expenseId: expense.id, payableId: payable.id, retainedId: retained?.id },
+          { yearClosed, label: `${startYmd} to ${endYmd}` }
+        );
+        // A locked month is expected here (VAT filing and the year-end close lock months), so the
+        // accrual is posted into it as a system entry through the audited, narrow bypass.
+        try {
+          await assertMonthOpenInTx(tx, companyId, endYmd);
+        } catch {
+          lockedAccrual = true;
+        }
+        const bypass: PostingBypass | undefined = lockedAccrual ? { reason: "corporate_tax_accrual", returnId: ret.id } : undefined;
         clearingEntryId = await postSettlementJournal(tx, {
           companyId,
-          ymd: checked.filedAt,
+          ymd: endYmd,
           memo: `Corporate tax ${ret.isAmendment ? "amendment " : ""}${startYmd} to ${endYmd} - FTA ref ${checked.referenceNumber}`,
           source: CT_JOURNAL_SOURCE_FILING,
           sourceId: ret.id,
           userId: args.user.id,
-          lines: buildCtAccrualLines(net, { expenseId: expense.id, payableId: payable.id }, `${startYmd} to ${endYmd}`),
+          lines: posting.accrual,
+          allowLockedPeriod: bypass,
         });
+        if (posting.closing.length > 0) {
+          await postSettlementJournal(tx, {
+            companyId,
+            ymd: endYmd,
+            memo: `Corporate tax ${startYmd} to ${endYmd} closed to retained earnings (year ${startYmd.slice(0, 4)} already closed)`,
+            source: YEAR_END_SOURCE,
+            sourceId: ret.id,
+            userId: args.user.id,
+            lines: posting.closing,
+            allowLockedPeriod: bypass,
+          });
+        }
       }
 
       const [row] = await tx
@@ -220,8 +297,20 @@ export async function recordCtFiling(args: {
         .where(eq(corporateTaxReturns.id, ret.id));
 
       if (stored) await tx.insert(taxFilingEvidence).values(evidenceRow(companyId, row.id, args.user.id, stored));
-      return row as TaxFiling;
+      return { row: row as TaxFiling, lockedAccrual, accrualDate: endYmd };
     });
+    const filing = outcome.row;
+    if (outcome.lockedAccrual) {
+      await recordAudit({
+        userId: args.user.id,
+        companyId,
+        action: "tax_filing.locked_period_accrual",
+        entityType: "corporate_tax_return",
+        entityId: ret.id,
+        after: { filingId: filing.id, accrualDate: outcome.accrualDate, reason: "corporate_tax_accrual", journalEntryId: filing.clearingEntryId },
+        req: args.req,
+      });
+    }
 
     await recordAudit({
       userId: args.user.id,
@@ -239,7 +328,7 @@ export async function recordCtFiling(args: {
       },
       req: args.req,
     });
-    return filing;
+    return { filing };
   } catch (err) {
     if (stored) await removeStoredFile(stored.key);
     throw err;
@@ -352,7 +441,7 @@ async function liveBookTotals(companyId: string, startYmd: string, endYmd: strin
     JOIN journal_entries je ON je.id = jl.entry_id
     JOIN accounts a ON a.id = jl.account_id
     WHERE je.company_id = ${companyId} AND je.status = 'posted'
-      AND je.source NOT IN ('year_end_close', 'year_end_close_reversal')
+      AND je.source NOT IN ('year_end_close', 'year_end_close_reversal', 'corporate_tax_filing')
       AND je.date::date >= ${startYmd}::date AND je.date::date <= ${endYmd}::date`);
   const row = ((res.rows ?? res) as Array<{ revenue: string; expenses: string }>)[0];
   return { revenue: Number(row?.revenue ?? 0), expenses: Number(row?.expenses ?? 0) };

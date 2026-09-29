@@ -3269,6 +3269,10 @@ export const vatReturns = pgTable(
     amendsReturnId: uuid("amends_return_id"),
     isAmendment: boolean("is_amendment").notNull().default(false),
 
+    // Boxes changed by hand on the draft: { boxes: { <box>: { from, to } }, at, by }.
+    // Server-owned: recorded by PATCH, read by filing (which will not silently discard them).
+    manualEdits: jsonb("manual_edits"),
+
     // Declaration
     declarantName: text("declarant_name"),
     declarantPosition: text("declarant_position"),

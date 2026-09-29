@@ -25,6 +25,7 @@ import {
   type TaxFiling,
 } from "../../shared/schema";
 import { validateUpload } from "./document-validation";
+import type { PostingBypass } from "./posting-lock";
 import {
   removeStoredFile,
   storeUploadedFile,
@@ -169,6 +170,8 @@ export async function postSettlementJournal(
     sourceId: string;
     userId: string;
     lines: JournalLineInput[];
+    /** Narrow, server-constructed exception to the period lock (never from a request). */
+    allowLockedPeriod?: PostingBypass;
   }
 ): Promise<string | null> {
   if (input.lines.length === 0) return null;
@@ -192,7 +195,7 @@ export async function postSettlementJournal(
       credit: l.credit,
       description: l.description,
     })),
-    { tx }
+    { tx, allowLockedPeriod: input.allowLockedPeriod }
   );
   return entry.id;
 }
@@ -533,6 +536,8 @@ export async function recordFilingPayment(args: {
 export interface FilingViewBase {
   filed: boolean;
   filing: null | {
+    /** Created from the stored figures of a return filed before filing records existed. */
+    legacy: boolean;
     id: string;
     referenceNumber: string;
     filedAt: string;
@@ -568,6 +573,7 @@ export async function buildFilingViewBase(
   return {
     filed: true,
     filing: {
+      legacy: (filing.snapshot as { legacy?: boolean } | null)?.legacy === true,
       id: filing.id,
       referenceNumber: filing.referenceNumber,
       filedAt: String(filing.filedAt).slice(0, 10),

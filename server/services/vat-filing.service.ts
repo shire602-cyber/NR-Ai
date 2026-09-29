@@ -25,30 +25,34 @@ import {
   type TaxFiling,
   type VatReturn,
 } from "../../shared/schema";
-import { ACCOUNT_CODES } from "../constants";
 import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { lockPeriodInTx } from "./month-end.service";
+import { acquirePeriodLockExclusive } from "./posting-lock";
+import { ledgerVatBalances, planVatClearing } from "./vat-clearing.service";
+import { ensureLegacyVatFilings } from "./vat-legacy-filings.service";
 import { removeStoredFile } from "./document-upload.service";
 import { assertVatPeriodEnded } from "./vat-period-status.service";
 import { computeVatReturnForPeriod } from "./vat-return-compute.service";
 import { recordAudit } from "./audit.service";
 import {
+  assessDraftFigures,
   buildVatSnapshot,
   diffBoxes,
+  fromFils,
+  hasRecordedManualEdits,
+  manualSettlementDelta,
   monthEndsInRange,
   snapshotHash,
+  toFils,
   validateFilingInput,
   ymdOf,
+  type AcceptFigures,
   type BoxDifference,
+  type ManualEdits,
   type VatSnapshot,
 } from "./tax-filing-core";
-import {
-  buildClearingLines,
-  settlementFigures,
-  vatSettlementFromDifference,
-  type VatSettlement,
-} from "./tax-settlement";
+import { settlementFigures, vatSettlementFromDifference } from "./tax-settlement";
 import {
   assertFilingPermission,
   buildFilingViewBase,
@@ -105,17 +109,6 @@ async function resolveVatControl(tx: Tx, companyId: string): Promise<AccountRef>
   return created;
 }
 
-async function resolveClearingAccounts(tx: Tx, companyId: string, fig: VatSettlement) {
-  const control = await resolveVatControl(tx, companyId);
-  const needsOutput = fig.outputVat !== 0;
-  const needsInput = fig.inputVat !== 0;
-  const output = needsOutput ? await findAccountByCode(tx, companyId, ACCOUNT_CODES.VAT_OUTPUT, ["liability"]) : null;
-  if (needsOutput && !output) throw missingAccountError("VAT Payable (Output VAT)", ACCOUNT_CODES.VAT_OUTPUT, "liability");
-  const input = needsInput ? await findAccountByCode(tx, companyId, ACCOUNT_CODES.VAT_INPUT, ["asset"]) : null;
-  if (needsInput && !input) throw missingAccountError("VAT Receivable (Input VAT)", ACCOUNT_CODES.VAT_INPUT, "asset");
-  return { control, output, input };
-}
-
 // ─── Chain helpers (original + amendments) ───────────────────────────────────
 
 /** Every return of a period: the original and its amendments, oldest first. */
@@ -151,12 +144,51 @@ async function baseFilingFor(ret: VatReturn): Promise<{ base: VatReturn; filing:
 
 // ─── Record filing ───────────────────────────────────────────────────────────
 
+/** What was already cleared from the ledger by the return this one amends (cumulative). */
+interface ClearedSoFar {
+  ledgerOutput: number;
+  ledgerInput: number;
+  expectedIrrecoverable: number;
+  manualOutput: number;
+  manualInput: number;
+}
+
+/** Stored on every new filing snapshot so an amendment can clear only the difference. */
+type ClearingRecord = ClearedSoFar & { irrecoverable: number; rounding: number; manualAdjustment: number };
+
+function clearedByBase(snap: VatSnapshot & { clearing?: ClearedSoFar; legacy?: boolean }): ClearedSoFar {
+  if (snap.clearing) return snap.clearing;
+  // A legacy filing was settled outside this system: measure against the figures it declared.
+  return {
+    ledgerOutput: snap.boxes.box12TotalDueTax ?? 0,
+    ledgerInput: snap.boxes.box13RecoverableTax ?? 0,
+    expectedIrrecoverable: 0,
+    manualOutput: 0,
+    manualInput: 0,
+  };
+}
+
+export interface VatFilingResult {
+  filing: TaxFiling;
+  /** True when the stored draft was replaced by figures recomputed from the books at filing. */
+  recomputedAtFiling: boolean;
+  /** Per box: stored draft (`filed`) vs the books (`current`). Empty when they agreed. */
+  differences: BoxDifference[];
+  clearing: { irrecoverableVat: number; rounding: number; manualAdjustment: number };
+}
+
 export async function recordVatFiling(args: {
   user: FilingActor;
   returnId: string;
-  input: { ftaReferenceNumber?: unknown; filedAt?: unknown; notes?: unknown; evidence?: EvidenceUploadInput | null };
+  input: {
+    ftaReferenceNumber?: unknown;
+    filedAt?: unknown;
+    notes?: unknown;
+    evidence?: EvidenceUploadInput | null;
+    acceptFigures?: AcceptFigures | null;
+  };
   req?: Request;
-}) {
+}): Promise<VatFilingResult> {
   const ret = await loadVatReturn(args.returnId);
   const { companyId } = ret;
   await assertFilingPermission(args.user, companyId, "write");
@@ -176,7 +208,7 @@ export async function recordVatFiling(args: {
   if (!checked.ok) {
     throw new AppError({ message: checked.message, statusCode: checked.status, code: checked.code });
   }
-  // The clearing journal is dated on the filing day.
+  // The clearing journal is dated on the filing day (re-checked inside the transaction).
   await assertPeriodNotLocked(companyId, checked.filedAt);
 
   const notes = typeof args.input.notes === "string" && args.input.notes.trim() ? args.input.notes.trim().slice(0, 2000) : null;
@@ -190,8 +222,16 @@ export async function recordVatFiling(args: {
     ? await storeEvidenceFile(companyId, args.user.id, args.input.evidence)
     : null;
 
+  const lockedMonths = monthEndsInRange(periodStartYmd, periodEndYmd);
+
   try {
-    const filing = await db.transaction(async (tx: Tx) => {
+    const outcome = await db.transaction(async (tx: Tx) => {
+      // FIRST, before any other work: no posting can be in flight into these months while the
+      // return is recomputed, cleared and locked; later postings find them locked (posting-lock.ts).
+      // Everything below runs on this one connection: postings queue behind this lock, each holding
+      // a pooled connection, so waiting for a second connection here could starve the pool.
+      await acquirePeriodLockExclusive(tx, companyId, [...lockedMonths, checked.filedAt]);
+
       // Serialise on the return row and re-check inside the transaction.
       const locked = await tx.execute(sql`SELECT status FROM vat_returns WHERE id = ${ret.id} FOR UPDATE`);
       const lockedRow = ((locked as any).rows ?? locked)[0];
@@ -199,16 +239,65 @@ export async function recordVatFiling(args: {
         throw new AppError({ message: "This VAT return is already recorded as filed.", statusCode: 409, code: "VAT_RETURN_ALREADY_FILED" });
       }
 
+      const [stale] = await tx.select().from(vatReturns).where(eq(vatReturns.id, ret.id));
+
+      // Recompute the return from the books as they are NOW, and compare with the draft.
+      const { returnValues, metadata } = await computeVatReturnForPeriod({
+        companyId,
+        userId: args.user.id,
+        periodStart: periodStartYmd,
+        periodEnd: periodEndYmd,
+        executor: tx,
+      });
+      const storedSnap = buildVatSnapshot(stale as unknown as Record<string, unknown>);
+      const recomputedSnap = buildVatSnapshot(returnValues as unknown as Record<string, unknown>);
+      const manualEdits = ((stale as any).manualEdits ?? null) as ManualEdits | null;
+      const assessment = assessDraftFigures({
+        stored: storedSnap.boxes,
+        recomputed: recomputedSnap.boxes,
+        hasManualEdits: hasRecordedManualEdits(manualEdits, stale.adjustmentAmount),
+        acceptFigures: args.input.acceptFigures ?? null,
+      });
+      if (assessment.action === "refuse") {
+        throw new AppError({
+          message:
+            "The books have changed since this draft was generated, and the draft has figures that were entered by hand. " +
+            "Regenerate the return, or choose which figures to file: the stored draft or the figures recomputed from the books.",
+          statusCode: 409,
+          code: assessment.code,
+          details: {
+            differences: assessment.differences,
+            stored: storedSnap.boxes,
+            recomputed: recomputedSnap.boxes,
+            choices: ["stored", "recomputed"],
+          },
+        });
+      }
+
+      const useRecomputed = assessment.action === "use_recomputed";
+      if (useRecomputed) {
+        // The draft's figures become the books' figures (hand edits, if any, were explicitly given up).
+        const boxValues: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(returnValues as Record<string, unknown>)) {
+          if (/^box\d/.test(key)) boxValues[key] = value;
+        }
+        await tx
+          .update(vatReturns)
+          .set({ ...boxValues, manualEdits: null, updatedAt: new Date() } as any)
+          .where(eq(vatReturns.id, ret.id));
+      }
       const [fresh] = await tx.select().from(vatReturns).where(eq(vatReturns.id, ret.id));
       const snapshotBase = buildVatSnapshot(fresh as unknown as Record<string, unknown>);
 
       let figures: ReturnType<typeof settlementFigures>;
-      let snapshot: VatSnapshot & { amendment?: unknown } = snapshotBase;
+      let snapshot: Record<string, unknown> = snapshotBase as unknown as Record<string, unknown>;
       let baseFilingId: string | null = null;
+      let baseCleared: ClearedSoFar | null = null;
       if (base) {
         const baseSnap = base.filing.snapshot as VatSnapshot;
         figures = vatSettlementFromDifference(baseSnap.boxes, snapshotBase.boxes);
         baseFilingId = base.filing.id;
+        baseCleared = clearedByBase(baseSnap as any);
         snapshot = {
           ...snapshotBase,
           amendment: {
@@ -225,17 +314,56 @@ export async function recordVatFiling(args: {
         throw new AppError({ message: figures.message, statusCode: 422, code: figures.code });
       }
 
-      // Clearing journal (design: tax-settlement.ts header). Dated on the filing day.
-      const accts = await resolveClearingAccounts(tx, companyId, figures);
-      const lines = buildClearingLines(
-        figures,
-        {
-          outputId: accts.output?.id ?? "",
-          inputId: accts.input?.id ?? "",
-          controlId: accts.control.id,
+      // The clearing journal is driven by the LEDGER, so the VAT accounts end at exactly zero
+      // (design: tax-settlement.ts header). Cumulative figures for this return; an amendment
+      // clears only what the return it amends had not already cleared.
+      const ledger = await ledgerVatBalances(tx, companyId, periodStartYmd, periodEndYmd);
+      const manual = useRecomputed ? { outputVat: 0, inputVat: 0 } : manualSettlementDelta(manualEdits);
+      const cumulative: ClearedSoFar = {
+        ledgerOutput: ledger.outputVat,
+        ledgerInput: ledger.inputVat,
+        expectedIrrecoverable: Number(metadata.expectedIrrecoverableInputVat ?? 0),
+        manualOutput: manual.outputVat,
+        manualInput: manual.inputVat,
+      };
+      const delta = (now: number, before: number) => fromFils(toFils(now) - toFils(before));
+      const step = baseCleared
+        ? {
+            ledgerOutput: delta(cumulative.ledgerOutput, baseCleared.ledgerOutput),
+            ledgerInput: delta(cumulative.ledgerInput, baseCleared.ledgerInput),
+            expectedIrrecoverable: delta(cumulative.expectedIrrecoverable, baseCleared.expectedIrrecoverable),
+            manualOutput: delta(cumulative.manualOutput, baseCleared.manualOutput),
+            manualInput: delta(cumulative.manualInput, baseCleared.manualInput),
+          }
+        : cumulative;
+
+      const control = await resolveVatControl(tx, companyId);
+      const plan = await planVatClearing({
+        tx,
+        companyId,
+        ledger: { outputVat: step.ledgerOutput, inputVat: step.ledgerInput },
+        figures: {
+          outputVat: figures.outputVat,
+          inputVat: figures.inputVat,
+          net: figures.net,
+          expectedIrrecoverable: step.expectedIrrecoverable,
+          manual: { outputVat: step.manualOutput, inputVat: step.manualInput, reason: fresh.adjustmentReason ?? null },
         },
-        `${periodStartYmd} to ${periodEndYmd}${ret.isAmendment ? " (amendment)" : ""}`
-      );
+        controlId: control.id,
+        label: `${periodStartYmd} to ${periodEndYmd}${ret.isAmendment ? " (amendment)" : ""}`,
+      });
+      const clearing: ClearingRecord = {
+        ...cumulative,
+        irrecoverable: plan.irrecoverable,
+        rounding: plan.rounding,
+        manualAdjustment: plan.manualAdjustment,
+      };
+      snapshot = {
+        ...snapshot,
+        clearing,
+        recompute: { action: assessment.action, differences: assessment.differences },
+      };
+
       const clearingEntryId = await postSettlementJournal(tx, {
         companyId,
         ymd: checked.filedAt,
@@ -243,7 +371,7 @@ export async function recordVatFiling(args: {
         source: VAT_JOURNAL_SOURCE_FILING,
         sourceId: ret.id,
         userId: args.user.id,
-        lines,
+        lines: plan.lines,
       });
 
       const [row] = await tx
@@ -280,16 +408,17 @@ export async function recordVatFiling(args: {
         .where(eq(vatReturns.id, ret.id));
 
       // Lock every month of the period; if this fails the filing fails.
-      for (const monthEnd of monthEndsInRange(periodStartYmd, periodEndYmd)) {
+      for (const monthEnd of lockedMonths) {
         await lockPeriodInTx(tx, companyId, monthEnd, args.user.id);
       }
 
       if (stored) {
         await tx.insert(taxFilingEvidence).values(evidenceRow(companyId, row.id, args.user.id, stored));
       }
-      return row as TaxFiling;
+      return { filing: row as TaxFiling, assessment, plan };
     });
 
+    const { filing, assessment, plan } = outcome;
     await recordAudit({
       userId: args.user.id,
       companyId,
@@ -302,12 +431,21 @@ export async function recordVatFiling(args: {
         filedAt: filing.filedAt,
         snapshotHash: filing.snapshotHash,
         settlementNet: filing.settlementNet,
-        lockedMonths: monthEndsInRange(periodStartYmd, periodEndYmd),
+        lockedMonths,
         isAmendment: ret.isAmendment,
+        figures: assessment.action,
+        recomputedDifferences: assessment.differences.length,
+        irrecoverableVat: plan.irrecoverable,
+        rounding: plan.rounding,
       },
       req: args.req,
     });
-    return filing;
+    return {
+      filing,
+      recomputedAtFiling: assessment.action === "use_recomputed" && assessment.differences.length > 0,
+      differences: assessment.differences,
+      clearing: { irrecoverableVat: plan.irrecoverable, rounding: plan.rounding, manualAdjustment: plan.manualAdjustment },
+    };
   } catch (err) {
     if (stored) await removeStoredFile(stored.key);
     throw err;
@@ -358,6 +496,7 @@ export async function recordVatPayment(args: {
 export async function createVatAmendment(args: { user: FilingActor; returnId: string; req?: Request }) {
   const ret = await loadVatReturn(args.returnId);
   await assertFilingPermission(args.user, ret.companyId, "write");
+  await ensureLegacyVatFilings(ret.companyId);
 
   const chain = await chainOf(ret);
   const filings = await filingsByReturnIds(chain.map((r) => r.id));
@@ -425,6 +564,7 @@ export function overlaySnapshot<T extends Record<string, unknown>>(row: T, filin
 
 /** Light overlay for lists: snapshot figures + a filing summary, no live drift computation. */
 export async function overlayVatReturns(rows: VatReturn[]) {
+  for (const companyId of new Set(rows.map((r) => r.companyId))) await ensureLegacyVatFilings(companyId);
   const ids = rows.map((r) => r.id);
   const filings = await filingsByReturnIds(ids);
   const filingIds = [...filings.values()].map((f) => f.id);
@@ -500,6 +640,7 @@ async function computeVatDrift(ret: VatReturn, userId: string, snapshot: VatSnap
 
 /** Full read model of one VAT return for the UI and the API. */
 export async function getVatReturnView(ret: VatReturn, userId: string) {
+  await ensureLegacyVatFilings(ret.companyId);
   const filing = await getFilingByReturn("vat", ret.id);
   const drift = filing
     ? await computeVatDrift(ret, userId, filing.snapshot as VatSnapshot)

@@ -23,6 +23,7 @@ import {
 } from "../../shared/schema";
 import { ACCOUNT_CODES } from "../constants";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { advanceSequencePast } from "./invoice-numbering.service";
 import { recordAudit } from "./audit.service";
 import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, postSettlementJournal, type FilingActor } from "./tax-filing.service";
@@ -357,6 +358,10 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
         vatSupplyType: "out_of_scope",
       } as any);
     }
+    // The customer's own numbers may be in the sequence's format (INV-2026-00003): move the
+    // company's counter past the highest one per year so normal numbering carries on after it
+    // instead of running into the imported numbers one by one. (Bills have no sequence.)
+    await advanceSequencePast(tx, companyId, "invoice", invDocs.map((d) => d.number));
     // Open vendor bills, likewise: approved, no journal, no VAT.
     for (const d of billDocs) {
       const res: any = await tx.execute(sql`

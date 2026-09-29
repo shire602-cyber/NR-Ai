@@ -53,15 +53,25 @@ export const ACCOUNT_CODES = {
 } as const;
 
 /**
- * Corporate tax accounts. NOT part of the default chart: a company that files
- * corporate tax through Muhasib creates them (by these codes, or by these exact
- * English names). Filing / paying returns 422 naming the missing account.
+ * Corporate tax accounts. In the default chart; an older company that lacks them
+ * (by these codes or by these exact English names) gets them created from the
+ * default template when a corporate tax return is filed.
  */
 export const CT_ACCOUNT_CODES = {
   /** Corporate Tax Payable (current liability). */
   PAYABLE: "2060",
   /** Corporate Tax Expense (expense). */
   EXPENSE: "5150",
+} as const;
+
+/**
+ * VAT settlement accounts outside the input/output pair. "Irrecoverable VAT Expense" receives
+ * the input VAT a return does not recover, VAT rounding (<= AED 1.00) and recorded manual
+ * adjustments when the VAT accounts are cleared at filing. Created on demand for older charts.
+ */
+export const VAT_ACCOUNT_CODES = {
+  /** Irrecoverable VAT Expense (expense). */
+  IRRECOVERABLE_EXPENSE: "5160",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
