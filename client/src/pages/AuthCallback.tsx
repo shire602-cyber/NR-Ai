@@ -5,6 +5,7 @@ import { currentUserQueryKey } from "@/hooks/useCurrentUser";
 import { fetchCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { messages as pageMessages } from "./AuthCallback.i18n";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
@@ -20,6 +21,8 @@ function safeNextPath(value: string | null): string {
 }
 
 export default function AuthCallback() {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -44,8 +47,8 @@ export default function AuthCallback() {
         if (cancelled) return;
         toast({
           variant: "destructive",
-          title: "Login failed",
-          description: "We could not complete social login. Please try again.",
+          title: tr("loginFailed"),
+          description: tr("weCouldNotCompleteSocialLogin"),
         });
         setLocation("/login?oauth_error=1");
       }
@@ -61,7 +64,7 @@ export default function AuthCallback() {
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex items-center gap-3 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
-        Completing secure login...
+        {tr("completingSecureLogin")}
       </div>
     </div>
   );

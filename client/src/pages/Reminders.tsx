@@ -44,27 +44,34 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { ReminderSetting, ReminderLog } from "@shared/schema";
+import { messages as pageMessages } from "./Reminders.i18n";
 
-const REMINDER_TYPES = [
+const getReminderTypes = () => [
   {
     value: "invoice_overdue",
-    label: "Invoice Overdue",
-    description: "Send when invoice is past due date",
+    label: pageMessages.t("invoiceOverdue"),
+    description: pageMessages.t("sendWhenInvoiceIsPastDue"),
   },
   {
     value: "invoice_due_soon",
-    label: "Invoice Due Soon",
-    description: "Send before invoice due date",
+    label: pageMessages.t("invoiceDueSoon"),
+    description: pageMessages.t("sendBeforeInvoiceDueDate"),
   },
-  { value: "vat_deadline", label: "VAT Deadline", description: "Remind about upcoming VAT filing" },
+  {
+    value: "vat_deadline",
+    label: pageMessages.t("vatDeadline"),
+    description: pageMessages.t("remindAboutUpcomingVatFiling"),
+  },
   {
     value: "payment_followup",
-    label: "Payment Follow-up",
-    description: "Follow up on unpaid invoices",
+    label: pageMessages.t("paymentFollowUp"),
+    description: pageMessages.t("followUpOnUnpaidInvoices"),
   },
 ];
 
 export default function Reminders() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId, isLoading: companyLoading } = useDefaultCompany();
@@ -101,10 +108,10 @@ export default function Reminders() {
         queryKey: ["/api/companies", selectedCompanyId, "reminder-settings"],
       });
       setShowCreateDialog(false);
-      toast({ title: "Reminder setting created" });
+      toast({ title: tr("reminderSettingCreated") });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -115,7 +122,7 @@ export default function Reminders() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "reminder-settings"],
       });
-      toast({ title: "Reminder setting updated" });
+      toast({ title: tr("reminderSettingUpdated") });
     },
   });
 
@@ -124,29 +131,29 @@ export default function Reminders() {
       case "sent":
         return (
           <Badge className="bg-success">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Sent
+            <CheckCircle className="w-3 h-3 me-1" />
+            {tr("sent")}
           </Badge>
         );
       case "delivered":
         return (
           <Badge className="bg-info">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Delivered
+            <CheckCircle className="w-3 h-3 me-1" />
+            {tr("delivered")}
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
-            <XCircle className="w-3 h-3 mr-1" />
-            Failed
+            <XCircle className="w-3 h-3 me-1" />
+            {tr("failed")}
           </Badge>
         );
       case "pending":
         return (
           <Badge variant="secondary">
-            <Clock className="w-3 h-3 mr-1" />
-            Pending
+            <Clock className="w-3 h-3 me-1" />
+            {tr("pending")}
           </Badge>
         );
       default:
@@ -179,12 +186,10 @@ export default function Reminders() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <AlertTriangle className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
-        <p className="text-muted-foreground mb-4">
-          You need a company before you can configure reminders.
-        </p>
+        <h2 className="text-xl font-semibold mb-2">{tr("setUpYourCompany")}</h2>
+        <p className="text-muted-foreground mb-4">{tr("youNeedACompanyBeforeYou")}</p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-          Create your company
+          {tr("createYourCompany")}
         </Button>
       </div>
     );
@@ -193,34 +198,34 @@ export default function Reminders() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Operations"
-        title="Payment Reminders"
-        description="Configure automated reminders for invoices and deadlines"
+        eyebrow={tr("operations")}
+        title={tr("paymentReminders")}
+        description={tr("configureAutomatedRemindersForInvoicesAnd")}
         actions={
           <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-reminder">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Reminder
+            <Plus className="w-4 h-4 me-2" />
+            {tr("createReminder")}
           </Button>
         }
       />
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Create Reminder Setting</DialogTitle>
-            <DialogDescription>Configure when and how reminders are sent</DialogDescription>
+            <DialogTitle>{tr("createReminderSetting")}</DialogTitle>
+            <DialogDescription>{tr("configureWhenAndHowRemindersAre")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Reminder Type</Label>
+              <Label>{tr("reminderType")}</Label>
               <Select
                 value={newSetting.reminderType}
                 onValueChange={(value) => setNewSetting({ ...newSetting, reminderType: value })}
               >
                 <SelectTrigger data-testid="select-reminder-type">
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder={tr("selectType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {REMINDER_TYPES.map((type) => (
+                  {getReminderTypes().map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       <div>
                         <div className="font-medium">{type.label}</div>
@@ -234,7 +239,7 @@ export default function Reminders() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Days Before Due</Label>
+                <Label>{tr("daysBeforeDue")}</Label>
                 <Input
                   type="number"
                   value={newSetting.daysBeforeDue}
@@ -245,7 +250,7 @@ export default function Reminders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Days After Due (for overdue)</Label>
+                <Label>{tr("daysAfterDueForOverdue")}</Label>
                 <Input
                   type="number"
                   value={newSetting.daysAfterDue}
@@ -259,7 +264,7 @@ export default function Reminders() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Repeat Every (days)</Label>
+                <Label>{tr("repeatEveryDays")}</Label>
                 <Input
                   type="number"
                   value={newSetting.repeatIntervalDays}
@@ -273,7 +278,7 @@ export default function Reminders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Max Reminders</Label>
+                <Label>{tr("maxReminders")}</Label>
                 <Input
                   type="number"
                   value={newSetting.maxReminders}
@@ -286,7 +291,7 @@ export default function Reminders() {
             </div>
 
             <div className="space-y-4">
-              <Label>Channels</Label>
+              <Label>{tr("channels")}</Label>
               <div className="flex gap-6 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Switch
@@ -297,7 +302,7 @@ export default function Reminders() {
                     data-testid="switch-in-app"
                   />
                   <Label className="flex items-center gap-1">
-                    <Bell className="w-4 h-4" /> In-App
+                    <Bell className="w-4 h-4" /> {tr("inApp")}
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -309,7 +314,7 @@ export default function Reminders() {
                     data-testid="switch-email"
                   />
                   <Label className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" /> Email
+                    <Mail className="w-4 h-4" /> {tr("email")}
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -328,9 +333,9 @@ export default function Reminders() {
             </div>
 
             <div className="space-y-2">
-              <Label>Email Subject (optional)</Label>
+              <Label>{tr("emailSubjectOptional")}</Label>
               <Input
-                placeholder="Payment Reminder: Invoice {{invoice_number}}"
+                placeholder={tr("paymentReminderInvoice")}
                 value={newSetting.emailSubject}
                 onChange={(e) => setNewSetting({ ...newSetting, emailSubject: e.target.value })}
                 data-testid="input-email-subject"
@@ -338,17 +343,17 @@ export default function Reminders() {
             </div>
 
             <div className="space-y-2">
-              <Label>Email Template (optional)</Label>
+              <Label>{tr("emailTemplateOptional")}</Label>
               <Textarea
-                placeholder="Dear {{customer_name}}, This is a reminder..."
+                placeholder={tr("dearThisIsAReminder")}
                 value={newSetting.emailTemplate}
                 onChange={(e) => setNewSetting({ ...newSetting, emailTemplate: e.target.value })}
                 rows={4}
                 data-testid="input-email-template"
               />
               <p className="text-xs text-muted-foreground">
-                Use placeholders: {"{{customer_name}}"}, {"{{invoice_number}}"}, {"{{amount}}"},{" "}
-                {"{{due_date}}"}
+                {tr("usePlaceholders")} {"{{customer_name}}"}, {"{{invoice_number}}"},{" "}
+                {"{{amount}}"}, {"{{due_date}}"}
               </p>
             </div>
 
@@ -357,7 +362,7 @@ export default function Reminders() {
               disabled={!newSetting.reminderType || createSettingMutation.isPending}
               data-testid="button-save-reminder"
             >
-              Create Reminder Setting
+              {tr("createReminderSetting")}
             </Button>
           </div>
         </DialogContent>
@@ -366,12 +371,12 @@ export default function Reminders() {
       <Tabs defaultValue="settings">
         <TabsList>
           <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
+            <Settings className="w-4 h-4 me-2" />
+            {tr("settings")}
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
-            <History className="w-4 h-4 mr-2" />
-            History
+            <History className="w-4 h-4 me-2" />
+            {tr("history")}
           </TabsTrigger>
         </TabsList>
 
@@ -386,20 +391,20 @@ export default function Reminders() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Clock className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No reminder settings</h3>
+                <h3 className="text-lg font-medium">{tr("noReminderSettings")}</h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Create reminder settings to automate payment follow-ups
+                  {tr("createReminderSettingsToAutomatePayment")}
                 </p>
                 <Button onClick={() => setShowCreateDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create First Reminder
+                  <Plus className="w-4 h-4 me-2" />
+                  {tr("createFirstReminder")}
                 </Button>
               </CardContent>
             </Card>
           ) : (
             <div className="grid gap-4">
               {settings.map((setting) => {
-                const typeInfo = REMINDER_TYPES.find((t) => t.value === setting.reminderType);
+                const typeInfo = getReminderTypes().find((t) => t.value === setting.reminderType);
                 return (
                   <Card key={setting.id} data-testid={`card-setting-${setting.id}`}>
                     <CardHeader>
@@ -408,7 +413,7 @@ export default function Reminders() {
                           <CardTitle className="flex items-center gap-2">
                             {typeInfo?.label || setting.reminderType}
                             <Badge variant={setting.isEnabled ? "default" : "secondary"}>
-                              {setting.isEnabled ? "Active" : "Disabled"}
+                              {setting.isEnabled ? tr("active") : tr("disabled")}
                             </Badge>
                           </CardTitle>
                           <CardDescription>{typeInfo?.description}</CardDescription>
@@ -425,44 +430,46 @@ export default function Reminders() {
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <span className="text-muted-foreground">Before Due:</span>
-                          <span className="ml-2 font-medium">
-                            {setting.daysBeforeDue || 0} days
+                          <span className="text-muted-foreground">{tr("beforeDue")}</span>
+                          <span className="ms-2 font-medium">
+                            {setting.daysBeforeDue || 0} {tr("days")}
                           </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">After Due:</span>
-                          <span className="ml-2 font-medium">{setting.daysAfterDue || 0} days</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Repeat:</span>
-                          <span className="ml-2 font-medium">
-                            Every {setting.repeatIntervalDays || 7} days
+                          <span className="text-muted-foreground">{tr("afterDue")}</span>
+                          <span className="ms-2 font-medium">
+                            {setting.daysAfterDue || 0} {tr("days")}
                           </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Max:</span>
-                          <span className="ml-2 font-medium">
-                            {setting.maxReminders || 3} reminders
+                          <span className="text-muted-foreground">{tr("repeat")}</span>
+                          <span className="ms-2 font-medium">
+                            {tr("every")} {setting.repeatIntervalDays || 7} {tr("days")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">{tr("max")}</span>
+                          <span className="ms-2 font-medium">
+                            {setting.maxReminders || 3} {tr("reminders")}
                           </span>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-4">
                         {setting.sendInApp && (
                           <Badge variant="outline">
-                            <Bell className="w-3 h-3 mr-1" />
-                            In-App
+                            <Bell className="w-3 h-3 me-1" />
+                            {tr("inApp")}
                           </Badge>
                         )}
                         {setting.sendEmail && (
                           <Badge variant="outline">
-                            <Mail className="w-3 h-3 mr-1" />
-                            Email
+                            <Mail className="w-3 h-3 me-1" />
+                            {tr("email")}
                           </Badge>
                         )}
                         {setting.sendSms && (
                           <Badge variant="outline">
-                            <MessageSquare className="w-3 h-3 mr-1" />
+                            <MessageSquare className="w-3 h-3 me-1" />
                             SMS
                           </Badge>
                         )}
@@ -486,8 +493,10 @@ export default function Reminders() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <History className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No reminder history</h3>
-                <p className="text-muted-foreground text-center">Sent reminders will appear here</p>
+                <h3 className="text-lg font-medium">{tr("noReminderHistory")}</h3>
+                <p className="text-muted-foreground text-center">
+                  {tr("sentRemindersWillAppearHere")}
+                </p>
               </CardContent>
             </Card>
           ) : (
@@ -501,13 +510,13 @@ export default function Reminders() {
                         <div>
                           <div className="font-medium">{log.reminderType.replace("_", " ")}</div>
                           <div className="text-sm text-muted-foreground">
-                            {log.recipientEmail || log.recipientPhone || "In-app notification"}
+                            {log.recipientEmail || log.recipientPhone || tr("inAppNotification")}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-sm text-muted-foreground">
-                          Attempt {log.attemptNumber}
+                          {tr("attempt", { attemptNumber: log.attemptNumber })}
                         </span>
                         {getStatusBadge(log.status)}
                         <span className="text-sm text-muted-foreground">

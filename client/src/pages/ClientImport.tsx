@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./ClientImport.i18n";
 
 interface PreviewData {
   fileName: string;
@@ -51,6 +52,8 @@ interface ImportResult {
 }
 
 export default function ClientImport() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -67,10 +70,16 @@ export default function ClientImport() {
     },
     onSuccess: (data: PreviewData) => {
       setPreviewData(data);
-      toast({ title: `Found ${data.totalRows} records in ${data.fileName}` });
+      toast({
+        title: tr("foundRecordsIn", { totalRows: data.totalRows, fileName: data.fileName }),
+      });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Failed to parse file", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: tr("failedToParseFile"),
+        description: error?.message,
+      });
     },
   });
 
@@ -86,12 +95,12 @@ export default function ClientImport() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
       toast({
-        title: "Import completed!",
+        title: tr("importCompleted"),
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("importFailed"), description: error?.message });
     },
   });
 
@@ -100,8 +109,8 @@ export default function ClientImport() {
       if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
         toast({
           variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an Excel file (.xlsx) or CSV file",
+          title: tr("invalidFileType"),
+          description: tr("pleaseUploadAnExcelFileXlsx"),
         });
         return;
       }
@@ -166,9 +175,9 @@ export default function ClientImport() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast({ title: "Template downloaded successfully" });
+      toast({ title: tr("templateDownloadedSuccessfully") });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Download failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("downloadFailed"), description: error?.message });
     }
   };
 
@@ -181,18 +190,18 @@ export default function ClientImport() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="Import Clients"
+        eyebrow={tr("admin")}
+        title={tr("importClients")}
         testId="text-import-title"
-        description="Bulk import client companies from Excel spreadsheets"
+        description={tr("bulkImportClientCompaniesFromExcel")}
         actions={
           <Button
             variant="outline"
             onClick={downloadTemplate}
             data-testid="button-download-template"
           >
-            <Download className="w-4 h-4 mr-2" />
-            Download Template
+            <Download className="w-4 h-4 me-2" />
+            {tr("downloadTemplate")}
           </Button>
         }
       />
@@ -203,12 +212,9 @@ export default function ClientImport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5" />
-                Upload Excel File
+                {tr("uploadExcelFile")}
               </CardTitle>
-              <CardDescription>
-                Upload an Excel file (.xlsx) or CSV containing your client data. We'll automatically
-                map common column names like "Company Name", "Email", "Phone", etc.
-              </CardDescription>
+              <CardDescription>{tr("uploadAnExcelFileXlsxOr")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div
@@ -225,22 +231,22 @@ export default function ClientImport() {
                 {previewMutation.isPending ? (
                   <div className="flex flex-col items-center gap-3">
                     <Loader2 className="w-10 h-10 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Parsing file...</p>
+                    <p className="text-muted-foreground">{tr("parsingFile")}</p>
                   </div>
                 ) : file ? (
                   <div className="flex flex-col items-center gap-3">
                     <FileSpreadsheet className="w-10 h-10 text-success" />
                     <p className="font-medium">{file.name}</p>
                     <Button variant="outline" size="sm" onClick={resetImport}>
-                      Choose Different File
+                      {tr("chooseDifferentFile")}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3">
                     <Upload className="w-10 h-10 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Drag and drop your Excel file here</p>
-                      <p className="text-sm text-muted-foreground">or click to browse</p>
+                      <p className="font-medium">{tr("dragAndDropYourExcelFile")}</p>
+                      <p className="text-sm text-muted-foreground">{tr("orClickToBrowse")}</p>
                     </div>
                     <input
                       type="file"
@@ -260,12 +266,15 @@ export default function ClientImport() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    <span>Preview Data</span>
-                    <Badge variant="secondary">{previewData.totalRows} records found</Badge>
+                    <span>{tr("previewData")}</span>
+                    <Badge variant="secondary">
+                      {tr("recordsFound", { totalRows: previewData.totalRows })}
+                    </Badge>
                   </CardTitle>
                   <CardDescription>
-                    Review the mapped data before importing. We detected the following columns:{" "}
-                    {previewData.headers.join(", ")}
+                    {tr("reviewTheMappedDataBeforeImporting", {
+                      headers: previewData.headers.join(", "),
+                    })}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -274,12 +283,12 @@ export default function ClientImport() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-12">#</TableHead>
-                          <TableHead>Company Name</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Phone</TableHead>
-                          <TableHead>TRN</TableHead>
-                          <TableHead>Industry</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>{tr("companyName")}</TableHead>
+                          <TableHead>{tr("email")}</TableHead>
+                          <TableHead>{tr("phone")}</TableHead>
+                          <TableHead>{tr("trn")}</TableHead>
+                          <TableHead>{tr("industry")}</TableHead>
+                          <TableHead>{tr("status")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -294,13 +303,13 @@ export default function ClientImport() {
                             <TableCell>
                               {row.name ? (
                                 <Badge className="bg-success/10 text-success border-success/20">
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Valid
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
+                                  {tr("valid")}
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive">
-                                  <XCircle className="w-3 h-3 mr-1" />
-                                  Missing Name
+                                  <XCircle className="w-3 h-3 me-1" />
+                                  {tr("missingName")}
                                 </Badge>
                               )}
                             </TableCell>
@@ -311,7 +320,7 @@ export default function ClientImport() {
                   </ScrollArea>
                   {previewData.totalRows > 10 && (
                     <p className="text-sm text-muted-foreground mt-4 text-center">
-                      Showing first 10 of {previewData.totalRows} records
+                      {tr("showingFirst10OfRecords", { totalRows: previewData.totalRows })}
                     </p>
                   )}
                 </CardContent>
@@ -319,7 +328,7 @@ export default function ClientImport() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Import Options</CardTitle>
+                  <CardTitle>{tr("importOptions")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center space-x-2">
@@ -331,19 +340,18 @@ export default function ClientImport() {
                     />
                     <Label htmlFor="createInvitations" className="flex items-center gap-2">
                       <Mail className="w-4 h-4" />
-                      Create portal invitations for clients with email addresses
+                      {tr("createPortalInvitationsForClientsWith")}
                     </Label>
                   </div>
-                  <p className="text-sm text-muted-foreground ml-6">
-                    If enabled, clients with email addresses will receive invitation links to access
-                    their portal.
+                  <p className="text-sm text-muted-foreground ms-6">
+                    {tr("ifEnabledClientsWithEmailAddresses")}
                   </p>
                 </CardContent>
               </Card>
 
               <div className="flex justify-end gap-3">
                 <Button variant="outline" onClick={resetImport} data-testid="button-cancel-import">
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   onClick={handleImport}
@@ -352,13 +360,13 @@ export default function ClientImport() {
                 >
                   {importMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Importing...
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                      {tr("importing")}
                     </>
                   ) : (
                     <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Import {previewData.totalRows} Clients
+                      <Upload className="w-4 h-4 me-2" />
+                      {tr("importClients2", { totalRows: previewData.totalRows })}
                     </>
                   )}
                 </Button>
@@ -371,7 +379,7 @@ export default function ClientImport() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-success" />
-              Import Complete
+              {tr("importComplete")}
             </CardTitle>
             <CardDescription>{importResults.message}</CardDescription>
           </CardHeader>
@@ -380,18 +388,20 @@ export default function ClientImport() {
               <TabsList className="mb-4">
                 <TabsTrigger value="success" className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Imported ({importResults.results.success.length})
+                  {tr("imported", { successCount: importResults.results.success.length })}
                 </TabsTrigger>
                 {importResults.results.errors.length > 0 && (
                   <TabsTrigger value="errors" className="flex items-center gap-2">
                     <XCircle className="w-4 h-4" />
-                    Errors ({importResults.results.errors.length})
+                    {tr("errors", { errorsCount: importResults.results.errors.length })}
                   </TabsTrigger>
                 )}
                 {importResults.results.invitations.length > 0 && (
                   <TabsTrigger value="invitations" className="flex items-center gap-2">
                     <Mail className="w-4 h-4" />
-                    Invitations ({importResults.results.invitations.length})
+                    {tr("invitations", {
+                      invitationsCount: importResults.results.invitations.length,
+                    })}
                   </TabsTrigger>
                 )}
               </TabsList>
@@ -401,9 +411,9 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Company Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>{tr("companyName")}</TableHead>
+                        <TableHead>{tr("email")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -418,7 +428,7 @@ export default function ClientImport() {
                           <TableCell>{item.email || "-"}</TableCell>
                           <TableCell>
                             <Badge className="bg-success/10 text-success border-success/20">
-                              Created
+                              {tr("created")}
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -433,15 +443,15 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Company Name</TableHead>
-                        <TableHead>Error</TableHead>
+                        <TableHead>{tr("companyName")}</TableHead>
+                        <TableHead>{tr("error")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {importResults.results.errors.map((item, index) => (
                         <TableRow key={index}>
                           <TableCell className="font-medium">
-                            {item.row?.name || "Unknown"}
+                            {item.row?.name || tr("unknown")}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 text-destructive">
@@ -461,9 +471,9 @@ export default function ClientImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Invite Link</TableHead>
+                        <TableHead>{tr("email")}</TableHead>
+                        <TableHead>{tr("company")}</TableHead>
+                        <TableHead>{tr("inviteLink")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -486,15 +496,15 @@ export default function ClientImport() {
 
             <div className="flex justify-end gap-3 mt-6">
               <Button variant="outline" onClick={resetImport} data-testid="button-import-another">
-                <Upload className="w-4 h-4 mr-2" />
-                Import Another File
+                <Upload className="w-4 h-4 me-2" />
+                {tr("importAnotherFile")}
               </Button>
               <Button
                 onClick={() => (window.location.href = "/admin/clients")}
                 data-testid="button-view-clients"
               >
-                <Users className="w-4 h-4 mr-2" />
-                View All Clients
+                <Users className="w-4 h-4 me-2" />
+                {tr("viewAllClients")}
               </Button>
             </div>
           </CardContent>

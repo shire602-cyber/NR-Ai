@@ -8,6 +8,9 @@ export const UPLOAD_ROUTE_PATTERNS: readonly RegExp[] = [
   /^\/api\/companies\/[^/]+\/tax-returns-archive$/,
   /^\/api\/companies\/[^/]+\/expense-claims\/receipt-upload$/,
   /^\/api\/firm\/vat-workpapers\/[^/]+\/scan$/,
+  // Tax filing: FTA acknowledgement uploaded with, or after, recording a filing.
+  /^\/api\/vat-returns\/[^/]+\/(file|evidence)$/,
+  /^\/api\/corporate-tax\/returns\/[^/]+\/(file|evidence)$/,
 ];
 
 /** express.json limit for upload routes. */

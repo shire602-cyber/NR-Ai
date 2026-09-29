@@ -89,7 +89,7 @@ export function registerReportRoutes(app: Express) {
       // Cashflow must reflect only posted activity; drafts/voided entries
       // would otherwise distort inflow/outflow totals.
       const [journalEntriesRaw, accountsData] = await Promise.all([
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getAccountsByCompanyId(companyId),
       ]);
       const journalEntriesData = journalEntriesRaw.filter((e) => e.status === "posted");

@@ -58,6 +58,7 @@ import {
 } from "@shared/client-services";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { PortalAccessCard } from "./PortalAccessCard";
+import { messages as pageMessages } from "./ClientProfile.i18n";
 
 interface AssignedStaff {
   id: string;
@@ -108,35 +109,38 @@ function formatAed(amount: number) {
   }).format(amount);
 }
 
-const MONTH_OPTIONS = [
-  { value: "1", label: "January" },
-  { value: "2", label: "February" },
-  { value: "3", label: "March" },
-  { value: "4", label: "April" },
-  { value: "5", label: "May" },
-  { value: "6", label: "June" },
-  { value: "7", label: "July" },
-  { value: "8", label: "August" },
-  { value: "9", label: "September" },
-  { value: "10", label: "October" },
-  { value: "11", label: "November" },
-  { value: "12", label: "December" },
+const getMonthOptions = () => [
+  { value: "1", label: pageMessages.t("january") },
+  { value: "2", label: pageMessages.t("february") },
+  { value: "3", label: pageMessages.t("march") },
+  { value: "4", label: pageMessages.t("april") },
+  { value: "5", label: pageMessages.t("may") },
+  { value: "6", label: pageMessages.t("june") },
+  { value: "7", label: pageMessages.t("july") },
+  { value: "8", label: pageMessages.t("august") },
+  { value: "9", label: pageMessages.t("september") },
+  { value: "10", label: pageMessages.t("october") },
+  { value: "11", label: pageMessages.t("november") },
+  { value: "12", label: pageMessages.t("december") },
 ];
 
-const VAT_CLOSE_GROUPS = [
-  { value: "11", label: "Jan / Apr / Jul / Oct" },
-  { value: "12", label: "Feb / May / Aug / Nov" },
-  { value: "1", label: "Mar / Jun / Sep / Dec" },
+const getVatCloseGroups = () => [
+  { value: "11", label: pageMessages.t("janAprJulOct") },
+  { value: "12", label: pageMessages.t("febMayAugNov") },
+  { value: "1", label: pageMessages.t("marJunSepDec") },
 ];
 
 function monthLabel(month: number | string | null | undefined) {
-  return MONTH_OPTIONS.find((option) => option.value === String(month || 1))?.label ?? "January";
+  return (
+    getMonthOptions().find((option) => option.value === String(month || 1))?.label ??
+    pageMessages.t("january")
+  );
 }
 
 function vatCloseGroupLabel(periodStartMonth: number | string | null | undefined) {
   return (
-    VAT_CLOSE_GROUPS.find((option) => option.value === String(periodStartMonth || 1))?.label ??
-    "Mar / Jun / Sep / Dec"
+    getVatCloseGroups().find((option) => option.value === String(periodStartMonth || 1))?.label ??
+    pageMessages.t("marJunSepDec")
   );
 }
 
@@ -193,6 +197,8 @@ function EditableField({
 }
 
 export default function ClientProfile() {
+  const tr = pageMessages.useT();
+
   const { companyId } = useParams<{ companyId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -212,7 +218,7 @@ export default function ClientProfile() {
     onError: (e: any) => {
       toast({
         variant: "destructive",
-        title: "Could not open client books",
+        title: tr("couldNotOpenClientBooks"),
         description: e?.message,
       });
     },
@@ -239,12 +245,12 @@ export default function ClientProfile() {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
-      toast({ title: "Client updated successfully" });
+      toast({ title: tr("clientUpdatedSuccessfully") });
       setEditing(false);
       setEditData({});
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Update failed", description: e?.message });
+      toast({ variant: "destructive", title: tr("updateFailed"), description: e?.message });
     },
   });
 
@@ -259,19 +265,19 @@ export default function ClientProfile() {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
-      toast({ title: vars.action === "assign" ? "Staff assigned" : "Staff unassigned" });
+      toast({ title: vars.action === "assign" ? tr("staffAssigned") : tr("staffUnassigned") });
       setAssignOpen(false);
       setSelectedStaff("");
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Assignment failed", description: e?.message });
+      toast({ variant: "destructive", title: tr("assignmentFailed"), description: e?.message });
     },
   });
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading client profile...
+        {tr("loadingClientProfile")}
       </div>
     );
   }
@@ -279,20 +285,20 @@ export default function ClientProfile() {
   if (!summary) {
     // Surface the server's actual reason — access denied, not-a-client, and
     // genuinely-missing are different problems with different fixes.
-    const message = (summaryError as any)?.message || "Client not found";
+    const message = (summaryError as any)?.message || tr("clientNotFound");
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
         <p className="font-medium">{message}</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-md">
           {message.toLowerCase().includes("access")
-            ? "Your account does not have this client assigned. A firm owner can assign you from the client profile."
+            ? tr("yourAccountDoesNotHaveThis")
             : message.toLowerCase().includes("not an nra client")
-              ? "This company exists but is not marked as a firm-managed client."
-              : "The link may be outdated, or the client was removed."}
+              ? tr("thisCompanyExistsButIsNot")
+              : tr("theLinkMayBeOutdatedOr")}
         </p>
         <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
-          Back to portfolio
+          {tr("backToPortfolio")}
         </Button>
       </div>
     );
@@ -334,8 +340,8 @@ export default function ClientProfile() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/firm/clients")}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          NRA Client Portfolio
+          <ArrowLeft className="w-4 h-4 me-1" />
+          {tr("nraClientPortfolio")}
         </Button>
         <span className="text-muted-foreground">/</span>
         <span className="text-sm font-medium">{company.name}</span>
@@ -350,7 +356,9 @@ export default function ClientProfile() {
           <div>
             <h1 className="text-2xl font-bold">{company.name}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {company.trnVatNumber ? `TRN: ${company.trnVatNumber}` : "No TRN registered"}
+              {company.trnVatNumber
+                ? tr("trn", { trnVatNumber: company.trnVatNumber })
+                : tr("noTrnRegistered")}
               {company.emirate ? ` · ${company.emirate.replace(/_/g, " ")}` : ""}
             </p>
           </div>
@@ -359,28 +367,28 @@ export default function ClientProfile() {
           {editing ? (
             <>
               <Button variant="outline" onClick={handleCancel}>
-                <X className="w-4 h-4 mr-1" />
-                Cancel
+                <X className="w-4 h-4 me-1" />
+                {tr("cancel")}
               </Button>
               <Button onClick={handleSave} disabled={updateMutation.isPending}>
-                <Save className="w-4 h-4 mr-1" />
-                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                <Save className="w-4 h-4 me-1" />
+                {updateMutation.isPending ? tr("saving") : tr("saveChanges")}
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={handleEdit}>
-                <Edit className="w-4 h-4 mr-1" />
-                Edit
+                <Edit className="w-4 h-4 me-1" />
+                {tr("edit")}
               </Button>
               <Button
                 onClick={() => switchMutation.mutate()}
                 disabled={switchMutation.isPending}
                 data-testid="button-open-books-profile"
               >
-                <BookOpen className="w-4 h-4 mr-2" />
-                {switchMutation.isPending ? "Switching..." : "Open Books"}
-                <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                <BookOpen className="w-4 h-4 me-2" />
+                {switchMutation.isPending ? tr("switching") : tr("openBooks")}
+                <ExternalLink className="w-3.5 h-3.5 ms-1.5" />
               </Button>
             </>
           )}
@@ -391,30 +399,30 @@ export default function ClientProfile() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Outstanding AR</p>
+            <p className="text-xs text-muted-foreground">{tr("outstandingAr")}</p>
             <p className="text-xl font-bold mt-0.5">{formatAed(stats.outstandingAr)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Invoices</p>
+            <p className="text-xs text-muted-foreground">{tr("totalInvoices")}</p>
             <p className="text-xl font-bold mt-0.5">{stats.invoiceCount}</p>
             <p className="text-xs text-muted-foreground">{formatAed(stats.invoiceTotal)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Last Receipt</p>
+            <p className="text-xs text-muted-foreground">{tr("lastReceipt")}</p>
             <p className="text-sm font-semibold mt-0.5">
               {stats.lastReceiptDate
                 ? format(new Date(stats.lastReceiptDate), "MMM d, yyyy")
-                : "Never"}
+                : tr("never")}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">VAT Status</p>
+            <p className="text-xs text-muted-foreground">{tr("vatStatus")}</p>
             {stats.vatStatus ? (
               <div className="mt-0.5">
                 <Badge
@@ -427,11 +435,11 @@ export default function ClientProfile() {
                   {stats.vatStatus.status.replace(/_/g, " ")}
                 </Badge>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Due {format(new Date(stats.vatStatus.dueDate), "MMM d, yyyy")}
+                  {tr("due", { format: format(new Date(stats.vatStatus.dueDate), "MMM d, yyyy") })}
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground mt-0.5">No returns</p>
+              <p className="text-sm text-muted-foreground mt-0.5">{tr("noReturns")}</p>
             )}
           </CardContent>
         </Card>
@@ -441,7 +449,7 @@ export default function ClientProfile() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
-            NR Service Scope
+            {tr("nrServiceScope")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -479,8 +487,7 @@ export default function ClientProfile() {
             <div className="space-y-2">
               <ServiceBadges services={serviceScope} />
               <p className="text-xs text-muted-foreground">
-                VAT, corporate tax, bookkeeping, and accounting queues use this scope so clients
-                only appear in services NRA actually delivers.
+                {tr("vatCorporateTaxBookkeepingAndAccounting")}
               </p>
             </div>
           )}
@@ -491,20 +498,20 @@ export default function ClientProfile() {
         {/* Company Info */}
         <Card className="md:col-span-2">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Company Information</CardTitle>
+            <CardTitle className="text-base">{tr("companyInformation")}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <EditableField label="Company Name" {...field("name")} />
-            <EditableField label="TRN / VAT Number" {...field("trnVatNumber")} />
-            <EditableField label="Legal Structure" {...field("legalStructure")} />
-            <EditableField label="Industry" {...field("industry")} />
-            <EditableField label="Registration Number" {...field("registrationNumber")} />
-            <EditableField label="Emirate" {...field("emirate")} />
+            <EditableField label={tr("companyName")} {...field("name")} />
+            <EditableField label={tr("trnVatNumber")} {...field("trnVatNumber")} />
+            <EditableField label={tr("legalStructure")} {...field("legalStructure")} />
+            <EditableField label={tr("industry")} {...field("industry")} />
+            <EditableField label={tr("registrationNumber")} {...field("registrationNumber")} />
+            <EditableField label={tr("emirate")} {...field("emirate")} />
             <div className="col-span-2">
               <EditableField
-                label="Business Address"
+                label={tr("businessAddress")}
                 {...field("businessAddress")}
-                placeholder="Street, Area, City"
+                placeholder={tr("streetAreaCity")}
               />
             </div>
           </CardContent>
@@ -514,22 +521,24 @@ export default function ClientProfile() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Contact</CardTitle>
+              <CardTitle className="text-base">{tr("contact")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <EditableField label="Email" {...field("contactEmail")} type="email" />
-              <EditableField label="Phone" {...field("contactPhone")} type="tel" />
-              <EditableField label="Website" {...field("websiteUrl")} />
+              <EditableField label={tr("email")} {...field("contactEmail")} type="email" />
+              <EditableField label={tr("phone")} {...field("contactPhone")} type="tel" />
+              <EditableField label={tr("website")} {...field("websiteUrl")} />
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Tax & Compliance</CardTitle>
+              <CardTitle className="text-base">{tr("taxCompliance")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT Filing</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  {tr("vatFiling")}
+                </p>
                 {editing ? (
                   <Select
                     value={current.vatFilingFrequency || "quarterly"}
@@ -539,19 +548,19 @@ export default function ClientProfile() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="monthly">{tr("monthly")}</SelectItem>
+                      <SelectItem value="quarterly">{tr("quarterly")}</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
                   <p className="text-sm font-medium capitalize">
-                    {company.vatFilingFrequency || "quarterly"}
+                    {company.vatFilingFrequency || tr("quarterly2")}
                   </p>
                 )}
               </div>
               <div className="grid gap-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  VAT Close Group
+                  {tr("vatCloseGroup")}
                 </p>
                 {editing ? (
                   <Select
@@ -564,7 +573,7 @@ export default function ClientProfile() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {VAT_CLOSE_GROUPS.map((option) => (
+                      {getVatCloseGroups().map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -579,7 +588,7 @@ export default function ClientProfile() {
               </div>
               <div className="grid gap-1">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Financial Year Start
+                  {tr("financialYearStart")}
                 </p>
                 {editing ? (
                   <Select
@@ -592,7 +601,7 @@ export default function ClientProfile() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {MONTH_OPTIONS.map((option) => (
+                      {getMonthOptions().map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -603,8 +612,8 @@ export default function ClientProfile() {
                   <p className="text-sm font-medium">{monthLabel(company.fiscalYearStartMonth)}</p>
                 )}
               </div>
-              <EditableField label="Tax Registration Type" {...field("taxRegistrationType")} />
-              <EditableField label="Corporate Tax Registration" {...field("corporateTaxId")} />
+              <EditableField label={tr("taxRegistrationType")} {...field("taxRegistrationType")} />
+              <EditableField label={tr("corporateTaxRegistration")} {...field("corporateTaxId")} />
             </CardContent>
           </Card>
         </div>
@@ -613,17 +622,17 @@ export default function ClientProfile() {
       {/* Assigned Staff */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Assigned NRA Staff</CardTitle>
+          <CardTitle className="text-base">{tr("assignedNraStaff")}</CardTitle>
           <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
-            <UserPlus className="w-4 h-4 mr-1.5" />
-            Assign Staff
+            <UserPlus className="w-4 h-4 me-1.5" />
+            {tr("assignStaff")}
           </Button>
         </CardHeader>
         <CardContent>
           {stats.assignedStaff.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground">
               <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No staff assigned to this client yet</p>
+              <p className="text-sm">{tr("noStaffAssignedToThisClient")}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -671,7 +680,7 @@ export default function ClientProfile() {
       {summary.recentInvoices.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Recent Invoices</CardTitle>
+            <CardTitle className="text-base">{tr("recentInvoices")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
@@ -687,7 +696,7 @@ export default function ClientProfile() {
                       <p className="text-xs text-muted-foreground">{inv.customerName}</p>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-sm font-medium">{formatAed(inv.total)}</p>
                     <Badge
                       variant={inv.status === "paid" ? "outline" : "secondary"}
@@ -707,19 +716,19 @@ export default function ClientProfile() {
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign Staff to {company.name}</DialogTitle>
+            <DialogTitle>{tr("assignStaffTo", { name: company.name })}</DialogTitle>
           </DialogHeader>
           <div className="py-3 space-y-3">
             {unassignedStaff.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
-                All firm staff are already assigned to this client.
+                {tr("allFirmStaffAreAlreadyAssigned")}
               </p>
             ) : (
               <>
-                <Label>Select staff member</Label>
+                <Label>{tr("selectStaffMember")}</Label>
                 <Select value={selectedStaff} onValueChange={setSelectedStaff}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a staff member..." />
+                    <SelectValue placeholder={tr("chooseAStaffMember")} />
                   </SelectTrigger>
                   <SelectContent>
                     {unassignedStaff.map((s) => (
@@ -740,7 +749,7 @@ export default function ClientProfile() {
                 setSelectedStaff("");
               }}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() =>
@@ -748,7 +757,7 @@ export default function ClientProfile() {
               }
               disabled={!selectedStaff || assignMutation.isPending}
             >
-              {assignMutation.isPending ? "Assigning..." : "Assign"}
+              {assignMutation.isPending ? tr("assigning") : tr("assign")}
             </Button>
           </DialogFooter>
         </DialogContent>

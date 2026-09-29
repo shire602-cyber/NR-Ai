@@ -40,8 +40,11 @@ import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import type { ActivityLog } from "@shared/schema";
+import { messages as pageMessages } from "./History.i18n";
 
 export default function History() {
+  const tr = pageMessages.useT();
+
   const { companyId } = useDefaultCompany();
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
@@ -108,13 +111,15 @@ export default function History() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
+        return (
+          <Badge className="bg-success/10 text-success border-success/20">{tr("create")}</Badge>
+        );
       case "update":
-        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
+        return <Badge className="bg-info/10 text-info border-info/20">{tr("update")}</Badge>;
       case "delete":
-        return <Badge variant="destructive">Delete</Badge>;
+        return <Badge variant="destructive">{tr("delete")}</Badge>;
       case "view":
-        return <Badge variant="secondary">View</Badge>;
+        return <Badge variant="secondary">{tr("view")}</Badge>;
       default:
         return <Badge variant="outline">{action}</Badge>;
     }
@@ -123,7 +128,7 @@ export default function History() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Please select a company to view history.</p>
+        <p className="text-muted-foreground">{tr("pleaseSelectACompanyToView")}</p>
       </div>
     );
   }
@@ -139,10 +144,10 @@ export default function History() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
-        title="Activity History"
+        eyebrow={tr("workspace")}
+        title={tr("activityHistory")}
         testId="text-history-title"
-        description="Track all changes made to your financial records"
+        description={tr("trackAllChangesMadeToYour")}
       />
 
       <Card>
@@ -150,12 +155,12 @@ export default function History() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search activities..."
+                  placeholder={tr("searchActivities")}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-history"
                 />
               </div>
@@ -163,30 +168,32 @@ export default function History() {
             <div className="flex items-center gap-2">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder="Action" />
+                  <SelectValue placeholder={tr("action")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  <SelectItem value="create">Create</SelectItem>
-                  <SelectItem value="update">Update</SelectItem>
-                  <SelectItem value="delete">Delete</SelectItem>
-                  <SelectItem value="view">View</SelectItem>
+                  <SelectItem value="all">{tr("allActions")}</SelectItem>
+                  <SelectItem value="create">{tr("create")}</SelectItem>
+                  <SelectItem value="update">{tr("update")}</SelectItem>
+                  <SelectItem value="delete">{tr("delete")}</SelectItem>
+                  <SelectItem value="view">{tr("view")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
                 <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder="Entity Type" />
+                  <SelectValue placeholder={tr("entityType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="account">Accounts</SelectItem>
-                  <SelectItem value="invoice">Invoices</SelectItem>
-                  <SelectItem value="journal_entry">Journal Entries</SelectItem>
-                  <SelectItem value="receipt">Receipts</SelectItem>
-                  <SelectItem value="backup">Backups</SelectItem>
+                  <SelectItem value="all">{tr("allTypes")}</SelectItem>
+                  <SelectItem value="account">{tr("accounts")}</SelectItem>
+                  <SelectItem value="invoice">{tr("invoices")}</SelectItem>
+                  <SelectItem value="journal_entry">{tr("journalEntries")}</SelectItem>
+                  <SelectItem value="receipt">{tr("receipts")}</SelectItem>
+                  <SelectItem value="backup">{tr("backups")}</SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
+              <Badge variant="secondary">
+                {tr("entries", { filteredLogsCount: filteredLogs.length })}
+              </Badge>
             </div>
           </div>
         </CardHeader>
@@ -195,21 +202,18 @@ export default function History() {
             {filteredLogs.length === 0 ? (
               <div className="text-center py-12">
                 <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Activity Yet</h3>
-                <p className="text-muted-foreground">
-                  Activity will appear here as you create invoices, journal entries, and other
-                  records.
-                </p>
+                <h3 className="text-lg font-medium mb-2">{tr("noActivityYet")}</h3>
+                <p className="text-muted-foreground">{tr("activityWillAppearHereAsYou")}</p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Date & Time</TableHead>
+                    <TableHead>{tr("description")}</TableHead>
+                    <TableHead>{tr("action")}</TableHead>
+                    <TableHead>{tr("type")}</TableHead>
+                    <TableHead>{tr("dateTime")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

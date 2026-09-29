@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,10 @@ import {
   BookOpen,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import FilingEvidencePanel from "@/components/compliance/FilingEvidencePanel";
+import RecordFilingDialog from "@/components/compliance/RecordFilingDialog";
+import AmendButton from "@/components/compliance/AmendButton";
+import { useComplianceText } from "@/lib/i18n-compliance";
 
 type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 
@@ -81,6 +85,10 @@ interface CorporateTaxReturn {
   workpaper: CorporateTaxWorkpaper | null;
   notes: string | null;
   createdAt: string;
+  /** Filing with evidence (Phase 4). */
+  isAmendment?: boolean;
+  amendsReturnId?: string | null;
+  filing?: { id: string; referenceNumber: string; filedAt: string } | null;
 }
 
 interface CalculationResult {
@@ -206,6 +214,9 @@ export default function CorporateTax() {
 
   // Detail dialog
   const [viewReturn, setViewReturn] = useState<CorporateTaxReturn | null>(null);
+  const { c: cc } = useComplianceText();
+  const [filingReturn, setFilingReturn] = useState<CorporateTaxReturn | null>(null);
+  const [openAfterRefresh, setOpenAfterRefresh] = useState<string | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   // Fetch existing returns
@@ -337,27 +348,22 @@ export default function CorporateTax() {
     },
   });
 
-  // Update status mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, {
-        status,
-        ...(status === "filed" ? { filedAt: new Date().toISOString() } : {}),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
-      toast({ title: "Status Updated", description: "Tax return status has been updated." });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Update Failed",
-        description: error?.message || "Failed to update status",
-      });
-    },
-  });
+  const returnsListKey = ["/api/companies", companyId, "corporate-tax", "returns"];
+
+  // Keep the open detail in step with the refreshed list, and open a freshly created amendment.
+  useEffect(() => {
+    if (!taxReturns) return;
+    if (openAfterRefresh) {
+      const found = taxReturns.find((r) => r.id === openAfterRefresh);
+      if (found) {
+        setOpenAfterRefresh(null);
+        setViewReturn(found);
+        setViewDialogOpen(true);
+        return;
+      }
+    }
+    setViewReturn((current) => (current ? (taxReturns.find((r) => r.id === current.id) ?? current) : current));
+  }, [taxReturns, openAfterRefresh]);
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -808,7 +814,12 @@ export default function CorporateTax() {
                         <TableCell className="text-right font-semibold">
                           {formatCurrency(taxReturn.taxPayable, "AED", locale)}
                         </TableCell>
-                        <TableCell>{statusBadge(taxReturn.status)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {statusBadge(taxReturn.status)}
+                            {taxReturn.isAmendment && <Badge variant="outline">{cc.amendmentBadge}</Badge>}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
@@ -852,14 +863,9 @@ export default function CorporateTax() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() =>
-                                    updateStatusMutation.mutate({
-                                      id: taxReturn.id,
-                                      status: "filed",
-                                    })
-                                  }
-                                  disabled={updateStatusMutation.isPending}
-                                  title="Mark as Filed"
+                                  onClick={() => setFilingReturn(taxReturn)}
+                                  title={cc.recordFiling}
+                                  data-testid={`button-ct-record-filing-${taxReturn.id}`}
                                 >
                                   <CheckCircle2 className="w-4 h-4 text-info" />
                                 </Button>
@@ -874,18 +880,13 @@ export default function CorporateTax() {
                                 </Button>
                               </>
                             )}
-                            {taxReturn.status === "filed" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  updateStatusMutation.mutate({ id: taxReturn.id, status: "paid" })
-                                }
-                                disabled={updateStatusMutation.isPending}
-                                title="Mark as Paid"
-                              >
-                                <Banknote className="w-4 h-4 text-success" />
-                              </Button>
+                            {(taxReturn.status === "filed" || taxReturn.status === "paid") && (
+                              <AmendButton
+                                kind="corporate_tax"
+                                returnId={taxReturn.id}
+                                invalidateKeys={[returnsListKey]}
+                                onCreated={setOpenAfterRefresh}
+                              />
                             )}
                           </div>
                         </TableCell>
@@ -900,7 +901,7 @@ export default function CorporateTax() {
 
       {/* View Detail Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Corporate Tax Return Details</DialogTitle>
             <DialogDescription>
@@ -1002,13 +1003,35 @@ export default function CorporateTax() {
               ) : null}
             </div>
           )}
+          {viewReturn && companyId && (
+            <FilingEvidencePanel
+              kind="corporate_tax"
+              returnId={viewReturn.id}
+              companyId={companyId}
+              returnStatus={viewReturn.status}
+              periodEnd={viewReturn.taxPeriodEnd}
+              listKeys={[returnsListKey]}
+              onOpenReturn={setOpenAfterRefresh}
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-              Close
+              {cc.close}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {filingReturn && (
+        <RecordFilingDialog
+          open
+          onOpenChange={(open) => !open && setFilingReturn(null)}
+          kind="corporate_tax"
+          returnId={filingReturn.id}
+          periodEnd={filingReturn.taxPeriodEnd.slice(0, 10)}
+          invalidateKeys={[returnsListKey]}
+        />
+      )}
     </div>
   );
 }

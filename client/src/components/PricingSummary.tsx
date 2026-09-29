@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
+import { messages as pageMessages } from "./PricingSummary.i18n";
 
 /**
  * PricingSummary -- Condensed 4-card pricing component
@@ -18,33 +19,40 @@ import { StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
  *   <PricingSummary />
  */
 export function PricingSummary() {
+  const tr = pageMessages.useT();
+
   const { locale } = useI18n();
   const [isYearly, setIsYearly] = useState(false);
   const isRTL = locale === "ar";
 
   const t = {
-    monthly: locale === "en" ? "Monthly" : "شهري",
-    yearly: locale === "en" ? "Yearly" : "سنوي",
-    save20: locale === "en" ? "Save 20%" : "وفّر 20%",
-    perMonth: locale === "en" ? "/mo" : "/شهر",
-    free: locale === "en" ? "Free" : "مجاني",
-    viewAll: locale === "en" ? "View Full Pricing" : "عرض جميع الأسعار",
-    recommended: locale === "en" ? "Recommended" : "موصى به",
-    mostPopular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
+    monthly: tr("monthly"),
+    yearly: tr("yearly"),
+    save20: tr("save20"),
+    perMonth: tr("mo"),
+    free: tr("free"),
+    viewAll: tr("viewFullPricing"),
+    recommended: tr("recommended"),
+    mostPopular: tr("mostPopular"),
   };
 
   const plans = [
     {
       id: "free",
-      name: locale === "en" ? "Free" : "مجاني",
+      name: tr("free"),
       icon: Zap,
       monthlyPrice: 0,
       yearlyPrice: 0,
       highlights:
         locale === "en"
-          ? ["1 company, 1 user", "50 invoices/mo", "Basic AI categorization", "VAT filing"]
+          ? [
+              tr("n1Company1User"),
+              tr("n50InvoicesMo"),
+              tr("basicAiCategorization"),
+              tr("vatFiling"),
+            ]
           : ["شركة واحدة، مستخدم واحد", "50 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
-      cta: locale === "en" ? "Get Started Free" : "ابدأ مجاناً",
+      cta: tr("getStartedFree"),
       variant: "outline" as const,
       highlight: false,
       badge: null,
@@ -54,15 +62,20 @@ export function PricingSummary() {
     },
     {
       id: "starter",
-      name: locale === "en" ? "Starter" : "المبتدئ",
+      name: tr("starter"),
       icon: Rocket,
       monthlyPrice: 49,
       yearlyPrice: 39,
       highlights:
         locale === "en"
-          ? ["1 company, 3 users", "200 invoices/mo", "AI OCR scanning", "Inventory & bill pay"]
+          ? [
+              tr("n1Company3Users"),
+              tr("n200InvoicesMo"),
+              tr("aiOcrScanning"),
+              tr("inventoryBillPay"),
+            ]
           : ["شركة واحدة، 3 مستخدمين", "200 فاتورة/شهر", "مسح OCR ذكي", "مخزون ودفع فواتير"],
-      cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+      cta: tr("start14DayTrial"),
       variant: "default" as const,
       highlight: false,
       badge: "recommended",
@@ -72,17 +85,17 @@ export function PricingSummary() {
     },
     {
       id: "professional",
-      name: locale === "en" ? "Professional" : "الاحترافي",
+      name: tr("professional"),
       icon: Crown,
       monthlyPrice: 149,
       yearlyPrice: 119,
       highlights:
         locale === "en"
           ? [
-              "3 companies, 10 users",
-              "Unlimited invoices",
-              "AI CFO & Anomaly Detection",
-              "Payroll, Tax & E-Invoicing",
+              tr("n3Companies10Users"),
+              tr("unlimitedInvoices"),
+              tr("aiCfoAnomalyDetection"),
+              tr("payrollTaxEInvoicing"),
             ]
           : [
               "3 شركات، 10 مستخدمين",
@@ -90,7 +103,7 @@ export function PricingSummary() {
               "مستشار مالي وكشف شاذ",
               "رواتب، ضرائب وفوترة إلكترونية",
             ],
-      cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+      cta: tr("start14DayTrial"),
       variant: "default" as const,
       highlight: true,
       badge: "mostPopular",
@@ -100,20 +113,20 @@ export function PricingSummary() {
     },
     {
       id: "enterprise",
-      name: locale === "en" ? "Enterprise" : "المؤسسات",
+      name: tr("enterprise"),
       icon: Building2,
       monthlyPrice: 299,
       yearlyPrice: 239,
       highlights:
         locale === "en"
           ? [
-              "Unlimited everything",
-              "Priority AI processing",
-              "Dedicated account manager",
-              "Custom integrations & API",
+              tr("unlimitedEverything"),
+              tr("priorityAiProcessing"),
+              tr("dedicatedAccountManager"),
+              tr("customIntegrationsApi"),
             ]
           : ["كل شيء غير محدود", "أولوية معالجة ذكية", "مدير حساب مخصص", "تكاملات مخصصة و API"],
-      cta: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+      cta: tr("contactSales"),
       variant: "outline" as const,
       highlight: false,
       badge: null,
@@ -177,9 +190,7 @@ export function PricingSummary() {
                   }`}
                 >
                   {/* Top accent bar */}
-                  <div
-                    className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`}
-                  />
+                  <div className={`absolute inset-x-0 top-0 h-1 ${plan.gradient}`} />
 
                   <CardHeader className="pb-3">
                     {/* Badge */}
@@ -235,9 +246,7 @@ export function PricingSummary() {
                         <li key={idx} className="flex items-start gap-2 text-sm">
                           <Check
                             className={`h-4 w-4 mt-0.5 shrink-0 ${
-                              plan.highlight
-                                ? "text-success "
-                                : "text-muted-foreground"
+                              plan.highlight ? "text-success " : "text-muted-foreground"
                             }`}
                           />
                           <span>{item}</span>
@@ -276,10 +285,7 @@ export function PricingSummary() {
       {/* View all link */}
       <div className="text-center mt-8">
         <Link href="/pricing">
-          <Button
-            variant="ghost"
-            className="text-success hover:text-success "
-          >
+          <Button variant="ghost" className="text-success hover:text-success ">
             {t.viewAll}
             <ArrowRight className="h-4 w-4 ms-1" />
           </Button>

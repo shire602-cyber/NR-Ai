@@ -64,6 +64,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { messages as pageMessages } from "./CustomerContacts.i18n";
 
 interface ImportResult {
   message: string;
@@ -127,6 +128,8 @@ function ContactForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
+  const tr = pageMessages.useT();
+
   const [formData, setFormData] = useState({
     name: contact?.name || "",
     email: contact?.email || "",
@@ -141,16 +144,16 @@ function ContactForm({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Name *</Label>
+          <Label>{tr("name")}</Label>
           <Input
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Company or contact name"
+            placeholder={tr("companyOrContactName")}
             data-testid="input-contact-name"
           />
         </div>
         <div className="space-y-2">
-          <Label>Email *</Label>
+          <Label>{tr("email")}</Label>
           <Input
             type="email"
             value={formData.email}
@@ -162,7 +165,7 @@ function ContactForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Phone</Label>
+          <Label>{tr("phone")}</Label>
           <Input
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -173,28 +176,28 @@ function ContactForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>TRN Number</Label>
+          <Label>{tr("trnNumber")}</Label>
           <Input
             value={formData.trnNumber}
             onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
-            placeholder="100XXXXXXXXX003"
+            placeholder={tr("n100xxxxxxxxx003")}
             data-testid="input-contact-trn"
           />
         </div>
         <div />
       </div>
       <div className="space-y-2">
-        <Label>Address</Label>
+        <Label>{tr("address")}</Label>
         <Input
           value={formData.address}
           onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          placeholder="Street address"
+          placeholder={tr("streetAddress")}
           data-testid="input-contact-address"
         />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>City</Label>
+          <Label>{tr("city")}</Label>
           <Input
             value={formData.city}
             onChange={(e) => setFormData({ ...formData, city: e.target.value })}
@@ -203,7 +206,7 @@ function ContactForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Country</Label>
+          <Label>{tr("country")}</Label>
           <Input
             value={formData.country}
             onChange={(e) => setFormData({ ...formData, country: e.target.value })}
@@ -214,14 +217,14 @@ function ContactForm({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
-          Cancel
+          {tr("cancel")}
         </Button>
         <Button
           onClick={() => onSubmit(formData)}
           disabled={!formData.name || !formData.email}
           data-testid="button-save-contact"
         >
-          {contact ? "Update" : "Create"} Contact
+          {contact ? tr("update") : tr("create")} {tr("contact")}
         </Button>
       </DialogFooter>
     </div>
@@ -229,6 +232,8 @@ function ContactForm({
 }
 
 export default function CustomerContacts() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
@@ -266,12 +271,12 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       toast({
-        title: "Import completed!",
+        title: tr("importCompleted"),
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("importFailed"), description: error?.message });
     },
   });
 
@@ -284,12 +289,12 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setShowAddDialog(false);
-      toast({ title: "Contact created successfully" });
+      toast({ title: tr("contactCreatedSuccessfully") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create contact",
+        title: tr("failedToCreateContact"),
         description: error?.message,
       });
     },
@@ -304,12 +309,12 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setEditContact(null);
-      toast({ title: "Contact updated successfully" });
+      toast({ title: tr("contactUpdatedSuccessfully") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update contact",
+        title: tr("failedToUpdateContact"),
         description: error?.message,
       });
     },
@@ -323,12 +328,12 @@ export default function CustomerContacts() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
-      toast({ title: "Contact deleted successfully" });
+      toast({ title: tr("contactDeletedSuccessfully") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete contact",
+        title: tr("failedToDeleteContact"),
         description: error?.message,
       });
     },
@@ -355,14 +360,14 @@ export default function CustomerContacts() {
       setShowClearAllDialog(false);
       setClearAllConfirmation("");
       toast({
-        title: "All contacts cleared",
+        title: tr("allContactsCleared"),
         description: result.message,
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to clear contacts",
+        title: tr("failedToClearContacts"),
         description: error?.message,
       });
     },
@@ -380,7 +385,7 @@ export default function CustomerContacts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to generate portal link",
+        title: tr("failedToGeneratePortalLink"),
         description: error?.message,
       });
     },
@@ -391,8 +396,8 @@ export default function CustomerContacts() {
       if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
         toast({
           variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an Excel file (.xlsx) or CSV file",
+          title: tr("invalidFileType"),
+          description: tr("pleaseUploadAnExcelFileXlsx"),
         });
         return;
       }
@@ -415,11 +420,16 @@ export default function CustomerContacts() {
           const mappedData = preview.rows;
 
           setPreviewData(mappedData);
-          toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
+          toast({
+            title: tr("foundContactsIn", {
+              mappedDataCount: mappedData.length,
+              name: selectedFile.name,
+            }),
+          });
         } catch (err: any) {
           toast({
             variant: "destructive",
-            title: "Failed to parse file",
+            title: tr("failedToParseFile"),
             description: err?.message,
           });
         }
@@ -464,16 +474,16 @@ export default function CustomerContacts() {
 
   const downloadTemplate = () => {
     if (!companyId) {
-      toast({ variant: "destructive", title: "Select a company first" });
+      toast({ variant: "destructive", title: tr("selectACompanyFirst") });
       return;
     }
 
     void downloadContactTemplate(companyId)
-      .then(() => toast({ title: "Template downloaded" }))
+      .then(() => toast({ title: tr("templateDownloaded") }))
       .catch((err: any) =>
         toast({
           variant: "destructive",
-          title: "Failed to create template",
+          title: tr("failedToCreateTemplate"),
           description: err?.message,
         })
       );
@@ -489,9 +499,9 @@ export default function CustomerContacts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
-        title="Customer Contacts"
-        description="Manage your customers and business contacts for invoicing"
+        eyebrow={tr("sales")}
+        title={tr("customerContacts")}
+        description={tr("manageYourCustomersAndBusinessContacts")}
         testId="text-contacts-title"
         actions={
           <>
@@ -500,8 +510,8 @@ export default function CustomerContacts() {
               onClick={downloadTemplate}
               data-testid="button-download-template"
             >
-              <Download className="w-4 h-4 mr-2" />
-              Download Template
+              <Download className="w-4 h-4 me-2" />
+              {tr("downloadTemplate")}
             </Button>
             <Button
               variant="destructive"
@@ -512,20 +522,20 @@ export default function CustomerContacts() {
               disabled={contacts.length === 0}
               data-testid="button-clear-all-contacts"
             >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Clear All
+              <Trash2 className="w-4 h-4 me-2" />
+              {tr("clearAll")}
             </Button>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-contact">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Contact
+                  <Plus className="w-4 h-4 me-2" />
+                  {tr("addContact")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
-                  <DialogTitle>Add New Contact</DialogTitle>
-                  <DialogDescription>Add a new customer or business contact</DialogDescription>
+                  <DialogTitle>{tr("addNewContact")}</DialogTitle>
+                  <DialogDescription>{tr("addANewCustomerOrBusiness")}</DialogDescription>
                 </DialogHeader>
                 <ContactForm
                   onSubmit={(data) => createMutation.mutate(data)}
@@ -540,24 +550,24 @@ export default function CustomerContacts() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
-            <Building2 className="w-4 h-4 mr-2" />
-            Contacts ({contacts.length})
+            <Building2 className="w-4 h-4 me-2" />
+            {tr("contacts", { contactsCount: contacts.length })}
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-contacts-import">
-            <Upload className="w-4 h-4 mr-2" />
-            Import from Excel
+            <Upload className="w-4 h-4 me-2" />
+            {tr("importFromExcel")}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search contacts..."
+                placeholder={tr("searchContacts")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-contacts"
               />
             </div>
@@ -572,25 +582,23 @@ export default function CustomerContacts() {
               ) : filteredContacts.length === 0 ? (
                 <EmptyState
                   icon={Building2}
-                  title={searchTerm ? "No matching contacts" : "No contacts yet"}
+                  title={searchTerm ? tr("noMatchingContacts") : tr("noContactsYet")}
                   description={
-                    searchTerm
-                      ? "Try a different search term or clear the search."
-                      : "Add your first contact, or import a list from an Excel/CSV file."
+                    searchTerm ? tr("tryADifferentSearchTermOr") : tr("addYourFirstContactOrImport")
                   }
                   action={
                     searchTerm
                       ? undefined
                       : {
-                          label: "Add contact",
+                          label: tr("addContact2"),
                           onClick: () => setShowAddDialog(true),
                           testId: "button-add-first-contact",
                         }
                   }
                   secondaryAction={
                     searchTerm
-                      ? { label: "Clear search", onClick: () => setSearchTerm("") }
-                      : { label: "Import from Excel", onClick: () => setActiveTab("import") }
+                      ? { label: tr("clearSearch"), onClick: () => setSearchTerm("") }
+                      : { label: tr("importFromExcel"), onClick: () => setActiveTab("import") }
                   }
                 />
               ) : (
@@ -603,7 +611,7 @@ export default function CustomerContacts() {
                   columns={[
                     {
                       key: "name",
-                      header: "Name",
+                      header: tr("name2"),
                       cell: (contact) => (
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-muted-foreground" />
@@ -613,7 +621,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "email",
-                      header: "Email",
+                      header: tr("email2"),
                       cell: (contact) => (
                         <div className="flex items-center gap-2 truncate">
                           <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -623,7 +631,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "phone",
-                      header: "Phone",
+                      header: tr("phone"),
                       cell: (contact) =>
                         contact.phone ? (
                           <div className="flex items-center gap-2">
@@ -634,7 +642,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "trn",
-                      header: "TRN",
+                      header: tr("trn"),
                       cell: (contact) =>
                         contact.trnNumber ? (
                           <Badge variant="outline">{contact.trnNumber}</Badge>
@@ -644,7 +652,7 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "location",
-                      header: "Location",
+                      header: tr("location"),
                       cell: (contact) =>
                         contact.city || contact.country ? (
                           <div className="flex items-center gap-2">
@@ -655,14 +663,14 @@ export default function CustomerContacts() {
                     },
                     {
                       key: "actions",
-                      header: "Actions",
+                      header: tr("actions"),
                       width: "170px",
                       cell: (contact) => (
                         <div className="flex items-center gap-1">
                           <Button
                             size="icon"
                             variant="ghost"
-                            title="Generate Portal Link"
+                            title={tr("generatePortalLink")}
                             onClick={() =>
                               portalLinkMutation.mutate({
                                 contactId: contact.id,
@@ -707,12 +715,9 @@ export default function CustomerContacts() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="w-5 h-5" />
-                    Upload Excel File
+                    {tr("uploadExcelFile")}
                   </CardTitle>
-                  <CardDescription>
-                    Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
-                    automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
-                  </CardDescription>
+                  <CardDescription>{tr("uploadAnExcelFileXlsxOr")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div
@@ -731,15 +736,15 @@ export default function CustomerContacts() {
                         <FileSpreadsheet className="w-10 h-10 text-success" />
                         <p className="font-medium">{file.name}</p>
                         <Button variant="outline" size="sm" onClick={resetImport}>
-                          Choose Different File
+                          {tr("chooseDifferentFile")}
                         </Button>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3">
                         <Upload className="w-10 h-10 text-muted-foreground" />
                         <div>
-                          <p className="font-medium">Drop your Excel file here</p>
-                          <p className="text-sm text-muted-foreground">or click to browse</p>
+                          <p className="font-medium">{tr("dropYourExcelFileHere")}</p>
+                          <p className="text-sm text-muted-foreground">{tr("orClickToBrowse")}</p>
                         </div>
                         <input
                           type="file"
@@ -759,32 +764,31 @@ export default function CustomerContacts() {
               {previewData && previewData.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Preview ({previewData.length} contacts)</CardTitle>
-                    <CardDescription>
-                      Review the data before importing. Contacts with matching emails will be
-                      updated.
-                    </CardDescription>
+                    <CardTitle>
+                      {tr("previewContacts", { previewDataCount: previewData.length })}
+                    </CardTitle>
+                    <CardDescription>{tr("reviewTheDataBeforeImportingContacts")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[300px]">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>TRN</TableHead>
-                            <TableHead>City</TableHead>
+                            <TableHead>{tr("name2")}</TableHead>
+                            <TableHead>{tr("email2")}</TableHead>
+                            <TableHead>{tr("phone")}</TableHead>
+                            <TableHead>{tr("trn")}</TableHead>
+                            <TableHead>{tr("city")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {previewData.slice(0, 20).map((row, idx) => (
                             <TableRow key={idx}>
                               <TableCell className={!row.name ? "text-destructive" : ""}>
-                                {row.name || "Missing"}
+                                {row.name || tr("missing")}
                               </TableCell>
                               <TableCell className={!row.email ? "text-destructive" : ""}>
-                                {row.email || "Missing"}
+                                {row.email || tr("missing")}
                               </TableCell>
                               <TableCell>{row.phone || "-"}</TableCell>
                               <TableCell>{row.trnNumber || "-"}</TableCell>
@@ -795,7 +799,7 @@ export default function CustomerContacts() {
                       </Table>
                       {previewData.length > 20 && (
                         <p className="text-center text-sm text-muted-foreground py-2">
-                          ... and {previewData.length - 20} more contacts
+                          {tr("andMoreContacts", { value: previewData.length - 20 })}
                         </p>
                       )}
                     </ScrollArea>
@@ -806,7 +810,7 @@ export default function CustomerContacts() {
                         onClick={resetImport}
                         data-testid="button-cancel-import"
                       >
-                        Cancel
+                        {tr("cancel")}
                       </Button>
                       <Button
                         onClick={handleImport}
@@ -815,13 +819,13 @@ export default function CustomerContacts() {
                       >
                         {importMutation.isPending ? (
                           <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Importing...
+                            <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                            {tr("importing")}
                           </>
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Import {previewData.length} Contacts
+                            <Upload className="w-4 h-4 me-2" />
+                            {tr("importContacts", { previewDataCount: previewData.length })}
                           </>
                         )}
                       </Button>
@@ -835,22 +839,22 @@ export default function CustomerContacts() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-success" />
-                  Import Complete
+                  {tr("importComplete")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-success/10 rounded-lg">
                     <p className="text-2xl font-bold text-success">{importResults.created}</p>
-                    <p className="text-sm text-muted-foreground">Created</p>
+                    <p className="text-sm text-muted-foreground">{tr("created")}</p>
                   </div>
                   <div className="text-center p-4 bg-info/10 rounded-lg">
                     <p className="text-2xl font-bold text-info">{importResults.updated}</p>
-                    <p className="text-sm text-muted-foreground">Updated</p>
+                    <p className="text-sm text-muted-foreground">{tr("updated")}</p>
                   </div>
                   <div className="text-center p-4 bg-warning/10 rounded-lg">
                     <p className="text-2xl font-bold text-warning">{importResults.skipped}</p>
-                    <p className="text-sm text-muted-foreground">Skipped</p>
+                    <p className="text-sm text-muted-foreground">{tr("skipped")}</p>
                   </div>
                 </div>
 
@@ -858,7 +862,7 @@ export default function CustomerContacts() {
                   <div className="border border-destructive/50 rounded-lg p-4">
                     <p className="font-medium text-destructive flex items-center gap-2 mb-2">
                       <AlertCircle className="w-4 h-4" />
-                      {importResults.errors.length} Errors
+                      {tr("errors", { errorsCount: importResults.errors.length })}
                     </p>
                     <ScrollArea className="h-[100px]">
                       <ul className="text-sm space-y-1">
@@ -881,10 +885,10 @@ export default function CustomerContacts() {
                     }}
                     data-testid="button-view-contacts"
                   >
-                    View Contacts
+                    {tr("viewContacts")}
                   </Button>
                   <Button onClick={resetImport} data-testid="button-import-more">
-                    Import More
+                    {tr("importMore")}
                   </Button>
                 </div>
               </CardContent>
@@ -896,8 +900,8 @@ export default function CustomerContacts() {
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Edit Contact</DialogTitle>
-            <DialogDescription>Update customer contact information</DialogDescription>
+            <DialogTitle>{tr("editContact")}</DialogTitle>
+            <DialogDescription>{tr("updateCustomerContactInformation")}</DialogDescription>
           </DialogHeader>
           {editContact && (
             <ContactForm
@@ -920,11 +924,10 @@ export default function CustomerContacts() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="w-5 h-5" />
-              Client Portal Link
+              {tr("clientPortalLink")}
             </DialogTitle>
             <DialogDescription>
-              Share this link with {portalLinkDialog.contactName} to give them access to view their
-              invoices and download PDFs.
+              {tr("shareThisLinkWithToGive", { contactName: portalLinkDialog.contactName })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -940,7 +943,7 @@ export default function CustomerContacts() {
                 size="icon"
                 onClick={() => {
                   navigator.clipboard.writeText(portalLinkDialog.url);
-                  toast({ title: "Link copied to clipboard" });
+                  toast({ title: tr("linkCopiedToClipboard") });
                 }}
                 data-testid="button-copy-portal-link"
               >
@@ -954,14 +957,11 @@ export default function CustomerContacts() {
                 onClick={() => window.open(portalLinkDialog.url, "_blank")}
                 data-testid="button-open-portal"
               >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Open Portal
+                <ExternalLink className="w-4 h-4 me-2" />
+                {tr("openPortal")}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              This link is valid for 1 year. The client can view invoices and download PDFs without
-              needing to log in.
-            </p>
+            <p className="text-xs text-muted-foreground">{tr("thisLinkIsValidFor1")}</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -979,40 +979,34 @@ export default function CustomerContacts() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="w-5 h-5" />
-              Delete ALL contacts?
+              {tr("deleteAllContacts")}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p>
-                  This will permanently delete{" "}
+                  {tr("thisWillPermanentlyDelete")}
                   <strong>
-                    {clearPreview?.contactCount ?? contacts.length} contact
-                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? "" : "s"}
+                    {tr.plural("contactsCount", clearPreview?.contactCount ?? contacts.length)}
                   </strong>{" "}
-                  for this company. This action cannot be undone.
+                  {tr("forThisCompanyThisActionCannot")}
                 </p>
                 {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
                     <p className="font-medium text-destructive">
-                      {clearPreview.linkedInvoiceCount} invoice
-                      {clearPreview.linkedInvoiceCount === 1 ? " is" : "s are"} linked to these
-                      contacts.
+                      {tr.plural("invoicesLinkedToTheseContacts", clearPreview.linkedInvoiceCount)}
                     </p>
-                    <p className="text-muted-foreground mt-1">
-                      Invoices will be kept, but their customer link will be cleared. You may need
-                      to relink them after re-importing your client list.
-                    </p>
+                    <p className="text-muted-foreground mt-1">{tr("invoicesWillBeKeptButTheir")}</p>
                   </div>
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="clear-all-confirm">
-                    Type <strong>DELETE ALL</strong> to confirm:
+                    {tr("type")} <strong>{tr("deleteAll")}</strong> {tr("toConfirm")}
                   </Label>
                   <Input
                     id="clear-all-confirm"
                     value={clearAllConfirmation}
                     onChange={(e) => setClearAllConfirmation(e.target.value)}
-                    placeholder="DELETE ALL"
+                    placeholder={tr("deleteAll")}
                     autoComplete="off"
                     data-testid="input-clear-all-confirm"
                   />
@@ -1021,7 +1015,9 @@ export default function CustomerContacts() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">
+              {tr("cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
@@ -1033,11 +1029,11 @@ export default function CustomerContacts() {
             >
               {clearAllMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {tr("deleting")}
                 </>
               ) : (
-                "Delete all contacts"
+                tr("deleteAllContacts2")
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1052,14 +1048,14 @@ export default function CustomerContacts() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Contact?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteContact")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{contactToDelete?.name}</strong>? This action
-              cannot be undone.
+              {tr("areYouSureYouWantTo")} <strong>{contactToDelete?.name}</strong>
+              {tr("thisActionCannotBeUndone")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (contactToDelete) {
@@ -1069,7 +1065,7 @@ export default function CustomerContacts() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

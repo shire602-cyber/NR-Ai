@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   ShieldCheck,
 } from "lucide-react";
+import { messages as pageMessages } from "./ReceiptAutopilot.i18n";
 
 type ClassifierMethod = "rule" | "keyword" | "statistical" | "openai";
 type ClassifierMode = "hybrid" | "openai_only";
@@ -50,21 +51,23 @@ interface ModelStats {
   };
 }
 
-const METHOD_LABELS: Record<ClassifierMethod, string> = {
-  rule: "Company Rules",
-  keyword: "UAE Keywords",
-  statistical: "Statistical (Naive Bayes)",
-  openai: "OpenAI Fallback",
-};
+const getMethodLabels = (): Record<ClassifierMethod, string> => ({
+  rule: pageMessages.t("companyRules"),
+  keyword: pageMessages.t("uaeKeywords"),
+  statistical: pageMessages.t("statisticalNaiveBayes"),
+  openai: pageMessages.t("openaiFallback"),
+});
 
-const METHOD_DESCRIPTIONS: Record<ClassifierMethod, string> = {
-  rule: "Exact + fuzzy merchant patterns from your accepted history.",
-  keyword: "Built-in patterns covering DEWA, Etisalat, Careem, Emirates, …",
-  statistical: "Naive Bayes trained on your accepted classifications.",
-  openai: "Used when internal confidence falls below threshold.",
-};
+const getMethodDescriptions = (): Record<ClassifierMethod, string> => ({
+  rule: pageMessages.t("exactFuzzyMerchantPatternsFromYour"),
+  keyword: pageMessages.t("builtInPatternsCoveringDewaEtisalat"),
+  statistical: pageMessages.t("naiveBayesTrainedOnYourAccepted"),
+  openai: pageMessages.t("usedWhenInternalConfidenceFallsBelow"),
+});
 
 export default function ReceiptAutopilot() {
+  const tr = pageMessages.useT();
+
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -81,12 +84,12 @@ export default function ReceiptAutopilot() {
       apiRequest("PATCH", "/api/ai/classifier-config", { companyId, ...patch }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai/classifier-stats", companyId] });
-      toast({ title: "Settings saved", description: "Autopilot configuration updated." });
+      toast({ title: tr("settingsSaved"), description: tr("autopilotConfigurationUpdated") });
     },
     onError: (err: any) => {
       toast({
-        title: "Could not save",
-        description: err?.message || "Please try again.",
+        title: tr("couldNotSave"),
+        description: err?.message || tr("pleaseTryAgain"),
         variant: "destructive",
       });
     },
@@ -119,22 +122,21 @@ export default function ReceiptAutopilot() {
                   <Brain className="w-6 h-6 text-primary" />
                 </div>
                 <Badge variant="secondary" className="text-xs font-medium">
-                  <Sparkles className="w-3 h-3 mr-1" />
-                  Receipt Autopilot
+                  <Sparkles className="w-3 h-3 me-1" />
+                  {tr("receiptAutopilot")}
                 </Badge>
                 {stats?.belowThreshold && (
                   <Badge variant="destructive" className="text-xs">
-                    <AlertTriangle className="w-3 h-3 mr-1" />
-                    Failsafe Active
+                    <AlertTriangle className="w-3 h-3 me-1" />
+                    {tr("failsafeActive")}
                   </Badge>
                 )}
               </div>
               <h1 className="text-3xl font-bold mb-2" data-testid="text-autopilot-title">
-                Receipt Autopilot
+                {tr("receiptAutopilot")}
               </h1>
               <p className="text-muted-foreground">
-                Internal classifier with OpenAI fallback. The system learns your accepted
-                classifications and automatically posts high-confidence receipts to the GL.
+                {tr("internalClassifierWithOpenaiFallbackThe")}
               </p>
             </div>
           </div>
@@ -148,17 +150,22 @@ export default function ReceiptAutopilot() {
             <Activity className="w-6 h-6 text-success" />
           </div>
           <div className="flex-1">
-            <CardTitle>AI Accuracy</CardTitle>
+            <CardTitle>{tr("aiAccuracy")}</CardTitle>
             <CardDescription>
-              Overall acceptance rate across all classifier methods. Threshold: {thresholdPct}%.
+              {tr("overallAcceptanceRateAcrossAllClassifier", { thresholdPct })}
             </CardDescription>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <div className="text-3xl font-bold" data-testid="text-overall-accuracy">
               {accuracyPct}%
             </div>
             <div className="text-xs text-muted-foreground">
-              {stats ? `${stats.totalAccepted} accepted / ${stats.totalRejected} rejected` : "—"}
+              {stats
+                ? tr("acceptedRejected", {
+                    totalAccepted: stats.totalAccepted,
+                    totalRejected: stats.totalRejected,
+                  })
+                : "—"}
             </div>
           </div>
         </CardHeader>
@@ -168,8 +175,8 @@ export default function ReceiptAutopilot() {
             <Alert className="mt-4" variant="destructive" data-testid="alert-stats-error">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Could not load classifier stats:{" "}
-                {(statsQuery.error as any)?.message || "Please try again."}
+                {tr("couldNotLoadClassifierStats")}
+                {(statsQuery.error as any)?.message || tr("pleaseTryAgain")}
               </AlertDescription>
             </Alert>
           )}
@@ -177,9 +184,7 @@ export default function ReceiptAutopilot() {
             <Alert className="mt-4" variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Internal classifier accuracy ({accuracyPct}%) is below the {thresholdPct}% threshold
-                — this company has been automatically switched to OpenAI-only mode. Restore hybrid
-                mode below once you have more training data.
+                {tr("internalClassifierAccuracyIsBelowThe", { accuracyPct, thresholdPct })}
               </AlertDescription>
             </Alert>
           )}
@@ -200,7 +205,7 @@ export default function ReceiptAutopilot() {
               className="mt-6 text-center text-sm text-muted-foreground py-8 border rounded-lg"
               data-testid="stats-empty"
             >
-              No receipts classified yet. Upload receipts to start training the model.
+              {tr("noReceiptsClassifiedYetUploadReceipts")}
             </div>
           )}
 
@@ -212,15 +217,15 @@ export default function ReceiptAutopilot() {
                 <Card key={m.method} className="border-muted">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      {METHOD_LABELS[m.method]}
+                      {getMethodLabels()[m.method]}
                       {m.method === "openai" && (
                         <Badge variant="outline" className="text-xs">
-                          Fallback
+                          {tr("fallback")}
                         </Badge>
                       )}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      {METHOD_DESCRIPTIONS[m.method]}
+                      {getMethodDescriptions()[m.method]}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -232,7 +237,7 @@ export default function ReceiptAutopilot() {
                         {Math.round(m.accuracy * 100)}%
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {m.accepted + m.rejected} judged
+                        {tr("judged", { value: m.accepted + m.rejected })}
                       </span>
                     </div>
                     <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
@@ -244,8 +249,8 @@ export default function ReceiptAutopilot() {
                         <XCircle className="w-3 h-3 text-destructive" />
                         {m.rejected}
                       </span>
-                      <span className="flex items-center gap-1 ml-auto">
-                        Total {m.totalPredictions}
+                      <span className="flex items-center gap-1 ms-auto">
+                        {tr("total", { totalPredictions: m.totalPredictions })}
                       </span>
                     </div>
                   </CardContent>
@@ -263,21 +268,18 @@ export default function ReceiptAutopilot() {
               <ShieldCheck className="w-6 h-6 text-info" />
             </div>
             <div className="flex-1">
-              <CardTitle>Autopilot Settings</CardTitle>
-              <CardDescription>
-                Hybrid mode runs the internal classifier first; OpenAI is used only as a fallback.
-              </CardDescription>
+              <CardTitle>{tr("autopilotSettings")}</CardTitle>
+              <CardDescription>{tr("hybridModeRunsTheInternalClassifier")}</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="autopilot-toggle" className="text-base font-semibold">
-                  Auto-post high-confidence receipts
+                  {tr("autoPostHighConfidenceReceipts")}
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  When enabled, receipts matching a rule with ≥5 acceptances and confidence at or
-                  above your auto-post threshold are posted to the GL without user review.
+                  {tr("whenEnabledReceiptsMatchingARule")}
                 </p>
               </div>
               <Switch
@@ -292,11 +294,10 @@ export default function ReceiptAutopilot() {
             <div className="flex items-center justify-between gap-6">
               <div>
                 <Label htmlFor="autopost-threshold" className="text-base font-semibold">
-                  Auto-post confidence threshold
+                  {tr("autoPostConfidenceThreshold")}
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Minimum classification confidence before a receipt may post without review
-                  (80–99%). Below it, receipts wait in the review queue.
+                  {tr("minimumClassificationConfidenceBeforeAReceipt")}
                 </p>
               </div>
               <select
@@ -318,10 +319,10 @@ export default function ReceiptAutopilot() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="hybrid-toggle" className="text-base font-semibold">
-                  Hybrid mode (recommended)
+                  {tr("hybridModeRecommended")}
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Off → bypass the internal classifier and use OpenAI for every receipt.
+                  {tr("offBypassTheInternalClassifierAnd")}
                 </p>
               </div>
               <Switch

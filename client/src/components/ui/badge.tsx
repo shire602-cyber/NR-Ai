@@ -2,6 +2,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./badge.i18n";
 
 const badgeVariants = cva(
   "whitespace-nowrap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-tight transition-colors" +
@@ -79,21 +80,21 @@ export type StatusKind =
   | "inactive"
   | "submitted";
 
-const STATUS_MAP: Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> = {
-  paid: { variant: "success", label: "Paid" },
-  credited: { variant: "neutral", label: "Credited" },
-  posted: { variant: "success", label: "Posted" },
-  approved: { variant: "success", label: "Approved" },
-  active: { variant: "success", label: "Active" },
-  sent: { variant: "info", label: "Sent" },
-  submitted: { variant: "info", label: "Submitted" },
-  pending: { variant: "warning", label: "Pending" },
-  overdue: { variant: "danger", label: "Overdue" },
-  rejected: { variant: "danger", label: "Rejected" },
-  void: { variant: "neutral", label: "Void" },
-  draft: { variant: "neutral", label: "Draft" },
-  inactive: { variant: "neutral", label: "Inactive" },
-};
+const getStatusMap = (): Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> => ({
+  paid: { variant: "success", label: pageMessages.t("paid") },
+  credited: { variant: "neutral", label: pageMessages.t("credited") },
+  posted: { variant: "success", label: pageMessages.t("posted") },
+  approved: { variant: "success", label: pageMessages.t("approved") },
+  active: { variant: "success", label: pageMessages.t("active") },
+  sent: { variant: "info", label: pageMessages.t("sent") },
+  submitted: { variant: "info", label: pageMessages.t("submitted") },
+  pending: { variant: "warning", label: pageMessages.t("pending") },
+  overdue: { variant: "danger", label: pageMessages.t("overdue") },
+  rejected: { variant: "danger", label: pageMessages.t("rejected") },
+  void: { variant: "neutral", label: pageMessages.t("void") },
+  draft: { variant: "neutral", label: pageMessages.t("draft") },
+  inactive: { variant: "neutral", label: pageMessages.t("inactive") },
+});
 
 interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
   status: string;
@@ -102,8 +103,9 @@ interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
 }
 
 function StatusBadge({ status, label, className, ...props }: StatusBadgeProps) {
+  pageMessages.useT(); // subscribe so labels re-render on language switch
   const key = (status || "").toLowerCase() as StatusKind;
-  const meta = STATUS_MAP[key] ?? { variant: "neutral" as const, label: status };
+  const meta = getStatusMap()[key] ?? { variant: "neutral" as const, label: status };
   return (
     <Badge variant={meta.variant} dot className={cn("py-0.5", className)} {...props}>
       {label ?? meta.label}

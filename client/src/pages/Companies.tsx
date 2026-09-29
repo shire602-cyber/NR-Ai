@@ -35,9 +35,10 @@ import { useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Building2, CheckCircle2 } from "lucide-react";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./Companies.i18n";
 
 const companySchema = z.object({
-  name: z.string().min(2, "Company name must be at least 2 characters"),
+  name: z.string().min(2, pageMessages.marker("companyNameMustBeAtLeast")),
   baseCurrency: z.string().default("AED"),
   locale: z.enum(["en", "ar"]).default("en"),
 });
@@ -45,6 +46,8 @@ const companySchema = z.object({
 type CompanyFormData = z.infer<typeof companySchema>;
 
 export default function Companies() {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -67,8 +70,8 @@ export default function Companies() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Company created",
-        description: "Your company has been created with a Chart of Accounts.",
+        title: tr("companyCreated"),
+        description: tr("yourCompanyHasBeenCreatedWith"),
       });
       setDialogOpen(false);
       form.reset();
@@ -76,8 +79,8 @@ export default function Companies() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create company",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateCompany"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -89,12 +92,12 @@ export default function Companies() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Workspace"
+        eyebrow={tr("workspace")}
         title={t.companies}
-        description="Manage your companies and switch between them"
+        description={tr("manageYourCompaniesAndSwitchBetween")}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-company">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 me-2" />
             {t.createCompany}
           </Button>
         }
@@ -103,9 +106,7 @@ export default function Companies() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t.createCompany}</DialogTitle>
-            <DialogDescription>
-              Create a new company. A Chart of Accounts will be automatically created.
-            </DialogDescription>
+            <DialogDescription>{tr("createANewCompanyAChart")}</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -116,7 +117,11 @@ export default function Companies() {
                   <FormItem>
                     <FormLabel>{t.companyName}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Acme Corp" data-testid="input-company-name" />
+                      <Input
+                        {...field}
+                        placeholder={tr("acmeCorp")}
+                        data-testid="input-company-name"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -135,9 +140,9 @@ export default function Companies() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="AED">AED (UAE Dirham)</SelectItem>
-                        <SelectItem value="USD">USD (US Dollar)</SelectItem>
-                        <SelectItem value="EUR">EUR (Euro)</SelectItem>
+                        <SelectItem value="AED">{tr("aedUaeDirham")}</SelectItem>
+                        <SelectItem value="USD">{tr("usdUsDollar")}</SelectItem>
+                        <SelectItem value="EUR">{tr("eurEuro")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -211,7 +216,7 @@ export default function Companies() {
                     <div className="min-w-0 flex-1">
                       <CardTitle className="text-lg truncate">{company.name}</CardTitle>
                       <CardDescription className="text-xs">
-                        {company.baseCurrency} • {company.locale === "en" ? "English" : "العربية"}
+                        {company.baseCurrency} • {company.locale === "en" ? tr("english") : tr("arabic")}
                       </CardDescription>
                     </div>
                   </div>
@@ -225,12 +230,12 @@ export default function Companies() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Building2 className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No companies yet</h3>
+            <h3 className="text-lg font-medium mb-2">{tr("noCompaniesYet")}</h3>
             <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
-              Create your first company to get started with bookkeeping
+              {tr("createYourFirstCompanyToGet")}
             </p>
             <Button onClick={() => setDialogOpen(true)} data-testid="button-create-first-company">
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 me-2" />
               {t.createCompany}
             </Button>
           </CardContent>

@@ -32,6 +32,7 @@ import {
   UserX,
   TrendingUp,
 } from "lucide-react";
+import { messages as pageMessages } from "./AnomalyDetection.i18n";
 
 type AnomalySeverity = "critical" | "warning" | "info";
 type RawAnomalySeverity = AnomalySeverity | "low" | "medium" | "high" | string;
@@ -60,24 +61,29 @@ interface AnomalyResult {
   scannedAt: string;
 }
 
-const severityConfig: Record<
+const getSeverityConfig = (): Record<
   AnomalySeverity,
   { color: string; bg: string; icon: typeof AlertTriangle; label: string }
-> = {
+> => ({
   critical: {
     color: "text-destructive",
     bg: "bg-danger-subtle border-destructive/30",
     icon: AlertCircle,
-    label: "Critical",
+    label: pageMessages.t("critical"),
   },
   warning: {
     color: "text-warning",
     bg: "bg-warning-subtle border-warning/30",
     icon: AlertTriangle,
-    label: "Warning",
+    label: pageMessages.t("warning"),
   },
-  info: { color: "text-info", bg: "bg-info-subtle border-info/30", icon: Info, label: "Info" },
-};
+  info: {
+    color: "text-info",
+    bg: "bg-info-subtle border-info/30",
+    icon: Info,
+    label: pageMessages.t("info"),
+  },
+});
 
 const typeIcons: Record<string, typeof Copy> = {
   duplicate_amount: Copy,
@@ -102,6 +108,8 @@ function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): Ano
 }
 
 export default function AnomalyDetection() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -124,12 +132,12 @@ export default function AnomalyDetection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/anomalies`] });
       toast({
-        title: "Anomaly dismissed",
-        description: "The anomaly has been removed from the list.",
+        title: tr("anomalyDismissed"),
+        description: tr("theAnomalyHasBeenRemovedFrom"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -151,9 +159,7 @@ export default function AnomalyDetection() {
       <div className="p-6">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground text-center">
-              Please create a company first to use anomaly detection.
-            </p>
+            <p className="text-muted-foreground text-center">{tr("pleaseCreateACompanyFirstTo")}</p>
           </CardContent>
         </Card>
       </div>
@@ -191,9 +197,9 @@ export default function AnomalyDetection() {
             <ShieldAlert className="h-6 w-6 text-destructive" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Anomaly Detection</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{tr("aiAnomalyDetection")}</h1>
             <p className="text-muted-foreground text-sm">
-              Automatically scan transactions for irregularities and potential issues
+              {tr("automaticallyScanTransactionsForIrregularitiesAn")}
             </p>
           </div>
         </div>
@@ -201,16 +207,16 @@ export default function AnomalyDetection() {
           {result?.scannedAt && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              Last scanned: {new Date(result.scannedAt).toLocaleString()}
+              {tr("lastScanned", { value: new Date(result.scannedAt).toLocaleString() })}
             </span>
           )}
           <Button onClick={() => refetch()} disabled={isFetching}>
             {isFetching ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              <RefreshCw className="h-4 w-4 me-2 animate-spin" />
             ) : (
-              <Scan className="h-4 w-4 mr-2" />
+              <Scan className="h-4 w-4 me-2" />
             )}
-            {isFetching ? "Scanning..." : "Run Scan"}
+            {isFetching ? tr("scanning") : tr("runScan")}
           </Button>
         </div>
       </div>
@@ -229,7 +235,7 @@ export default function AnomalyDetection() {
             onClick={() => setSeverityFilter("all")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs">Total Anomalies</CardDescription>
+              <CardDescription className="text-xs">{tr("totalAnomalies")}</CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <div className="text-3xl font-bold">{result.summary.total}</div>
@@ -242,7 +248,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <AlertCircle className="h-3 w-3 text-destructive" />
-                Critical
+                {tr("critical")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -256,7 +262,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3 text-warning" />
-                Warning
+                {tr("warning")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -270,7 +276,7 @@ export default function AnomalyDetection() {
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
                 <Info className="h-3 w-3 text-info" />
-                Info
+                {tr("info")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -282,21 +288,21 @@ export default function AnomalyDetection() {
 
       {/* Filters */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Filter:</span>
+        <span className="text-sm text-muted-foreground">{tr("filter")}</span>
         <Select value={severityFilter} onValueChange={setSeverityFilter}>
           <SelectTrigger className="w-[160px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
+            <SelectItem value="all">{tr("allSeverities")}</SelectItem>
+            <SelectItem value="critical">{tr("critical")}</SelectItem>
+            <SelectItem value="warning">{tr("warning")}</SelectItem>
+            <SelectItem value="info">{tr("info")}</SelectItem>
           </SelectContent>
         </Select>
         {severityFilter !== "all" && (
           <Button variant="ghost" size="sm" onClick={() => setSeverityFilter("all")}>
-            Clear filter
+            {tr("clearFilter")}
           </Button>
         )}
       </div>
@@ -312,7 +318,7 @@ export default function AnomalyDetection() {
         <div className="space-y-3">
           {filteredAnomalies.map((anomaly) => {
             const severity = normalizeSeverity(anomaly.severity);
-            const config = severityConfig[severity];
+            const config = getSeverityConfig()[severity];
             const SeverityIcon = config.icon;
             const anomalyType = anomaly.type || "anomaly";
             const TypeIcon = typeIcons[anomalyType] || Info;
@@ -365,8 +371,8 @@ export default function AnomalyDetection() {
                       disabled={dismissMutation.isPending}
                       className="shrink-0"
                     >
-                      <X className="h-4 w-4 mr-1" />
-                      Dismiss
+                      <X className="h-4 w-4 me-1" />
+                      {tr("dismiss")}
                     </Button>
                   </div>
                 </CardContent>
@@ -379,11 +385,11 @@ export default function AnomalyDetection() {
           <CardContent className="pt-6">
             <div className="text-center py-8 space-y-3">
               <ShieldAlert className="h-12 w-12 text-success mx-auto" />
-              <h3 className="text-lg font-semibold">No Anomalies Found</h3>
+              <h3 className="text-lg font-semibold">{tr("noAnomaliesFound")}</h3>
               <p className="text-muted-foreground text-sm">
                 {severityFilter !== "all"
-                  ? `No ${severityFilter} anomalies detected. Try changing the filter.`
-                  : "Your transactions look clean. No irregularities detected in the latest scan."}
+                  ? tr("noAnomaliesDetectedTryChangingThe", { severityFilter })
+                  : tr("yourTransactionsLookCleanNoIrregularities")}
               </p>
             </div>
           </CardContent>

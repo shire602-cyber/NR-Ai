@@ -18,6 +18,15 @@ import {
 } from "../../shared/ct-workpaper";
 import { insertCorporateTaxReturnSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
+import { getFilingByReturn } from "../services/tax-filing.service";
+import { overlayCtReturns, overlayCtSnapshot } from "../services/ct-filing.service";
+
+/**
+ * Fields a client can never write on a corporate tax return: the tenant, and the
+ * filing state, which only moves through POST .../file (a filed return needs an
+ * FTA reference, a date and a frozen snapshot).
+ */
+const CT_SERVER_OWNED_FIELDS = ["companyId", "status", "filedAt", "amendsReturnId", "isAmendment"];
 
 const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const CT_IMPORT_MAX_ROWS = 2000;
@@ -53,7 +62,8 @@ export function registerCorporateTaxRoutes(app: Express) {
       }
 
       const returns = await storage.getCorporateTaxReturnsByCompanyId(companyId);
-      res.json(returns);
+      // Filed returns read as the snapshot frozen at filing.
+      res.json(await overlayCtReturns(returns));
     })
   );
 
@@ -95,7 +105,7 @@ export function registerCorporateTaxRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      res.json(taxReturn);
+      res.json(overlayCtSnapshot(taxReturn as any, await getFilingByReturn("corporate_tax", taxReturn.id)));
     })
   );
 
@@ -124,7 +134,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       // spread into the Drizzle write, then force the tenant scope.
       const taxReturn = await storage.createCorporateTaxReturn(
         normalizeCtDates({
-          ...(pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any),
+          ...(pickAllowed(req.body, insertCorporateTaxReturnSchema, CT_SERVER_OWNED_FIELDS) as any),
           companyId,
         }) as any
       );
@@ -237,13 +247,40 @@ export function registerCorporateTaxRoutes(app: Express) {
         await assertPeriodNotLocked(existing.companyId, periodEnd);
       }
 
-      // S-M1: allowlist body fields and never let the tenant scope be changed.
-      const taxReturn = await storage.updateCorporateTaxReturn(
-        id,
-        normalizeCtDates(
-          pickAllowed(req.body, insertCorporateTaxReturnSchema, ["companyId"]) as any
-        ) as any
-      );
+      // S-M1: allowlist body fields and never let the tenant scope or the filing
+      // state be changed.
+      const patch = pickAllowed(req.body, insertCorporateTaxReturnSchema, CT_SERVER_OWNED_FIELDS) as Record<string, unknown>;
+
+      // Soft-delete of an unfiled draft (the UI "remove"). A filed return can never be voided.
+      if (req.body?.status === "void") {
+        if (existing.status !== "draft") {
+          return res.status(409).json({
+            message: `This corporate tax return is ${existing.status} and cannot be removed. Record an amendment instead.`,
+            code: "CT_RETURN_LOCKED",
+          });
+        }
+        const voided = await storage.updateCorporateTaxReturn(id, { status: "void" } as any);
+        return res.json(voided);
+      }
+
+      // A filed / paid return keeps its figures; only the free-text notes may change.
+      if (existing.status !== "draft") {
+        const onlyNotes = Object.keys(patch).every((k) => k === "notes");
+        if (!onlyNotes) {
+          return res.status(409).json({
+            message: `This corporate tax return is ${existing.status} and can no longer be edited. Record an amendment instead.`,
+            code: "CT_RETURN_LOCKED",
+          });
+        }
+      }
+      if (req.body?.status === "filed" || req.body?.status === "paid") {
+        return res.status(409).json({
+          message:
+            "A corporate tax return is recorded as filed with POST /api/corporate-tax/returns/:id/file (FTA reference, filing date and acknowledgement), and as paid by recording payments.",
+          code: "CT_FILING_REQUIRES_RECORD",
+        });
+      }
+      const taxReturn = await storage.updateCorporateTaxReturn(id, normalizeCtDates(patch as any) as any);
       res.json(taxReturn);
     })
   );
@@ -386,7 +423,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       const allAccounts = await storage.getAccountsByCompanyId(ctReturn.companyId);
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
-      const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
         const entryDate = new Date(entry.date);
         return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";
@@ -478,7 +515,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
       // Get all journal entries in the period
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
         const entryDate = new Date(entry.date);
         return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";

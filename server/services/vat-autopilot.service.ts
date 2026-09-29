@@ -703,7 +703,8 @@ export async function calculateVatReturn(
      JOIN invoices i ON i.id = il.invoice_id
      WHERE i.company_id = $1
        AND i.date >= $2 AND i.date <= $3
-       AND i.status NOT IN ('void','draft','cancelled')`,
+       AND i.status NOT IN ('void','draft','cancelled')
+       AND COALESCE(i.is_opening_balance, false) = false`,
     [companyId, resolvedPeriod.start, resolvedPeriod.end]
   );
 
@@ -782,7 +783,8 @@ export async function calculateVatReturn(
        FROM vendor_bills
        WHERE company_id = $1
          AND bill_date >= $2::date AND bill_date <= $3::date
-         AND status NOT IN ('void','cancelled','draft','pending')`,
+         AND status NOT IN ('void','cancelled','draft','pending')
+         AND COALESCE(is_opening_balance, false) = false`,
       // Calendar-date comparison — timestamptz casts shift boundaries in
       // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).
       [

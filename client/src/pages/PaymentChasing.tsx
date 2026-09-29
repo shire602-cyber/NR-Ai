@@ -61,6 +61,7 @@ import {
   Ban,
   AlertCircle,
 } from "lucide-react";
+import { messages as pageMessages } from "./PaymentChasing.i18n";
 
 // Threshold above which "Chase all" requires explicit confirmation. Picked to
 // match a conservative "is this batch big enough to be embarrassing if wrong"
@@ -195,6 +196,7 @@ interface BulkSendResponse {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function levelLabel(level: number, locale: string): string {
+  // i18n-ignore: already bilingual (paired with the Arabic array below)
   const en = ["", "Friendly reminder", "Firm reminder", "Urgent notice", "Final notice"];
   const ar = ["", "تذكير ودي", "تذكير حازم", "إشعار عاجل", "إشعار نهائي"];
   return (locale === "ar" ? ar : en)[level] || `Level ${level}`;
@@ -231,6 +233,8 @@ function bucketColor(b: AgingBucket): string {
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function PaymentChasing() {
+  const tr = pageMessages.useT();
+
   const { companyId } = useDefaultCompany();
   const { locale } = useTranslation();
   const { toast } = useToast();
@@ -289,8 +293,8 @@ export default function PaymentChasing() {
       }),
     onSuccess: (data: any) => {
       toast({
-        title: "Reminder ready",
-        description: "Review the message, then send it by email or copy it into your workflow.",
+        title: tr("reminderReady"),
+        description: tr("reviewTheMessageThenSendIt"),
       });
       setPreviewBody(data.message);
       // Use the language we requested — server may fall back to default but the
@@ -303,8 +307,8 @@ export default function PaymentChasing() {
     },
     onError: (e: any) =>
       toast({
-        title: "Could not send",
-        description: e?.message ?? "Unknown error",
+        title: tr("couldNotSend"),
+        description: e?.message ?? tr("unknownError"),
         variant: "destructive",
       }),
   });
@@ -318,8 +322,8 @@ export default function PaymentChasing() {
     onSuccess: (data) => {
       const failed = data.failed ?? 0;
       toast({
-        title: failed > 0 ? "Bulk send completed with errors" : "Bulk reminders queued",
-        description: `Sent ${data.sent} • Skipped ${data.skipped} • Failed ${failed}`,
+        title: failed > 0 ? tr("bulkSendCompletedWithErrors") : tr("bulkRemindersQueued"),
+        description: tr("sentSkippedFailed", { sent: data.sent, skipped: data.skipped, failed }),
         variant: failed > 0 ? "destructive" : "default",
       });
       setBulkResults(data);
@@ -328,7 +332,11 @@ export default function PaymentChasing() {
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/history", companyId] });
     },
     onError: (e) =>
-      toast({ title: "Bulk send failed", description: e?.message ?? "—", variant: "destructive" }),
+      toast({
+        title: tr("bulkSendFailed"),
+        description: e?.message ?? "—",
+        variant: "destructive",
+      }),
   });
 
   const toggleDoNotChase = useMutation({
@@ -344,7 +352,7 @@ export default function PaymentChasing() {
     mutationFn: (patch: Partial<ChaseConfig> & { doNotChaseContactIds?: string[] }) =>
       apiRequest("PATCH", `/api/chasing/config/${companyId}`, patch),
     onSuccess: () => {
-      toast({ title: "Settings saved" });
+      toast({ title: tr("settingsSaved") });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/config", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
@@ -369,14 +377,14 @@ export default function PaymentChasing() {
       });
     },
     onSuccess: () => {
-      toast({ title: "Template saved" });
+      toast({ title: tr("templateSaved") });
       setEditingTemplate(null);
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/templates", companyId] });
     },
     onError: (e: any) =>
       toast({
-        title: "Could not save template",
-        description: e?.message ?? "Unknown error",
+        title: tr("couldNotSaveTemplate"),
+        description: e?.message ?? tr("unknownError"),
         variant: "destructive",
       }),
   });
@@ -431,9 +439,9 @@ export default function PaymentChasing() {
   return (
     <div className="container mx-auto py-6 space-y-6" data-testid="payment-chasing-page">
       <PageHeader
-        eyebrow="Sales"
-        title="Payment Chasing Autopilot"
-        description="Automated reminders for overdue invoices with smart escalation"
+        eyebrow={tr("sales")}
+        title={tr("paymentChasingAutopilot")}
+        description={tr("automatedRemindersForOverdueInvoicesWith")}
         actions={
           <Button
             onClick={() => {
@@ -446,8 +454,10 @@ export default function PaymentChasing() {
             disabled={queue.length === 0 || bulkSend.isPending}
             data-testid="button-chase-all"
           >
-            <Send className="mr-2 h-4 w-4" />
-            {bulkSend.isPending ? `Sending ${queue.length}…` : `Chase all (${queue.length})`}
+            <Send className="me-2 h-4 w-4" />
+            {bulkSend.isPending
+              ? tr("sending", { queueCount: queue.length })
+              : tr("chaseAll", { queueCount: queue.length })}
           </Button>
         }
       />
@@ -457,12 +467,12 @@ export default function PaymentChasing() {
         {(["1-7", "8-30", "31-60", "60+"] as AgingBucket[]).map((b) => (
           <Card key={b} className={bucketColor(b)} data-testid={`bucket-${b}`}>
             <CardHeader className="pb-2">
-              <CardDescription>{b} days overdue</CardDescription>
+              <CardDescription>{tr("daysOverdue", { b })}</CardDescription>
               <CardTitle className="text-3xl">
                 {overdueQuery.isLoading ? <Skeleton className="h-9 w-12" /> : (buckets[b] ?? 0)}
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">invoices</CardContent>
+            <CardContent className="text-xs text-muted-foreground">{tr("invoices")}</CardContent>
           </Card>
         ))}
       </div>
@@ -471,19 +481,19 @@ export default function PaymentChasing() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Could not load overdue invoices:{" "}
-            {overdueQuery.error instanceof Error ? overdueQuery.error.message : "Unknown error"}
+            {tr("couldNotLoadOverdueInvoices")}
+            {overdueQuery.error instanceof Error ? overdueQuery.error.message : tr("unknownError")}
           </AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Total outstanding</CardTitle>
+          <CardTitle>{tr("totalOutstanding")}</CardTitle>
           <CardDescription>
             {overdueQuery.isLoading
-              ? "Loading…"
-              : `${overdue.length} overdue invoice${overdue.length === 1 ? "" : "s"}`}
+              ? tr("loading")
+              : tr.plural("overdueInvoicesCount", overdue.length)}
           </CardDescription>
         </CardHeader>
         <CardContent className="text-3xl font-semibold" data-testid="total-outstanding">
@@ -494,7 +504,7 @@ export default function PaymentChasing() {
               {formatCurrency(totalOutstanding, totalOutstandingCurrency)}
               {totalOutstandingCurrency === "Mixed" && (
                 <p className="text-xs font-normal text-muted-foreground mt-1">
-                  Sum across multiple currencies — open the table for per-invoice amounts.
+                  {tr("sumAcrossMultipleCurrenciesOpenThe")}
                 </p>
               )}
             </>
@@ -505,28 +515,28 @@ export default function PaymentChasing() {
       <Tabs defaultValue="overdue" className="w-full">
         <TabsList>
           <TabsTrigger value="overdue">
-            <AlertTriangle className="mr-2 h-4 w-4" />
-            Overdue
+            <AlertTriangle className="me-2 h-4 w-4" />
+            {tr("overdue")}
           </TabsTrigger>
           <TabsTrigger value="queue">
-            <Inbox className="mr-2 h-4 w-4" />
-            Queue
+            <Inbox className="me-2 h-4 w-4" />
+            {tr("queue")}
           </TabsTrigger>
           <TabsTrigger value="history">
-            <Clock className="mr-2 h-4 w-4" />
-            History
+            <Clock className="me-2 h-4 w-4" />
+            {tr("history")}
           </TabsTrigger>
           <TabsTrigger value="effectiveness">
-            <BarChart3 className="mr-2 h-4 w-4" />
-            Effectiveness
+            <BarChart3 className="me-2 h-4 w-4" />
+            {tr("effectiveness")}
           </TabsTrigger>
           <TabsTrigger value="templates">
-            <FileText className="mr-2 h-4 w-4" />
-            Templates
+            <FileText className="me-2 h-4 w-4" />
+            {tr("templates")}
           </TabsTrigger>
           <TabsTrigger value="settings">
-            <SettingsIcon className="mr-2 h-4 w-4" />
-            Settings
+            <SettingsIcon className="me-2 h-4 w-4" />
+            {tr("settings")}
           </TabsTrigger>
         </TabsList>
 
@@ -534,28 +544,28 @@ export default function PaymentChasing() {
         <TabsContent value="overdue">
           <Card>
             <CardHeader>
-              <CardTitle>Overdue invoices</CardTitle>
-              <CardDescription>Sorted by days overdue (oldest first)</CardDescription>
+              <CardTitle>{tr("overdueInvoices")}</CardTitle>
+              <CardDescription>{tr("sortedByDaysOverdueOldestFirst")}</CardDescription>
             </CardHeader>
             <CardContent>
               {overdueQuery.isLoading && <Skeleton className="h-32" />}
               {!overdueQuery.isLoading && sortedOverdue.length === 0 && (
                 <div className="text-muted-foreground text-sm py-8 text-center">
                   <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success" />
-                  No overdue invoices. Nice.
+                  {tr("noOverdueInvoicesNice")}
                 </div>
               )}
               {sortedOverdue.length > 0 && (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Outstanding</TableHead>
-                      <TableHead className="text-right">Days overdue</TableHead>
-                      <TableHead>Bucket</TableHead>
-                      <TableHead>Last chase</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{tr("invoice")}</TableHead>
+                      <TableHead>{tr("customer")}</TableHead>
+                      <TableHead className="text-end">{tr("outstanding")}</TableHead>
+                      <TableHead className="text-end">{tr("daysOverdue2")}</TableHead>
+                      <TableHead>{tr("bucket")}</TableHead>
+                      <TableHead>{tr("lastChase")}</TableHead>
+                      <TableHead className="text-end">{tr("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -566,10 +576,10 @@ export default function PaymentChasing() {
                       >
                         <TableCell className="font-mono">{row.invoice.number}</TableCell>
                         <TableCell>{row.invoice.customerName}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {formatCurrency(row.outstanding, row.invoice.currency)}
                         </TableCell>
-                        <TableCell className="text-right">{row.daysOverdue}</TableCell>
+                        <TableCell className="text-end">{row.daysOverdue}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{row.bucket}</Badge>
                         </TableCell>
@@ -582,7 +592,7 @@ export default function PaymentChasing() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right space-x-2">
+                        <TableCell className="text-end space-x-2">
                           <Button
                             size="sm"
                             variant="outline"
@@ -601,7 +611,7 @@ export default function PaymentChasing() {
                               })
                             }
                             data-testid={`button-dnc-${row.invoice.number}`}
-                            title={row.invoice.doNotChase ? "Resume chasing" : "Do not chase"}
+                            title={row.invoice.doNotChase ? tr("resumeChasing") : tr("doNotChase")}
                           >
                             <Ban className="h-4 w-4" />
                           </Button>
@@ -611,7 +621,7 @@ export default function PaymentChasing() {
                             disabled={row.invoice.doNotChase || sendOne.isPending}
                             data-testid={`button-send-${row.invoice.number}`}
                           >
-                            Send
+                            {tr("send")}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -627,10 +637,10 @@ export default function PaymentChasing() {
         <TabsContent value="queue">
           <Card>
             <CardHeader>
-              <CardTitle>Next chase queue</CardTitle>
+              <CardTitle>{tr("nextChaseQueue")}</CardTitle>
               <CardDescription>
-                Invoices eligible for the next chase action (frequency ={" "}
-                {queueQuery.data?.config.frequencyDays ?? 7} days, max level ={" "}
+                {tr("invoicesEligibleForTheNextChase")}
+                {queueQuery.data?.config.frequencyDays ?? 7} {tr("daysMaxLevel")}
                 {queueQuery.data?.config.maxLevel ?? 4})
               </CardDescription>
             </CardHeader>
@@ -640,14 +650,16 @@ export default function PaymentChasing() {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Could not load chase queue:{" "}
-                    {queueQuery.error instanceof Error ? queueQuery.error.message : "Unknown error"}
+                    {tr("couldNotLoadChaseQueue")}
+                    {queueQuery.error instanceof Error
+                      ? queueQuery.error.message
+                      : tr("unknownError")}
                   </AlertDescription>
                 </Alert>
               )}
               {!queueQuery.isLoading && !queueQuery.isError && queue.length === 0 ? (
                 <div className="text-muted-foreground text-sm py-8 text-center">
-                  Nothing waiting in the queue.
+                  {tr("nothingWaitingInTheQueue")}
                 </div>
               ) : (
                 !queueQuery.isLoading &&
@@ -655,12 +667,12 @@ export default function PaymentChasing() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Next level</TableHead>
-                        <TableHead className="text-right">Outstanding</TableHead>
-                        <TableHead className="text-right">Days</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <TableHead>{tr("invoice")}</TableHead>
+                        <TableHead>{tr("customer")}</TableHead>
+                        <TableHead>{tr("nextLevel")}</TableHead>
+                        <TableHead className="text-end">{tr("outstanding")}</TableHead>
+                        <TableHead className="text-end">{tr("days")}</TableHead>
+                        <TableHead className="text-end">{tr("action")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -680,13 +692,13 @@ export default function PaymentChasing() {
                               "—"
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {formatCurrency(row.outstanding, row.invoice.currency)}
                           </TableCell>
-                          <TableCell className="text-right">{row.daysOverdue}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">{row.daysOverdue}</TableCell>
+                          <TableCell className="text-end">
                             <Button size="sm" onClick={() => sendOne.mutate(row.invoice.id)}>
-                              Send
+                              {tr("send")}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -703,8 +715,8 @@ export default function PaymentChasing() {
         <TabsContent value="history">
           <Card>
             <CardHeader>
-              <CardTitle>Chase history</CardTitle>
-              <CardDescription>Last 180 days</CardDescription>
+              <CardTitle>{tr("chaseHistory")}</CardTitle>
+              <CardDescription>{tr("last180Days")}</CardDescription>
             </CardHeader>
             <CardContent>
               {historyQuery.isLoading && <Skeleton className="h-32" />}
@@ -712,10 +724,10 @@ export default function PaymentChasing() {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Could not load history:{" "}
+                    {tr("couldNotLoadHistory")}
                     {historyQuery.error instanceof Error
                       ? historyQuery.error.message
-                      : "Unknown error"}
+                      : tr("unknownError")}
                   </AlertDescription>
                 </Alert>
               )}
@@ -723,21 +735,21 @@ export default function PaymentChasing() {
                 !historyQuery.isError &&
                 historyQuery.data?.length === 0 && (
                   <div className="text-muted-foreground text-sm py-8 text-center">
-                    No chase history yet.
+                    {tr("noChaseHistoryYet")}
                   </div>
                 )}
               {historyQuery.data && historyQuery.data.length > 0 && (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Sent</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Lang</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Days overdue</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Paid?</TableHead>
+                      <TableHead>{tr("sent")}</TableHead>
+                      <TableHead>{tr("level")}</TableHead>
+                      <TableHead>{tr("method")}</TableHead>
+                      <TableHead>{tr("lang")}</TableHead>
+                      <TableHead>{tr("status")}</TableHead>
+                      <TableHead className="text-end">{tr("daysOverdue2")}</TableHead>
+                      <TableHead className="text-end">{tr("amount")}</TableHead>
+                      <TableHead>{tr("paid")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -757,14 +769,16 @@ export default function PaymentChasing() {
                             {c.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{c.daysOverdueAtSend}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">{c.daysOverdueAtSend}</TableCell>
+                        <TableCell className="text-end">
                           {Number(c.amountAtSend).toFixed(2)}
                         </TableCell>
                         <TableCell>
                           {c.paidAt ? (
                             <Badge className="bg-success-subtle text-success-subtle-foreground">
-                              Paid {new Date(c.paidAt).toLocaleDateString()}
+                              {tr("paid2", {
+                                toLocaleDateString: new Date(c.paidAt).toLocaleDateString(),
+                              })}
                             </Badge>
                           ) : (
                             "—"
@@ -785,15 +799,15 @@ export default function PaymentChasing() {
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Could not load effectiveness metrics:{" "}
-                {effQuery.error instanceof Error ? effQuery.error.message : "Unknown error"}
+                {tr("couldNotLoadEffectivenessMetrics")}
+                {effQuery.error instanceof Error ? effQuery.error.message : tr("unknownError")}
               </AlertDescription>
             </Alert>
           )}
           <div className="grid gap-4 md:grid-cols-3">
             <Card data-testid="metric-conversion-rate">
               <CardHeader>
-                <CardDescription>Conversion rate</CardDescription>
+                <CardDescription>{tr("conversionRate")}</CardDescription>
                 <CardTitle className="text-3xl">
                   {effQuery.isLoading ? (
                     <Skeleton className="h-9 w-20" />
@@ -806,13 +820,16 @@ export default function PaymentChasing() {
                 {effQuery.isLoading ? (
                   <Skeleton className="h-3 w-32" />
                 ) : (
-                  `${effQuery.data?.paidAfterChase ?? 0} / ${effQuery.data?.uniqueInvoices ?? 0} chased invoices paid`
+                  tr("chasedInvoicesPaid", {
+                    value: effQuery.data?.paidAfterChase ?? 0,
+                    value2: effQuery.data?.uniqueInvoices ?? 0,
+                  })
                 )}
               </CardContent>
             </Card>
             <Card data-testid="metric-avg-days">
               <CardHeader>
-                <CardDescription>Avg days to payment</CardDescription>
+                <CardDescription>{tr("avgDaysToPayment")}</CardDescription>
                 <CardTitle className="text-3xl">
                   {effQuery.isLoading ? (
                     <Skeleton className="h-9 w-16" />
@@ -821,37 +838,39 @@ export default function PaymentChasing() {
                   )}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">after first chase</CardContent>
+              <CardContent className="text-xs text-muted-foreground">
+                {tr("afterFirstChase")}
+              </CardContent>
             </Card>
             <Card data-testid="metric-windowed">
               <CardHeader>
-                <CardDescription>Paid within window</CardDescription>
+                <CardDescription>{tr("paidWithinWindow")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <div>
-                  7 days: <strong>{effQuery.data?.paidWithin7 ?? 0}</strong>
+                  {tr("n7Days")} <strong>{effQuery.data?.paidWithin7 ?? 0}</strong>
                 </div>
                 <div>
-                  14 days: <strong>{effQuery.data?.paidWithin14 ?? 0}</strong>
+                  {tr("n14Days")} <strong>{effQuery.data?.paidWithin14 ?? 0}</strong>
                 </div>
                 <div>
-                  30 days: <strong>{effQuery.data?.paidWithin30 ?? 0}</strong>
+                  {tr("n30Days")} <strong>{effQuery.data?.paidWithin30 ?? 0}</strong>
                 </div>
               </CardContent>
             </Card>
           </div>
           <Card className="mt-4">
             <CardHeader>
-              <CardTitle>By escalation level</CardTitle>
+              <CardTitle>{tr("byEscalationLevel")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Level</TableHead>
-                    <TableHead className="text-right">Sent</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead>{tr("level")}</TableHead>
+                    <TableHead className="text-end">{tr("sent")}</TableHead>
+                    <TableHead className="text-end">{tr("paid3")}</TableHead>
+                    <TableHead className="text-end">{tr("rate")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -865,9 +884,9 @@ export default function PaymentChasing() {
                             L{level} — {levelLabel(level, locale)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{lv.sent}</TableCell>
-                        <TableCell className="text-right">{lv.paid}</TableCell>
-                        <TableCell className="text-right">{rate.toFixed(1)}%</TableCell>
+                        <TableCell className="text-end">{lv.sent}</TableCell>
+                        <TableCell className="text-end">{lv.paid}</TableCell>
+                        <TableCell className="text-end">{rate.toFixed(1)}%</TableCell>
                       </TableRow>
                     );
                   })}
@@ -881,10 +900,10 @@ export default function PaymentChasing() {
         <TabsContent value="templates">
           <Card>
             <CardHeader>
-              <CardTitle>Message templates</CardTitle>
+              <CardTitle>{tr("messageTemplates")}</CardTitle>
               <CardDescription>
-                Customize each escalation level. Placeholders:
-                <code className="ml-2 text-xs">
+                {tr("customizeEachEscalationLevelPlaceholders")}
+                <code className="ms-2 text-xs">
                   {
                     "{customerName} {invoiceNumber} {amount} {currency} {dueDate} {daysOverdue} {paymentLink} {senderName}"
                   }
@@ -897,10 +916,10 @@ export default function PaymentChasing() {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Could not load templates:{" "}
+                    {tr("couldNotLoadTemplates")}
                     {templatesQuery.error instanceof Error
                       ? templatesQuery.error.message
-                      : "Unknown error"}
+                      : tr("unknownError")}
                   </AlertDescription>
                 </Alert>
               )}
@@ -908,7 +927,7 @@ export default function PaymentChasing() {
                 !templatesQuery.isError &&
                 (templatesQuery.data?.length ?? 0) === 0 && (
                   <div className="text-muted-foreground text-sm py-8 text-center">
-                    No templates available — defaults will be created on first send.
+                    {tr("noTemplatesAvailableDefaultsWillBe")}
                   </div>
                 )}
               {!templatesQuery.isLoading &&
@@ -917,11 +936,11 @@ export default function PaymentChasing() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Level</TableHead>
-                        <TableHead>Language</TableHead>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Subject</TableHead>
-                        <TableHead className="text-right">Edit</TableHead>
+                        <TableHead>{tr("level")}</TableHead>
+                        <TableHead>{tr("language")}</TableHead>
+                        <TableHead>{tr("source")}</TableHead>
+                        <TableHead>{tr("subject")}</TableHead>
+                        <TableHead className="text-end">{tr("edit")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -931,15 +950,15 @@ export default function PaymentChasing() {
                             <Badge className={levelColor(t.level)}>L{t.level}</Badge>
                           </TableCell>
                           <TableCell>{t.language}</TableCell>
-                          <TableCell>{t.companyId ? "Custom" : "Default"}</TableCell>
+                          <TableCell>{t.companyId ? tr("custom") : tr("default")}</TableCell>
                           <TableCell className="max-w-xs truncate">{t.subject ?? "—"}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => setEditingTemplate(t)}
                             >
-                              Edit
+                              {tr("edit")}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -955,10 +974,8 @@ export default function PaymentChasing() {
         <TabsContent value="settings">
           <Card>
             <CardHeader>
-              <CardTitle>Chase configuration</CardTitle>
-              <CardDescription>
-                Controls how aggressively the autopilot chases overdue invoices
-              </CardDescription>
+              <CardTitle>{tr("chaseConfiguration")}</CardTitle>
+              <CardDescription>{tr("controlsHowAggressivelyTheAutopilotChases")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {configQuery.isLoading && <Skeleton className="h-32" />}
@@ -966,10 +983,10 @@ export default function PaymentChasing() {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Could not load settings:{" "}
+                    {tr("couldNotLoadSettings")}
                     {configQuery.error instanceof Error
                       ? configQuery.error.message
-                      : "Unknown error"}
+                      : tr("unknownError")}
                   </AlertDescription>
                 </Alert>
               )}
@@ -977,9 +994,9 @@ export default function PaymentChasing() {
                 <>
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label>Auto-chase enabled</Label>
+                      <Label>{tr("autoChaseEnabled")}</Label>
                       <p className="text-xs text-muted-foreground">
-                        Automatically queue chases as invoices age
+                        {tr("automaticallyQueueChasesAsInvoicesAge")}
                       </p>
                     </div>
                     <Switch
@@ -990,7 +1007,7 @@ export default function PaymentChasing() {
                   </div>
                   <div className="grid gap-4 md:grid-cols-3">
                     <div>
-                      <Label>Chase frequency (days)</Label>
+                      <Label>{tr("chaseFrequencyDays")}</Label>
                       <Input
                         key={`freq-${configQuery.data?.chaseFrequencyDays ?? 7}`}
                         type="number"
@@ -1003,8 +1020,8 @@ export default function PaymentChasing() {
                           // so the user gets immediate feedback rather than a 400.
                           if (!Number.isFinite(n) || n < 1 || n > 365) {
                             toast({
-                              title: "Invalid frequency",
-                              description: "Pick a value between 1 and 365 days.",
+                              title: tr("invalidFrequency"),
+                              description: tr("pickAValueBetween1And"),
                               variant: "destructive",
                             });
                             e.target.value = String(configQuery.data?.chaseFrequencyDays ?? 7);
@@ -1016,7 +1033,7 @@ export default function PaymentChasing() {
                       />
                     </div>
                     <div>
-                      <Label>Max escalation level</Label>
+                      <Label>{tr("maxEscalationLevel")}</Label>
                       <Select
                         value={String(configQuery.data?.maxLevel ?? 4)}
                         onValueChange={(v) => saveConfig.mutate({ maxLevel: Number(v) })}
@@ -1034,7 +1051,7 @@ export default function PaymentChasing() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Default language</Label>
+                      <Label>{tr("defaultLanguage")}</Label>
                       <Select
                         value={configQuery.data?.defaultLanguage ?? "en"}
                         onValueChange={(v) => saveConfig.mutate({ defaultLanguage: v })}
@@ -1043,7 +1060,7 @@ export default function PaymentChasing() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="en">{tr("english")}</SelectItem>
                           <SelectItem value="ar">العربية</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1060,10 +1077,8 @@ export default function PaymentChasing() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Reminder ready</DialogTitle>
-            <DialogDescription>
-              Review the message, then send it by email or copy it into your workflow.
-            </DialogDescription>
+            <DialogTitle>{tr("reminderReady")}</DialogTitle>
+            <DialogDescription>{tr("reviewTheMessageThenSendIt")}</DialogDescription>
           </DialogHeader>
           <Textarea
             value={previewBody}
@@ -1075,8 +1090,7 @@ export default function PaymentChasing() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Delivery is not automatic from this screen. Copy the message or send it through your
-              configured email process.
+              {tr("deliveryIsNotAutomaticFromThis")}
             </AlertDescription>
           </Alert>
           <DialogFooter>
@@ -1089,18 +1103,18 @@ export default function PaymentChasing() {
                     throw new Error("Clipboard API unavailable");
                   }
                   await navigator.clipboard.writeText(previewBody);
-                  toast({ title: "Copied to clipboard" });
+                  toast({ title: tr("copiedToClipboard") });
                 } catch (err) {
                   toast({
-                    title: "Could not copy",
+                    title: tr("couldNotCopy"),
                     description:
-                      err instanceof Error ? err.message : "Select the text and copy manually.",
+                      err instanceof Error ? err.message : tr("selectTheTextAndCopyManually"),
                     variant: "destructive",
                   });
                 }
               }}
             >
-              Copy
+              {tr("copy")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1110,35 +1124,35 @@ export default function PaymentChasing() {
       <Dialog open={!!historyInvoiceId} onOpenChange={(open) => !open && setHistoryInvoiceId(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Invoice chase timeline</DialogTitle>
+            <DialogTitle>{tr("invoiceChaseTimeline")}</DialogTitle>
           </DialogHeader>
           {invoiceHistoryQuery.isLoading && <Skeleton className="h-32" />}
           {invoiceHistoryQuery.isError && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Could not load timeline:{" "}
+                {tr("couldNotLoadTimeline")}
                 {invoiceHistoryQuery.error instanceof Error
                   ? invoiceHistoryQuery.error.message
-                  : "Unknown error"}
+                  : tr("unknownError")}
               </AlertDescription>
             </Alert>
           )}
           {invoiceHistoryQuery.data && invoiceHistoryQuery.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">No chases yet for this invoice.</p>
+            <p className="text-sm text-muted-foreground">{tr("noChasesYetForThisInvoice")}</p>
           )}
           <div className="space-y-3">
             {invoiceHistoryQuery.data?.map((c) => (
               <div
                 key={c.id}
-                className="border-l-2 border-muted pl-4 py-2"
+                className="border-s-2 border-muted ps-4 py-2"
                 data-testid={`timeline-entry-${c.id}`}
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={levelColor(c.level)}>L{c.level}</Badge>
                   <span className="text-sm font-medium">{new Date(c.sentAt).toLocaleString()}</span>
                   <span className="text-xs text-muted-foreground">
-                    via {c.method} ({c.language})
+                    {tr("via", { method: c.method, language: c.language })}
                   </span>
                   <Badge
                     variant={c.status === "failed" ? "destructive" : "outline"}
@@ -1155,7 +1169,7 @@ export default function PaymentChasing() {
                 </pre>
                 {c.paidAt && (
                   <Badge className="mt-2 bg-success-subtle text-success-subtle-foreground">
-                    Paid {new Date(c.paidAt).toLocaleDateString()}
+                    {tr("paid2", { toLocaleDateString: new Date(c.paidAt).toLocaleDateString() })}
                   </Badge>
                 )}
               </div>
@@ -1169,19 +1183,19 @@ export default function PaymentChasing() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              Edit template — L{editingTemplate?.level}{" "}
-              {editingTemplate?.language === "ar" ? "(Arabic)" : "(English)"}
+              {tr("editTemplateL", { level: editingTemplate?.level })}
+              {editingTemplate?.language === "ar" ? tr("arabic") : tr("english2")}
             </DialogTitle>
             <DialogDescription>
               {editingTemplate?.companyId
-                ? "Custom template — saving updates this template."
-                : "System default — saving creates a company override."}
+                ? tr("customTemplateSavingUpdatesThisTemplate")
+                : tr("systemDefaultSavingCreatesACompany")}
             </DialogDescription>
           </DialogHeader>
           {editingTemplate && (
             <div className="space-y-4">
               <div>
-                <Label>Subject (used for email)</Label>
+                <Label>{tr("subjectUsedForEmail")}</Label>
                 <Input
                   value={editingTemplate.subject ?? ""}
                   onChange={(e) =>
@@ -1192,7 +1206,7 @@ export default function PaymentChasing() {
                 />
               </div>
               <div>
-                <Label>Body</Label>
+                <Label>{tr("body")}</Label>
                 <Textarea
                   value={editingTemplate.body}
                   onChange={(e) => setEditingTemplate({ ...editingTemplate, body: e.target.value })}
@@ -1208,9 +1222,9 @@ export default function PaymentChasing() {
                   >
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription className="text-xs">
-                      Unknown placeholder{editingPlaceholders.unknown.length === 1 ? "" : "s"}:{" "}
-                      <code>{editingPlaceholders.unknown.map((p) => `{${p}}`).join(", ")}</code> —
-                      these will render as literal text. Known placeholders:{" "}
+                      {tr.plural("unknownPlaceholder", editingPlaceholders.unknown.length)}{" "}
+                      <code>{editingPlaceholders.unknown.map((p) => `{${p}}`).join(", ")}</code> —{" "}
+                      {tr("willRenderAsLiteralTextKnownPlaceholders")}{" "}
                       <code>{KNOWN_PLACEHOLDERS.map((p) => `{${p}}`).join(", ")}</code>.
                     </AlertDescription>
                   </Alert>
@@ -1220,14 +1234,14 @@ export default function PaymentChasing() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingTemplate(null)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => editingTemplate && saveTemplate.mutate(editingTemplate)}
               disabled={saveTemplate.isPending || !editingTemplate?.body?.trim()}
               data-testid="button-save-template"
             >
-              {saveTemplate.isPending ? "Saving…" : "Save template"}
+              {saveTemplate.isPending ? tr("saving") : tr("saveTemplate")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1237,13 +1251,13 @@ export default function PaymentChasing() {
       <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
         <AlertDialogContent data-testid="alert-bulk-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Send {queue.length} chase reminders?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will record a chase against each invoice and bump its escalation level.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {tr("sendChaseReminders", { queueCount: queue.length })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{tr("thisWillRecordAChaseAgainst")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               data-testid="button-confirm-bulk"
               onClick={() => {
@@ -1251,7 +1265,7 @@ export default function PaymentChasing() {
                 bulkSend.mutate();
               }}
             >
-              Send all
+              {tr("sendAll")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1261,13 +1275,15 @@ export default function PaymentChasing() {
       <Dialog open={!!bulkResults} onOpenChange={(open) => !open && setBulkResults(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Bulk chase results</DialogTitle>
+            <DialogTitle>{tr("bulkChaseResults")}</DialogTitle>
             <DialogDescription>
               {bulkResults && (
                 <>
-                  Sent <strong className="text-foreground">{bulkResults.sent}</strong>
-                  {" • "}Skipped <strong className="text-foreground">{bulkResults.skipped}</strong>
-                  {" • "}Failed{" "}
+                  {tr("sent")} <strong className="text-foreground">{bulkResults.sent}</strong>
+                  {" • "}
+                  {tr("skipped")} <strong className="text-foreground">{bulkResults.skipped}</strong>
+                  {" • "}
+                  {tr("failed")}
                   <strong
                     className={bulkResults.failed > 0 ? "text-destructive" : "text-foreground"}
                   >
@@ -1282,10 +1298,10 @@ export default function PaymentChasing() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Level</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Detail</TableHead>
+                    <TableHead>{tr("invoice")}</TableHead>
+                    <TableHead>{tr("level")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("detail")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1334,7 +1350,7 @@ export default function PaymentChasing() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkResults(null)}>
-              Close
+              {tr("close")}
             </Button>
           </DialogFooter>
         </DialogContent>

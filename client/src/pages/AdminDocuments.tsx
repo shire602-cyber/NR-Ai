@@ -51,6 +51,7 @@ import {
   Building2,
   FileUp,
 } from "lucide-react";
+import { messages as pageMessages } from "./AdminDocuments.i18n";
 
 interface Company {
   id: string;
@@ -96,6 +97,8 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function AdminDocuments() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,8 +146,8 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Upload Successful",
-        description: "Document has been saved for the client",
+        title: tr("uploadSuccessful"),
+        description: tr("documentHasBeenSavedForThe"),
       });
       setUploadDialogOpen(false);
       resetForm();
@@ -152,7 +155,7 @@ export default function AdminDocuments() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Upload Failed",
+        title: tr("uploadFailed"),
         description: error?.message,
       });
     },
@@ -165,8 +168,8 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Deleted",
-        description: "Document has been deleted",
+        title: tr("deleted"),
+        description: tr("documentHasBeenDeleted"),
       });
     },
   });
@@ -187,8 +190,8 @@ export default function AdminDocuments() {
     if (!newDocument.name) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Please enter document name",
+        title: tr("missingInformation"),
+        description: tr("pleaseEnterDocumentName"),
       });
       return;
     }
@@ -196,8 +199,8 @@ export default function AdminDocuments() {
     if (!selectedCompanyId) {
       toast({
         variant: "destructive",
-        title: "Select Client",
-        description: "Please select a client first",
+        title: tr("selectClient"),
+        description: tr("pleaseSelectAClientFirst"),
       });
       return;
     }
@@ -263,18 +266,18 @@ export default function AdminDocuments() {
   return (
     <div className="space-y-6 p-6">
       <PageHeader
-        eyebrow="Admin"
-        title="Client Document Management"
+        eyebrow={tr("admin")}
+        title={tr("clientDocumentManagement")}
         testId="text-admin-documents-title"
-        description="Upload and manage invoices, bills, and documents for your clients"
+        description={tr("uploadAndManageInvoicesBillsAnd")}
         actions={
           <Button
             onClick={() => setUploadDialogOpen(true)}
             disabled={!selectedCompanyId}
             data-testid="button-upload-client-document"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Upload Document
+            <Plus className="w-4 h-4 me-2" />
+            {tr("uploadDocument")}
           </Button>
         }
       />
@@ -283,14 +286,14 @@ export default function AdminDocuments() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="w-5 h-5" />
-            Select Client
+            {tr("selectClient")}
           </CardTitle>
-          <CardDescription>Choose a client to view or upload documents for them</CardDescription>
+          <CardDescription>{tr("chooseAClientToViewOr")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
             <SelectTrigger className="w-full md:w-[400px]" data-testid="select-client-company">
-              <SelectValue placeholder="Select a client company..." />
+              <SelectValue placeholder={tr("selectAClientCompany")} />
             </SelectTrigger>
             <SelectContent>
               {companies?.map((company) => (
@@ -300,7 +303,7 @@ export default function AdminDocuments() {
                     <span>{company.name}</span>
                     {company.trnNumber && (
                       <span className="text-muted-foreground text-xs">
-                        (TRN: {company.trnNumber})
+                        {tr("trn", { trnNumber: company.trnNumber })}
                       </span>
                     )}
                   </div>
@@ -316,7 +319,7 @@ export default function AdminDocuments() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalDocuments")}</CardTitle>
                 <FolderOpen className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -326,7 +329,7 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Invoices</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("invoices")}</CardTitle>
                 <FileText className="w-4 h-4 text-info" />
               </CardHeader>
               <CardContent>
@@ -338,7 +341,7 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Bills/Expenses</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("billsExpenses")}</CardTitle>
                 <FileUp className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
@@ -350,7 +353,7 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("expiringSoon")}</CardTitle>
                 <Clock className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
@@ -369,22 +372,22 @@ export default function AdminDocuments() {
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
-                    placeholder="Search documents..."
+                    placeholder={tr("searchDocuments")}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                     data-testid="input-search-client-documents"
                   />
                 </div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                   <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
-                    <Filter className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder="Filter by category" />
+                    <Filter className="w-4 h-4 me-2" />
+                    <SelectValue placeholder={tr("filterByCategory")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="all">{tr("allCategories")}</SelectItem>
                     {DOCUMENT_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
                         {cat.labelEn}
@@ -404,9 +407,9 @@ export default function AdminDocuments() {
               ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No documents found for {selectedCompany?.name}</p>
+                  <p>{tr("noDocumentsFoundFor", { name: selectedCompany?.name })}</p>
                   <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                    Upload a document
+                    {tr("uploadADocument")}
                   </Button>
                 </div>
               ) : (
@@ -414,12 +417,12 @@ export default function AdminDocuments() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Document Name</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>File</TableHead>
-                        <TableHead>Expiry</TableHead>
-                        <TableHead>Uploaded</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{tr("documentName")}</TableHead>
+                        <TableHead>{tr("category")}</TableHead>
+                        <TableHead>{tr("file")}</TableHead>
+                        <TableHead>{tr("expiry")}</TableHead>
+                        <TableHead>{tr("uploaded")}</TableHead>
+                        <TableHead className="text-end">{tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -464,9 +467,9 @@ export default function AdminDocuments() {
                                   )}
                                   <Badge variant={expiryStatus.color}>
                                     {expiryStatus.status === "expired"
-                                      ? `Expired ${expiryStatus.days}d ago`
+                                      ? tr("expiredDAgo", { days: expiryStatus.days })
                                       : expiryStatus.status === "expiring_soon"
-                                        ? `${expiryStatus.days}d left`
+                                        ? tr("dLeft", { days: expiryStatus.days })
                                         : format(parseISO(doc.expiryDate!), "MMM d, yyyy")}
                                   </Badge>
                                 </div>
@@ -479,7 +482,7 @@ export default function AdminDocuments() {
                                 {format(parseISO(doc.createdAt), "MMM d, yyyy")}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   size="icon"
@@ -522,27 +525,25 @@ export default function AdminDocuments() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Upload Document for {selectedCompany?.name}
+              {tr("uploadDocumentFor", { name: selectedCompany?.name })}
             </DialogTitle>
-            <DialogDescription>
-              Add an invoice, bill, or other document for this client
-            </DialogDescription>
+            <DialogDescription>{tr("addAnInvoiceBillOrOther")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Document Name *</Label>
+                <Label htmlFor="name">{tr("documentName2")}</Label>
                 <Input
                   id="name"
-                  placeholder="e.g., Invoice #001"
+                  placeholder={tr("eGInvoice001")}
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
                   data-testid="input-document-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
+                <Label htmlFor="category">{tr("category2")}</Label>
                 <Select
                   value={newDocument.category}
                   onValueChange={(value) => setNewDocument({ ...newDocument, category: value })}
@@ -562,10 +563,10 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">{tr("description")}</Label>
               <Textarea
                 id="description"
-                placeholder="Brief description of this document..."
+                placeholder={tr("briefDescriptionOfThisDocument")}
                 value={newDocument.description}
                 onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
                 rows={2}
@@ -575,7 +576,7 @@ export default function AdminDocuments() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="expiryDate">Expiry Date (if applicable)</Label>
+                <Label htmlFor="expiryDate">{tr("expiryDateIfApplicable")}</Label>
                 <Input
                   id="expiryDate"
                   type="date"
@@ -585,7 +586,7 @@ export default function AdminDocuments() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="reminderDays">Remind Before (days)</Label>
+                <Label htmlFor="reminderDays">{tr("remindBeforeDays")}</Label>
                 <Input
                   id="reminderDays"
                   type="number"
@@ -601,7 +602,7 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>Upload File</Label>
+              <Label>{tr("uploadFile")}</Label>
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
@@ -625,8 +626,8 @@ export default function AdminDocuments() {
                   ) : (
                     <div className="text-muted-foreground">
                       <Upload className="w-8 h-8 mx-auto mb-2" />
-                      <p>Click to upload or drag and drop</p>
-                      <p className="text-xs">PDF, DOC, XLS, JPG, PNG (max 10MB)</p>
+                      <p>{tr("clickToUploadOrDragAnd")}</p>
+                      <p className="text-xs">{tr("pdfDocXlsJpgPngMax")}</p>
                     </div>
                   )}
                 </label>
@@ -636,7 +637,7 @@ export default function AdminDocuments() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleUpload}
@@ -645,13 +646,13 @@ export default function AdminDocuments() {
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {tr("uploading")}
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Document
+                  <Upload className="w-4 h-4 me-2" />
+                  {tr("uploadDocument")}
                 </>
               )}
             </Button>

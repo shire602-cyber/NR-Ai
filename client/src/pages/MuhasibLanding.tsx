@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
+import { messages as pageMessages } from "./MuhasibLanding.i18n";
+import { useTranslation } from "@/lib/i18n";
+import { CALENDAR_DATE_SHORT_FORMAT, formatDate } from "@/lib/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Muhasib.ai · Landing page
@@ -119,7 +122,7 @@ function HeroMesh() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <motion.div
-        className="absolute -left-32 top-0 h-[640px] w-[640px] rounded-full opacity-50 blur-3xl"
+        className="absolute -start-32 top-0 h-[640px] w-[640px] rounded-full opacity-50 blur-3xl"
         style={{
           background: "radial-gradient(circle, rgba(13,92,61,0.35) 0%, rgba(13,92,61,0) 60%)",
         }}
@@ -127,7 +130,7 @@ function HeroMesh() {
         transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
-        className="absolute -right-32 top-32 h-[560px] w-[560px] rounded-full opacity-40 blur-3xl"
+        className="absolute -end-32 top-32 h-[560px] w-[560px] rounded-full opacity-40 blur-3xl"
         style={{
           background: "radial-gradient(circle, rgba(193,158,80,0.32) 0%, rgba(193,158,80,0) 60%)",
         }}
@@ -141,6 +144,8 @@ function HeroMesh() {
 
 // ── 4. Hero product mock — animated dashboard + AI agent chat surface ────────
 function HeroProductMock() {
+  const tr = pageMessages.useT();
+
   return (
     <div className="relative w-full">
       <Reveal delay={0.2} y={40}>
@@ -157,10 +162,11 @@ function HeroProductMock() {
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#F4BE4F" }} />
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#60C354" }} />
             <span
-              className="ml-3 rounded-md px-2.5 py-0.5 font-mono text-[10px]"
+              dir="ltr"
+              className="ms-3 rounded-md px-2.5 py-0.5 font-mono text-[10px]"
               style={{ background: C.whisper, color: C.muted }}
             >
-              app.muhasib.ai / dashboard
+              {tr("appMuhasibAiDashboard")}
             </span>
           </div>
 
@@ -176,29 +182,34 @@ function HeroProductMock() {
                   م
                 </div>
                 <span className="text-[11px] font-semibold tracking-wide" style={{ color: C.ink }}>
-                  Acme Trading LLC
+                  {tr("acmeTradingLlc")}
                 </span>
               </div>
               <div className="space-y-1">
-                {["Dashboard", "Invoices", "Receipts", "VAT 201", "Bank Imports", "Reports"].map(
-                  (l, i) => (
-                    <div
-                      key={l}
-                      className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]"
-                      style={{
-                        background: i === 0 ? C.emeraldSoft : "transparent",
-                        color: i === 0 ? C.emerald : C.muted,
-                        fontWeight: i === 0 ? 600 : 500,
-                      }}
-                    >
-                      <span
-                        className="h-1 w-1 rounded-full"
-                        style={{ background: i === 0 ? C.emerald : "transparent" }}
-                      />
-                      {l}
-                    </div>
-                  )
-                )}
+                {[
+                  tr("dashboard"),
+                  tr("invoices"),
+                  tr("receipts"),
+                  "VAT 201",
+                  tr("bankImports"),
+                  tr("reports"),
+                ].map((l, i) => (
+                  <div
+                    key={l}
+                    className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]"
+                    style={{
+                      background: i === 0 ? C.emeraldSoft : "transparent",
+                      color: i === 0 ? C.emerald : C.muted,
+                      fontWeight: i === 0 ? 600 : 500,
+                    }}
+                  >
+                    <span
+                      className="h-1 w-1 rounded-full"
+                      style={{ background: i === 0 ? C.emerald : "transparent" }}
+                    />
+                    {l}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -206,9 +217,9 @@ function HeroProductMock() {
             <div className="col-span-9 bg-card p-5">
               {/* KPI row */}
               <div className="grid grid-cols-3 gap-3">
-                <KpiTile label="Cash on hand" value="AED 412,840" delta="+8.4%" />
-                <KpiTile label="VAT due · Q3" value="AED 48,210" delta="-3.4%" negative />
-                <KpiTile label="Runway" value="14.2 mo" delta="+2.1%" />
+                <KpiTile label={tr("cashOnHand")} value="AED 412,840" delta="+8.4%" />
+                <KpiTile label={tr("vatDueQ3")} value="AED 48,210" delta="-3.4%" negative />
+                <KpiTile label={tr("runway")} value="14.2 mo" delta="+2.1%" />
               </div>
 
               {/* Chart */}
@@ -216,16 +227,17 @@ function HeroProductMock() {
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <div className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                      Cash flow · 90 days
+                      {tr("cashFlow90Days")}
                     </div>
                     <div
                       className="text-[9px] font-medium uppercase tracking-wider"
                       style={{ color: C.muted }}
                     >
-                      Operating · Investing · Financing
+                      {tr("operatingInvestingFinancing")}
                     </div>
                   </div>
                   <span
+                    dir="ltr"
                     className="rounded-full px-2 py-0.5 font-mono text-[9px]"
                     style={{ background: C.emeraldSoft, color: C.emerald }}
                   >
@@ -263,19 +275,19 @@ function HeroProductMock() {
                   style={{ borderColor: C.hairline }}
                 >
                   <span className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                    Today · auto-categorised
+                    {tr("todayAutoCategorised")}
                   </span>
                   <span
                     className="text-[9px] font-medium uppercase tracking-wider"
                     style={{ color: C.muted }}
                   >
-                    AI · 99.2% confidence
+                    {tr("ai992Confidence")}
                   </span>
                 </div>
                 {[
-                  ["Carrefour Hypermarket", "Office supplies", "AED 432.10"],
-                  ["Etisalat — Business Line", "Telecom", "AED 879.00"],
-                  ["DEWA — June bill", "Utilities", "AED 1,204.50"],
+                  [tr("carrefourHypermarket"), tr("officeSupplies"), "AED 432.10"],
+                  [tr("etisalatBusinessLine"), tr("telecom"), "AED 879.00"],
+                  [tr("dewaJuneBill"), tr("utilities"), "AED 1,204.50"],
                 ].map(([v, c, a], i) => (
                   <motion.div
                     key={v}
@@ -295,7 +307,7 @@ function HeroProductMock() {
                     >
                       {c}
                     </span>
-                    <span className="font-mono" style={{ color: C.ink }}>
+                    <span dir="ltr" className="font-mono" style={{ color: C.ink }}>
                       {a}
                     </span>
                   </motion.div>
@@ -309,7 +321,7 @@ function HeroProductMock() {
       {/* Floating AI chat surface */}
       <Reveal delay={0.7} y={20}>
         <div
-          className="absolute -bottom-8 -left-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-card p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
+          className="absolute -bottom-8 -start-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-card p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
           style={{ borderColor: C.hairline }}
         >
           <div
@@ -322,32 +334,33 @@ function HeroProductMock() {
             >
               <Sparkles className="h-2.5 w-2.5 text-white" />
             </span>
-            Ask Muhasib
+            {tr("askMuhasib")}
           </div>
           <div
             className="mb-2 rounded-lg px-3 py-2 text-[11px]"
             style={{ background: C.whisper, color: C.ink }}
           >
-            What's my VAT liability for Q3?
+            {tr("whatSMyVatLiabilityFor")}
           </div>
           <div
             className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
             style={{ background: C.emeraldSoft, color: C.ink }}
           >
-            <span className="font-semibold">AED 48,210</span> due 28 October. Down 3.4% from Q2 —
-            driven by lower zero-rated exports. Want me to draft the return?
+            <span className="font-semibold">AED 48,210</span> {tr("due28OctoberDown34")}
             <div className="mt-2 flex gap-1.5">
               <span
+                dir="ltr"
                 className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.emerald }}
               >
-                Draft return
+                {tr("draftReturn")}
               </span>
               <span
+                dir="ltr"
                 className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.muted }}
               >
-                Show workpaper
+                {tr("showWorkpaper")}
               </span>
             </div>
           </div>
@@ -357,7 +370,7 @@ function HeroProductMock() {
       {/* Floating compliance ribbon */}
       <Reveal delay={0.9}>
         <div
-          className="absolute -right-6 -top-6 hidden items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-[0_12px_30px_-12px_rgba(15,20,25,0.2)] sm:flex"
+          className="absolute -end-6 -top-6 hidden items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-[0_12px_30px_-12px_rgba(15,20,25,0.2)] sm:flex"
           style={{ borderColor: C.hairline }}
         >
           <FileCheck className="h-4 w-4" style={{ color: C.emerald }} />
@@ -365,7 +378,7 @@ function HeroProductMock() {
             className="text-[10px] font-semibold uppercase tracking-wider"
             style={{ color: C.ink }}
           >
-            VAT 201 · review-ready export
+            {tr("vat201ReviewReadyExport")}
           </span>
         </div>
       </Reveal>
@@ -389,11 +402,12 @@ function KpiTile({
       <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
         {label}
       </div>
-      <div className="mt-1 font-mono text-[13px] font-semibold" style={{ color: C.ink }}>
+      <div dir="ltr" className="mt-1 font-mono text-[13px] font-semibold" style={{ color: C.ink }}>
         {value}
       </div>
       <div className="mt-1.5">
         <span
+          dir="ltr"
           className="rounded-full px-1.5 py-0.5 font-mono text-[9px]"
           style={{
             background: negative ? "#FBE7E3" : C.emeraldSoft,
@@ -409,13 +423,15 @@ function KpiTile({
 
 // ── 5. UAE tax workflow ticker ───────────────────────────────────────────────
 function FtaTicker() {
+  const tr = pageMessages.useT();
+
   const updates = [
-    ["VAT 201", "Output tax, input tax, and net payable review queue"],
-    ["Corporate Tax", "Annual workpaper schedule with revenue and expense totals"],
-    ["e-Invoicing", "PINT AE XML generation and validation workflow"],
-    ["EmaraTax handoff", "Export figures for official-channel filing"],
-    ["Evidence", "Receipts, invoices, and bank lines tied to workpapers"],
-    ["Month-end", "Close checklist before VAT and CT review"],
+    ["VAT 201", tr("outputTaxInputTaxAndNet")],
+    [tr("corporateTax"), tr("annualWorkpaperScheduleWithRevenueAnd")],
+    ["e-Invoicing", tr("pintAeXmlGenerationAndValidation")],
+    [tr("emarataxHandoff"), tr("exportFiguresForOfficialChannelFiling")],
+    [tr("evidence"), tr("receiptsInvoicesAndBankLinesTied")],
+    [tr("monthEnd"), tr("closeChecklistBeforeVatAndCt")],
   ];
   // Duplicate for seamless loop.
   const stream = [...updates, ...updates];
@@ -425,8 +441,8 @@ function FtaTicker() {
       className="relative overflow-hidden border-y"
       style={{ borderColor: C.hairline, background: C.whisper }}
     >
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#FAFAF6] to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#FAFAF6] to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 start-0 z-10 w-24 bg-gradient-to-r from-[#FAFAF6] to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 end-0 z-10 w-24 bg-gradient-to-l from-[#FAFAF6] to-transparent" />
 
       <div className="flex items-center gap-3 px-6 py-3">
         <span
@@ -437,7 +453,7 @@ function FtaTicker() {
             <span className="absolute inset-0 animate-ping rounded-full bg-success/60 opacity-75" />
             <span className="relative h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
           </span>
-          Tax workflow
+          {tr("taxWorkflow")}
         </span>
 
         <div className="relative flex-1 overflow-hidden">
@@ -449,6 +465,7 @@ function FtaTicker() {
             {stream.map(([tag, body], i) => (
               <div key={i} className="flex shrink-0 items-center gap-3 text-[12px]">
                 <span
+                  dir="ltr"
                   className="rounded-full px-2 py-0.5 font-mono text-[10px]"
                   style={{ background: C.goldSoft, color: "#7B6228" }}
                 >
@@ -467,19 +484,19 @@ function FtaTicker() {
 
 // ── 6. Capability bento (real product UI in tiles, not icons) ────────────────
 function CapabilityBento() {
+  const tr = pageMessages.useT();
+  const { locale } = useTranslation();
+
   return (
     <div className="grid gap-4 md:grid-cols-6 md:grid-rows-2">
       {/* Receipt OCR — wide */}
       <BentoCard className="md:col-span-3 md:row-span-1">
         <BentoHeader
           icon={Receipt}
-          eyebrow="Receipt vision"
-          title="Photograph it. We do the rest."
+          eyebrow={tr("receiptVision")}
+          title={tr("photographItWeDoTheRest")}
         />
-        <BentoBody>
-          Vendor, VAT, total, currency, IBAN — extracted in under a second. Arabic and English,
-          faded or crumpled.
-        </BentoBody>
+        <BentoBody>{tr("vendorVatTotalCurrencyIbanExtracted")}</BentoBody>
         <div
           className="relative mt-5 overflow-hidden rounded-xl border"
           style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
@@ -491,20 +508,24 @@ function CapabilityBento() {
                 className="relative aspect-[3/4] rounded-md border"
                 style={{ borderColor: C.hairline, background: "#FBF9F2" }}
               >
-                <div className="p-2.5 text-[8px] font-mono leading-tight" style={{ color: C.ink }}>
-                  CARREFOUR
+                <div
+                  dir="ltr"
+                  className="p-2.5 text-[8px] font-mono leading-tight"
+                  style={{ color: C.ink }}
+                >
+                  {tr("carrefour")}
                   <br />
-                  Dubai Mall
-                  <br />
-                  ───────────────
-                  <br />
-                  Office supplies 432.10
-                  <br />
-                  VAT 5% 21.61
+                  {tr("dubaiMall")}
                   <br />
                   ───────────────
                   <br />
-                  TOTAL AED 453.71
+                  {tr("officeSupplies43210")}
+                  <br />
+                  {tr("vat52161")}
+                  <br />
+                  ───────────────
+                  <br />
+                  {tr("totalAed45371")}
                 </div>
                 {/* Scan line */}
                 <motion.div
@@ -517,12 +538,12 @@ function CapabilityBento() {
             </div>
             <div className="col-span-3 bg-card p-4">
               {[
-                ["Vendor", "Carrefour Hypermarket"],
-                ["Date", "12 Jun 2026"],
-                ["Subtotal", "AED 432.10"],
+                [tr("vendor"), tr("carrefourHypermarket")],
+                [tr("date"), formatDate("2026-06-12", locale, CALENDAR_DATE_SHORT_FORMAT)],
+                [tr("subtotal"), "AED 432.10"],
                 ["VAT 5%", "AED 21.61"],
-                ["Total", "AED 453.71"],
-                ["Category", "Office supplies"],
+                [tr("total"), "AED 453.71"],
+                [tr("category"), tr("officeSupplies")],
               ].map(([k, v], i) => (
                 <motion.div
                   key={k}
@@ -534,7 +555,7 @@ function CapabilityBento() {
                   style={{ borderColor: C.hairline }}
                 >
                   <span style={{ color: C.muted }}>{k}</span>
-                  <span className="font-mono font-medium" style={{ color: C.ink }}>
+                  <span dir="ltr" className="font-mono font-medium" style={{ color: C.ink }}>
                     {v}
                   </span>
                 </motion.div>
@@ -546,20 +567,21 @@ function CapabilityBento() {
 
       {/* VAT 201 */}
       <BentoCard className="md:col-span-3">
-        <BentoHeader icon={FileCheck} eyebrow="VAT 201" title="Review-ready before month end." />
-        <BentoBody>
-          Output VAT, input VAT, reverse charge, designated-zone adjustments — calculated
-          continuously and held audit-ready.
-        </BentoBody>
+        <BentoHeader
+          icon={FileCheck}
+          eyebrow={tr("vat201")}
+          title={tr("reviewReadyBeforeMonthEnd")}
+        />
+        <BentoBody>{tr("outputVatInputVatReverseCharge")}</BentoBody>
         <div
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border"
           style={{ borderColor: C.hairline, background: C.hairline }}
         >
           {[
-            ["Box 1a · Standard rated", "AED 824,000"],
-            ["Box 1a · Output VAT", "AED 41,200"],
-            ["Box 9 · Input VAT", "AED 14,820"],
-            ["Net payable", "AED 26,380"],
+            [tr("box1aStandardRated"), "AED 824,000"],
+            [tr("box1aOutputVat"), "AED 41,200"],
+            [tr("box9InputVat"), "AED 14,820"],
+            [tr("netPayable"), "AED 26,380"],
           ].map(([k, v], i) => (
             <div key={k} className="bg-card p-3">
               <div
@@ -568,7 +590,7 @@ function CapabilityBento() {
               >
                 {k}
               </div>
-              <div className="mt-1 font-mono text-[13px]" style={{ color: C.ink }}>
+              <div dir="ltr" className="mt-1 font-mono text-[13px]" style={{ color: C.ink }}>
                 {i === 3 ? <span style={{ color: C.emerald }}>{v}</span> : v}
               </div>
             </div>
@@ -578,34 +600,38 @@ function CapabilityBento() {
 
       {/* Bilingual invoice — narrow */}
       <BentoCard className="md:col-span-2">
-        <BentoHeader icon={Languages} eyebrow="Bilingual" title="One invoice. Two scripts." />
-        <BentoBody>VAT-ready tax invoices with Arabic and English on the same document.</BentoBody>
+        <BentoHeader
+          icon={Languages}
+          eyebrow={tr("bilingual")}
+          title={tr("oneInvoiceTwoScripts")}
+        />
+        <BentoBody>{tr("vatReadyTaxInvoicesWithArabic")}</BentoBody>
         <div
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border text-[8px]"
           style={{ borderColor: C.hairline, background: C.hairline }}
         >
           <div className="bg-card p-3 leading-tight" style={{ color: C.ink }}>
             <div className="font-semibold" style={{ color: C.emerald }}>
-              Tax Invoice
+              {tr("taxInvoice")}
             </div>
-            <div className="mt-1 font-mono" style={{ color: C.muted }}>
-              TRN 100212345600003
+            <div dir="ltr" className="mt-1 font-mono" style={{ color: C.muted }}>
+              {tr("trn100212345600003")}
             </div>
-            <div className="mt-2 space-y-0.5 font-mono">
-              <div>Consulting · AED 5,000.00</div>
-              <div>VAT 5% · AED 250.00</div>
-              <div className="font-semibold">Total · AED 5,250.00</div>
+            <div dir="ltr" className="mt-2 space-y-0.5 font-mono">
+              <div>{tr("consultingAed500000")}</div>
+              <div>{tr("vat5Aed25000")}</div>
+              <div className="font-semibold">{tr("totalAed525000")}</div>
             </div>
           </div>
           <div
-            className="bg-card p-3 text-right leading-tight"
+            className="bg-card p-3 text-end leading-tight"
             dir="rtl"
             style={{ color: C.ink, fontFamily: '"Cairo", "Noto Sans Arabic", sans-serif' }}
           >
             <div className="font-semibold" style={{ color: C.emerald }}>
               فاتورة ضريبية
             </div>
-            <div className="mt-1 font-mono" style={{ color: C.muted }}>
+            <div dir="ltr" className="mt-1 font-mono" style={{ color: C.muted }}>
               ١٠٠٢١٢٣٤٥٦٠٠٠٠٣
             </div>
             <div className="mt-2 space-y-0.5">
@@ -621,13 +647,10 @@ function CapabilityBento() {
       <BentoCard className="md:col-span-2">
         <BentoHeader
           icon={RefreshCw}
-          eyebrow="Bank imports"
-          title="Reconciled without live feeds."
+          eyebrow={tr("bankImports2")}
+          title={tr("reconciledWithoutLiveFeeds")}
         />
-        <BentoBody>
-          Import CSV or PDF statements from UAE banks, review suggested matches, then post with a
-          human approval step.
-        </BentoBody>
+        <BentoBody>{tr("importCsvOrPdfStatementsFrom")}</BentoBody>
         <div
           className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-card p-3"
           style={{ borderColor: C.hairline }}
@@ -638,7 +661,7 @@ function CapabilityBento() {
             ["Mashreq · 5520", "review", "AED 880"],
           ].map(([bank, status, amt], i) => (
             <div key={i} className="flex items-center justify-between text-[10px]">
-              <span className="font-mono" style={{ color: C.muted }}>
+              <span dir="ltr" className="font-mono" style={{ color: C.muted }}>
                 {bank}
               </span>
               <span
@@ -650,7 +673,7 @@ function CapabilityBento() {
               >
                 {status}
               </span>
-              <span className="font-mono" style={{ color: C.ink }}>
+              <span dir="ltr" className="font-mono" style={{ color: C.ink }}>
                 {amt}
               </span>
             </div>
@@ -660,10 +683,8 @@ function CapabilityBento() {
 
       {/* Multi-currency */}
       <BentoCard className="md:col-span-2">
-        <BentoHeader icon={Wallet} eyebrow="Multi-currency" title="AED home, 150+ rails." />
-        <BentoBody>
-          Live FX rates, automatic gain/loss postings, designated-zone exemption handling.
-        </BentoBody>
+        <BentoHeader icon={Wallet} eyebrow={tr("multiCurrency")} title={tr("aedHome150Rails")} />
+        <BentoBody>{tr("liveFxRatesAutomaticGainLoss")}</BentoBody>
         <div className="mt-5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
           {[
             ["USD", "3.6730", "+0.01"],
@@ -672,15 +693,17 @@ function CapabilityBento() {
           ].map(([k, r, d]) => (
             <div key={k} className="rounded-lg border p-2" style={{ borderColor: C.hairline }}>
               <div
+                dir="ltr"
                 className="font-mono text-[9px] uppercase tracking-wider"
                 style={{ color: C.muted }}
               >
                 AED · {k}
               </div>
-              <div className="mt-0.5 font-mono font-semibold" style={{ color: C.ink }}>
+              <div dir="ltr" className="mt-0.5 font-mono font-semibold" style={{ color: C.ink }}>
                 {r}
               </div>
               <div
+                dir="ltr"
                 className="font-mono text-[9px]"
                 style={{ color: d.startsWith("+") ? C.emerald : "#B5392B" }}
               >
@@ -748,16 +771,18 @@ function BentoBody({ children }: { children: React.ReactNode }) {
 
 // ── 7. Comparison strip ──────────────────────────────────────────────────────
 function ComparisonTable() {
+  const tr = pageMessages.useT();
+
   const rows = [
-    ["VAT 201 workpaper export", true, false, false, false],
-    ["Arabic + English UI", true, false, false, true],
+    [tr("vat201WorkpaperExport"), true, false, false, false],
+    [tr("arabicEnglishUi"), true, false, false, true],
     ["e-Invoicing PINT AE (2026)", true, false, false, false],
-    ["UAE bank CSV imports", true, false, false, false],
-    ["Receipt OCR — Arabic + English", true, true, false, false],
-    ["UAE corporate tax workpapers", true, false, false, false],
-    ["Pricing in AED", true, false, false, true],
+    [tr("uaeBankCsvImports"), true, false, false, false],
+    [tr("receiptOcrArabicEnglish"), true, true, false, false],
+    [tr("uaeCorporateTaxWorkpapers"), true, false, false, false],
+    [tr("pricingInAed"), true, false, false, true],
   ];
-  const cols = ["Muhasib", "QuickBooks", "Xero", "Zoho Books"];
+  const cols = ["Muhasib", "QuickBooks", "Xero", tr("zohoBooks")];
   return (
     <Reveal>
       <div
@@ -768,11 +793,11 @@ function ComparisonTable() {
           className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-[10px] font-semibold uppercase tracking-[0.2em]"
           style={{ borderColor: C.hairline, color: C.muted }}
         >
-          <div className="px-5 py-4">UAE-built feature</div>
+          <div className="px-5 py-4">{tr("uaeBuiltFeature")}</div>
           {cols.map((c, i) => (
             <div
               key={c}
-              className="border-l px-4 py-4 text-center"
+              className="border-s px-4 py-4 text-center"
               style={{
                 borderColor: C.hairline,
                 background: i === 0 ? C.emeraldSoft : "transparent",
@@ -795,7 +820,7 @@ function ComparisonTable() {
             {(vals as boolean[]).map((v, i) => (
               <div
                 key={i}
-                className="border-l px-4 py-3.5 text-center"
+                className="border-s px-4 py-3.5 text-center"
                 style={{
                   borderColor: C.hairline,
                   background: i === 0 ? C.emeraldSoft : "transparent",
@@ -807,7 +832,11 @@ function ComparisonTable() {
                     style={{ color: i === 0 ? C.emerald : C.ink }}
                   />
                 ) : (
-                  <span className="font-mono text-base" style={{ color: "rgba(15,20,25,0.2)" }}>
+                  <span
+                    dir="ltr"
+                    className="font-mono text-base"
+                    style={{ color: "rgba(15,20,25,0.2)" }}
+                  >
                     —
                   </span>
                 )}
@@ -822,6 +851,8 @@ function ComparisonTable() {
 
 // ── 8. Workflow walkthrough — scroll-driven 4-step morph ────────────────────
 function Workflow() {
+  const tr = pageMessages.useT();
+
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
@@ -868,28 +899,28 @@ function Workflow() {
   }> = [
     {
       n: "01",
-      t: "Capture",
+      t: tr("capture"),
       d: "Photo, email forward, or CSV import.",
       op: s1Op,
       border: s1Border,
     },
     {
       n: "02",
-      t: "Categorise",
+      t: tr("categorise"),
       d: "AI assigns COA, VAT code, project, cost centre.",
       op: s2Op,
       border: s2Border,
     },
     {
       n: "03",
-      t: "Reconcile",
+      t: tr("reconcile"),
       d: "Matched against imported bank movements.",
       op: s3Op,
       border: s3Border,
     },
     {
       n: "04",
-      t: "Export",
+      t: tr("export"),
       d: "VAT 201 figures exported for official-channel filing.",
       op: s4Op,
       border: s4Border,
@@ -903,10 +934,10 @@ function Workflow() {
     tick: import("framer-motion").MotionValue<number>;
     bg: import("framer-motion").MotionValue<string>;
   }> = [
-    { label: "Receipt captured", body: "Carrefour · AED 453.71", op: p1Op, tick: t1, bg: b1 },
-    { label: "Categorised", body: "Office supplies · VAT 5%", op: p2Op, tick: t2, bg: b2 },
-    { label: "Reconciled", body: "Matched ADCB · 0119", op: p3Op, tick: t3, bg: b3 },
-    { label: "VAT 201 queued", body: "Q3 2026 · review-ready", op: p4Op, tick: t4, bg: b4 },
+    { label: tr("receiptCaptured"), body: tr("carrefourAed45371"), op: p1Op, tick: t1, bg: b1 },
+    { label: tr("categorised"), body: tr("officeSuppliesVat5"), op: p2Op, tick: t2, bg: b2 },
+    { label: tr("reconciled"), body: tr("matchedAdcb0119"), op: p3Op, tick: t3, bg: b3 },
+    { label: tr("vat201Queued"), body: tr("q32026ReviewReady"), op: p4Op, tick: t4, bg: b4 },
   ];
 
   return (
@@ -918,23 +949,21 @@ function Workflow() {
             style={{ color: C.emerald }}
           >
             <span className="h-px w-8" style={{ background: C.emerald }} />
-            How it works
+            {tr("howItWorks")}
           </div>
           <h2
             className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
             style={{ color: C.ink }}
           >
-            From receipt to{" "}
+            {tr("fromReceiptTo")}
             <span className="italic" style={{ color: C.emerald }}>
-              review-ready
+              {tr("reviewReady")}
             </span>
             .<br />
-            With controls.
+            {tr("withControls")}
           </h2>
           <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
-            Snap a receipt, forward an invoice, or import a bank statement. Muhasib categorises it,
-            drafts the journal, updates your VAT position, and prepares the review queue before you
-            open your spreadsheet.
+            {tr("snapAReceiptForwardAnInvoice")}
           </p>
 
           <div className="mt-10 space-y-5">
@@ -969,7 +998,7 @@ function Workflow() {
               style={{ color: C.muted }}
             >
               <Cpu className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              Live pipeline
+              {tr("livePipeline")}
             </div>
 
             <div className="space-y-3">
@@ -992,7 +1021,7 @@ function Workflow() {
                     <div className="text-[11px] font-semibold" style={{ color: C.ink }}>
                       {p.label}
                     </div>
-                    <div className="font-mono text-[10px]" style={{ color: C.muted }}>
+                    <div dir="ltr" className="font-mono text-[10px]" style={{ color: C.muted }}>
                       {p.body}
                     </div>
                   </div>
@@ -1008,6 +1037,8 @@ function Workflow() {
 
 // ── 9. Page ──────────────────────────────────────────────────────────────────
 export default function MuhasibLanding() {
+  const tr = pageMessages.useT();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -1047,11 +1078,11 @@ export default function MuhasibLanding() {
 
           <nav className="hidden items-center gap-8 md:flex">
             {[
-              ["Product", "#capabilities"],
-              ["Compliance", "#compliance"],
-              ["Compare", "#compare"],
-              ["Demo", "/demo"],
-              ["Pricing", "/pricing"],
+              [tr("product"), "#capabilities"],
+              [tr("compliance"), "#compliance"],
+              [tr("compare"), "#compare"],
+              [tr("demo"), "/demo"],
+              [tr("pricing"), "/pricing"],
             ].map(([l, h]) => (
               <a
                 key={l}
@@ -1067,7 +1098,7 @@ export default function MuhasibLanding() {
           <div className="hidden items-center gap-3 md:flex">
             <Link href="/login">
               <button className="text-[13px] font-medium" style={{ color: C.muted }}>
-                Sign in
+                {tr("signIn")}
               </button>
             </Link>
             <Link href="/register">
@@ -1075,7 +1106,7 @@ export default function MuhasibLanding() {
                 className="group flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold text-white transition-transform hover:scale-[1.02]"
                 style={{ background: C.emerald }}
               >
-                Start free
+                {tr("startFree")}
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </Link>
@@ -1084,7 +1115,7 @@ export default function MuhasibLanding() {
           <button
             className="rounded-md p-2 md:hidden"
             onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Toggle menu"
+            aria-label={tr("toggleMenu")}
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -1099,11 +1130,11 @@ export default function MuhasibLanding() {
           >
             <div className="flex flex-col gap-1 p-4">
               {[
-                ["Product", "#capabilities"],
-                ["Compliance", "#compliance"],
-                ["Compare", "#compare"],
-                ["Demo", "/demo"],
-                ["Pricing", "/pricing"],
+                [tr("product"), "#capabilities"],
+                [tr("compliance"), "#compliance"],
+                [tr("compare"), "#compare"],
+                [tr("demo"), "/demo"],
+                [tr("pricing"), "/pricing"],
               ].map(([l, h]) => (
                 <a
                   key={l}
@@ -1119,7 +1150,7 @@ export default function MuhasibLanding() {
                   className="w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
                   style={{ background: C.emerald }}
                 >
-                  Start free
+                  {tr("startFree")}
                 </button>
               </Link>
             </div>
@@ -1144,7 +1175,7 @@ export default function MuhasibLanding() {
                   }}
                 >
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
-                  Built in Dubai · for the UAE
+                  {tr("builtInDubaiForTheUae")}
                 </div>
               </Reveal>
 
@@ -1154,10 +1185,10 @@ export default function MuhasibLanding() {
                   className="mt-7 font-serif text-[3.2rem] font-medium leading-[0.98] tracking-tight md:text-[4.4rem] lg:text-[5.2rem]"
                   style={{ color: C.ink }}
                 >
-                  The ledger,
+                  {tr("theLedger")}
                   <br />
                   <span className="italic" style={{ color: C.emerald }}>
-                    handled.
+                    {tr("handled")}
                   </span>
                 </h1>
               </Reveal>
@@ -1168,9 +1199,7 @@ export default function MuhasibLanding() {
                   className="mt-7 max-w-xl text-base leading-relaxed md:text-lg"
                   style={{ color: C.muted }}
                 >
-                  AI-native accounting for UAE businesses. Receipts captured, VAT calculated,
-                  imported bank statements reconciled, and tax workpapers prepared continuously,
-                  with review steps where judgment matters.
+                  {tr("aiNativeAccountingForUaeBusinesses")}
                 </p>
               </Reveal>
 
@@ -1182,7 +1211,7 @@ export default function MuhasibLanding() {
                       className="group flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                       style={{ background: C.emerald }}
                     >
-                      Start 14-day trial
+                      {tr("start14DayTrial")}
                       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   </Link>
@@ -1191,7 +1220,7 @@ export default function MuhasibLanding() {
                     className="flex items-center gap-2 rounded-full border px-6 py-3.5 text-sm font-semibold"
                     style={{ borderColor: C.hairlineStrong, color: C.ink }}
                   >
-                    Explore demo data
+                    {tr("exploreDemoData")}
                     <ChevronRight className="h-4 w-4" />
                   </Link>
                 </div>
@@ -1205,22 +1234,22 @@ export default function MuhasibLanding() {
                 >
                   <div className="flex items-center gap-1.5">
                     <FileCheck className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    FTA · VAT 201
+                    {tr("ftaVat201")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    Official-channel handoff
+                    {tr("officialChannelHandoff")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <FileText className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    E-invoicing roadmap
+                    {tr("eInvoicingRoadmap")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    SOC / ISO roadmap
+                    {tr("socIsoRoadmap")}
                   </div>
                 </div>
               </Reveal>
@@ -1245,10 +1274,10 @@ export default function MuhasibLanding() {
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
             {(
               [
-                { value: 4, label: "Migration paths prepared" },
-                { value: 5, label: "Mobile workflows checked" },
-                { value: 2, label: "VAT and CT export workbooks" },
-                { value: 0, label: "Direct filing claims made" },
+                { value: 4, label: tr("migrationPathsPrepared") },
+                { value: 5, label: tr("mobileWorkflowsChecked") },
+                { value: 2, label: tr("vatAndCtExportWorkbooks") },
+                { value: 0, label: tr("directFilingClaimsMade") },
               ] as Array<{ value: number; label: string; suffix?: string; prefix?: string }>
             ).map((s) => (
               <div key={s.label}>
@@ -1279,16 +1308,16 @@ export default function MuhasibLanding() {
               style={{ color: C.emerald }}
             >
               <span className="h-px w-8" style={{ background: C.emerald }} />
-              Product
+              {tr("product")}
             </div>
             <h2
               className="font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
               style={{ color: C.ink }}
             >
-              Every UAE accounting workflow,
+              {tr("everyUaeAccountingWorkflow")}
               <br />
               <span className="italic" style={{ color: C.emerald }}>
-                quietly automated.
+                {tr("quietlyAutomated")}
               </span>
             </h2>
           </div>
@@ -1314,21 +1343,20 @@ export default function MuhasibLanding() {
               style={{ color: C.emerald }}
             >
               <span className="h-px w-8" style={{ background: C.emerald }} />
-              Compare
+              {tr("compare")}
             </div>
             <h2
               className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
               style={{ color: C.ink }}
             >
-              Other tools were built
+              {tr("otherToolsWereBuilt")}
               <br />
               <span className="italic" style={{ color: C.emerald }}>
-                somewhere else.
+                {tr("somewhereElse")}
               </span>
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-relaxed" style={{ color: C.muted }}>
-              QuickBooks was built for the US tax code. Xero for the Anzac market. Zoho is closer,
-              but adapts global features for the UAE — instead of starting here.
+              {tr("quickbooksWasBuiltForTheUs")}
             </p>
           </div>
         </Reveal>
@@ -1349,13 +1377,13 @@ export default function MuhasibLanding() {
                 style={{ color: C.emerald }}
               >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
-                Insights
+                {tr("insights")}
               </div>
               <h2
                 className="font-serif text-3xl tracking-tight md:text-5xl"
                 style={{ color: C.ink }}
               >
-                From the desk.
+                {tr("fromTheDesk")}
               </h2>
             </div>
             <a
@@ -1363,28 +1391,16 @@ export default function MuhasibLanding() {
               className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex"
               style={{ color: C.muted }}
             >
-              All insights <ArrowUpRight className="h-3.5 w-3.5" />
+              {tr("allInsights")} <ArrowUpRight className="h-3.5 w-3.5" />
             </a>
           </div>
         </Reveal>
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           {[
-            [
-              "FTA decision 5/2025",
-              "A practical guide to the new real-estate VAT clarification",
-              "8 min read",
-            ],
-            [
-              "Corporate tax",
-              "When the AED 3M small-business relief actually saves you money",
-              "6 min read",
-            ],
-            [
-              "e-Invoicing",
-              "PINT AE in plain Arabic: what changes for your invoicing in July 2026",
-              "11 min read",
-            ],
+            [tr("ftaDecision52025"), tr("aPracticalGuideToTheNew"), tr("n8MinRead")],
+            [tr("corporateTax2"), tr("whenTheAed3mSmallBusiness"), tr("n6MinRead")],
+            ["e-Invoicing", tr("pintAeInPlainArabicWhat"), tr("n11MinRead")],
           ].map(([eyebrow, title, meta], i) => (
             <Reveal key={i} delay={i * 0.08}>
               <article
@@ -1427,24 +1443,23 @@ export default function MuhasibLanding() {
                 style={{ color: C.emerald }}
               >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
-                14-day trial · no card
+                {tr("n14DayTrialNoCard")}
               </div>
               <h2
                 className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
                 style={{ color: C.ink }}
               >
-                Hand the ledger to an
+                {tr("handTheLedgerToAn")}
                 <br />
                 <span className="italic" style={{ color: C.emerald }}>
-                  agent that never sleeps.
+                  {tr("agentThatNeverSleeps")}
                 </span>
               </h2>
               <p
                 className="mx-auto mt-7 max-w-xl text-base leading-relaxed"
                 style={{ color: C.muted }}
               >
-                Use guided migration templates for your chart of accounts, opening balances,
-                contacts, and historical activity.
+                {tr("useGuidedMigrationTemplatesForYour")}
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <Link href="/register">
@@ -1452,7 +1467,7 @@ export default function MuhasibLanding() {
                     className="group flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                     style={{ background: C.emerald }}
                   >
-                    Start 14-day trial
+                    {tr("start14DayTrial")}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 </Link>
@@ -1461,7 +1476,7 @@ export default function MuhasibLanding() {
                   className="rounded-full border px-7 py-3.5 text-sm font-semibold"
                   style={{ borderColor: C.hairlineStrong, color: C.ink }}
                 >
-                  Explore demo
+                  {tr("exploreDemo")}
                 </Link>
               </div>
             </div>
@@ -1489,34 +1504,33 @@ export default function MuhasibLanding() {
                 </span>
               </div>
               <p className="mt-5 max-w-md text-sm" style={{ color: C.muted }}>
-                AI-native accounting, built in Dubai for the UAE. Headquartered in DIFC. Operating
-                across the GCC.
+                {tr("aiNativeAccountingBuiltInDubai")}
               </p>
               <div className="mt-6 flex items-center gap-2 text-[11px]" style={{ color: C.muted }}>
                 <Building2 className="h-3.5 w-3.5" />
-                Index Tower · DIFC · Dubai
+                {tr("indexTowerDifcDubai")}
               </div>
             </div>
 
             <FooterCol
-              title="Product"
+              title={tr("product")}
               links={[
-                ["Receipts", "#"],
+                [tr("receipts"), "#"],
                 ["VAT 201", "#"],
-                ["Bank imports", "#"],
-                ["Demo workspace", "/demo"],
-                ["Bilingual invoices", "#"],
-                ["Pricing", "/pricing"],
+                [tr("bankImports2"), "#"],
+                [tr("demoWorkspace"), "/demo"],
+                [tr("bilingualInvoices"), "#"],
+                [tr("pricing"), "/pricing"],
               ]}
             />
             <FooterCol
-              title="Company"
+              title={tr("company")}
               links={[
-                ["Sign in", "/login"],
-                ["Register", "/register"],
-                ["Privacy", "/privacy"],
-                ["Terms", "/terms"],
-                ["Cookies", "/cookies"],
+                [tr("signIn"), "/login"],
+                [tr("register"), "/register"],
+                [tr("privacy"), "/privacy"],
+                [tr("terms"), "/terms"],
+                [tr("cookies"), "/cookies"],
               ]}
             />
           </div>
@@ -1525,10 +1539,12 @@ export default function MuhasibLanding() {
             className="mt-14 flex flex-col items-start justify-between gap-3 border-t pt-8 text-[11px] md:flex-row md:items-center"
             style={{ borderColor: C.hairline, color: C.muted }}
           >
-            <div>© {new Date().getFullYear()} Muhasib.ai · DIFC, Dubai, United Arab Emirates</div>
+            <div>
+              {tr("muhasibAiDifcDubaiUnitedArab", { getFullYear: new Date().getFullYear() })}
+            </div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              All systems normal
+              {tr("allSystemsNormal")}
             </div>
           </div>
         </div>

@@ -43,6 +43,7 @@ import {
   Eye,
   PieChart,
 } from "lucide-react";
+import { messages as pageMessages } from "./AICFO.i18n";
 
 interface Message {
   role: "user" | "assistant";
@@ -84,6 +85,8 @@ interface KPI {
 }
 
 export default function AICFO() {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -140,8 +143,8 @@ export default function AICFO() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "AI CFO Error",
-        description: error?.message || "Failed to get advice",
+        title: tr("aiCfoError"),
+        description: error?.message || tr("failedToGetAdvice"),
       });
     },
   });
@@ -153,8 +156,7 @@ export default function AICFO() {
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/ai/cfo-advice", {
         companyId,
-        question:
-          "Give me 3 concrete, prioritized recommendations to improve my financial health based on my current data. Focus on actions I can take this month.",
+        question: tr("giveMe3ConcretePrioritizedRecommendations"),
         context: { stats, profitLoss },
       });
       return response.advice as string;
@@ -162,8 +164,8 @@ export default function AICFO() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "AI CFO Error",
-        description: error?.message || "Failed to generate insights",
+        title: tr("aiCfoError"),
+        description: error?.message || tr("failedToGenerateInsights"),
       });
     },
   });
@@ -185,12 +187,12 @@ export default function AICFO() {
   };
 
   const quickQuestions = [
-    { q: "What are my biggest expenses?", icon: "📊" },
-    { q: "How's my cash flow looking?", icon: "💰" },
-    { q: "What's my profit margin?", icon: "📈" },
-    { q: "Any financial risks I should know?", icon: "⚠️" },
-    { q: "How can I reduce expenses?", icon: "✂️" },
-    { q: "Revenue forecast for next quarter?", icon: "🔮" },
+    { q: tr("whatAreMyBiggestExpenses"), icon: "📊" },
+    { q: tr("howSMyCashFlowLooking"), icon: "💰" },
+    { q: tr("whatSMyProfitMargin"), icon: "📈" },
+    { q: tr("anyFinancialRisksIShouldKnow"), icon: "⚠️" },
+    { q: tr("howCanIReduceExpenses"), icon: "✂️" },
+    { q: tr("revenueForecastForNextQuarter"), icon: "🔮" },
   ];
 
   const profitMarginPct =
@@ -204,28 +206,28 @@ export default function AICFO() {
 
   const kpis: KPI[] = [
     {
-      label: "Profit Margin",
+      label: tr("profitMargin"),
       value: profitMarginPct ?? 0,
       format: "percent",
       icon: TrendingUp,
       color: "text-success ",
     },
     {
-      label: "Expense Ratio",
+      label: tr("expenseRatio"),
       value: expenseRatioPct ?? 0,
       format: "percent",
       icon: BarChart3,
       color: "text-info ",
     },
     {
-      label: "Total Revenue",
+      label: tr("totalRevenue"),
       value: profitLoss?.totalRevenue ?? 0,
       format: "currency",
       icon: ArrowUp,
       color: "text-chart-5 ",
     },
     {
-      label: "Net Profit",
+      label: tr("netProfit"),
       value: profitLoss?.netProfit ?? 0,
       format: "currency",
       icon: DollarSign,
@@ -245,33 +247,33 @@ export default function AICFO() {
               <Brain className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">AI CFO & Financial Advisor</h1>
+              <h1 className="text-3xl font-bold">{tr("aiCfoFinancialAdvisor")}</h1>
               <p className="text-muted-foreground mt-1">
-                Ask questions about your financial data and get AI-generated guidance.
+                {tr("askQuestionsAboutYourFinancialData")}
               </p>
             </div>
           </div>
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-32 -mt-32 blur-3xl" />
+        <div className="absolute top-0 end-0 w-64 h-64 bg-primary/5 rounded-full -me-32 -mt-32 blur-3xl" />
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="overview" className="gap-2">
             <Eye className="w-4 h-4" />
-            <span className="hidden sm:inline">Overview</span>
+            <span className="hidden sm:inline">{tr("overview")}</span>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="gap-2">
             <BarChart3 className="w-4 h-4" />
-            <span className="hidden sm:inline">Analytics</span>
+            <span className="hidden sm:inline">{tr("analytics")}</span>
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2">
             <Zap className="w-4 h-4" />
-            <span className="hidden sm:inline">Insights</span>
+            <span className="hidden sm:inline">{tr("insights")}</span>
           </TabsTrigger>
           <TabsTrigger value="chat" className="gap-2">
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline">Chat</span>
+            <span className="hidden sm:inline">{tr("chat")}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -308,7 +310,7 @@ export default function AICFO() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalRevenue")}</CardTitle>
                 <TrendingUp className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
@@ -316,22 +318,22 @@ export default function AICFO() {
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-success ">
+                    <div dir="ltr" className="text-3xl font-bold font-mono text-success ">
                       {formatCurrency(stats.revenue || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalInvoices || 0} invoices • Last 30 days
+                      {stats.totalInvoices || 0} {tr("invoicesLast30Days")}
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">{tr("noData")}</p>
                 )}
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalExpenses")}</CardTitle>
                 <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
@@ -339,15 +341,15 @@ export default function AICFO() {
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-info ">
+                    <div dir="ltr" className="text-3xl font-bold font-mono text-info ">
                       {formatCurrency(stats.expenses || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats.totalEntries || 0} entries • Last 30 days
+                      {stats.totalEntries || 0} {tr("entriesLast30Days")}
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">{tr("noData")}</p>
                 )}
               </CardContent>
             </Card>
@@ -356,7 +358,7 @@ export default function AICFO() {
               className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-success/30 " : "border-destructive/30 "}`}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("netProfit")}</CardTitle>
                 <Target
                   className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
                 />
@@ -367,18 +369,23 @@ export default function AICFO() {
                 ) : profitLoss ? (
                   <>
                     <div
+                      dir="ltr"
                       className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-success " : "text-destructive "}`}
                     >
                       {formatCurrency(profitLoss.netProfit || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       {profitLoss.totalRevenue
-                        ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin`
-                        : "No revenue yet"}
+                        ? tr("margin", {
+                            value: ((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(
+                              1
+                            ),
+                          })
+                        : tr("noRevenueYet")}
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">{tr("noData")}</p>
                 )}
               </CardContent>
             </Card>
@@ -389,7 +396,7 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning " />
-                Outstanding Invoices
+                {tr("outstandingInvoices")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -398,19 +405,18 @@ export default function AICFO() {
                   <Skeleton className="h-10 w-40" />
                 ) : stats ? (
                   <>
-                    <div className="text-3xl font-bold font-mono text-warning ">
+                    <div dir="ltr" className="text-3xl font-bold font-mono text-warning ">
                       {formatCurrency(stats.outstanding || 0, "AED")}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      You have outstanding amounts that need follow-up. Send reminders to improve
-                      cash flow.
+                      {tr("youHaveOutstandingAmountsThatNeed")}
                     </p>
                     <Button variant="outline" size="sm" className="w-fit">
-                      View Outstanding Invoices
+                      {tr("viewOutstandingInvoices")}
                     </Button>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No data</p>
+                  <p className="text-sm text-muted-foreground">{tr("noData")}</p>
                 )}
               </div>
             </CardContent>
@@ -421,8 +427,8 @@ export default function AICFO() {
         <TabsContent value="analytics" className="space-y-6">
           <Card className="hover-elevate">
             <CardHeader>
-              <CardTitle className="text-base">Revenue vs Expenses Trend</CardTitle>
-              <CardDescription>Last 6 months performance</CardDescription>
+              <CardTitle className="text-base">{tr("revenueVsExpensesTrend")}</CardTitle>
+              <CardDescription>{tr("last6MonthsPerformance")}</CardDescription>
             </CardHeader>
             <CardContent>
               {trendsLoading ? (
@@ -454,8 +460,8 @@ export default function AICFO() {
               ) : (
                 <EmptyState
                   icon={BarChart3}
-                  title="No trend data yet"
-                  description="Post invoices and journal entries to see revenue and expense trends here."
+                  title={tr("noTrendDataYet")}
+                  description={tr("postInvoicesAndJournalEntriesTo")}
                   compact
                 />
               )}
@@ -467,9 +473,9 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <PieChart className="w-4 h-4" />
-                Expense Breakdown
+                {tr("expenseBreakdown")}
               </CardTitle>
-              <CardDescription>Top expense categories from posted journal entries</CardDescription>
+              <CardDescription>{tr("topExpenseCategoriesFromPostedJournal")}</CardDescription>
             </CardHeader>
             <CardContent>
               {breakdownLoading ? (
@@ -483,7 +489,9 @@ export default function AICFO() {
                       <div key={idx} className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">{item.name}</span>
-                          <span className="text-sm font-mono font-bold">{pct.toFixed(0)}%</span>
+                          <span dir="ltr" className="text-sm font-mono font-bold">
+                            {pct.toFixed(0)}%
+                          </span>
                         </div>
                         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                           <div className="bg-primary h-full" style={{ width: `${pct}%` }} />
@@ -498,8 +506,8 @@ export default function AICFO() {
               ) : (
                 <EmptyState
                   icon={PieChart}
-                  title="No expense data yet"
-                  description="Post expense journal entries to see how your spending breaks down."
+                  title={tr("noExpenseDataYet")}
+                  description={tr("postExpenseJournalEntriesToSee")}
                   compact
                 />
               )}
@@ -514,11 +522,9 @@ export default function AICFO() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Brain className="w-4 h-4 text-primary" />
-                  AI-Generated Recommendations
+                  {tr("aiGeneratedRecommendations")}
                 </CardTitle>
-                <CardDescription>
-                  Based on your live financial data. Generated on demand.
-                </CardDescription>
+                <CardDescription>{tr("basedOnYourLiveFinancialData")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">
@@ -532,19 +538,19 @@ export default function AICFO() {
                   disabled={insightsMutation.isPending}
                 >
                   {insightsMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : null}
-                  Regenerate
+                  {tr("regenerate")}
                 </Button>
               </CardContent>
             </Card>
           ) : (
             <EmptyState
               icon={Brain}
-              title="No insights generated yet"
-              description="Generate prioritized, AI-written recommendations based on your real financial data. Costs an AI request."
+              title={tr("noInsightsGeneratedYet")}
+              description={tr("generatePrioritizedAiWrittenRecommendationsBased")}
               action={{
-                label: insightsMutation.isPending ? "Generating…" : "Generate insights",
+                label: insightsMutation.isPending ? tr("generating") : tr("generateInsights"),
                 onClick: () => insightsMutation.mutate(),
               }}
             />
@@ -557,29 +563,26 @@ export default function AICFO() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                Chat with Your AI CFO
+                {tr("chatWithYourAiCfo")}
               </CardTitle>
-              <CardDescription>
-                Ask questions about your finances and get personalized advice
-              </CardDescription>
+              <CardDescription>{tr("askQuestionsAboutYourFinancesAnd")}</CardDescription>
             </CardHeader>
 
             {/* Messages Area */}
             <CardContent className="flex-1 flex flex-col overflow-hidden pb-4">
-              <ScrollArea className="flex-1 pr-4 mb-4">
+              <ScrollArea className="flex-1 pe-4 mb-4">
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-8">
                     <div className="p-4 rounded-full bg-primary/10 mb-4">
                       <Bot className="w-8 h-8 text-primary" />
                     </div>
-                    <h3 className="font-semibold mb-2">Start a conversation</h3>
+                    <h3 className="font-semibold mb-2">{tr("startAConversation")}</h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-                      Ask me anything about your finances. I'll provide data-backed insights and
-                      recommendations.
+                      {tr("askMeAnythingAboutYourFinances")}
                     </p>
                     <div className="w-full space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground mb-3">
-                        Quick Questions:
+                        {tr("quickQuestions")}
                       </p>
                       <div className="grid gap-2">
                         {quickQuestions.slice(0, 3).map((item, i) => (
@@ -587,11 +590,11 @@ export default function AICFO() {
                             key={i}
                             variant="outline"
                             size="sm"
-                            className="w-full justify-start text-left h-auto py-3"
+                            className="w-full justify-start text-start h-auto py-3"
                             onClick={() => setInput(item.q)}
                             data-testid={`button-quick-question-${i}`}
                           >
-                            <span className="mr-2">{item.icon}</span>
+                            <span className="me-2">{item.icon}</span>
                             <span className="text-xs">{item.q}</span>
                           </Button>
                         ))}
@@ -633,7 +636,7 @@ export default function AICFO() {
                           <Loader2 className="w-4 h-4 animate-spin text-primary" />
                         </div>
                         <div className="bg-muted rounded-lg p-3">
-                          <p className="text-sm text-muted-foreground">AI is thinking...</p>
+                          <p className="text-sm text-muted-foreground">{tr("aiIsThinking")}</p>
                         </div>
                       </div>
                     )}
@@ -647,7 +650,7 @@ export default function AICFO() {
               {messages.length > 0 && (
                 <div className="mb-3 pb-3 border-b">
                   <p className="text-xs font-semibold text-muted-foreground mb-2">
-                    Suggested questions:
+                    {tr("suggestedQuestions")}
                   </p>
                   <div className="flex gap-2 flex-wrap">
                     {quickQuestions.slice(0, 3).map((item, i) => (
@@ -669,7 +672,7 @@ export default function AICFO() {
                 <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about expenses, revenue, cash flow, tax optimization..."
+                  placeholder={tr("askAboutExpensesRevenueCashFlow")}
                   rows={2}
                   data-testid="input-cfo-question"
                   disabled={askAICFOMutation.isPending}
@@ -682,11 +685,11 @@ export default function AICFO() {
                   className="w-full"
                 >
                   {askAICFOMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : (
-                    <Send className="w-4 h-4 mr-2" />
+                    <Send className="w-4 h-4 me-2" />
                   )}
-                  Send Message
+                  {tr("sendMessage")}
                 </Button>
               </form>
             </CardContent>

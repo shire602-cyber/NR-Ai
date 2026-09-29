@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import { useTranslation } from "@/lib/i18n";
+import { messages as pageMessages } from "./FirmHealth.i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -111,11 +112,13 @@ function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineSta
 }
 
 function HealthBadge({ status }: { status: HealthStatus }) {
+  const tr = pageMessages.useT();
+
   if (status === "healthy") {
     return (
       <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30 gap-1">
         <CheckCircle2 className="w-3 h-3" />
-        Healthy
+        {tr("healthy")}
       </Badge>
     );
   }
@@ -123,34 +126,36 @@ function HealthBadge({ status }: { status: HealthStatus }) {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30 gap-1">
         <AlertTriangle className="w-3 h-3" />
-        Attention
+        {tr("attention")}
       </Badge>
     );
   }
   return (
     <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30 gap-1">
       <XCircle className="w-3 h-3" />
-      Critical
+      {tr("critical")}
     </Badge>
   );
 }
 
 function DeadlineBadge({ status, daysTilDue }: { status: DeadlineStatus; daysTilDue: number }) {
+  const tr = pageMessages.useT();
+
   if (status === "overdue") {
     return (
       <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30">
-        {Math.abs(daysTilDue)}d overdue
+        {tr("dOverdue", { abs: Math.abs(daysTilDue) })}
       </Badge>
     );
   }
   if (status === "due-soon") {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due in {daysTilDue}d
+        {tr("dueInD", { daysTilDue })}
       </Badge>
     );
   }
-  return <Badge variant="outline">In {daysTilDue}d</Badge>;
+  return <Badge variant="outline">{tr("inD", { daysTilDue })}</Badge>;
 }
 
 function SortIcon({
@@ -162,11 +167,11 @@ function SortIcon({
   sortField: SortField;
   sortDir: SortDir;
 }) {
-  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ml-1 text-muted-foreground" />;
+  if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ms-1 text-muted-foreground" />;
   return sortDir === "asc" ? (
-    <ChevronUp className="w-3 h-3 ml-1" />
+    <ChevronUp className="w-3 h-3 ms-1" />
   ) : (
-    <ChevronDown className="w-3 h-3 ml-1" />
+    <ChevronDown className="w-3 h-3 ms-1" />
   );
 }
 
@@ -176,6 +181,8 @@ const VAT_ORDER: Record<VatStatus, number> = { overdue: 0, "due-soon": 1, "on-tr
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function FirmHealth() {
+  const tr = pageMessages.useT();
+
   const [, navigate] = useLocation();
   const { t } = useTranslation();
   const [sortField, setSortField] = useState<SortField>("health");
@@ -255,9 +262,7 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-success ">
-              {summary?.healthy ?? 0}
-            </p>
+            <p className="text-3xl font-bold text-success ">{summary?.healthy ?? 0}</p>
           </CardContent>
         </Card>
 
@@ -269,9 +274,7 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-warning ">
-              {summary?.attention ?? 0}
-            </p>
+            <p className="text-3xl font-bold text-warning ">{summary?.attention ?? 0}</p>
           </CardContent>
         </Card>
 
@@ -283,9 +286,7 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-destructive ">
-              {summary?.critical ?? 0}
-            </p>
+            <p className="text-3xl font-bold text-destructive ">{summary?.critical ?? 0}</p>
           </CardContent>
         </Card>
       </div>
@@ -361,7 +362,9 @@ export default function FirmHealth() {
                         <div>
                           <p className="font-medium">{client.companyName}</p>
                           {client.trn && (
-                            <p className="text-xs text-muted-foreground">TRN: {client.trn}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {tr("trn", { trn: client.trn })}
+                            </p>
                           )}
                         </div>
                       </TableCell>
@@ -380,8 +383,8 @@ export default function FirmHealth() {
                           <TrafficDot status={client.arHealth.status} />
                           <span className="text-sm">
                             {client.arHealth.overdueCount > 0
-                              ? `${client.arHealth.overdueCount} overdue`
-                              : "Clear"}
+                              ? tr("overdue", { overdueCount: client.arHealth.overdueCount })
+                              : tr("clear")}
                           </span>
                         </div>
                       </TableCell>
@@ -390,8 +393,10 @@ export default function FirmHealth() {
                           <TrafficDot status={client.bankRecStatus.status} />
                           <span className="text-sm">
                             {client.bankRecStatus.unreconciledCount > 0
-                              ? `${client.bankRecStatus.unreconciledCount} unmatched`
-                              : "Clear"}
+                              ? tr("unmatched", {
+                                  unreconciledCount: client.bankRecStatus.unreconciledCount,
+                                })
+                              : tr("clear")}
                           </span>
                         </div>
                       </TableCell>
@@ -399,7 +404,7 @@ export default function FirmHealth() {
                         <div className="flex items-center gap-2">
                           <TrafficDot status={client.trialBalanceStatus.status} />
                           <span className="text-sm">
-                            {client.trialBalanceStatus.balanced ? "Balanced" : "Off"}
+                            {client.trialBalanceStatus.balanced ? tr("balanced") : tr("off")}
                           </span>
                         </div>
                       </TableCell>

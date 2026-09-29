@@ -38,13 +38,8 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
-import {
-  ADMIN_GROUP,
-  CUSTOMER_GROUPS,
-  MORE_GROUP,
-  NRA_GROUP,
-  type NavGroup,
-} from "./nav-config";
+import { ADMIN_GROUP, CUSTOMER_GROUPS, MORE_GROUP, NRA_GROUP, type NavGroup } from "./nav-config";
+import { messages as pageMessages } from "./AppSidebar.i18n";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,6 +97,8 @@ function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function AppSidebar() {
+  const tr = pageMessages.useT();
+
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
@@ -133,7 +130,12 @@ export function AppSidebar() {
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP, MORE_GROUP]);
+    const fromRoute = getGroupForRoute(location, [
+      ...CUSTOMER_GROUPS,
+      NRA_GROUP,
+      ADMIN_GROUP,
+      MORE_GROUP,
+    ]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);
@@ -241,7 +243,7 @@ export function AppSidebar() {
               <SidebarMenuSub
                 className={cn(
                   group.key === "reports" &&
-                    "max-h-[min(34rem,calc(100vh-18rem))] overflow-y-auto pr-1"
+                    "max-h-[min(34rem,calc(100vh-18rem))] overflow-y-auto pe-1"
                 )}
               >
                 {group.items.map((item) => {
@@ -255,7 +257,7 @@ export function AppSidebar() {
                         asChild
                         isActive={isActive}
                         className={cn(
-                          "w-full justify-start text-left",
+                          "w-full justify-start text-start",
                           description ? "h-auto min-h-10 py-1.5" : undefined
                         )}
                         data-testid={`link-${item.testId ?? item.titleKey}`}
@@ -315,7 +317,7 @@ export function AppSidebar() {
               <BrandMark size="md" />
               <span
                 aria-hidden
-                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
+                className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
               />
             </div>
             <div className="min-w-0">
@@ -323,7 +325,7 @@ export function AppSidebar() {
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
               <div className="text-[10.5px] text-sidebar-foreground/55 uppercase tracking-[0.12em] leading-tight font-medium">
-                {t.smartAccounting ?? "Smart Accounting"}
+                {t.smartAccounting ?? tr("smartAccounting")}
               </div>
             </div>
           </div>
@@ -336,7 +338,7 @@ export function AppSidebar() {
         {userType === "client" && (
           <>
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Workspace
+              {tr("workspace")}
             </div>
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
@@ -352,21 +354,21 @@ export function AppSidebar() {
             </SidebarMenu>
 
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Documents
+              {tr("documents")}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              {t.compliance ?? "Compliance"}
+              {t.compliance ?? tr("compliance")}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Insights
+              {tr("insights")}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_INSIGHT_ITEMS.map(renderClientPortalItem)}
@@ -390,7 +392,7 @@ export function AppSidebar() {
         {userType !== "client" && (
           <>
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Overview
+              {tr("overview")}
             </div>
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
@@ -406,7 +408,7 @@ export function AppSidebar() {
             </SidebarMenu>
 
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
-              Operations
+              {tr("operations")}
             </div>
             <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>
           </>
@@ -434,7 +436,7 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
         >
           <LogOut className="w-4 h-4 opacity-70" />
-          <span className="text-[13px]">{t.logout ?? "Sign out"}</span>
+          <span className="text-[13px]">{t.logout ?? tr("signOut")}</span>
         </button>
       </SidebarFooter>
     </Sidebar>

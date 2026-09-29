@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
+import { messages as pageMessages } from "./LeadPipeline.i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,34 +78,34 @@ interface SaasProspect {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STAGES: { key: Stage; label: string; color: string; bg: string }[] = [
+const getStages = (): { key: Stage; label: string; color: string; bg: string }[] => [
   {
     key: "prospect",
-    label: "Prospect",
+    label: pageMessages.t("prospect"),
     color: "text-muted-foreground",
     bg: "bg-muted border-border",
   },
   {
     key: "contacted",
-    label: "Contacted",
+    label: pageMessages.t("contacted"),
     color: "text-info",
     bg: "bg-info-subtle border-info/30",
   },
   {
     key: "interested",
-    label: "Interested",
+    label: pageMessages.t("interested"),
     color: "text-warning",
     bg: "bg-warning-subtle border-warning/30",
   },
   {
     key: "converted",
-    label: "Converted",
+    label: pageMessages.t("converted"),
     color: "text-success",
     bg: "bg-success-subtle border-success/30",
   },
   {
     key: "lost",
-    label: "Lost",
+    label: pageMessages.t("lost"),
     color: "text-destructive",
     bg: "bg-danger-subtle border-destructive/30",
   },
@@ -116,12 +117,12 @@ const SCORE_COLOR = (score: number) => {
   return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
 };
 
-const SOURCE_LABELS: Record<Source, string> = {
+const getSourceLabels = (): Record<Source, string> => ({
   saas_signup: "SaaS",
-  referral: "Referral",
-  manual: "Manual",
-  website: "Website",
-};
+  referral: pageMessages.t("referral"),
+  manual: pageMessages.t("manual"),
+  website: pageMessages.t("website"),
+});
 
 // ─── Lead card ────────────────────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ function LeadCard({
 
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="text-xs px-1.5 py-0">
-          {SOURCE_LABELS[lead.source]}
+          {getSourceLabels()[lead.source]}
         </Badge>
       </div>
 
@@ -185,7 +186,7 @@ function KanbanColumn({
   onDragOver,
   onDragLeave,
 }: {
-  stage: (typeof STAGES)[0];
+  stage: ReturnType<typeof getStages>[0];
   leads: Lead[];
   onEdit: (lead: Lead) => void;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -219,6 +220,8 @@ function KanbanColumn({
 // ─── Add Lead dialog ──────────────────────────────────────────────────────────
 
 function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [userId, setUserId] = useState("");
   const [notes, setNotes] = useState("");
@@ -230,13 +233,13 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
     mutationFn: (data: object) => apiRequest("POST", "/api/firm/pipeline/leads", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead added" });
+      toast({ title: tr("leadAdded") });
       onClose();
       setUserId("");
       setNotes("");
       setScore("50");
     },
-    onError: () => toast({ title: "Failed to add lead", variant: "destructive" }),
+    onError: () => toast({ title: tr("failedToAddLead"), variant: "destructive" }),
   });
 
   const handleSubmit = () => {
@@ -254,11 +257,11 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Lead</DialogTitle>
+          <DialogTitle>{tr("addLead")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>User ID (UUID)</Label>
+            <Label>{tr("userIdUuid")}</Label>
             <Input
               placeholder="e.g. 550e8400-e29b-41d4-..."
               value={userId}
@@ -267,13 +270,13 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Stage</Label>
+              <Label>{tr("stage")}</Label>
               <Select value={stage} onValueChange={(v) => setStage(v as Stage)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAGES.map((s) => (
+                  {getStages().map((s) => (
                     <SelectItem key={s.key} value={s.key}>
                       {s.label}
                     </SelectItem>
@@ -282,22 +285,22 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Source</Label>
+              <Label>{tr("source")}</Label>
               <Select value={source} onValueChange={(v) => setSource(v as Source)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="saas_signup">SaaS Signup</SelectItem>
-                  <SelectItem value="referral">Referral</SelectItem>
-                  <SelectItem value="website">Website</SelectItem>
+                  <SelectItem value="manual">{tr("manual")}</SelectItem>
+                  <SelectItem value="saas_signup">{tr("saasSignup")}</SelectItem>
+                  <SelectItem value="referral">{tr("referral")}</SelectItem>
+                  <SelectItem value="website">{tr("website")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Score (0–100)</Label>
+            <Label>{tr("score0100")}</Label>
             <Input
               type="number"
               min={0}
@@ -307,9 +310,9 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>{tr("notes")}</Label>
             <Textarea
-              placeholder="Optional notes..."
+              placeholder={tr("optionalNotes")}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
@@ -318,11 +321,11 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {tr("cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={mutation.isPending || !userId.trim()}>
-            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            Add Lead
+            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : null}
+            {tr("addLead")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -333,6 +336,8 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
 // ─── Edit Lead dialog ─────────────────────────────────────────────────────────
 
 function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [notes, setNotes] = useState(lead?.notes ?? "");
   const [score, setScore] = useState(String(lead?.score ?? 50));
@@ -342,20 +347,20 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
     mutationFn: (data: object) => apiRequest("PUT", `/api/firm/pipeline/leads/${lead!.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead updated" });
+      toast({ title: tr("leadUpdated") });
       onClose();
     },
-    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+    onError: () => toast({ title: tr("failedToUpdate"), variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/firm/pipeline/leads/${lead!.id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Lead removed" });
+      toast({ title: tr("leadRemoved") });
       onClose();
     },
-    onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
+    onError: () => toast({ title: tr("failedToDelete"), variant: "destructive" }),
   });
 
   if (!lead) return null;
@@ -364,25 +369,31 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
     <Dialog open={!!lead} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Lead — {lead.userEmail}</DialogTitle>
+          <DialogTitle>{tr("editLead", { userEmail: lead.userEmail })}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="text-sm text-muted-foreground space-y-0.5">
-            {lead.companyName && <p>Company: {lead.companyName}</p>}
-            <p>Source: {SOURCE_LABELS[lead.source]}</p>
-            <p>Added: {new Date(lead.createdAt).toLocaleDateString()}</p>
+            {lead.companyName && <p>{tr("company", { companyName: lead.companyName })}</p>}
+            <p>{tr("source2", { value: getSourceLabels()[lead.source] })}</p>
+            <p>
+              {tr("added", { toLocaleDateString: new Date(lead.createdAt).toLocaleDateString() })}
+            </p>
             {lead.convertedAt && (
-              <p>Converted: {new Date(lead.convertedAt).toLocaleDateString()}</p>
+              <p>
+                {tr("converted2", {
+                  toLocaleDateString: new Date(lead.convertedAt).toLocaleDateString(),
+                })}
+              </p>
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Stage</Label>
+            <Label>{tr("stage")}</Label>
             <Select value={stage} onValueChange={(v) => setStage(v as Stage)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {STAGES.map((s) => (
+                {getStages().map((s) => (
                   <SelectItem key={s.key} value={s.key}>
                     {s.label}
                   </SelectItem>
@@ -391,7 +402,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Score (0–100)</Label>
+            <Label>{tr("score0100")}</Label>
             <Input
               type="number"
               min={0}
@@ -401,7 +412,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>{tr("notes")}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
           </div>
         </div>
@@ -412,12 +423,12 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             onClick={() => deleteMutation.mutate()}
             disabled={deleteMutation.isPending}
           >
-            {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-            Delete
+            {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
+            {tr("delete")}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() =>
@@ -425,8 +436,8 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
               }
               disabled={updateMutation.isPending}
             >
-              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              Save
+              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
+              {tr("save")}
             </Button>
           </div>
         </DialogFooter>
@@ -438,6 +449,8 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
 // ─── Auto-discover panel ──────────────────────────────────────────────────────
 
 function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
 
   const { data: prospects = [], isLoading } = useQuery<SaasProspect[]>({
@@ -455,9 +468,9 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
-      toast({ title: "Prospect added to pipeline" });
+      toast({ title: tr("prospectAddedToPipeline") });
     },
-    onError: () => toast({ title: "Failed to add", variant: "destructive" }),
+    onError: () => toast({ title: tr("failedToAdd"), variant: "destructive" }),
   });
 
   return (
@@ -466,25 +479,21 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2 text-warning">
             <Sparkles className="w-4 h-4" />
-            Auto-discovered SaaS Prospects
+            {tr("autoDiscoveredSaasProspects")}
           </CardTitle>
           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Active SaaS users with 30+ transactions in the last 30 days — potential NRA clients.
-        </p>
+        <p className="text-xs text-muted-foreground">{tr("activeSaasUsersWith30Transactions")}</p>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" /> Scanning…
+            <Loader2 className="w-4 h-4 animate-spin" /> {tr("scanning")}
           </div>
         ) : prospects.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No high-activity prospects found right now.
-          </p>
+          <p className="text-sm text-muted-foreground">{tr("noHighActivityProspectsFoundRight")}</p>
         ) : (
           <div className="space-y-2">
             {prospects.map((p) => (
@@ -495,8 +504,11 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{p.email}</p>
                   <p className="text-xs text-muted-foreground">
-                    {p.transactionCount} txns · {p.companyCount} companies · score{" "}
-                    {p.suggestedScore}
+                    {tr("txnsCompaniesScore", {
+                      transactionCount: p.transactionCount,
+                      companyCount: p.companyCount,
+                      suggestedScore: p.suggestedScore,
+                    })}
                   </p>
                 </div>
                 <Button
@@ -506,8 +518,8 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
                   onClick={() => addMutation.mutate(p)}
                   disabled={addMutation.isPending}
                 >
-                  <UserPlus className="w-3.5 h-3.5 mr-1" />
-                  Add
+                  <UserPlus className="w-3.5 h-3.5 me-1" />
+                  {tr("add")}
                 </Button>
               </div>
             ))}
@@ -521,6 +533,8 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function LeadPipeline() {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
 
@@ -538,7 +552,7 @@ export default function LeadPipeline() {
     mutationFn: ({ id, stage }: { id: string; stage: Stage }) =>
       apiRequest("PUT", `/api/firm/pipeline/leads/${id}`, { stage }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] }),
-    onError: () => toast({ title: "Failed to move lead", variant: "destructive" }),
+    onError: () => toast({ title: tr("failedToMoveLead"), variant: "destructive" }),
   });
 
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
@@ -570,7 +584,7 @@ export default function LeadPipeline() {
       <div className="p-6 animate-pulse space-y-4">
         <div className="h-10 w-48 rounded bg-muted" />
         <div className="flex gap-3">
-          {STAGES.map((s) => (
+          {getStages().map((s) => (
             <div key={s.key} className="flex-1 min-w-[200px] h-64 rounded-xl bg-muted" />
           ))}
         </div>
@@ -583,29 +597,30 @@ export default function LeadPipeline() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader
-        eyebrow="Firm"
-        title={(t as any).leadPipeline || "Lead Pipeline"}
+        eyebrow={tr("firm")}
+        title={(t as any).leadPipeline || tr("leadPipeline")}
         description={
           <>
-            {pipeline?.totalLeads ?? 0} leads · {pipeline?.conversionRate ?? 0}% conversion
+            {pipeline?.totalLeads ?? 0} {tr("leads")} {pipeline?.conversionRate ?? 0}
+            {tr("conversion")}
             {pipeline?.avgDaysToConvert != null &&
-              ` · ${pipeline.avgDaysToConvert}d avg to convert`}
+              tr("dAvgToConvert", { avgDaysToConvert: pipeline.avgDaysToConvert })}
           </>
         }
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowDiscover((v) => !v)}>
-              <Sparkles className="w-4 h-4 mr-1.5 text-warning" />
-              Auto-discover
+              <Sparkles className="w-4 h-4 me-1.5 text-warning" />
+              {tr("autoDiscover")}
               {showDiscover ? (
-                <ChevronUp className="w-3.5 h-3.5 ml-1" />
+                <ChevronUp className="w-3.5 h-3.5 ms-1" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                <ChevronDown className="w-3.5 h-3.5 ms-1" />
               )}
             </Button>
             <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="w-4 h-4 mr-1.5" />
-              Add Lead
+              <Plus className="w-4 h-4 me-1.5" />
+              {tr("addLead")}
             </Button>
           </>
         }
@@ -616,7 +631,7 @@ export default function LeadPipeline() {
 
       {/* Kanban board — horizontal scroll on small screens */}
       <div className="flex gap-3 overflow-x-auto pb-3">
-        {STAGES.map((stage) => (
+        {getStages().map((stage) => (
           <KanbanColumn
             key={stage.key}
             stage={stage}

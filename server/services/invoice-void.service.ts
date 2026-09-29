@@ -61,6 +61,15 @@ export async function voidOrCancelInvoice(args: {
   // Everything that needs the pool is read BEFORE the transaction is opened.
   const preliminary = await storage.getInvoice(invoiceId, companyId);
   if (!preliminary) return fail(404, "INVOICE_NOT_FOUND", "Invoice not found");
+  // An opening-balance invoice posted nothing of its own (its amount is inside the opening
+  // balances), so voiding it would flip the status and leave the receivable in the ledger.
+  if ((preliminary as any).isOpeningBalance) {
+    return fail(
+      409,
+      "OPENING_BALANCE_INVOICE",
+      "This invoice was entered as an opening balance. Reverse the opening balances to remove it."
+    );
+  }
   const accounts = await storage.getAccountsByCompanyId(companyId);
   const accountsReceivable = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
   const vatPayable = accounts.find(

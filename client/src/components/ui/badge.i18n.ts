@@ -1,0 +1,35 @@
+import { defineMessages } from "@/lib/i18n-messages";
+
+export const messages = defineMessages(
+  "badge",
+  {
+    paid: "Paid",
+    credited: "Credited",
+    posted: "Posted",
+    approved: "Approved",
+    active: "Active",
+    sent: "Sent",
+    submitted: "Submitted",
+    pending: "Pending",
+    overdue: "Overdue",
+    rejected: "Rejected",
+    void: "Void",
+    draft: "Draft",
+    inactive: "Inactive",
+  },
+  {
+    paid: "مدفوعة",
+    credited: "مُسوّى بإشعار دائن",
+    posted: "مرحّل",
+    approved: "معتمدة",
+    active: "نشط",
+    sent: "مرسلة",
+    submitted: "مُقدَّم",
+    pending: "قيد الانتظار",
+    overdue: "متأخرة",
+    rejected: "مرفوضة",
+    void: "ملغاة",
+    draft: "مسودة",
+    inactive: "غير نشط",
+  }
+);

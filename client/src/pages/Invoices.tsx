@@ -101,12 +101,13 @@ import {
 import { SiGooglesheets } from "react-icons/si";
 import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { downloadInvoicePDF } from "@/lib/pdf-invoice";
+import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./Invoices.i18n";
 
 const invoiceLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0.01, "Price must be greater than 0"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unitPrice: z.coerce.number().min(0.01, pageMessages.marker("priceMustBeGreaterThan0")),
   vatRate: z.coerce.number().default(0.05),
   // Optional income account for this line (null/empty = the default account).
   revenueAccountId: z.string().nullable().optional(),
@@ -119,12 +120,12 @@ const DEFAULT_REVENUE_ACCOUNT = "__default__";
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, "Invoice number is required"),
-  customerName: z.string().min(1, "Customer name is required"),
+  number: z.string().min(1, pageMessages.marker("invoiceNumberIsRequired")),
+  customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
   date: z.date(),
   currency: z.string().default("AED"),
-  lines: z.array(invoiceLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(invoiceLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 const invoiceBrandingSchema = z.object({
@@ -147,6 +148,8 @@ type InvoiceFormData = z.infer<typeof invoiceSchema>;
 type InvoiceBrandingFormData = z.infer<typeof invoiceBrandingSchema>;
 
 export default function Invoices() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -229,8 +232,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Invoice created",
-        description: "Your invoice has been created with VAT calculation.",
+        title: tr("invoiceCreated"),
+        description: tr("yourInvoiceHasBeenCreatedWith"),
       });
       setDialogOpen(false);
       setEditingInvoice(null);
@@ -247,8 +250,8 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create invoice",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateInvoice"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -261,8 +264,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Invoice updated successfully",
-        description: "Your invoice has been updated.",
+        title: tr("invoiceUpdatedSuccessfully"),
+        description: tr("yourInvoiceHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingInvoice(null);
@@ -279,8 +282,8 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update invoice",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateInvoice"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -318,8 +321,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Status updated",
-        description: "Invoice status has been updated successfully.",
+        title: tr("statusUpdated"),
+        description: tr("invoiceStatusHasBeenUpdatedSuccessfully"),
       });
       setPaymentDialogOpen(false);
       setInvoiceForPayment(null);
@@ -334,8 +337,8 @@ export default function Invoices() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to update status",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateStatus"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -391,14 +394,14 @@ export default function Invoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
-      toast({ title: "Recurring settings saved" });
+      toast({ title: tr("recurringSettingsSaved") });
       setRecurringDialogOpen(false);
       setInvoiceForRecurring(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save recurring settings",
+        title: tr("failedToSaveRecurringSettings"),
         description: error?.message,
       });
     },
@@ -415,7 +418,10 @@ export default function Invoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
-      toast({ title: "Payment recorded", description: `Status updated to ${result.status}` });
+      toast({
+        title: tr("paymentRecorded"),
+        description: tr("statusUpdatedTo", { status: result.status }),
+      });
       setAddPaymentDialogOpen(false);
       setInvoiceForPaymentDetail(null);
       setPaymentAmount("");
@@ -426,7 +432,7 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to record payment",
+        title: tr("failedToRecordPayment"),
         description: error?.message,
       });
     },
@@ -444,14 +450,14 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Credit note created",
-        description: "A credit note has been created and the journal entry reversed.",
+        title: tr("creditNoteCreated"),
+        description: tr("aCreditNoteHasBeenCreated"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create credit note",
+        title: tr("failedToCreateCreditNote"),
         description: error?.message,
       });
     },
@@ -473,8 +479,8 @@ export default function Invoices() {
     if (!selectedPaymentAccount || !invoiceForPayment) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Please select a payment account.",
+        title: tr("error"),
+        description: tr("pleaseSelectAPaymentAccount"),
       });
       return;
     }
@@ -521,8 +527,8 @@ export default function Invoices() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load invoice details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadInvoiceDetails"),
       });
     }
   };
@@ -641,15 +647,15 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Invoice branding updated",
-        description: "Your invoice customization settings have been saved successfully.",
+        title: tr("invoiceBrandingUpdated"),
+        description: tr("yourInvoiceCustomizationSettingsHaveBeen"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update branding",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateBranding"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -688,7 +694,7 @@ export default function Invoices() {
 
   const handleExportExcel = () => {
     if (!filteredInvoices.length) {
-      toast({ variant: "destructive", title: "No data", description: "No invoices to export" });
+      toast({ variant: "destructive", title: tr("noData"), description: tr("noInvoicesToExport") });
       return;
     }
 
@@ -699,14 +705,16 @@ export default function Invoices() {
 
     exportToExcel([prepareInvoicesForExport(filteredInvoices, locale)], `invoices${dateRangeStr}`);
     toast({
-      title: "Export successful",
-      description: `${filteredInvoices.length} invoices exported to Excel`,
+      title: tr("exportSuccessful"),
+      description: tr("invoicesExportedToExcel", {
+        filteredInvoicesCount: filteredInvoices.length,
+      }),
     });
   };
 
   const handleExportGoogleSheets = async () => {
     if (!selectedCompanyId || !filteredInvoices.length) {
-      toast({ variant: "destructive", title: "No data", description: "No invoices to export" });
+      toast({ variant: "destructive", title: tr("noData"), description: tr("noInvoicesToExport") });
       return;
     }
 
@@ -726,8 +734,10 @@ export default function Invoices() {
 
     if (result.success) {
       toast({
-        title: "Export successful",
-        description: `${filteredInvoices.length} invoices exported to Google Sheets`,
+        title: tr("exportSuccessful"),
+        description: tr("invoicesExportedToGoogleSheets", {
+          filteredInvoicesCount: filteredInvoices.length,
+        }),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -735,8 +745,8 @@ export default function Invoices() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result.error || "Failed to export to Google Sheets",
+        title: tr("exportFailed"),
+        description: result.error || tr("failedToExportToGoogleSheets"),
       });
     }
   };
@@ -744,20 +754,20 @@ export default function Invoices() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={tr("sales")}
         title={t.invoices}
-        description={(t as any).manageInvoices ?? "Manage invoices and customize their appearance"}
+        description={(t as any).manageInvoices ?? tr("manageInvoicesAndCustomizeTheirAppearance")}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="invoices" data-testid="tab-invoices">
-            <FileText className="w-4 h-4 mr-2" />
+            <FileText className="w-4 h-4 me-2" />
             {t.invoices}
           </TabsTrigger>
           <TabsTrigger value="branding" data-testid="tab-branding">
-            <Palette className="w-4 h-4 mr-2" />
-            {(t as any).invoiceBranding ?? "Invoice Branding"}
+            <Palette className="w-4 h-4 me-2" />
+            {(t as any).invoiceBranding ?? tr("invoiceBranding")}
           </TabsTrigger>
         </TabsList>
 
@@ -767,7 +777,7 @@ export default function Invoices() {
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-4 flex-wrap">
                   <span className="text-sm font-medium">
-                    {(t as any).filterByDate ?? "Filter by date:"}
+                    {(t as any).filterByDate ?? tr("filterByDate")}
                   </span>
                   <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
                 </div>
@@ -779,8 +789,8 @@ export default function Invoices() {
                         disabled={isExporting}
                         data-testid="button-export-invoices"
                       >
-                        <Download className="w-4 h-4 mr-2" />
-                        {isExporting ? "Exporting..." : t.export}
+                        <Download className="w-4 h-4 me-2" />
+                        {isExporting ? tr("exporting") : t.export}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -788,15 +798,15 @@ export default function Invoices() {
                         onClick={handleExportExcel}
                         data-testid="menu-export-invoices-excel"
                       >
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        Export to Excel
+                        <FileSpreadsheet className="w-4 h-4 me-2" />
+                        {tr("exportToExcel")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={handleExportGoogleSheets}
                         data-testid="menu-export-invoices-sheets"
                       >
-                        <SiGooglesheets className="w-4 h-4 mr-2" />
-                        Export to Google Sheets
+                        <SiGooglesheets className="w-4 h-4 me-2" />
+                        {tr("exportToGoogleSheets")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -826,17 +836,17 @@ export default function Invoices() {
             >
               <DialogTrigger asChild>
                 <Button data-testid="button-create-invoice">
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4 me-2" />
                   {t.newInvoice}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>{editingInvoice ? "Edit Invoice" : t.newInvoice}</DialogTitle>
+                  <DialogTitle>{editingInvoice ? tr("editInvoice") : t.newInvoice}</DialogTitle>
                   <DialogDescription>
                     {editingInvoice
-                      ? "Update invoice details"
-                      : "Create a new invoice with automatic VAT calculation"}
+                      ? tr("updateInvoiceDetails")
+                      : tr("createANewInvoiceWithAutomatic")}
                   </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
@@ -871,16 +881,16 @@ export default function Invoices() {
                                   <Button
                                     variant="outline"
                                     className={cn(
-                                      "w-full justify-start text-left font-normal",
+                                      "w-full justify-start text-start font-normal",
                                       !field.value && "text-muted-foreground"
                                     )}
                                     data-testid="button-date-picker"
                                   >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    <CalendarIcon className="me-2 h-4 w-4" />
                                     {field.value ? (
                                       format(field.value, "PPP")
                                     ) : (
-                                      <span>Pick a date</span>
+                                      <span>{tr("pickADate")}</span>
                                     )}
                                   </Button>
                                 </FormControl>
@@ -923,7 +933,7 @@ export default function Invoices() {
                             <FormControl>
                               <Input
                                 {...field}
-                                placeholder="Optional"
+                                placeholder={tr("optional")}
                                 className="font-mono"
                                 data-testid="input-customer-trn"
                               />
@@ -936,7 +946,7 @@ export default function Invoices() {
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium">Line Items</h3>
+                        <h3 className="font-medium">{tr("lineItems")}</h3>
                         <Button
                           type="button"
                           variant="outline"
@@ -946,7 +956,7 @@ export default function Invoices() {
                           }
                           data-testid="button-add-line"
                         >
-                          <Plus className="w-4 h-4 mr-2" />
+                          <Plus className="w-4 h-4 me-2" />
                           {t.addLine}
                         </Button>
                       </div>
@@ -983,9 +993,9 @@ export default function Invoices() {
                                     <Input
                                       type="number"
                                       step="0.01"
-                                      placeholder="Qty"
+                                      placeholder={tr("qty")}
                                       className="font-mono"
-                                      aria-label={`Line ${index + 1} quantity`}
+                                      aria-label={tr("lineQuantity", { value: index + 1 })}
                                       value={field.value ?? ""}
                                       onChange={(e) =>
                                         field.onChange(
@@ -1009,9 +1019,9 @@ export default function Invoices() {
                                     <Input
                                       type="number"
                                       step="0.01"
-                                      placeholder="Price"
+                                      placeholder={tr("price")}
                                       className="font-mono"
-                                      aria-label={`Line ${index + 1} unit price`}
+                                      aria-label={tr("lineUnitPrice", { value: index + 1 })}
                                       value={field.value ?? ""}
                                       onChange={(e) =>
                                         field.onChange(
@@ -1126,7 +1136,7 @@ export default function Invoices() {
                     <div className="border-t pt-4 space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{t.subtotal}</span>
-                        <span className="font-mono font-medium">
+                        <span dir="ltr" className="font-mono font-medium">
                           {formatCurrency(subtotal, "AED", locale)}
                         </span>
                       </div>
@@ -1134,17 +1144,25 @@ export default function Invoices() {
                         <span className="text-muted-foreground">
                           {t.vat} (
                           {watchLines.some((line) => line.vatRate !== 0)
-                            ? `avg ${Math.round((watchLines.reduce((sum, line) => sum + line.vatRate, 0) / Math.max(1, watchLines.filter((l) => l.vatRate > 0).length)) * 100)}%`
+                            ? tr("avg", {
+                                round: Math.round(
+                                  (watchLines.reduce((sum, line) => sum + line.vatRate, 0) /
+                                    Math.max(1, watchLines.filter((l) => l.vatRate > 0).length)) *
+                                    100
+                                ),
+                              })
                             : "0%"}
                           )
                         </span>
-                        <span className="font-mono font-medium">
+                        <span dir="ltr" className="font-mono font-medium">
                           {formatCurrency(vatAmount, "AED", locale)}
                         </span>
                       </div>
                       <div className="flex justify-between text-lg font-semibold pt-2 border-t">
                         <span>{t.total}</span>
-                        <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
+                        <span dir="ltr" className="font-mono">
+                          {formatCurrency(total, "AED", locale)}
+                        </span>
                       </div>
                     </div>
 
@@ -1190,7 +1208,7 @@ export default function Invoices() {
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-mono text-sm font-semibold truncate">
+                          <p dir="ltr" className="font-mono text-sm font-semibold truncate">
                             {invoice.number}
                           </p>
                           <p className="text-sm font-medium truncate">{invoice.customerName}</p>
@@ -1198,7 +1216,7 @@ export default function Invoices() {
                             {formatDate(invoice.date, locale)}
                           </p>
                         </div>
-                        <p className="font-mono text-sm font-semibold shrink-0">
+                        <p dir="ltr" className="font-mono text-sm font-semibold shrink-0">
                           {formatCurrency(invoice.total, invoice.currency, locale)}
                         </p>
                       </div>
@@ -1218,7 +1236,7 @@ export default function Invoices() {
                             <SelectItem value="draft">{t.draft}</SelectItem>
                             <SelectItem value="sent">{t.sent}</SelectItem>
                             <SelectItem value="paid">{t.paid}</SelectItem>
-                            <SelectItem value="partial">Partial</SelectItem>
+                            <SelectItem value="partial">{tr("partial")}</SelectItem>
                             {/* Derived from credit notes: shown, never selectable. */}
                             <SelectItem value="credited" disabled>
                               {t.credited}
@@ -1233,8 +1251,8 @@ export default function Invoices() {
                             onClick={() => handleEditInvoice(invoice)}
                             data-testid={`mobile-button-edit-invoice-${invoice.id}`}
                           >
-                            <Edit className="w-4 h-4 mr-1" />
-                            Edit
+                            <Edit className="w-4 h-4 me-1" />
+                            {tr("edit")}
                           </Button>
                         )}
                         <Button
@@ -1244,8 +1262,8 @@ export default function Invoices() {
                           data-testid={`mobile-button-proof-invoice-${invoice.id}`}
                         >
                           <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                            <FileText className="w-4 h-4 mr-1" />
-                            Proof
+                            <FileText className="w-4 h-4 me-1" />
+                            {tr("proof")}
                           </Link>
                         </Button>
                       </div>
@@ -1272,7 +1290,7 @@ export default function Invoices() {
                         <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
                         <TableHead className="font-semibold">{t.customerName}</TableHead>
                         <TableHead className="font-semibold">{t.date}</TableHead>
-                        <TableHead className="font-semibold text-right">{t.total}</TableHead>
+                        <TableHead className="font-semibold text-end">{t.total}</TableHead>
                         <TableHead className="font-semibold text-center">{t.status}</TableHead>
                         <TableHead className="font-semibold text-center">{t.actions}</TableHead>
                       </TableRow>
@@ -1287,7 +1305,7 @@ export default function Invoices() {
                           <TableCell className="text-muted-foreground">
                             {formatDate(invoice.date, locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-medium">
+                          <TableCell className="text-end font-mono font-medium">
                             {formatCurrency(invoice.total, invoice.currency, locale)}
                           </TableCell>
                           <TableCell className="text-center">
@@ -1325,7 +1343,7 @@ export default function Invoices() {
                                   value="partial"
                                   data-testid={`status-option-partial-${invoice.id}`}
                                 >
-                                  Partial
+                                  {tr("partial")}
                                 </SelectItem>
                                 {/* Derived from credit notes: shown, never selectable. */}
                                 <SelectItem
@@ -1346,7 +1364,7 @@ export default function Invoices() {
                             {(invoice as any).einvoiceStatus && (
                               <Badge
                                 variant="outline"
-                                className="ml-1 text-[10px] px-1 py-0 bg-info-subtle text-info border-info/30"
+                                className="ms-1 text-[10px] px-1 py-0 bg-info-subtle text-info border-info/30"
                               >
                                 E
                               </Badge>
@@ -1361,8 +1379,8 @@ export default function Invoices() {
                                 data-testid={`button-proof-invoice-${invoice.id}`}
                               >
                                 <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                                  <FileText className="w-4 h-4 mr-2" />
-                                  Proof
+                                  <FileText className="w-4 h-4 me-2" />
+                                  {tr("proof")}
                                 </Link>
                               </Button>
                               {canEditInvoice(invoice.status) && (
@@ -1372,84 +1390,21 @@ export default function Invoices() {
                                   onClick={() => handleEditInvoice(invoice)}
                                   data-testid={`button-edit-invoice-${invoice.id}`}
                                 >
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Edit
+                                  <Edit className="w-4 h-4 me-2" />
+                                  {tr("edit")}
                                 </Button>
                               )}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={async () => {
-                                  try {
-                                    // Fetch full invoice details with lines using apiRequest
-                                    const invoiceDetails = await apiRequest(
-                                      "GET",
-                                      `/api/invoices/${invoice.id}`
-                                    );
-
-                                    // Check if company is VAT registered
-                                    const isVATRegistered = !!(
-                                      company?.trnVatNumber && company.trnVatNumber.length > 0
-                                    );
-
-                                    await downloadInvoicePDF({
-                                      invoiceNumber: invoiceDetails.number,
-                                      date: invoiceDetails.date.toString(),
-                                      customerName: invoiceDetails.customerName,
-                                      customerTRN: invoiceDetails.customerTrn || undefined,
-                                      companyName: company?.name || "Your Company",
-                                      companyTRN: company?.trnVatNumber || undefined,
-                                      companyAddress: company?.businessAddress || undefined,
-                                      companyPhone: company?.contactPhone || undefined,
-                                      companyEmail: company?.contactEmail || undefined,
-                                      companyWebsite: company?.websiteUrl || undefined,
-                                      companyLogo: company?.logoUrl || undefined,
-                                      lines: invoiceDetails.lines || [],
-                                      subtotal: invoiceDetails.subtotal,
-                                      vatAmount: invoiceDetails.vatAmount,
-                                      total: invoiceDetails.total,
-                                      currency: invoiceDetails.currency,
-                                      locale,
-                                      companyType: company?.companyType,
-                                      // Invoice customization settings
-                                      showLogo:
-                                        company?.invoiceShowLogo !== undefined
-                                          ? company.invoiceShowLogo
-                                          : true,
-                                      showAddress:
-                                        company?.invoiceShowAddress !== undefined
-                                          ? company.invoiceShowAddress
-                                          : true,
-                                      showPhone:
-                                        company?.invoiceShowPhone !== undefined
-                                          ? company.invoiceShowPhone
-                                          : true,
-                                      showEmail:
-                                        company?.invoiceShowEmail !== undefined
-                                          ? company.invoiceShowEmail
-                                          : true,
-                                      showWebsite:
-                                        company?.invoiceShowWebsite === true ? true : undefined,
-                                      customTitle: company?.invoiceCustomTitle || undefined,
-                                      footerNote: company?.invoiceFooterNote || undefined,
-                                      isVATRegistered,
-                                    });
-
-                                    toast({
-                                      title: "PDF Downloaded",
-                                      description: "Invoice PDF has been downloaded successfully",
-                                    });
-                                  } catch (error: any) {
-                                    toast({
-                                      title: "Error",
-                                      description: error?.message || "Failed to generate PDF",
-                                      variant: "destructive",
-                                    });
-                                  }
-                                }}
+                                onClick={() =>
+                                  // The server renders the PDF (Arabic-capable fonts, FTA layout);
+                                  // the old browser-side generator could not draw Arabic text.
+                                  window.open(apiUrl(`/api/invoices/${invoice.id}/pdf`), "_blank")
+                                }
                                 data-testid={`button-download-pdf-${invoice.id}`}
                               >
-                                <Download className="w-4 h-4 mr-2" />
+                                <Download className="w-4 h-4 me-2" />
                                 PDF
                               </Button>
                               <Button
@@ -1462,7 +1417,7 @@ export default function Invoices() {
                                       `/api/invoices/${invoice.id}/generate-einvoice`
                                     );
                                     toast({
-                                      title: "E-Invoice generated",
+                                      title: tr("eInvoiceGenerated"),
                                       description: `UUID: ${result.uuid}`,
                                     });
                                     queryClient.invalidateQueries({
@@ -1470,13 +1425,13 @@ export default function Invoices() {
                                     });
                                   } catch (error: any) {
                                     toast({
-                                      title: "Error",
+                                      title: tr("error"),
                                       description: error?.message,
                                       variant: "destructive",
                                     });
                                   }
                                 }}
-                                title="Generate E-Invoice"
+                                title={tr("generateEInvoice")}
                                 data-testid={`button-einvoice-${invoice.id}`}
                               >
                                 <FileCode className="w-4 h-4 text-info" />
@@ -1484,7 +1439,7 @@ export default function Invoices() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Add Payment"
+                                title={tr("addPayment")}
                                 onClick={() => {
                                   setInvoiceForPaymentDetail(invoice);
                                   setPaymentAmount("");
@@ -1502,7 +1457,7 @@ export default function Invoices() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="View Payments"
+                                title={tr("viewPayments")}
                                 onClick={async () => {
                                   setInvoiceForPaymentDetail(invoice);
                                   try {
@@ -1515,7 +1470,7 @@ export default function Invoices() {
                                   } catch (e: any) {
                                     toast({
                                       variant: "destructive",
-                                      title: "Error",
+                                      title: tr("error"),
                                       description: e?.message,
                                     });
                                   }
@@ -1527,7 +1482,7 @@ export default function Invoices() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Set Recurring"
+                                title={tr("setRecurring")}
                                 onClick={() => {
                                   setInvoiceForRecurring(invoice);
                                   setRecurringEnabled((invoice as any).isRecurring || false);
@@ -1550,11 +1505,13 @@ export default function Invoices() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  title="Create Credit Note"
+                                  title={tr("createCreditNote")}
                                   onClick={() => {
                                     if (
                                       window.confirm(
-                                        `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
+                                        tr("createACreditNoteForInvoice", {
+                                          number: invoice.number,
+                                        })
                                       )
                                     ) {
                                       createCreditNoteMutation.mutate(invoice.id);
@@ -1580,20 +1537,19 @@ export default function Invoices() {
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>
-                                      Delete Invoice {invoice.number}?
+                                      {tr("deleteInvoice", { number: invoice.number })}
                                     </AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This will permanently delete this invoice. This action cannot
-                                      be undone.
+                                      {tr("thisWillPermanentlyDeleteThisInvoice")}
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                                     <AlertDialogAction
                                       onClick={() => deleteMutation.mutate(invoice.id)}
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                     >
-                                      Delete
+                                      {tr("delete")}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -1610,19 +1566,19 @@ export default function Invoices() {
                                 icon={FileText}
                                 title={
                                   dateRange.from || dateRange.to
-                                    ? "No invoices in this date range"
-                                    : ((t as any).noInvoicesYet ?? "No invoices yet")
+                                    ? tr("noInvoicesInThisDateRange")
+                                    : ((t as any).noInvoicesYet ?? tr("noInvoicesYet"))
                                 }
                                 description={
                                   dateRange.from || dateRange.to
-                                    ? "Try widening the date filter or clearing it to see all invoices."
+                                    ? tr("tryWideningTheDateFilterOr")
                                     : ((t as any).createFirstInvoice ??
-                                      "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.")
+                                      tr("createYourFirstInvoiceVatSequential"))
                                 }
                                 action={
                                   !dateRange.from && !dateRange.to
                                     ? {
-                                        label: (t as any).newInvoiceCta ?? "New invoice",
+                                        label: (t as any).newInvoiceCta ?? tr("newInvoice"),
                                         icon: Plus,
                                         onClick: () => setDialogOpen(true),
                                         testId: "button-create-first-invoice",
@@ -1632,7 +1588,7 @@ export default function Invoices() {
                                 secondaryAction={
                                   dateRange.from || dateRange.to
                                     ? {
-                                        label: "Clear filter",
+                                        label: tr("clearFilter"),
                                         onClick: () =>
                                           setDateRange({ from: undefined, to: undefined }),
                                       }
@@ -1657,7 +1613,7 @@ export default function Invoices() {
             <Skeleton className="h-96" />
           ) : !company ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">Company not found</p>
+              <p className="text-muted-foreground">{tr("companyNotFound")}</p>
             </div>
           ) : (
             <div className="space-y-6 max-w-3xl">
@@ -1665,9 +1621,7 @@ export default function Invoices() {
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    Your company is VAT registered. All invoices will automatically display your TRN
-                    ({company.trnVatNumber}) and be labeled as "Tax Invoice" to comply with UAE FTA
-                    requirements.
+                    {tr("yourCompanyIsVatRegisteredAll", { trnVatNumber: company.trnVatNumber })}
                   </AlertDescription>
                 </Alert>
               )}
@@ -1678,10 +1632,10 @@ export default function Invoices() {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <FileText className="w-5 h-5" />
-                        Company Details Display
+                        {tr("companyDetailsDisplay")}
                       </CardTitle>
                       <CardDescription>
-                        Choose which company information to display on invoices
+                        {tr("chooseWhichCompanyInformationToDisplay")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -1691,12 +1645,12 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Company Logo</FormLabel>
+                              <FormLabel className="text-base">{tr("showCompanyLogo")}</FormLabel>
                               <FormDescription>
-                                Display your company logo at the top of invoices
+                                {tr("displayYourCompanyLogoAtThe")}
                                 {!company.logoUrl && (
                                   <span className="block text-xs text-warning mt-1">
-                                    Note: Set your logo in Company Profile first
+                                    {tr("noteSetYourLogoInCompany")}
                                   </span>
                                 )}
                               </FormDescription>
@@ -1719,12 +1673,14 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Business Address</FormLabel>
+                              <FormLabel className="text-base">
+                                {tr("showBusinessAddress")}
+                              </FormLabel>
                               <FormDescription>
-                                Display your business address on invoices
+                                {tr("displayYourBusinessAddressOnInvoices")}
                                 {!company.businessAddress && (
                                   <span className="block text-xs text-warning mt-1">
-                                    Note: Set your address in Company Profile first
+                                    {tr("noteSetYourAddressInCompany")}
                                   </span>
                                 )}
                               </FormDescription>
@@ -1747,12 +1703,12 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Phone Number</FormLabel>
+                              <FormLabel className="text-base">{tr("showPhoneNumber")}</FormLabel>
                               <FormDescription>
-                                Display your business phone number on invoices
+                                {tr("displayYourBusinessPhoneNumberOn")}
                                 {!company.contactPhone && (
                                   <span className="block text-xs text-warning mt-1">
-                                    Note: Set your phone in Company Profile first
+                                    {tr("noteSetYourPhoneInCompany")}
                                   </span>
                                 )}
                               </FormDescription>
@@ -1775,12 +1731,12 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Email Address</FormLabel>
+                              <FormLabel className="text-base">{tr("showEmailAddress")}</FormLabel>
                               <FormDescription>
-                                Display your business email on invoices
+                                {tr("displayYourBusinessEmailOnInvoices")}
                                 {!company.contactEmail && (
                                   <span className="block text-xs text-warning mt-1">
-                                    Note: Set your email in Company Profile first
+                                    {tr("noteSetYourEmailInCompany")}
                                   </span>
                                 )}
                               </FormDescription>
@@ -1803,12 +1759,12 @@ export default function Invoices() {
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between rounded-lg border p-4">
                             <div className="space-y-0.5">
-                              <FormLabel className="text-base">Show Website</FormLabel>
+                              <FormLabel className="text-base">{tr("showWebsite")}</FormLabel>
                               <FormDescription>
-                                Display your website URL on invoices
+                                {tr("displayYourWebsiteUrlOnInvoices")}
                                 {!company.websiteUrl && (
                                   <span className="block text-xs text-warning mt-1">
-                                    Note: Set your website in Company Profile first
+                                    {tr("noteSetYourWebsiteInCompany")}
                                   </span>
                                 )}
                               </FormDescription>
@@ -1829,10 +1785,8 @@ export default function Invoices() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Invoice Customization</CardTitle>
-                      <CardDescription>
-                        Customize the appearance and text of your invoices
-                      </CardDescription>
+                      <CardTitle>{tr("invoiceCustomization")}</CardTitle>
+                      <CardDescription>{tr("customizeTheAppearanceAndTextOf")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                       <FormField
@@ -1840,11 +1794,11 @@ export default function Invoices() {
                         name="invoiceCustomTitle"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Invoice Title</FormLabel>
+                            <FormLabel>{tr("invoiceTitle")}</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder={
-                                  isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"
+                                  isVATRegistered ? tr("taxInvoiceDefault") : tr("invoiceDefault")
                                 }
                                 {...field}
                                 data-testid="input-invoice-title"
@@ -1852,8 +1806,8 @@ export default function Invoices() {
                             </FormControl>
                             <FormDescription>
                               {isVATRegistered
-                                ? 'For VAT-registered companies, invoices default to "Tax Invoice". You can customize this, but it must comply with FTA regulations.'
-                                : 'Custom title for your invoices. Leave blank to use "Invoice".'}
+                                ? tr("forVatRegisteredCompaniesInvoicesDefault")
+                                : tr("customTitleForYourInvoicesLeave")}
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
@@ -1865,20 +1819,17 @@ export default function Invoices() {
                         name="invoiceFooterNote"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Footer Note</FormLabel>
+                            <FormLabel>{tr("footerNote")}</FormLabel>
                             <FormControl>
                               <Textarea
-                                placeholder="Thank you for your business"
+                                placeholder={tr("thankYouForYourBusiness")}
                                 className="resize-none"
                                 rows={3}
                                 {...field}
                                 data-testid="textarea-footer-note"
                               />
                             </FormControl>
-                            <FormDescription>
-                              Add a custom message at the bottom of your invoices (e.g., payment
-                              terms, thank you message)
-                            </FormDescription>
+                            <FormDescription>{tr("addACustomMessageAtThe")}</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1892,8 +1843,8 @@ export default function Invoices() {
                       disabled={updateBrandingMutation.isPending}
                       data-testid="button-save-branding"
                     >
-                      <Save className="w-4 h-4 mr-2" />
-                      {updateBrandingMutation.isPending ? "Saving..." : "Save Settings"}
+                      <Save className="w-4 h-4 me-2" />
+                      {updateBrandingMutation.isPending ? tr("saving") : tr("saveSettings")}
                     </Button>
                   </div>
                 </form>
@@ -1909,11 +1860,9 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-warning" />
-              Similar Invoices Found
+              {tr("similarInvoicesFound")}
             </DialogTitle>
-            <DialogDescription>
-              We found similar invoices that might be duplicates. Review them before proceeding.
-            </DialogDescription>
+            <DialogDescription>{tr("weFoundSimilarInvoicesThatMight")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -1930,7 +1879,7 @@ export default function Invoices() {
                         {invoice.status}
                       </Badge>
                     </div>
-                    <p className="font-mono font-semibold">
+                    <p dir="ltr" className="font-mono font-semibold">
                       {formatCurrency(invoice.total || 0, "AED", locale)}
                     </p>
                   </div>
@@ -1947,7 +1896,7 @@ export default function Invoices() {
                 }}
                 className="flex-1"
               >
-                Cancel
+                {tr("cancel")}
               </Button>
               <Button
                 onClick={async () => {
@@ -1960,7 +1909,7 @@ export default function Invoices() {
                 }}
                 className="flex-1"
               >
-                Create Anyway
+                {tr("createAnyway")}
               </Button>
             </div>
           </div>
@@ -1973,18 +1922,20 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-chart-5" />
-              Recurring Invoice Settings
+              {tr("recurringInvoiceSettings")}
             </DialogTitle>
             <DialogDescription>
-              Configure automatic recurring copies for Invoice {invoiceForRecurring?.number}
+              {tr("configureAutomaticRecurringCopiesForInvoice", {
+                number: invoiceForRecurring?.number,
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div>
-                <p className="font-medium">Enable Recurring</p>
+                <p className="font-medium">{tr("enableRecurring")}</p>
                 <p className="text-sm text-muted-foreground">
-                  Automatically create new invoice copies on schedule
+                  {tr("automaticallyCreateNewInvoiceCopiesOn")}
                 </p>
               </div>
               <Switch checked={recurringEnabled} onCheckedChange={setRecurringEnabled} />
@@ -1993,30 +1944,30 @@ export default function Invoices() {
             {recurringEnabled && (
               <>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Frequency</label>
+                  <label className="text-sm font-medium">{tr("frequency")}</label>
                   <Select value={recurringInterval} onValueChange={setRecurringInterval}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
-                      <SelectItem value="yearly">Yearly</SelectItem>
+                      <SelectItem value="weekly">{tr("weekly")}</SelectItem>
+                      <SelectItem value="monthly">{tr("monthly")}</SelectItem>
+                      <SelectItem value="quarterly">{tr("quarterly")}</SelectItem>
+                      <SelectItem value="yearly">{tr("yearly")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Next Run Date</label>
+                  <label className="text-sm font-medium">{tr("nextRunDate")}</label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full justify-start text-left font-normal"
+                        className="w-full justify-start text-start font-normal"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {recurringNextDate ? format(recurringNextDate, "PPP") : "Pick a date"}
+                        <CalendarIcon className="me-2 h-4 w-4" />
+                        {recurringNextDate ? format(recurringNextDate, "PPP") : tr("pickADate")}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -2031,15 +1982,15 @@ export default function Invoices() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">End Date (optional)</label>
+                  <label className="text-sm font-medium">{tr("endDateOptional")}</label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full justify-start text-left font-normal"
+                        className="w-full justify-start text-start font-normal"
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {recurringEndDate ? format(recurringEndDate, "PPP") : "No end date"}
+                        <CalendarIcon className="me-2 h-4 w-4" />
+                        {recurringEndDate ? format(recurringEndDate, "PPP") : tr("noEndDate")}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -2058,7 +2009,7 @@ export default function Invoices() {
                       onClick={() => setRecurringEndDate(undefined)}
                       className="text-xs text-muted-foreground"
                     >
-                      Clear end date
+                      {tr("clearEndDate")}
                     </Button>
                   )}
                 </div>
@@ -2071,7 +2022,7 @@ export default function Invoices() {
               onClick={() => setRecurringDialogOpen(false)}
               className="flex-1"
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -2092,7 +2043,7 @@ export default function Invoices() {
               disabled={setRecurringMutation.isPending || (recurringEnabled && !recurringNextDate)}
               className="flex-1"
             >
-              {setRecurringMutation.isPending ? "Saving..." : "Save"}
+              {setRecurringMutation.isPending ? tr("saving") : tr("save")}
             </Button>
           </div>
         </DialogContent>
@@ -2104,10 +2055,10 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-success" />
-              Record Payment
+              {tr("recordPayment")}
             </DialogTitle>
             <DialogDescription>
-              Record a payment received for Invoice {invoiceForPaymentDetail?.number} (Total:{" "}
+              {tr("recordAPaymentReceivedForInvoice", { number: invoiceForPaymentDetail?.number })}
               {invoiceForPaymentDetail
                 ? formatCurrency(
                     invoiceForPaymentDetail.total,
@@ -2120,7 +2071,7 @@ export default function Invoices() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Amount</label>
+              <label className="text-sm font-medium">{tr("amount")}</label>
               <Input
                 type="number"
                 step="0.01"
@@ -2132,26 +2083,26 @@ export default function Invoices() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method</label>
+              <label className="text-sm font-medium">{tr("paymentMethod")}</label>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bank">Bank Transfer</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="online">Online Payment</SelectItem>
+                  <SelectItem value="bank">{tr("bankTransfer")}</SelectItem>
+                  <SelectItem value="cash">{tr("cash")}</SelectItem>
+                  <SelectItem value="cheque">{tr("cheque")}</SelectItem>
+                  <SelectItem value="online">{tr("onlinePayment")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Deposit Account</label>
+              <label className="text-sm font-medium">{tr("depositAccount")}</label>
               {paymentAccounts.length > 0 ? (
                 <Select value={paymentAccountForAdd} onValueChange={setPaymentAccountForAdd}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select account..." />
+                    <SelectValue placeholder={tr("selectAccount")} />
                   </SelectTrigger>
                   <SelectContent>
                     {paymentAccounts.map((acc) => (
@@ -2164,9 +2115,7 @@ export default function Invoices() {
               ) : (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    No cash/bank accounts found. Create one in Chart of Accounts.
-                  </AlertDescription>
+                  <AlertDescription>{tr("noCashBankAccountsFoundCreate")}</AlertDescription>
                 </Alert>
               )}
             </div>
@@ -2179,18 +2128,18 @@ export default function Invoices() {
             />
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Reference (optional)</label>
+              <label className="text-sm font-medium">{tr("referenceOptional")}</label>
               <Input
-                placeholder="e.g. Bank ref, cheque no."
+                placeholder={tr("eGBankRefChequeNo")}
                 value={paymentReference}
                 onChange={(e) => setPaymentReference(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Notes (optional)</label>
+              <label className="text-sm font-medium">{tr("notesOptional")}</label>
               <Input
-                placeholder="Additional notes"
+                placeholder={tr("additionalNotes")}
                 value={paymentNotes}
                 onChange={(e) => setPaymentNotes(e.target.value)}
               />
@@ -2202,7 +2151,7 @@ export default function Invoices() {
               onClick={() => setAddPaymentDialogOpen(false)}
               className="flex-1"
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -2222,7 +2171,7 @@ export default function Invoices() {
               disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
               className="flex-1"
             >
-              {addPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+              {addPaymentMutation.isPending ? tr("recording") : tr("recordPayment")}
             </Button>
           </div>
         </DialogContent>
@@ -2232,21 +2181,25 @@ export default function Invoices() {
       <Dialog open={viewPaymentsDialogOpen} onOpenChange={setViewPaymentsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
-            <DialogDescription>All payments recorded for this invoice</DialogDescription>
+            <DialogTitle>
+              {tr("paymentHistoryInvoice", { number: invoiceForPaymentDetail?.number })}
+            </DialogTitle>
+            <DialogDescription>{tr("allPaymentsRecordedForThisInvoice")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {invoicePayments.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">No payments recorded yet.</p>
+              <p className="text-center text-muted-foreground py-6">
+                {tr("noPaymentsRecordedYet")}
+              </p>
             ) : (
               <>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>{tr("date")}</TableHead>
+                      <TableHead>{tr("method")}</TableHead>
+                      <TableHead>{tr("reference")}</TableHead>
+                      <TableHead className="text-end">{tr("amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2257,7 +2210,7 @@ export default function Invoices() {
                         <TableCell className="text-muted-foreground">
                           {p.reference || "—"}
                         </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
+                        <TableCell className="text-end font-mono font-medium">
                           {formatCurrency(
                             p.amount,
                             invoiceForPaymentDetail?.currency || "AED",
@@ -2269,8 +2222,8 @@ export default function Invoices() {
                   </TableBody>
                 </Table>
                 <div className="flex justify-between pt-2 border-t font-semibold">
-                  <span>Total Paid</span>
-                  <span className="font-mono">
+                  <span>{tr("totalPaid")}</span>
+                  <span dir="ltr" className="font-mono">
                     {formatCurrency(
                       invoicePayments.reduce((s: number, p: InvoicePayment) => s + p.amount, 0),
                       invoiceForPaymentDetail?.currency || "AED",
@@ -2286,7 +2239,7 @@ export default function Invoices() {
             onClick={() => setViewPaymentsDialogOpen(false)}
             className="w-full mt-2"
           >
-            Close
+            {tr("close")}
           </Button>
         </DialogContent>
       </Dialog>
@@ -2295,9 +2248,9 @@ export default function Invoices() {
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Select Payment Account</DialogTitle>
+            <DialogTitle>{tr("selectPaymentAccount")}</DialogTitle>
             <DialogDescription>
-              Choose where the payment for invoice {invoiceForPayment?.number} was deposited
+              {tr("chooseWhereThePaymentForInvoice", { number: invoiceForPayment?.number })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2319,7 +2272,7 @@ export default function Invoices() {
                           <div className="font-medium">
                             {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
                           </div>
-                          <div className="text-sm text-muted-foreground font-mono">
+                          <div dir="ltr" className="text-sm text-muted-foreground font-mono">
                             {account.code}
                           </div>
                         </div>
@@ -2335,10 +2288,7 @@ export default function Invoices() {
               <div className="space-y-4">
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    You need to create at least one bank or cash account before marking invoices as
-                    paid.
-                  </AlertDescription>
+                  <AlertDescription>{tr("youNeedToCreateAtLeast")}</AlertDescription>
                 </Alert>
                 <Button
                   variant="outline"
@@ -2349,8 +2299,8 @@ export default function Invoices() {
                   className="w-full"
                   data-testid="button-create-payment-account"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Bank/Cash Account
+                  <Plus className="w-4 h-4 me-2" />
+                  {tr("createBankCashAccount")}
                 </Button>
               </div>
             )}
@@ -2371,7 +2321,7 @@ export default function Invoices() {
               className="flex-1"
               data-testid="button-cancel-payment"
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleConfirmPayment}
@@ -2379,7 +2329,7 @@ export default function Invoices() {
               className="flex-1"
               data-testid="button-confirm-payment"
             >
-              {updateStatusMutation.isPending ? "Processing..." : "Mark as Paid"}
+              {updateStatusMutation.isPending ? tr("processing") : tr("markAsPaid")}
             </Button>
           </div>
         </DialogContent>

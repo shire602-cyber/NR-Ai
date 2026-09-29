@@ -10,6 +10,7 @@ import {
 import { useNotifications, type AppNotification } from "@/hooks/useNotifications";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./NotificationBell.i18n";
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -28,6 +29,8 @@ function priorityDot(priority: string) {
 }
 
 export function NotificationBell() {
+  const tr = pageMessages.useT();
+
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
@@ -50,14 +53,16 @@ export function NotificationBell() {
           size="sm"
           className="relative"
           data-testid="button-notifications"
-          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+          aria-label={
+            unreadCount > 0 ? tr("notificationsUnread", { unreadCount }) : tr("notifications")
+          }
         >
           <Bell className="w-4 h-4" aria-hidden="true" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
               aria-hidden="true"
-              className="absolute -top-1 -right-1 h-4 min-w-[1rem] px-1 text-[10px] flex items-center justify-center"
+              className="absolute -top-1 -end-1 h-4 min-w-[1rem] px-1 text-[10px] flex items-center justify-center"
             >
               {unreadCount > 99 ? "99+" : unreadCount}
             </Badge>
@@ -67,7 +72,7 @@ export function NotificationBell() {
 
       <DropdownMenuContent align="end" className="w-80 p-0" sideOffset={8}>
         <div className="flex items-center justify-between px-3 py-2 border-b">
-          <span className="text-sm font-semibold">Notifications</span>
+          <span className="text-sm font-semibold">{tr("notifications")}</span>
           {unreadCount > 0 && (
             <Button
               variant="ghost"
@@ -75,15 +80,17 @@ export function NotificationBell() {
               className="h-6 px-2 text-xs text-muted-foreground"
               onClick={markAllAsRead}
             >
-              <CheckCheck className="w-3 h-3 mr-1" />
-              Mark all read
+              <CheckCheck className="w-3 h-3 me-1" />
+              {tr("markAllRead")}
             </Button>
           )}
         </div>
 
         <div className="max-h-80 overflow-y-auto">
           {recent.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No notifications</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {tr("noNotifications")}
+            </p>
           ) : (
             recent.map((n) => (
               <div
@@ -136,7 +143,7 @@ export function NotificationBell() {
                 setOpen(false);
               }}
             >
-              View all notifications
+              {tr("viewAllNotifications")}
             </Button>
           </div>
         )}

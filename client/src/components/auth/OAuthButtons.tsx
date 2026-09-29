@@ -3,6 +3,7 @@ import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./OAuthButtons.i18n";
 
 type OAuthProvider = "google" | "microsoft";
 type OAuthProviderInfo = {
@@ -30,6 +31,8 @@ function safeNextPath(): string {
 }
 
 export function OAuthButtons() {
+  const tr = pageMessages.useT();
+
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(null);
   const [providers, setProviders] = useState<OAuthProviderInfo[]>([]);
 
@@ -74,7 +77,7 @@ export function OAuthButtons() {
           <span className="w-full border-t" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+          <span className="bg-card px-2 text-muted-foreground">{tr("orContinueWith")}</span>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -98,7 +101,7 @@ export function OAuthButtons() {
       </div>
       {pendingProvider && (
         <p className="text-center text-xs text-muted-foreground" role="status">
-          Redirecting to {pendingProvider === "google" ? "Google" : "Microsoft"}...
+          {tr("redirectingTo")} {pendingProvider === "google" ? "Google" : "Microsoft"}...
         </p>
       )}
     </div>

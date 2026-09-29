@@ -39,6 +39,10 @@ import { registerClientErrorRoutes } from "./routes/client-errors.routes";
 import { registerVATRoutes } from "./routes/vat.routes";
 import { registerVATAutopilotRoutes } from "./routes/vat-autopilot.routes";
 import { registerCorporateTaxRoutes } from "./routes/corporate-tax.routes";
+import { registerTaxFilingRoutes } from "./routes/tax-filing.routes";
+import { registerFafRoutes } from "./routes/faf.routes";
+import { registerOpeningBalanceRoutes } from "./routes/opening-balance.routes";
+import { registerYearEndRoutes } from "./routes/year-end.routes";
 import { registerTeamRoutes } from "./routes/team.routes";
 import { registerPortalRoutes } from "./routes/portal.routes";
 import { registerDocumentRoutes } from "./routes/documents.routes";
@@ -170,6 +174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerVATRoutes(app);
   registerVATAutopilotRoutes(app);
   registerCorporateTaxRoutes(app);
+  registerTaxFilingRoutes(app);
+  registerFafRoutes(app);
+  registerOpeningBalanceRoutes(app);
+  registerYearEndRoutes(app);
   registerExchangeRateRoutes(app);
 
   // ─── Team & Client Portal ──────────────────────────────

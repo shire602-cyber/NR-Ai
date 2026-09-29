@@ -200,7 +200,8 @@ async function main() {
     ok("H2 response states Muhasib does not file with the FTA",
       /does NOT file|did not transmit/i.test(s1.json?.filing?.message || ""), { msg: s1.json?.filing?.message });
     // submit WITH a reference -> recorded as filed, still not transmitted by us
-    const s2 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { ftaReferenceNumber: "FTA-REF-99887766" } });
+    // Phase 4: a filing needs a filing date as well (and locks the period).
+    const s2 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { ftaReferenceNumber: "FTA-REF-99887766", filedAt: today } });
     ok("H2 an FTA reference promotes the return to filed",
       s2.status === 200 && s2.json?.status === "filed" && s2.json?.ftaReferenceNumber === "FTA-REF-99887766",
       { status: s2.json?.status, ref: s2.json?.ftaReferenceNumber });

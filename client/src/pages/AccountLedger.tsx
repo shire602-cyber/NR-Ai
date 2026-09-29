@@ -51,6 +51,7 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
+import { messages as pageMessages } from "./AccountLedger.i18n";
 
 interface LedgerEntry {
   id: string;
@@ -78,7 +79,14 @@ interface LedgerResponse {
   totalCount: number;
 }
 
+
+/** jsPDF's built-in fonts cannot draw Arabic; replace each Arabic run with a readable marker. */
+const ARABIC_RUN = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+/g;
+const maskArabicForPdf = (text: string): string => text.replace(ARABIC_RUN, "[AR]");
+
 export default function AccountLedger() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -129,9 +137,8 @@ export default function AccountLedger() {
     },
     onSuccess: () => {
       toast({
-        title: locale === "ar" ? "تم عكس القيد بنجاح" : "Entry reversed successfully",
-        description:
-          locale === "ar" ? "تم إنشاء قيد عكسي جديد" : "A new reversing entry has been created",
+        title: tr("entryReversedSuccessfully"),
+        description: tr("aNewReversingEntryHasBeen"),
       });
       setReversalDialogOpen(false);
       setSelectedEntry(null);
@@ -140,8 +147,8 @@ export default function AccountLedger() {
     },
     onError: (error: any) => {
       toast({
-        title: locale === "ar" ? "فشل عكس القيد" : "Reversal failed",
-        description: error?.message || "An error occurred",
+        title: tr("reversalFailed"),
+        description: error?.message || tr("anErrorOccurred"),
         variant: "destructive",
       });
     },
@@ -155,7 +162,14 @@ export default function AccountLedger() {
     if (!ledger) return;
 
     const exportEntries = ledger.allEntries || ledger.entries;
-    const headers = ["Date", "Entry #", "Description", "Debit", "Credit", "Balance"];
+    const headers = [
+      tr("date"),
+      tr("entry"),
+      tr("description"),
+      tr("debit"),
+      tr("credit"),
+      tr("balance"),
+    ];
     const rows = exportEntries.map((entry) => [
       format(new Date(entry.date), "yyyy-MM-dd"),
       entry.entryNumber,
@@ -186,11 +200,13 @@ export default function AccountLedger() {
     link.click();
 
     toast({
-      title: locale === "ar" ? "تم التصدير" : "Export complete",
-      description: locale === "ar" ? "تم تحميل ملف CSV" : "CSV file downloaded",
+      title: tr("exportComplete"),
+      description: tr("csvFileDownloaded"),
     });
   };
 
+  // i18n-ignore-start: the PDF export is English-only. jsPDF's built-in fonts cannot draw
+  // Arabic, so every label here is fixed English and Arabic runs in free text are masked.
   const handleExportPDF = () => {
     if (!ledger) return;
     setIsExporting(true);
@@ -214,7 +230,7 @@ export default function AccountLedger() {
 
       let yPos = 52;
       const colWidths = [25, 25, 65, 25, 25, 25];
-      const headers = ["Date", "Entry #", "Description", "Debit", "Credit", "Balance"];
+      const headers = ["Date", "Entry", "Description", "Debit", "Credit", "Balance"];
 
       doc.setFillColor(240, 240, 240);
       doc.rect(14, yPos - 4, pageWidth - 28, 8, "F");
@@ -242,7 +258,7 @@ export default function AccountLedger() {
         const rowData = [
           format(new Date(entry.date), "MMM dd"),
           entry.entryNumber.slice(-8),
-          (entry.description || entry.memo || "").slice(0, 40),
+          maskArabicForPdf(entry.description || entry.memo || "").slice(0, 40),
           entry.debit > 0 ? entry.debit.toFixed(2) : "-",
           entry.credit > 0 ? entry.credit.toFixed(2) : "-",
           entry.runningBalance.toFixed(2),
@@ -267,19 +283,20 @@ export default function AccountLedger() {
       );
 
       toast({
-        title: locale === "ar" ? "تم التصدير" : "Export complete",
-        description: locale === "ar" ? "تم تحميل ملف PDF" : "PDF file downloaded",
+        title: tr("exportComplete"),
+        description: tr("pdfFileDownloaded"),
       });
     } catch (error) {
       toast({
-        title: locale === "ar" ? "فشل التصدير" : "Export failed",
-        description: "Could not generate PDF",
+        title: tr("exportFailed"),
+        description: tr("couldNotGeneratePdf"),
         variant: "destructive",
       });
     } finally {
       setIsExporting(false);
     }
   };
+  // i18n-ignore-end
 
   const handleReverseEntry = (entry: LedgerEntry) => {
     setSelectedEntry(entry);
@@ -298,10 +315,10 @@ export default function AccountLedger() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
         <BookOpen className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Account Not Found</h2>
+        <h2 className="text-xl font-semibold mb-2">{tr("accountNotFound")}</h2>
         <Button onClick={() => navigate("/chart-of-accounts")} variant="outline">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Chart of Accounts
+          <ArrowLeft className="h-4 w-4 me-2" />
+          {tr("backToChartOfAccounts")}
         </Button>
       </div>
     );
@@ -329,17 +346,17 @@ export default function AccountLedger() {
               ) : locale === "ar" && ledger?.account.nameAr ? (
                 ledger.account.nameAr
               ) : (
-                ledger?.account.nameEn || "Account Ledger"
+                ledger?.account.nameEn || tr("accountLedger")
               )}
             </h1>
             {isLoading ? (
               <Skeleton className="h-4 w-32 mt-1" />
             ) : (
               <p className="text-muted-foreground mt-1">
-                <Badge variant="outline" className="mr-2">
+                <Badge variant="outline" className="me-2">
                   {ledger?.account.type}
                 </Badge>
-                {locale === "ar" ? "دفتر الأستاذ" : "General Ledger"}
+                {tr("generalLedger")}
               </p>
             )}
           </div>
@@ -352,7 +369,7 @@ export default function AccountLedger() {
             disabled={!ledger || isExporting}
             data-testid="button-export-csv"
           >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            <FileSpreadsheet className="h-4 w-4 me-2" />
             CSV
           </Button>
           <Button
@@ -362,7 +379,7 @@ export default function AccountLedger() {
             disabled={!ledger || isExporting}
             data-testid="button-export-pdf"
           >
-            <FileText className="h-4 w-4 mr-2" />
+            <FileText className="h-4 w-4 me-2" />
             PDF
           </Button>
           <Button
@@ -380,20 +397,21 @@ export default function AccountLedger() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "الرصيد الافتتاحي" : "Opening Balance"}
-              </p>
-              <p className="text-2xl font-mono font-bold" data-testid="text-opening-balance">
+              <p className="text-sm text-muted-foreground">{tr("openingBalance")}</p>
+              <p
+                dir="ltr"
+                className="text-2xl font-mono font-bold"
+                data-testid="text-opening-balance"
+              >
                 {formatCurrency(ledger.openingBalance)}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "إجمالي المدين" : "Total Debit"}
-              </p>
+              <p className="text-sm text-muted-foreground">{tr("totalDebit")}</p>
               <p
+                dir="ltr"
                 className="text-2xl font-mono font-bold text-success"
                 data-testid="text-total-debit"
               >
@@ -403,10 +421,9 @@ export default function AccountLedger() {
           </Card>
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "إجمالي الدائن" : "Total Credit"}
-              </p>
+              <p className="text-sm text-muted-foreground">{tr("totalCredit")}</p>
               <p
+                dir="ltr"
                 className="text-2xl font-mono font-bold text-destructive"
                 data-testid="text-total-credit"
               >
@@ -416,10 +433,9 @@ export default function AccountLedger() {
           </Card>
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar" ? "الرصيد الختامي" : "Closing Balance"}
-              </p>
+              <p className="text-sm text-muted-foreground">{tr("closingBalance")}</p>
               <p
+                dir="ltr"
                 className={`text-2xl font-mono font-bold ${
                   ledger.closingBalance >= 0 ? "text-foreground" : "text-destructive"
                 }`}
@@ -437,16 +453,16 @@ export default function AccountLedger() {
           <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
             <CardTitle className="text-lg flex items-center gap-2">
               <Filter className="h-5 w-5" />
-              {locale === "ar" ? "الفلاتر" : "Filters"}
+              {tr("filters")}
             </CardTitle>
             <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
               <div className="relative flex-1 sm:flex-none sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
+                  placeholder={tr("searchEntries")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-ledger"
                 />
               </div>
@@ -467,14 +483,8 @@ export default function AccountLedger() {
           ) : !ledger?.entries?.length ? (
             <div className="p-8 text-center">
               <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">
-                {locale === "ar" ? "لا توجد قيود" : "No entries found"}
-              </h3>
-              <p className="text-muted-foreground">
-                {locale === "ar"
-                  ? "لا توجد حركات لهذا الحساب بناءً على الفلاتر المحددة"
-                  : "No transactions found for this account with the selected filters"}
-              </p>
+              <h3 className="text-lg font-medium mb-2">{tr("noEntriesFound")}</h3>
+              <p className="text-muted-foreground">{tr("noTransactionsFoundForThisAccount")}</p>
             </div>
           ) : (
             <>
@@ -482,24 +492,12 @@ export default function AccountLedger() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[100px]">
-                        {locale === "ar" ? "التاريخ" : "Date"}
-                      </TableHead>
-                      <TableHead className="w-[120px]">
-                        {locale === "ar" ? "رقم القيد" : "Entry #"}
-                      </TableHead>
-                      <TableHead className="min-w-[200px]">
-                        {locale === "ar" ? "الوصف" : "Description"}
-                      </TableHead>
-                      <TableHead className="text-right w-[100px]">
-                        {locale === "ar" ? "مدين" : "Debit"}
-                      </TableHead>
-                      <TableHead className="text-right w-[100px]">
-                        {locale === "ar" ? "دائن" : "Credit"}
-                      </TableHead>
-                      <TableHead className="text-right w-[120px]">
-                        {locale === "ar" ? "الرصيد" : "Balance"}
-                      </TableHead>
+                      <TableHead className="w-[100px]">{tr("date")}</TableHead>
+                      <TableHead className="w-[120px]">{tr("entry")}</TableHead>
+                      <TableHead className="min-w-[200px]">{tr("description")}</TableHead>
+                      <TableHead className="text-end w-[100px]">{tr("debit")}</TableHead>
+                      <TableHead className="text-end w-[100px]">{tr("credit")}</TableHead>
+                      <TableHead className="text-end w-[120px]">{tr("balance")}</TableHead>
                       <TableHead className="w-[80px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -534,14 +532,14 @@ export default function AccountLedger() {
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-success">
+                        <TableCell className="text-end font-mono text-success">
                           {entry.debit > 0 ? formatCurrency(entry.debit) : "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-destructive">
+                        <TableCell className="text-end font-mono text-destructive">
                           {entry.credit > 0 ? formatCurrency(entry.credit) : "-"}
                         </TableCell>
                         <TableCell
-                          className={`text-right font-mono font-medium ${
+                          className={`text-end font-mono font-medium ${
                             entry.runningBalance >= 0 ? "text-foreground" : "text-destructive"
                           }`}
                         >
@@ -553,7 +551,7 @@ export default function AccountLedger() {
                             size="icon"
                             className="opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={() => handleReverseEntry(entry)}
-                            title={locale === "ar" ? "عكس القيد" : "Reverse entry"}
+                            title={tr("reverseEntry")}
                             data-testid={`button-reverse-${entry.id}`}
                           >
                             <RotateCcw className="h-4 w-4" />
@@ -605,50 +603,36 @@ export default function AccountLedger() {
       <Dialog open={reversalDialogOpen} onOpenChange={setReversalDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {locale === "ar" ? "عكس القيد المحاسبي" : "Reverse Journal Entry"}
-            </DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "سيتم إنشاء قيد عكسي جديد لإلغاء تأثير هذا القيد. هذا الإجراء لا يمكن التراجع عنه."
-                : "This will create a new reversing entry to cancel the effect of this entry. This action cannot be undone."}
-            </DialogDescription>
+            <DialogTitle>{tr("reverseJournalEntry")}</DialogTitle>
+            <DialogDescription>{tr("thisWillCreateANewReversing")}</DialogDescription>
           </DialogHeader>
 
           {selectedEntry && (
             <div className="py-4 space-y-4">
               <div className="p-4 bg-muted rounded-lg space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {locale === "ar" ? "رقم القيد" : "Entry Number"}
+                  <span className="text-sm text-muted-foreground">{tr("entryNumber")}</span>
+                  <span dir="ltr" className="font-mono">
+                    {selectedEntry.entryNumber}
                   </span>
-                  <span className="font-mono">{selectedEntry.entryNumber}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {locale === "ar" ? "التاريخ" : "Date"}
-                  </span>
+                  <span className="text-sm text-muted-foreground">{tr("date")}</span>
                   <span>{format(new Date(selectedEntry.date), "MMM dd, yyyy")}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {locale === "ar" ? "المبلغ" : "Amount"}
-                  </span>
-                  <span className="font-mono">
+                  <span className="text-sm text-muted-foreground">{tr("amount")}</span>
+                  <span dir="ltr" className="font-mono">
                     {formatCurrency(selectedEntry.debit || selectedEntry.credit)}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reversal-reason">
-                  {locale === "ar" ? "سبب العكس (اختياري)" : "Reversal reason (optional)"}
-                </Label>
+                <Label htmlFor="reversal-reason">{tr("reversalReasonOptional")}</Label>
                 <Textarea
                   id="reversal-reason"
-                  placeholder={
-                    locale === "ar" ? "أدخل سبب العكس..." : "Enter reason for reversal..."
-                  }
+                  placeholder={tr("enterReasonForReversal")}
                   value={reversalReason}
                   onChange={(e) => setReversalReason(e.target.value)}
                   rows={3}
@@ -664,7 +648,7 @@ export default function AccountLedger() {
               onClick={() => setReversalDialogOpen(false)}
               data-testid="button-cancel-reversal"
             >
-              {locale === "ar" ? "إلغاء" : "Cancel"}
+              {tr("cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -674,13 +658,13 @@ export default function AccountLedger() {
             >
               {reversalMutation.isPending ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  {locale === "ar" ? "جاري العكس..." : "Reversing..."}
+                  <RefreshCw className="h-4 w-4 me-2 animate-spin" />
+                  {tr("reversing")}
                 </>
               ) : (
                 <>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  {locale === "ar" ? "تأكيد العكس" : "Confirm Reversal"}
+                  <RotateCcw className="h-4 w-4 me-2" />
+                  {tr("confirmReversal")}
                 </>
               )}
             </Button>

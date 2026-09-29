@@ -22,6 +22,7 @@ export const customerOnlyRoutes = [
   "/auto-reconcile",
   "/ai-inbox",
   "/month-end",
+  "/opening-balances",
   "/integrations",
   "/integrations-hub",
   "/team",

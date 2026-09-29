@@ -69,6 +69,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { messages as pageMessages } from "./FixedAssets.i18n";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -111,6 +112,7 @@ interface AssetSummary {
 
 // ─── Schemas ─────────────────────────────────────────────
 
+// i18n-ignore-start: category ids stored with each record; the UI shows translated labels (assetCategoryLabel)
 const CATEGORIES = [
   "Vehicles",
   "Furniture",
@@ -120,16 +122,37 @@ const CATEGORIES = [
   "Land",
   "Other",
 ] as const;
+// i18n-ignore-end
+
+const CATEGORIES_LABEL_KEYS = {
+  Vehicles: "assetCategoryVehicles",
+  Furniture: "assetCategoryFurniture",
+  Equipment: "assetCategoryEquipment",
+  Electronics: "assetCategoryElectronics",
+  Building: "assetCategoryBuilding",
+  Land: "assetCategoryLand",
+  Other: "assetCategoryOther",
+} as const;
+
+/** Display label for a stored category id (the id itself stays English). */
+function assetCategoryLabel(category: string): string {
+  const key = CATEGORIES_LABEL_KEYS[category as keyof typeof CATEGORIES_LABEL_KEYS];
+  return key ? pageMessages.t(key) : category;
+}
 
 const assetFormSchema = z.object({
-  assetName: z.string().min(1, "Asset name is required"),
+  assetName: z.string().min(1, pageMessages.marker("assetNameIsRequired")),
   assetNameAr: z.string().optional().nullable(),
   assetNumber: z.string().optional().nullable(),
-  category: z.string().min(1, "Category is required"),
-  purchaseDate: z.string().min(1, "Purchase date is required"),
-  purchaseCost: z.coerce.number().min(0, "Purchase cost must be >= 0"),
-  salvageValue: z.coerce.number().min(0, "Salvage value must be >= 0").optional().nullable(),
-  usefulLifeYears: z.coerce.number().int().min(1, "Useful life must be at least 1 year"),
+  category: z.string().min(1, pageMessages.marker("categoryIsRequired")),
+  purchaseDate: z.string().min(1, pageMessages.marker("purchaseDateIsRequired")),
+  purchaseCost: z.coerce.number().min(0, pageMessages.marker("purchaseCostMustBe0")),
+  salvageValue: z.coerce
+    .number()
+    .min(0, pageMessages.marker("salvageValueMustBe0"))
+    .optional()
+    .nullable(),
+  usefulLifeYears: z.coerce.number().int().min(1, pageMessages.marker("usefulLifeMustBeAtLeast")),
   depreciationMethod: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
   serialNumber: z.string().optional().nullable(),
@@ -139,8 +162,8 @@ const assetFormSchema = z.object({
 type AssetFormData = z.infer<typeof assetFormSchema>;
 
 const disposeFormSchema = z.object({
-  disposalDate: z.string().min(1, "Disposal date is required"),
-  disposalAmount: z.coerce.number().min(0, "Disposal amount must be >= 0"),
+  disposalDate: z.string().min(1, pageMessages.marker("disposalDateIsRequired")),
+  disposalAmount: z.coerce.number().min(0, pageMessages.marker("disposalAmountMustBe0")),
   notes: z.string().optional().nullable(),
 });
 
@@ -156,6 +179,8 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 // ─── Component ───────────────────────────────────────────
 
 export default function FixedAssets() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -228,14 +253,14 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Created",
-        description: "The fixed asset has been added successfully.",
+        title: tr("assetCreated"),
+        description: tr("theFixedAssetHasBeenAdded"),
       });
       setAssetDialogOpen(false);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -248,15 +273,15 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Updated",
-        description: "The fixed asset has been updated successfully.",
+        title: tr("assetUpdated"),
+        description: tr("theFixedAssetHasBeenUpdated"),
       });
       setAssetDialogOpen(false);
       setEditingAsset(null);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -267,10 +292,10 @@ export default function FixedAssets() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
-      toast({ title: "Asset Deleted", description: "The fixed asset has been deleted." });
+      toast({ title: tr("assetDeleted"), description: tr("theFixedAssetHasBeenDeleted") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -282,12 +307,14 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Depreciation Recorded",
-        description: `Monthly depreciation of ${formatCurrency(data.monthlyDepreciation, "AED", locale)} recorded.`,
+        title: tr("depreciationRecorded"),
+        description: tr("monthlyDepreciationOfRecorded", {
+          formatCurrency: formatCurrency(data.monthlyDepreciation, "AED", locale),
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -299,17 +326,20 @@ export default function FixedAssets() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
-      const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
+      const glType = data.gainLossType === "gain" ? tr("gain") : tr("loss");
       toast({
-        title: "Asset Disposed",
-        description: `${glType} on disposal: ${formatCurrency(Math.abs(data.gainLoss), "AED", locale)}`,
+        title: tr("assetDisposed"),
+        description: tr("onDisposal", {
+          glType,
+          formatCurrency: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
+        }),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
       disposeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -322,14 +352,18 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Batch Depreciation Complete",
-        description: `Processed ${data.assetsProcessed} assets for ${data.month}/${data.year}.`,
+        title: tr("batchDepreciationComplete"),
+        description: tr("processedAssetsFor", {
+          assetsProcessed: data.assetsProcessed,
+          month: data.month,
+          year: data.year,
+        }),
       });
       setDepRunDialogOpen(false);
       depRunForm.reset({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -405,11 +439,11 @@ export default function FixedAssets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <StatusBadge tone="success">Active</StatusBadge>;
+        return <StatusBadge tone="success">{tr("active")}</StatusBadge>;
       case "disposed":
-        return <StatusBadge tone="danger">Disposed</StatusBadge>;
+        return <StatusBadge tone="danger">{tr("disposed")}</StatusBadge>;
       case "fully_depreciated":
-        return <StatusBadge tone="warning">Fully Depreciated</StatusBadge>;
+        return <StatusBadge tone="warning">{tr("fullyDepreciated")}</StatusBadge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -446,8 +480,8 @@ export default function FixedAssets() {
     return (
       <EmptyState
         icon={Building2}
-        title="No company selected"
-        description="Create or select a company before tracking fixed assets."
+        title={tr("noCompanySelected")}
+        description={tr("createOrSelectACompanyBefore")}
       />
     );
   }
@@ -461,10 +495,10 @@ export default function FixedAssets() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Building2 className="w-8 h-8" />
-            Fixed Assets
+            {tr("fixedAssets")}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage fixed assets, depreciation, and disposals
+            {tr("manageFixedAssetsDepreciationAndDisposals")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -474,11 +508,11 @@ export default function FixedAssets() {
             className="flex items-center gap-2"
           >
             <PlayCircle className="w-4 h-4" />
-            Run Depreciation
+            {tr("runDepreciation")}
           </Button>
           <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            Add Asset
+            {tr("addAsset")}
           </Button>
         </div>
       </div>
@@ -488,7 +522,7 @@ export default function FixedAssets() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
+              <CardTitle className="text-sm font-medium">{tr("totalCost")}</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -496,13 +530,13 @@ export default function FixedAssets() {
                 {formatCurrency(summary.totalCost, "AED", locale)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {summary.totalAssets} active asset{summary.totalAssets !== 1 ? "s" : ""}
+                {tr.plural("activeAssets", summary.totalAssets)}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Accumulated Depreciation</CardTitle>
+              <CardTitle className="text-sm font-medium">{tr("accumulatedDepreciation")}</CardTitle>
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -511,21 +545,26 @@ export default function FixedAssets() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {summary.totalCost > 0
-                  ? `${((summary.totalAccumulatedDepreciation / summary.totalCost) * 100).toFixed(1)}% depreciated`
-                  : "0% depreciated"}
+                  ? tr("depreciated", {
+                      value: (
+                        (summary.totalAccumulatedDepreciation / summary.totalCost) *
+                        100
+                      ).toFixed(1),
+                    })
+                  : tr("n0Depreciated")}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Net Book Value</CardTitle>
+              <CardTitle className="text-sm font-medium">{tr("netBookValue")}</CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 {formatCurrency(summary.totalNetBookValue, "AED", locale)}
               </div>
-              <p className="text-xs text-muted-foreground">Current carrying value</p>
+              <p className="text-xs text-muted-foreground">{tr("currentCarryingValue")}</p>
             </CardContent>
           </Card>
         </div>
@@ -535,32 +574,34 @@ export default function FixedAssets() {
       {summary && summary.byCategory.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Asset Category Breakdown</CardTitle>
+            <CardTitle className="text-base">{tr("assetCategoryBreakdown")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
-                    <TableHead className="text-right">Accum. Depreciation</TableHead>
-                    <TableHead className="text-right">Net Book Value</TableHead>
+                    <TableHead>{tr("category")}</TableHead>
+                    <TableHead className="text-end">{tr("count")}</TableHead>
+                    <TableHead className="text-end">{tr("totalCost")}</TableHead>
+                    <TableHead className="text-end">{tr("accumDepreciation")}</TableHead>
+                    <TableHead className="text-end">{tr("netBookValue")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {summary.byCategory.map((cat) => (
                     <TableRow key={cat.category}>
-                      <TableCell className="font-medium">{cat.category}</TableCell>
-                      <TableCell className="text-right">{cat.count}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="font-medium">
+                        {assetCategoryLabel(cat.category)}
+                      </TableCell>
+                      <TableCell className="text-end">{cat.count}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(cat.totalCost, "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {formatCurrency(cat.totalAccumulatedDepreciation, "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {formatCurrency(cat.totalNetBookValue, "AED", locale)}
                       </TableCell>
                     </TableRow>
@@ -577,15 +618,13 @@ export default function FixedAssets() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Fixed Assets</CardTitle>
-              <CardDescription>
-                {assets.length} asset{assets.length !== 1 ? "s" : ""} registered
-              </CardDescription>
+              <CardTitle>{tr("fixedAssets")}</CardTitle>
+              <CardDescription>{tr.plural("assetsRegistered", assets.length)}</CardDescription>
             </div>
           </div>
           <div className="mt-4">
             <Input
-              placeholder="Search assets by name, category, number..."
+              placeholder={tr("searchAssetsByNameCategoryNumber")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="max-w-sm"
@@ -599,10 +638,10 @@ export default function FixedAssets() {
             searchQuery ? (
               <EmptyState
                 icon={Building2}
-                title="No matching assets"
-                description={`No assets match "${searchQuery}". Try a different keyword or clear the search.`}
+                title={tr("noMatchingAssets")}
+                description={tr("noAssetsMatchTryADifferent", { searchQuery })}
                 action={{
-                  label: "Clear search",
+                  label: tr("clearSearch"),
                   onClick: () => setSearchQuery(""),
                   variant: "outline",
                 }}
@@ -611,9 +650,9 @@ export default function FixedAssets() {
             ) : (
               <EmptyState
                 icon={Building2}
-                title="No fixed assets yet"
-                description="Track equipment, vehicles, and other depreciable assets to keep your books accurate."
-                action={{ label: "Add Asset", icon: Plus, onClick: handleOpenCreateDialog }}
+                title={tr("noFixedAssetsYet")}
+                description={tr("trackEquipmentVehiclesAndOtherDepreciable")}
+                action={{ label: tr("addAsset"), icon: Plus, onClick: handleOpenCreateDialog }}
                 testId="empty-state-fixed-assets"
               />
             )
@@ -622,14 +661,14 @@ export default function FixedAssets() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Asset Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Purchase Date</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Accum. Dep.</TableHead>
-                    <TableHead className="text-right">NBV</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+                    <TableHead>{tr("assetName")}</TableHead>
+                    <TableHead>{tr("category")}</TableHead>
+                    <TableHead>{tr("purchaseDate")}</TableHead>
+                    <TableHead className="text-end">{tr("cost")}</TableHead>
+                    <TableHead className="text-end">{tr("accumDep")}</TableHead>
+                    <TableHead className="text-end">NBV</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead className="text-end">{t.actions || tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -650,27 +689,27 @@ export default function FixedAssets() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>{asset.category}</TableCell>
+                      <TableCell>{assetCategoryLabel(asset.category)}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         {asset.purchase_date
                           ? format(new Date(asset.purchase_date), "MMM dd, yyyy")
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {formatCurrency(parseFloat(asset.purchase_cost), "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {formatCurrency(
                           parseFloat(asset.accumulated_depreciation || "0"),
                           "AED",
                           locale
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-semibold">
+                      <TableCell className="text-end font-semibold">
                         {formatCurrency(parseFloat(asset.net_book_value || "0"), "AED", locale)}
                       </TableCell>
                       <TableCell>{getStatusBadge(asset.status)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <div className="flex items-center justify-end gap-1">
                           {asset.status === "active" && (
                             <>
@@ -678,7 +717,7 @@ export default function FixedAssets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => depreciateMutation.mutate(asset.id)}
-                                title="Record Depreciation"
+                                title={tr("recordDepreciation")}
                                 disabled={depreciateMutation.isPending}
                               >
                                 <Calculator className="w-4 h-4" />
@@ -687,7 +726,7 @@ export default function FixedAssets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleOpenEditDialog(asset)}
-                                title="Edit"
+                                title={tr("edit")}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -695,7 +734,7 @@ export default function FixedAssets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleOpenDisposeDialog(asset)}
-                                title="Dispose"
+                                title={tr("dispose")}
                                 className="text-[hsl(var(--chart-4))] hover:text-[hsl(var(--chart-4))]"
                               >
                                 <Ban className="w-4 h-4" />
@@ -706,7 +745,7 @@ export default function FixedAssets() {
                             variant="ghost"
                             size="sm"
                             onClick={() => setAssetToDelete(asset.id)}
-                            title="Delete"
+                            title={tr("delete")}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -726,9 +765,9 @@ export default function FixedAssets() {
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingAsset ? "Edit Fixed Asset" : "Add Fixed Asset"}</DialogTitle>
+            <DialogTitle>{editingAsset ? tr("editFixedAsset") : tr("addFixedAsset")}</DialogTitle>
             <DialogDescription>
-              {editingAsset ? "Update asset details." : "Register a new fixed asset."}
+              {editingAsset ? tr("updateAssetDetails") : tr("registerANewFixedAsset")}
             </DialogDescription>
           </DialogHeader>
 
@@ -739,9 +778,9 @@ export default function FixedAssets() {
                 name="assetName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Asset Name *</FormLabel>
+                    <FormLabel>{tr("assetName2")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Toyota Hilux 2024" {...field} />
+                      <Input placeholder={tr("eGToyotaHilux2024")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -753,7 +792,7 @@ export default function FixedAssets() {
                 name="assetNameAr"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Asset Name (Arabic)</FormLabel>
+                    <FormLabel>{tr("assetNameArabic")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="اسم الأصل"
@@ -773,7 +812,7 @@ export default function FixedAssets() {
                   name="assetNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Asset Number</FormLabel>
+                      <FormLabel>{tr("assetNumber")}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., FA-001" {...field} value={field.value || ""} />
                       </FormControl>
@@ -787,17 +826,17 @@ export default function FixedAssets() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category *</FormLabel>
+                      <FormLabel>{tr("category2")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
+                            <SelectValue placeholder={tr("selectCategory")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {CATEGORIES.map((cat) => (
                             <SelectItem key={cat} value={cat}>
-                              {cat}
+                              {assetCategoryLabel(cat)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -814,7 +853,7 @@ export default function FixedAssets() {
                   name="purchaseDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Date *</FormLabel>
+                      <FormLabel>{tr("purchaseDate2")}</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -828,7 +867,7 @@ export default function FixedAssets() {
                   name="purchaseCost"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Cost (AED) *</FormLabel>
+                      <FormLabel>{tr("purchaseCostAed")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -844,7 +883,7 @@ export default function FixedAssets() {
                   name="salvageValue"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Salvage Value (AED)</FormLabel>
+                      <FormLabel>{tr("salvageValueAed")}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -864,7 +903,7 @@ export default function FixedAssets() {
                   name="usefulLifeYears"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Useful Life (Years) *</FormLabel>
+                      <FormLabel>{tr("usefulLifeYears")}</FormLabel>
                       <FormControl>
                         <Input type="number" min="1" step="1" {...field} />
                       </FormControl>
@@ -879,16 +918,16 @@ export default function FixedAssets() {
                 name="depreciationMethod"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Depreciation Method</FormLabel>
+                    <FormLabel>{tr("depreciationMethod")}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select method" />
+                          <SelectValue placeholder={tr("selectMethod")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="straight_line">Straight-Line</SelectItem>
-                        <SelectItem value="declining_balance">Declining Balance</SelectItem>
+                        <SelectItem value="straight_line">{tr("straightLine")}</SelectItem>
+                        <SelectItem value="declining_balance">{tr("decliningBalance")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -902,10 +941,10 @@ export default function FixedAssets() {
                   name="location"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Location</FormLabel>
+                      <FormLabel>{tr("location")}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="e.g., Dubai Office"
+                          placeholder={tr("eGDubaiOffice")}
                           {...field}
                           value={field.value || ""}
                         />
@@ -920,7 +959,7 @@ export default function FixedAssets() {
                   name="serialNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Serial Number</FormLabel>
+                      <FormLabel>{tr("serialNumber")}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., SN-12345" {...field} value={field.value || ""} />
                       </FormControl>
@@ -935,10 +974,10 @@ export default function FixedAssets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{tr("notes")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Optional notes about this asset"
+                        placeholder={tr("optionalNotesAboutThisAsset")}
                         {...field}
                         value={field.value || ""}
                       />
@@ -950,17 +989,17 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setAssetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createAssetMutation.isPending || updateAssetMutation.isPending}
                 >
                   {createAssetMutation.isPending || updateAssetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading || tr("loading")
                     : editingAsset
-                      ? t.save || "Save"
-                      : "Add Asset"}
+                      ? t.save || tr("save")
+                      : tr("addAsset")}
                 </Button>
               </div>
             </form>
@@ -972,11 +1011,18 @@ export default function FixedAssets() {
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Dispose Asset</DialogTitle>
+            <DialogTitle>{tr("disposeAsset")}</DialogTitle>
             <DialogDescription>
               {disposingAsset
-                ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
-                : "Record asset disposal"}
+                ? tr("recordDisposalForNbv", {
+                    asset_name: disposingAsset.asset_name,
+                    formatCurrency: formatCurrency(
+                      parseFloat(disposingAsset.net_book_value || "0"),
+                      "AED",
+                      locale
+                    ),
+                  })
+                : tr("recordAssetDisposal")}
             </DialogDescription>
           </DialogHeader>
 
@@ -987,7 +1033,7 @@ export default function FixedAssets() {
                 name="disposalDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Date *</FormLabel>
+                    <FormLabel>{tr("disposalDate")}</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} />
                     </FormControl>
@@ -1001,7 +1047,7 @@ export default function FixedAssets() {
                 name="disposalAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Amount (AED)</FormLabel>
+                    <FormLabel>{tr("disposalAmountAed")}</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" min="0" {...field} />
                     </FormControl>
@@ -1015,10 +1061,10 @@ export default function FixedAssets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{tr("notes")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Reason for disposal"
+                        placeholder={tr("reasonForDisposal")}
                         {...field}
                         value={field.value || ""}
                       />
@@ -1030,10 +1076,10 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDisposeDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending ? t.loading || "Loading..." : "Dispose Asset"}
+                  {disposeMutation.isPending ? t.loading || tr("loading") : tr("disposeAsset")}
                 </Button>
               </div>
             </form>
@@ -1045,10 +1091,8 @@ export default function FixedAssets() {
       <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Run Monthly Depreciation</DialogTitle>
-            <DialogDescription>
-              Calculate and record depreciation for all active assets for the selected month.
-            </DialogDescription>
+            <DialogTitle>{tr("runMonthlyDepreciation")}</DialogTitle>
+            <DialogDescription>{tr("calculateAndRecordDepreciationForAll")}</DialogDescription>
           </DialogHeader>
 
           <Form {...depRunForm}>
@@ -1059,29 +1103,29 @@ export default function FixedAssets() {
                   name="month"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Month *</FormLabel>
+                      <FormLabel>{tr("month")}</FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseInt(v))}
                         value={String(field.value)}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select month" />
+                            <SelectValue placeholder={tr("selectMonth")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="1">January</SelectItem>
-                          <SelectItem value="2">February</SelectItem>
-                          <SelectItem value="3">March</SelectItem>
-                          <SelectItem value="4">April</SelectItem>
-                          <SelectItem value="5">May</SelectItem>
-                          <SelectItem value="6">June</SelectItem>
-                          <SelectItem value="7">July</SelectItem>
-                          <SelectItem value="8">August</SelectItem>
-                          <SelectItem value="9">September</SelectItem>
-                          <SelectItem value="10">October</SelectItem>
-                          <SelectItem value="11">November</SelectItem>
-                          <SelectItem value="12">December</SelectItem>
+                          <SelectItem value="1">{tr("january")}</SelectItem>
+                          <SelectItem value="2">{tr("february")}</SelectItem>
+                          <SelectItem value="3">{tr("march")}</SelectItem>
+                          <SelectItem value="4">{tr("april")}</SelectItem>
+                          <SelectItem value="5">{tr("may")}</SelectItem>
+                          <SelectItem value="6">{tr("june")}</SelectItem>
+                          <SelectItem value="7">{tr("july")}</SelectItem>
+                          <SelectItem value="8">{tr("august")}</SelectItem>
+                          <SelectItem value="9">{tr("september")}</SelectItem>
+                          <SelectItem value="10">{tr("october")}</SelectItem>
+                          <SelectItem value="11">{tr("november")}</SelectItem>
+                          <SelectItem value="12">{tr("december")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1094,7 +1138,7 @@ export default function FixedAssets() {
                   name="year"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Year *</FormLabel>
+                      <FormLabel>{tr("year")}</FormLabel>
                       <FormControl>
                         <Input type="number" min="2000" max="2100" {...field} />
                       </FormControl>
@@ -1106,12 +1150,12 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button type="submit" disabled={runDepreciationMutation.isPending}>
                   {runDepreciationMutation.isPending
-                    ? t.loading || "Loading..."
-                    : "Run Depreciation"}
+                    ? t.loading || tr("loading")
+                    : tr("runDepreciation")}
                 </Button>
               </div>
             </form>
@@ -1127,13 +1171,13 @@ export default function FixedAssets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Fixed Asset?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteFixedAsset")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this asset record. This action cannot be undone.
+              {tr("thisWillPermanentlyDeleteThisAsset")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (assetToDelete) {
@@ -1143,7 +1187,7 @@ export default function FixedAssets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

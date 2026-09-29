@@ -132,7 +132,16 @@ const moneyOverrides = Object.fromEntries(MONEY_KEYS.map((k) => [k, moneyField.o
  */
 export const vatReturnPatchSchema = insertVatReturnSchema
   .partial()
-  .omit({ companyId: true, createdBy: true, submittedBy: true, periodStart: true, periodEnd: true })
+  .omit({
+    companyId: true,
+    createdBy: true,
+    submittedBy: true,
+    periodStart: true,
+    periodEnd: true,
+    // Amendment links are created by the amendment endpoint only.
+    amendsReturnId: true,
+    isAmendment: true,
+  })
   .extend({
     ...moneyOverrides,
     status: z.enum(VAT_RETURN_STATUSES).optional(),
@@ -154,6 +163,13 @@ export type VatReturnPatchDecision =
   | { ok: false; status: number; code: string; message: string };
 
 const BOX_KEY = /^box\d/;
+const FILED_ONLY_ENDPOINT_FIELDS = new Set([
+  "paymentAmount",
+  "paymentStatus",
+  "paymentDate",
+  "ftaReferenceNumber",
+  "submittedAt",
+]);
 const ymdOf = (value: unknown): string | null => {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value.trim()) && !/[+-]\d{2}:?\d{2}$/.test(value.trim())) {
@@ -198,7 +214,13 @@ export function evaluateVatReturnPatch(args: {
 
   if ((LOCKED_VAT_RETURN_STATUSES as readonly string[]).includes(existing.status)) {
     const editsFigures = Object.keys(patch).some(
-      (k) => BOX_KEY.test(k) || k === "adjustmentAmount" || k === "adjustmentReason"
+      (k) =>
+        BOX_KEY.test(k) ||
+        k === "adjustmentAmount" ||
+        k === "adjustmentReason" ||
+        // Once filed, references and payments move only through the filing /
+        // payment endpoints so the filing record and the books cannot diverge.
+        (existing.status === "filed" && FILED_ONLY_ENDPOINT_FIELDS.has(k))
     );
     const reopens = patch.status === "draft" || patch.status === "pending_review";
     if (editsFigures || reopens) {
@@ -218,6 +240,16 @@ export function evaluateVatReturnPatch(args: {
       code: "PERIOD_NOT_ENDED",
       message:
         "This VAT period has not ended yet. It is a draft preview and cannot be saved, submitted or filed until the period is over.",
+    };
+  }
+
+  if (patch.status === "filed" && existing.status !== "filed") {
+    return {
+      ok: false,
+      status: 409,
+      code: "VAT_FILING_REQUIRES_RECORD",
+      message:
+        "A return is recorded as filed with POST /api/vat-returns/:id/file (FTA reference, filing date and acknowledgement), not by editing its status.",
     };
   }
 

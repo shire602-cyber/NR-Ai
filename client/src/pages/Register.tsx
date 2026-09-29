@@ -4,8 +4,11 @@ import { RegisterForm } from "@/components/auth/RegisterForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { establishAuthenticatedSession } from "@/lib/authSession";
+import { messages as pageMessages } from "./Register.i18n";
 
 export default function Register() {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -30,14 +33,14 @@ export default function Register() {
     <AuthLayout
       headline={
         <>
-          The ledger,{" "}
+          {tr("theLedger")}
           <span className="italic" style={{ color: "#C19E50" }}>
-            handled
+            {tr("handled")}
           </span>
           .
         </>
       }
-      subline="Snap a receipt, forward an invoice, or import a bank line; Muhasib turns daily accounting into VAT-ready records from day one."
+      subline={tr("snapAReceiptForwardAnInvoice")}
     >
       <RegisterForm onSuccess={handleSuccess} />
     </AuthLayout>

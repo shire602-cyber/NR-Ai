@@ -8,38 +8,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useKeyboardShortcuts, formatCombo } from "@/hooks/useKeyboardShortcuts";
+import { messages as pageMessages } from "./ShortcutsHelp.i18n";
 
-const SHORTCUTS = [
+const getShortcuts = () => [
   {
-    group: "General",
+    group: pageMessages.t("general"),
     items: [
-      { combo: "mod+k", label: "Open command palette" },
-      { combo: "/", label: "Search / open command palette" },
-      { combo: "mod+shift+/", label: "Show keyboard shortcuts" },
-      { combo: "escape", label: "Close dialog or modal" },
+      { combo: "mod+k", label: pageMessages.t("openCommandPalette") },
+      { combo: "/", label: pageMessages.t("searchOpenCommandPalette") },
+      { combo: "mod+shift+/", label: pageMessages.t("showKeyboardShortcuts") },
+      { combo: "escape", label: pageMessages.t("closeDialogOrModal") },
     ],
   },
   {
-    group: "Navigation",
+    group: pageMessages.t("navigation"),
     items: [
-      { combo: "g d", label: "Go to Dashboard" },
-      { combo: "g i", label: "Go to Invoices" },
-      { combo: "g j", label: "Go to Journal" },
-      { combo: "g r", label: "Go to Reports" },
-      { combo: "g c", label: "Go to Contacts" },
+      { combo: "g d", label: pageMessages.t("goToDashboard") },
+      { combo: "g i", label: pageMessages.t("goToInvoices") },
+      { combo: "g j", label: pageMessages.t("goToJournal") },
+      { combo: "g r", label: pageMessages.t("goToReports") },
+      { combo: "g c", label: pageMessages.t("goToContacts") },
     ],
   },
   {
-    group: "Lists",
+    group: pageMessages.t("lists"),
     items: [
-      { combo: "j", label: "Move down" },
-      { combo: "k", label: "Move up" },
-      { combo: "enter", label: "Open selected item" },
+      { combo: "j", label: pageMessages.t("moveDown") },
+      { combo: "k", label: pageMessages.t("moveUp") },
+      { combo: "enter", label: pageMessages.t("openSelectedItem") },
     ],
   },
   {
-    group: "Create",
-    items: [{ combo: "n", label: "New invoice (on Invoices page)" }],
+    group: pageMessages.t("create"),
+    items: [{ combo: "n", label: pageMessages.t("newInvoiceOnInvoicesPage") }],
   },
 ];
 
@@ -49,15 +50,17 @@ interface ShortcutsHelpProps {
 }
 
 export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
+  const tr = pageMessages.useT();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>Speed up navigation with these keys.</DialogDescription>
+          <DialogTitle>{tr("keyboardShortcuts")}</DialogTitle>
+          <DialogDescription>{tr("speedUpNavigationWithTheseKeys")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-5 pt-2 max-h-[60vh] overflow-y-auto">
-          {SHORTCUTS.map((section) => (
+          {getShortcuts().map((section) => (
             <div key={section.group}>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 {section.group}
@@ -69,7 +72,10 @@ export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
                     className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="text-foreground/90">{item.label}</span>
-                    <kbd className="ml-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground">
+                    <kbd
+                      dir="ltr"
+                      className="ms-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground"
+                    >
                       {item.combo
                         .split(" ")
                         .map((c) => formatCombo(c))
@@ -91,6 +97,8 @@ export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
  * `g` chords. Mount once inside an authenticated layout.
  */
 export function GlobalShortcutsProvider() {
+  const tr = pageMessages.useT();
+
   const [helpOpen, setHelpOpen] = useState(false);
   const [, navigate] = useLocation();
 
@@ -99,12 +107,12 @@ export function GlobalShortcutsProvider() {
       combo: "mod+shift+/",
       handler: () => setHelpOpen(true),
       allowInInputs: true,
-      description: "Show keyboard shortcuts",
+      description: tr("showKeyboardShortcuts"),
     },
     {
       combo: "?",
       handler: () => setHelpOpen(true),
-      description: "Show keyboard shortcuts",
+      description: tr("showKeyboardShortcuts"),
     },
   ]);
 

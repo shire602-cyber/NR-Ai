@@ -1,3 +1,4 @@
+import OpeningBalancesOnboardingStep from "@/components/compliance/OpeningBalancesOnboardingStep";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -91,15 +92,16 @@ const UAE_EMIRATES = [
   { value: "fujairah", label: "Fujairah" },
 ];
 
-type Step = "welcome" | "company" | "accounts" | "bank" | "first-doc" | "complete";
+type Step = "welcome" | "company" | "accounts" | "bank" | "opening" | "first-doc" | "complete";
 
-const STEPS: Step[] = ["welcome", "company", "accounts", "bank", "first-doc", "complete"];
+const STEPS: Step[] = ["welcome", "company", "accounts", "bank", "opening", "first-doc", "complete"];
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
   company: "Company Details",
   accounts: "Chart of Accounts",
   bank: "Bank Account",
+  opening: "Opening Balances",
   "first-doc": "First Document",
   complete: "Complete",
 };
@@ -541,6 +543,9 @@ function CustomerOnboarding() {
                   onBack={goBack}
                   saving={createBankMutation.isPending}
                 />
+              )}
+              {currentStep === "opening" && (
+                <OpeningBalancesOnboardingStep onNext={goNext} onBack={goBack} />
               )}
               {currentStep === "first-doc" && (
                 <FirstDocStep

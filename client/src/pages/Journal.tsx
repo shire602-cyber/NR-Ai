@@ -71,9 +71,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
+import { messages as pageMessages } from "./Journal.i18n";
 
 const journalLineSchema = z.object({
-  accountId: z.string().uuid("Please select an account"),
+  accountId: z.string().uuid(pageMessages.marker("pleaseSelectAnAccount")),
   debit: z.coerce.number().min(0).default(0),
   credit: z.coerce.number().min(0).default(0),
 });
@@ -83,7 +84,7 @@ const journalSchema = z
     companyId: z.string().uuid(),
     date: z.date(),
     memo: z.string().optional(),
-    lines: z.array(journalLineSchema).min(2, "At least two line items are required"),
+    lines: z.array(journalLineSchema).min(2, pageMessages.marker("atLeastTwoLineItemsAre")),
   })
   .refine(
     (data) => {
@@ -92,7 +93,7 @@ const journalSchema = z
       return Math.abs(totalDebit - totalCredit) < 0.01;
     },
     {
-      message: "Total debits must equal total credits",
+      message: pageMessages.marker("totalDebitsMustEqualTotalCredits"),
       path: ["lines"],
     }
   );
@@ -106,24 +107,26 @@ function isBackdatedConfirmation(error: unknown): boolean {
   return e?.status === 409 && e?.code === BACKDATED_CONFIRMATION_CODE;
 }
 
-const BACKDATED_COPY = {
-  en: {
-    title: "Post a backdated entry?",
-    description:
-      "This entry is dated before the current financial year and will change prior-year figures. Post anyway?",
-    cancel: "Cancel",
-    confirm: "Post anyway",
-  },
-  ar: {
-    title: "ترحيل قيد بتاريخ سابق؟",
-    description:
-      "هذا القيد مؤرخ قبل بداية السنة المالية الحالية وسيغيّر أرقام السنة السابقة. هل تريد الترحيل على أي حال؟",
-    cancel: "إلغاء",
-    confirm: "ترحيل على أي حال",
-  },
-} as const;
+const getBackdatedCopy = () =>
+  ({
+    en: {
+      title: pageMessages.t("postABackdatedEntry"),
+      description: pageMessages.t("thisEntryIsDatedBeforeThe"),
+      cancel: pageMessages.t("cancel"),
+      confirm: pageMessages.t("postAnyway"),
+    },
+    ar: {
+      title: "ترحيل قيد بتاريخ سابق؟",
+      description:
+        "هذا القيد مؤرخ قبل بداية السنة المالية الحالية وسيغيّر أرقام السنة السابقة. هل تريد الترحيل على أي حال؟",
+      cancel: "إلغاء",
+      confirm: "ترحيل على أي حال",
+    },
+  }) as const;
 
 export default function Journal() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
@@ -178,8 +181,8 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Journal entry posted",
-        description: "Your double-entry journal has been recorded.",
+        title: tr("journalEntryPosted"),
+        description: tr("yourDoubleEntryJournalHasBeen"),
       });
       setDialogOpen(false);
       setEditingEntry(null);
@@ -200,8 +203,8 @@ export default function Journal() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to post entry",
-        description: error?.message || "Please check that debits equal credits.",
+        title: tr("failedToPostEntry"),
+        description: error?.message || tr("pleaseCheckThatDebitsEqualCredits"),
       });
     },
   });
@@ -217,8 +220,8 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Draft entry updated",
-        description: "Your journal entry has been updated.",
+        title: tr("draftEntryUpdated"),
+        description: tr("yourJournalEntryHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingEntry(null);
@@ -239,8 +242,8 @@ export default function Journal() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to update entry",
-        description: error?.message || "Please check that debits equal credits.",
+        title: tr("failedToUpdateEntry"),
+        description: error?.message || tr("pleaseCheckThatDebitsEqualCredits"),
       });
     },
   });
@@ -250,14 +253,14 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Entry posted",
-        description: "Journal entry has been posted and is now immutable.",
+        title: tr("entryPosted"),
+        description: tr("journalEntryHasBeenPostedAnd"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to post entry",
+        title: tr("failedToPostEntry"),
         description: error?.message,
       });
     },
@@ -269,14 +272,16 @@ export default function Journal() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Entry reversed",
-        description: `Reversal entry ${data.reversalNumber} created. Original entry marked as void.`,
+        title: tr("entryReversed"),
+        description: tr("reversalEntryCreatedOriginalEntryMarked", {
+          reversalNumber: data.reversalNumber,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to reverse entry",
+        title: tr("failedToReverseEntry"),
         description: error?.message,
       });
     },
@@ -287,14 +292,14 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Draft entry deleted",
-        description: "The draft journal entry has been deleted.",
+        title: tr("draftEntryDeleted"),
+        description: tr("theDraftJournalEntryHasBeen"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete entry",
+        title: tr("failedToDeleteEntry"),
         description: error?.message,
       });
     },
@@ -321,8 +326,8 @@ export default function Journal() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load journal entry details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadJournalEntryDetails"),
       });
     }
   };
@@ -331,8 +336,8 @@ export default function Journal() {
     if (!selectedCompanyId) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Company not found. Please refresh the page.",
+        title: tr("error"),
+        description: tr("companyNotFoundPleaseRefreshThe"),
       });
       return;
     }
@@ -355,7 +360,7 @@ export default function Journal() {
     }
   };
 
-  const backdatedCopy = BACKDATED_COPY[locale === "ar" ? "ar" : "en"];
+  const backdatedCopy = getBackdatedCopy()[locale === "ar" ? "ar" : "en"];
 
   const confirmBackdatedPost = () => {
     const pending = pendingBackdated;
@@ -377,12 +382,12 @@ export default function Journal() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={tr("accounting")}
         title={t.journal}
-        description="Double-entry journal with automatic balance validation"
+        description={tr("doubleEntryJournalWithAutomaticBalance")}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-entry">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 me-2" />
             {t.newEntry}
           </Button>
         }
@@ -407,11 +412,11 @@ export default function Journal() {
       >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEntry ? "Edit Journal Entry" : t.newEntry}</DialogTitle>
+            <DialogTitle>{editingEntry ? tr("editJournalEntry") : t.newEntry}</DialogTitle>
             <DialogDescription>
               {editingEntry
-                ? "Update journal entry details"
-                : "Create a balanced double-entry journal entry"}
+                ? tr("updateJournalEntryDetails")
+                : tr("createABalancedDoubleEntryJournal")}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -429,13 +434,17 @@ export default function Journal() {
                             <Button
                               variant="outline"
                               className={cn(
-                                "w-full justify-start text-left font-normal",
+                                "w-full justify-start text-start font-normal",
                                 !field.value && "text-muted-foreground"
                               )}
                               data-testid="button-date-picker"
                             >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                              <CalendarIcon className="me-2 h-4 w-4" />
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>{tr("pickADate")}</span>
+                              )}
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
@@ -461,7 +470,7 @@ export default function Journal() {
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Optional description"
+                          placeholder={tr("optionalDescription")}
                           data-testid="input-memo"
                         />
                       </FormControl>
@@ -473,7 +482,7 @@ export default function Journal() {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Journal Lines</h3>
+                  <h3 className="font-medium">{tr("journalLines")}</h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -481,15 +490,15 @@ export default function Journal() {
                     onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
                     data-testid="button-add-line"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Line
+                    <Plus className="w-4 h-4 me-2" />
+                    {tr("addLine")}
                   </Button>
                 </div>
 
                 <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-3 pb-2">
-                  <div className="col-span-5">Account</div>
-                  <div className="col-span-3 text-right">{t.debit}</div>
-                  <div className="col-span-3 text-right">{t.credit}</div>
+                  <div className="col-span-5">{tr("account")}</div>
+                  <div className="col-span-3 text-end">{t.debit}</div>
+                  <div className="col-span-3 text-end">{t.credit}</div>
                   <div className="col-span-1"></div>
                 </div>
 
@@ -507,13 +516,15 @@ export default function Journal() {
                             <Select onValueChange={field.onChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger data-testid={`select-account-${index}`}>
-                                  <SelectValue placeholder="Select account" />
+                                  <SelectValue placeholder={tr("selectAccount")} />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
                                 {accounts?.map((acc: any) => (
                                   <SelectItem key={acc.id} value={acc.id}>
-                                    <span className="font-mono text-xs mr-2">{acc.code}</span>
+                                    <span dir="ltr" className="font-mono text-xs me-2">
+                                      {acc.code}
+                                    </span>
                                     {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
                                   </SelectItem>
                                 ))}
@@ -534,7 +545,7 @@ export default function Journal() {
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                className="font-mono text-right"
+                                className="font-mono text-end"
                                 value={field.value ?? ""}
                                 onChange={(e) =>
                                   field.onChange(e.target.value ? parseFloat(e.target.value) : "")
@@ -557,7 +568,7 @@ export default function Journal() {
                                 type="number"
                                 step="0.01"
                                 placeholder="0.00"
-                                className="font-mono text-right"
+                                className="font-mono text-end"
                                 value={field.value ?? ""}
                                 onChange={(e) =>
                                   field.onChange(e.target.value ? parseFloat(e.target.value) : "")
@@ -588,12 +599,18 @@ export default function Journal() {
 
               <div className="border-t pt-4 space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total {t.debit}</span>
-                  <span className="font-mono font-medium">{formatNumber(totalDebit, locale)}</span>
+                  <span className="text-muted-foreground">{tr("total", { debit: t.debit })}</span>
+                  <span dir="ltr" className="font-mono font-medium">
+                    {formatNumber(totalDebit, locale)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total {t.credit}</span>
-                  <span className="font-mono font-medium">{formatNumber(totalCredit, locale)}</span>
+                  <span className="text-muted-foreground">
+                    {tr("total2", { credit: t.credit })}
+                  </span>
+                  <span dir="ltr" className="font-mono font-medium">
+                    {formatNumber(totalCredit, locale)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="font-semibold">{t.balance}</span>
@@ -657,22 +674,22 @@ export default function Journal() {
               if (isPosted) {
                 return (
                   <StatusBadge tone="success">
-                    <Lock className="w-3 h-3 mr-1" />
-                    Posted
+                    <Lock className="w-3 h-3 me-1" />
+                    {tr("posted")}
                   </StatusBadge>
                 );
               } else if (isVoid) {
                 return (
                   <StatusBadge tone="danger">
-                    <XCircle className="w-3 h-3 mr-1" />
-                    Void
+                    <XCircle className="w-3 h-3 me-1" />
+                    {tr("void")}
                   </StatusBadge>
                 );
               } else {
                 return (
                   <StatusBadge tone="warning">
-                    <FileText className="w-3 h-3 mr-1" />
-                    Draft
+                    <FileText className="w-3 h-3 me-1" />
+                    {tr("draft")}
                   </StatusBadge>
                 );
               }
@@ -681,10 +698,10 @@ export default function Journal() {
             const getSourceBadge = () => {
               if (!entry.source || entry.source === "manual") return null;
               const sources: Record<string, { label: string; tone: StatusTone }> = {
-                invoice: { label: "Invoice", tone: "info" },
-                receipt: { label: "Receipt", tone: "accent" },
-                payment: { label: "Payment", tone: "success" },
-                reversal: { label: "Reversal", tone: "warning" },
+                invoice: { label: tr("invoice"), tone: "info" },
+                receipt: { label: tr("receipt"), tone: "accent" },
+                payment: { label: tr("payment"), tone: "success" },
+                reversal: { label: tr("reversal"), tone: "warning" },
               };
               const source = sources[entry.source];
               if (!source) return null;
@@ -702,7 +719,9 @@ export default function Journal() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         {entry.entryNumber && (
-                          <span className="font-mono font-medium">{entry.entryNumber}</span>
+                          <span dir="ltr" className="font-mono font-medium">
+                            {entry.entryNumber}
+                          </span>
                         )}
                         <span>{formatDate(entry.date, locale)}</span>
                       </div>
@@ -718,8 +737,8 @@ export default function Journal() {
                         data-testid={`button-proof-journal-${entry.id}`}
                       >
                         <Link href={sourceProofHref}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Proof
+                          <FileText className="w-4 h-4 me-2" />
+                          {tr("proof")}
                         </Link>
                       </Button>
 
@@ -732,8 +751,8 @@ export default function Journal() {
                             disabled={postMutation.isPending}
                             data-testid={`button-post-journal-${entry.id}`}
                           >
-                            <Send className="w-4 h-4 mr-2" />
-                            Post
+                            <Send className="w-4 h-4 me-2" />
+                            {tr("post")}
                           </Button>
                           <Button
                             variant="ghost"
@@ -741,8 +760,8 @@ export default function Journal() {
                             onClick={() => handleEditEntry(entry)}
                             data-testid={`button-edit-journal-${entry.id}`}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            <Edit className="w-4 h-4 me-2" />
+                            {tr("edit")}
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -756,19 +775,18 @@ export default function Journal() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Draft Entry?</AlertDialogTitle>
+                                <AlertDialogTitle>{tr("deleteDraftEntry")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete this draft entry. This action cannot
-                                  be undone.
+                                  {tr("thisWillPermanentlyDeleteThisDraft")}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => deleteMutation.mutate(entry.id)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 >
-                                  Delete
+                                  {tr("delete")}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -784,30 +802,28 @@ export default function Journal() {
                               size="sm"
                               data-testid={`button-reverse-journal-${entry.id}`}
                             >
-                              <RotateCcw className="w-4 h-4 mr-2" />
-                              Reverse
+                              <RotateCcw className="w-4 h-4 me-2" />
+                              {tr("reverse")}
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Reverse Journal Entry?</AlertDialogTitle>
+                              <AlertDialogTitle>{tr("reverseJournalEntry")}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will create a new reversing entry that offsets this posted
-                                entry, and mark the original as void. Posted entries cannot be
-                                edited or deleted.
+                                {tr("thisWillCreateANewReversing")}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() =>
                                   reverseMutation.mutate({
                                     id: entry.id,
-                                    reason: "User requested reversal",
+                                    reason: tr("userRequestedReversal"),
                                   })
                                 }
                               >
-                                Reverse Entry
+                                {tr("reverseEntry")}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -822,15 +838,15 @@ export default function Journal() {
                         className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0"
                       >
                         <div className="col-span-6 flex items-center gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">
+                          <span dir="ltr" className="font-mono text-xs text-muted-foreground">
                             {line.account?.code}
                           </span>
                           <span>{line.account?.nameEn}</span>
                         </div>
-                        <div className="col-span-3 text-right font-mono">
+                        <div className="col-span-3 text-end font-mono">
                           {line.debit > 0 ? formatNumber(line.debit, locale) : "-"}
                         </div>
-                        <div className="col-span-3 text-right font-mono">
+                        <div className="col-span-3 text-end font-mono">
                           {line.credit > 0 ? formatNumber(line.credit, locale) : "-"}
                         </div>
                       </div>
@@ -846,8 +862,8 @@ export default function Journal() {
           <CardContent className="p-0">
             <EmptyState
               icon={BookMarked}
-              title="No journal entries yet"
-              description="Record your first manual journal entry — every transaction needs at least one debit and one credit."
+              title={tr("noJournalEntriesYet")}
+              description={tr("recordYourFirstManualJournalEntry")}
               action={{
                 label: t.newEntry,
                 icon: Plus,

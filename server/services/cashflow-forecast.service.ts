@@ -43,7 +43,7 @@ export async function generateCashFlowForecast(
   const [accounts, journalEntries, invoices, receipts, bankTransactions, invoicePayments] =
     await Promise.all([
       storage.getAccountsByCompanyId(companyId),
-      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
       storage.getInvoicesByCompanyId(companyId),
       storage.getReceiptsByCompanyId(companyId),
       storage.getBankTransactionsByCompanyId(companyId),
@@ -309,7 +309,7 @@ export async function getCashFlowHistory(
 ): Promise<MonthlyCashHistory[]> {
   const now = new Date();
   const accounts = await storage.getAccountsByCompanyId(companyId);
-  const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+  const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
 
   const accountMap = new Map<string, Account>();
   for (const account of accounts) {

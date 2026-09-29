@@ -13,44 +13,47 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { messages as pageMessages } from "./HelpCenter.i18n";
 
-const guides = [
+const getGuides = () => [
   {
     icon: BookOpen,
-    title: "Set up your company",
-    text: "Add trade license details, TRN, emirate, fiscal year, currency, and the UAE chart of accounts.",
+    title: pageMessages.t("setUpYourCompany"),
+    text: pageMessages.t("addTradeLicenseDetailsTrnEmirate"),
   },
   {
     icon: Receipt,
-    title: "Create VAT-ready invoices",
-    text: "Create invoices, credit notes, payment records, and downloadable PDFs with clear VAT totals.",
+    title: pageMessages.t("createVatReadyInvoices"),
+    text: pageMessages.t("createInvoicesCreditNotesPaymentRecords"),
   },
   {
     icon: FileSpreadsheet,
-    title: "Import receipts and contacts",
-    text: "Upload receipts, export to Excel, and import customers from .xlsx or CSV templates.",
+    title: pageMessages.t("importReceiptsAndContacts"),
+    text: pageMessages.t("uploadReceiptsExportToExcelAnd"),
   },
   {
     icon: Banknote,
-    title: "Reconcile bank statements",
-    text: "Import CSV/PDF statements, review suggested matches, and create entries for unmatched transactions.",
+    title: pageMessages.t("reconcileBankStatements"),
+    text: pageMessages.t("importCsvPdfStatementsReviewSuggested"),
   },
   {
     icon: ShieldCheck,
-    title: "Migrate from mazeed or Wafeq",
-    text: "Use a go-live date, preserve source exports, import contacts and bank statements, and validate opening balances before live posting.",
+    title: pageMessages.t("migrateFromMazeedOrWafeq"),
+    text: pageMessages.t("useAGoLiveDatePreserve"),
   },
 ];
 
-const slaItems = [
-  "Launch onboarding support for setup, migration, VAT workflow questions, and first-month close.",
-  "Migration review covers mazeed, Wafeq, Zoho Books, and Excel export packs before live use.",
-  "Email support for free and starter users; priority onboarding support for professional and enterprise users.",
-  "Enterprise support terms, response windows, and uptime commitments are confirmed during activation.",
-  "Critical accounting workflow issues are triaged ahead of feature requests during launch.",
+const getSlaItems = () => [
+  pageMessages.t("launchOnboardingSupportForSetupMigration"),
+  pageMessages.t("migrationReviewCoversMazeedWafeqZoho"),
+  pageMessages.t("emailSupportForFreeAndStarter"),
+  pageMessages.t("enterpriseSupportTermsResponseWindowsAnd"),
+  pageMessages.t("criticalAccountingWorkflowIssuesAreTriaged"),
 ];
 
 export default function HelpCenter() {
+  const tr = pageMessages.useT();
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-background/95 backdrop-blur">
@@ -60,18 +63,18 @@ export default function HelpCenter() {
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link href="/pricing" className="hover:text-foreground">
-              Pricing
+              {tr("pricing")}
             </Link>
             <Link href="/trust" className="hover:text-foreground">
-              Trust
+              {tr("trust")}
             </Link>
             <Link href="/migration-guides" className="hover:text-foreground">
-              Migrate
+              {tr("migrate")}
             </Link>
           </nav>
           <a href="mailto:support@muhasib.ai?subject=Muhasib.ai%20support">
             <Button size="sm" variant="outline">
-              Contact Support
+              {tr("contactSupport")}
             </Button>
           </a>
         </div>
@@ -81,21 +84,20 @@ export default function HelpCenter() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-16">
             <Badge variant="outline" className="mb-5">
-              Help Center
+              {tr("helpCenter")}
             </Badge>
             <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-              Launch support for UAE accounting teams moving fast.
+              {tr("launchSupportForUaeAccountingTeams")}
             </h1>
             <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-              Practical setup guides for invoices, VAT workflows, bank reconciliation, imports, and
-              month-end routines. During launch, paid plans are activated with guided onboarding.
+              {tr("practicalSetupGuidesForInvoicesVat")}
             </p>
           </div>
         </section>
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
           <div className="grid gap-4 md:grid-cols-2">
-            {guides.map((guide) => {
+            {getGuides().map((guide) => {
               const Icon = guide.icon;
               return (
                 <Card key={guide.title}>
@@ -119,15 +121,14 @@ export default function HelpCenter() {
             <div>
               <h2 className="flex items-center gap-2 text-2xl font-semibold">
                 <LifeBuoy className="h-6 w-6 text-primary" />
-                Support and SLA posture
+                {tr("supportAndSlaPosture")}
               </h2>
               <p className="mt-3 text-muted-foreground">
-                We keep launch promises specific. Formal SLA terms are not implied for every plan;
-                they are confirmed for enterprise customers during setup.
+                {tr("weKeepLaunchPromisesSpecificFormal")}
               </p>
             </div>
             <div className="grid gap-3">
-              {slaItems.map((item) => (
+              {getSlaItems().map((item) => (
                 <div key={item} className="flex gap-3 rounded-lg border bg-background p-4 text-sm">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                   <span className="text-muted-foreground">{item}</span>
@@ -143,23 +144,23 @@ export default function HelpCenter() {
               <div>
                 <h2 className="flex items-center gap-2 text-xl font-semibold">
                   <HelpCircle className="h-5 w-5 text-primary" />
-                  Need help choosing the right path?
+                  {tr("needHelpChoosingTheRightPath")}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Ask for a guided migration review before importing live books.
+                  {tr("askForAGuidedMigrationReview")}
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <a href="mailto:support@muhasib.ai?subject=Migration%20review">
                   <Button>
-                    <Mail className="mr-2 h-4 w-4" />
-                    Request Review
+                    <Mail className="me-2 h-4 w-4" />
+                    {tr("requestReview")}
                   </Button>
                 </a>
                 <Link href="/migration-guides">
                   <Button variant="outline">
-                    Migration Guides
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    {tr("migrationGuides")}
+                    <ArrowRight className="ms-2 h-4 w-4" />
                   </Button>
                 </Link>
               </div>

@@ -72,24 +72,25 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { messages as pageMessages } from "./PurchaseOrders.i18n";
 
 const poLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const purchaseOrderSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, "PO number is required"),
-  vendorName: z.string().min(1, "Vendor name is required"),
+  number: z.string().min(1, pageMessages.marker("poNumberIsRequired")),
+  vendorName: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendorTrn: z.string().optional(),
   date: z.date(),
   expectedDeliveryDate: z.date(),
   currency: z.string().default("AED"),
   notes: z.string().optional(),
-  lines: z.array(poLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(poLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 type PurchaseOrderFormData = z.infer<typeof purchaseOrderSchema>;
@@ -112,6 +113,8 @@ interface PurchaseOrder {
 }
 
 export default function PurchaseOrders() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -158,8 +161,8 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order created",
-        description: "Your purchase order has been created successfully.",
+        title: tr("purchaseOrderCreated"),
+        description: tr("yourPurchaseOrderHasBeenCreated"),
       });
       setDialogOpen(false);
       setEditingPO(null);
@@ -168,8 +171,8 @@ export default function PurchaseOrders() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create purchase order",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreatePurchaseOrder"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -182,8 +185,8 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order updated",
-        description: "Your purchase order has been updated successfully.",
+        title: tr("purchaseOrderUpdated"),
+        description: tr("yourPurchaseOrderHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingPO(null);
@@ -192,8 +195,8 @@ export default function PurchaseOrders() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update purchase order",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdatePurchaseOrder"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -205,15 +208,15 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order deleted",
-        description: "The purchase order has been deleted.",
+        title: tr("purchaseOrderDeleted"),
+        description: tr("thePurchaseOrderHasBeenDeleted"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete purchase order",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeletePurchaseOrder"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -234,13 +237,13 @@ export default function PurchaseOrders() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
-      toast({ title: "Status updated", description: "Purchase order status has been updated." });
+      toast({ title: tr("statusUpdated"), description: tr("purchaseOrderStatusHasBeenUpdated") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update status",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateStatus"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -279,8 +282,8 @@ export default function PurchaseOrders() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load purchase order details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadPurchaseOrderDetails"),
       });
     }
   };
@@ -343,7 +346,7 @@ export default function PurchaseOrders() {
         <UpgradePrompt
           feature="purchaseOrders"
           requiredTier={getRequiredTier("purchaseOrders")}
-          description="Create and track purchase orders to your vendors. Manage procurement workflows and match POs to invoices."
+          description={tr("createAndTrackPurchaseOrdersTo")}
         />
       </div>
     );
@@ -352,11 +355,9 @@ export default function PurchaseOrders() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={tr("purchases")}
         title={t.purchaseOrders}
-        description={
-          (t as any).purchaseOrdersSubtitle ?? "Create and manage purchase orders for your vendors"
-        }
+        description={(t as any).purchaseOrdersSubtitle ?? tr("createAndManagePurchaseOrdersFor")}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -369,17 +370,17 @@ export default function PurchaseOrders() {
         >
           <DialogTrigger asChild>
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              New Purchase Order
+              <Plus className="w-4 h-4 me-2" />
+              {tr("newPurchaseOrder")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingPO ? "Edit Purchase Order" : "New Purchase Order"}</DialogTitle>
+              <DialogTitle>
+                {editingPO ? tr("editPurchaseOrder") : tr("newPurchaseOrder")}
+              </DialogTitle>
               <DialogDescription>
-                {editingPO
-                  ? "Update purchase order details"
-                  : "Create a new purchase order with automatic VAT calculation"}
+                {editingPO ? tr("updatePurchaseOrderDetails") : tr("createANewPurchaseOrderWith")}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -390,7 +391,7 @@ export default function PurchaseOrders() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>PO Number</FormLabel>
+                        <FormLabel>{tr("poNumber")}</FormLabel>
                         <FormControl>
                           <Input {...field} className="font-mono" />
                         </FormControl>
@@ -403,22 +404,22 @@ export default function PurchaseOrders() {
                     name="date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel>{tr("date")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full justify-start text-left font-normal",
+                                  "w-full justify-start text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{tr("pickADate")}</span>
                                 )}
                               </Button>
                             </FormControl>
@@ -444,7 +445,7 @@ export default function PurchaseOrders() {
                     name="vendorName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Vendor Name</FormLabel>
+                        <FormLabel>{tr("vendorName")}</FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -457,9 +458,9 @@ export default function PurchaseOrders() {
                     name="vendorTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Vendor TRN</FormLabel>
+                        <FormLabel>{tr("vendorTrn")}</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Optional" className="font-mono" />
+                          <Input {...field} placeholder={tr("optional")} className="font-mono" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -473,22 +474,22 @@ export default function PurchaseOrders() {
                     name="expectedDeliveryDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Expected Delivery Date</FormLabel>
+                        <FormLabel>{tr("expectedDeliveryDate")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full justify-start text-left font-normal",
+                                  "w-full justify-start text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{tr("pickADate")}</span>
                                 )}
                               </Button>
                             </FormControl>
@@ -511,11 +512,11 @@ export default function PurchaseOrders() {
                     name="currency"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Currency</FormLabel>
+                        <FormLabel>{tr("currency")}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select currency" />
+                              <SelectValue placeholder={tr("selectCurrency")} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -537,11 +538,11 @@ export default function PurchaseOrders() {
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes</FormLabel>
+                      <FormLabel>{tr("notes")}</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="Optional notes or special instructions"
+                          placeholder={tr("optionalNotesOrSpecialInstructions")}
                           rows={3}
                         />
                       </FormControl>
@@ -552,7 +553,7 @@ export default function PurchaseOrders() {
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Line Items</h3>
+                    <h3 className="font-medium">{tr("lineItems")}</h3>
                     <Button
                       type="button"
                       variant="outline"
@@ -561,8 +562,8 @@ export default function PurchaseOrders() {
                         append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                       }
                     >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Line
+                      <Plus className="w-4 h-4 me-2" />
+                      {tr("addLine")}
                     </Button>
                   </div>
 
@@ -578,7 +579,7 @@ export default function PurchaseOrders() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input {...field} placeholder="Description" />
+                                <Input {...field} placeholder={tr("description")} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -594,7 +595,7 @@ export default function PurchaseOrders() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Qty"
+                                  placeholder={tr("qty")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -616,7 +617,7 @@ export default function PurchaseOrders() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Price"
+                                  placeholder={tr("price")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -681,20 +682,22 @@ export default function PurchaseOrders() {
 
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("subtotal")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(subtotal, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("vat")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(vatAmount, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>Total</span>
-                    <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
+                    <span>{tr("total")}</span>
+                    <span dir="ltr" className="font-mono">
+                      {formatCurrency(total, "AED", locale)}
+                    </span>
                   </div>
                 </div>
 
@@ -705,14 +708,14 @@ export default function PurchaseOrders() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending || editMutation.isPending}
                     className="flex-1"
                   >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
+                    {createMutation.isPending || editMutation.isPending ? tr("saving") : tr("save")}
                   </Button>
                 </div>
               </form>
@@ -729,13 +732,13 @@ export default function PurchaseOrders() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">Number</TableHead>
-                  <TableHead className="font-semibold">Vendor</TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold">Expected Delivery</TableHead>
-                  <TableHead className="font-semibold text-right">Total</TableHead>
-                  <TableHead className="font-semibold text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                  <TableHead className="font-semibold">{tr("number")}</TableHead>
+                  <TableHead className="font-semibold">{tr("vendor")}</TableHead>
+                  <TableHead className="font-semibold">{tr("date")}</TableHead>
+                  <TableHead className="font-semibold">{tr("expectedDelivery")}</TableHead>
+                  <TableHead className="font-semibold text-end">{tr("total")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("status")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -752,7 +755,7 @@ export default function PurchaseOrders() {
                           ? formatDate(po.expectedDeliveryDate, locale)
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
+                      <TableCell className="text-end font-mono font-medium">
                         {formatCurrency(po.total, po.currency, locale)}
                       </TableCell>
                       <TableCell className="text-center">
@@ -772,8 +775,8 @@ export default function PurchaseOrders() {
                               onClick={() => handleEditPO(po)}
                               disabled={po.status !== "draft"}
                             >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
+                              <Edit className="w-4 h-4 me-2" />
+                              {tr("edit")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>
@@ -781,8 +784,8 @@ export default function PurchaseOrders() {
                               }
                               disabled={po.status !== "draft"}
                             >
-                              <Send className="w-4 h-4 mr-2" />
-                              Send
+                              <Send className="w-4 h-4 me-2" />
+                              {tr("send")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>
@@ -790,8 +793,8 @@ export default function PurchaseOrders() {
                               }
                               disabled={po.status !== "sent"}
                             >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Approve
+                              <CheckCircle className="w-4 h-4 me-2" />
+                              {tr("approve")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>
@@ -799,32 +802,28 @@ export default function PurchaseOrders() {
                               }
                               disabled={po.status !== "approved"}
                             >
-                              <PackageCheck className="w-4 h-4 mr-2" />
-                              Receive
+                              <PackageCheck className="w-4 h-4 me-2" />
+                              {tr("receive")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() =>
                                 window.open(`/api/purchase-orders/${po.id}/pdf`, "_blank")
                               }
                             >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download PDF
+                              <Download className="w-4 h-4 me-2" />
+                              {tr("downloadPdf")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
-                                if (
-                                  window.confirm(
-                                    "Are you sure you want to delete this purchase order?"
-                                  )
-                                ) {
+                                if (window.confirm(tr("areYouSureYouWantTo"))) {
                                   deleteMutation.mutate(po.id);
                                 }
                               }}
                               disabled={po.status !== "draft"}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              <Trash2 className="w-4 h-4 me-2" />
+                              {tr("delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -836,13 +835,12 @@ export default function PurchaseOrders() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={ShoppingCart}
-                        title={(t as any).noPurchaseOrdersYet ?? "No purchase orders yet"}
+                        title={(t as any).noPurchaseOrdersYet ?? tr("noPurchaseOrdersYet")}
                         description={
-                          (t as any).purchaseOrdersEmptyDesc ??
-                          "Track what you've ordered from suppliers and match deliveries to bills when they arrive."
+                          (t as any).purchaseOrdersEmptyDesc ?? tr("trackWhatYouVeOrderedFrom")
                         }
                         action={{
-                          label: (t as any).newPurchaseOrder ?? "New Purchase Order",
+                          label: (t as any).newPurchaseOrder ?? tr("newPurchaseOrder"),
                           onClick: () => setDialogOpen(true),
                         }}
                         testId="empty-purchase-orders"

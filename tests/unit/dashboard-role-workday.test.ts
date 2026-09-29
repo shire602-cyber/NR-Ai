@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
+import { readSourceWithMessages } from "../helpers/read-source";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
 
 function readRepoFile(path: string): string {
-  return readFileSync(join(repoRoot, path), "utf8");
+  return readSourceWithMessages(repoRoot, path);
 }
 
 describe("dashboard role workday path", () => {

@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
+import { messages as pageMessages } from "./ClientDetails.i18n";
 
 interface Company {
   id: string;
@@ -79,6 +80,8 @@ interface ClientData {
 }
 
 export default function ClientDetails() {
+  const tr = pageMessages.useT();
+
   const { id: clientId } = useParams<{ id: string }>();
 
   const { data, isLoading } = useQuery<ClientData>({
@@ -104,11 +107,11 @@ export default function ClientDetails() {
     return (
       <div className="text-center py-12">
         <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <p className="text-muted-foreground">Client not found</p>
+        <p className="text-muted-foreground">{tr("clientNotFound")}</p>
         <Link href="/admin/clients">
           <Button variant="ghost" className="mt-4">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Clients
+            <ArrowLeft className="w-4 h-4 me-2" />
+            {tr("backToClients")}
           </Button>
         </Link>
       </div>
@@ -147,14 +150,14 @@ export default function ClientDetails() {
         <div className="flex items-center gap-2">
           <Link href={`/admin/clients/${clientId}/documents`}>
             <Button variant="outline" data-testid="button-manage-documents">
-              <FileText className="w-4 h-4 mr-2" />
-              Documents
+              <FileText className="w-4 h-4 me-2" />
+              {tr("documents")}
             </Button>
           </Link>
           <Link href={`/admin/clients/${clientId}/tasks`}>
             <Button variant="outline" data-testid="button-manage-tasks">
-              <Calendar className="w-4 h-4 mr-2" />
-              Tasks
+              <Calendar className="w-4 h-4 me-2" />
+              {tr("tasks")}
             </Button>
           </Link>
         </div>
@@ -163,29 +166,33 @@ export default function ClientDetails() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Documents</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("documents")}</CardTitle>
             <FileText className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documents.length}</div>
-            {expiredDocs > 0 && <p className="text-xs text-destructive">{expiredDocs} expired</p>}
+            {expiredDocs > 0 && (
+              <p className="text-xs text-destructive">{tr("expired", { expiredDocs })}</p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tasks</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("tasks")}</CardTitle>
             <Calendar className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{complianceTasks.length}</div>
-            {overdueTasks > 0 && <p className="text-xs text-destructive">{overdueTasks} overdue</p>}
+            {overdueTasks > 0 && (
+              <p className="text-xs text-destructive">{tr("overdue", { overdueTasks })}</p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Users</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("users")}</CardTitle>
             <Users className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -195,7 +202,7 @@ export default function ClientDetails() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">TRN</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("trn")}</CardTitle>
             <Receipt className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -207,7 +214,7 @@ export default function ClientDetails() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle>Company Information</CardTitle>
+            <CardTitle>{tr("companyInformation")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {company.contactEmail && (
@@ -244,33 +251,33 @@ export default function ClientDetails() {
             {company.registrationNumber && (
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-muted-foreground" />
-                <span>Reg: {company.registrationNumber}</span>
+                <span>{tr("reg", { registrationNumber: company.registrationNumber })}</span>
               </div>
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2 border-t">
               <Clock className="w-3 h-3" />
-              Created {format(parseISO(company.createdAt), "MMM d, yyyy")}
+              {tr("created", { format: format(parseISO(company.createdAt), "MMM d, yyyy") })}
             </div>
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle>{tr("recentActivity")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="tasks">
               <TabsList className="mb-4">
-                <TabsTrigger value="tasks">Tasks ({pendingTasks} pending)</TabsTrigger>
-                <TabsTrigger value="documents">Documents</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
+                <TabsTrigger value="tasks">{tr("tasksPending", { pendingTasks })}</TabsTrigger>
+                <TabsTrigger value="documents">{tr("documents")}</TabsTrigger>
+                <TabsTrigger value="users">{tr("users")}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="tasks">
                 {complianceTasks.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Calendar className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No tasks yet</p>
+                    <p>{tr("noTasksYet")}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -301,7 +308,7 @@ export default function ClientDetails() {
                     {complianceTasks.length > 5 && (
                       <Link href={`/admin/clients/${clientId}/tasks`}>
                         <Button variant="ghost" className="w-full">
-                          View all {complianceTasks.length} tasks
+                          {tr("viewAllTasks", { complianceTasksCount: complianceTasks.length })}
                         </Button>
                       </Link>
                     )}
@@ -313,7 +320,7 @@ export default function ClientDetails() {
                 {documents.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No documents yet</p>
+                    <p>{tr("noDocumentsYet")}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -343,7 +350,7 @@ export default function ClientDetails() {
                     {documents.length > 5 && (
                       <Link href={`/admin/clients/${clientId}/documents`}>
                         <Button variant="ghost" className="w-full">
-                          View all {documents.length} documents
+                          {tr("viewAllDocuments", { documentsCount: documents.length })}
                         </Button>
                       </Link>
                     )}
@@ -355,7 +362,7 @@ export default function ClientDetails() {
                 {users.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No users assigned</p>
+                    <p>{tr("noUsersAssigned")}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">

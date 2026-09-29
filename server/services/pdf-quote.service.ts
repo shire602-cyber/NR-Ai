@@ -1,5 +1,4 @@
-// @ts-ignore - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
+import { createPdfDocument } from "./pdf-fonts";
 import type { Quote, QuoteLine, Company } from "../../shared/schema";
 import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
 
@@ -14,7 +13,7 @@ export async function generateQuotePDF(
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
+      const doc = createPdfDocument({
         size: "A4",
         margin: 50,
         info: {
@@ -37,7 +36,7 @@ export async function generateQuotePDF(
 
       // Company Name
       doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 30, { width: contentWidth * 0.6 });
+      doc.text(company.name, margin, 30, { width: contentWidth * 0.6, align: "left" });
 
       // Quote Type Label
       const quoteLabel = "QUOTATION";
@@ -46,6 +45,8 @@ export async function generateQuotePDF(
         width: contentWidth,
         align: "right",
       });
+      doc.fontSize(11).fillColor("#DBEAFE").font("Helvetica");
+      doc.text("عرض سعر", margin, 57, { width: contentWidth, align: "right" });
 
       // --- Quote Details Box ---
       let y = 120;
@@ -97,7 +98,7 @@ export async function generateQuotePDF(
       y = 120 + detailBoxHeight + 15;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       if (company.businessAddress) {
-        doc.text(company.businessAddress, margin, y, { width: 200 });
+        doc.text(company.businessAddress, margin, y, { width: 200, align: "left" });
         y += 12;
       }
       if (company.contactPhone) {
@@ -113,12 +114,12 @@ export async function generateQuotePDF(
 
       // --- Bill To Section ---
       doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("BILL TO:", margin, y);
+      doc.text("BILL TO / إلى", margin, y);
       y += 18;
 
       doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text(quote.customerName, margin, y);
-      y += 16;
+      doc.text(quote.customerName, margin, y, { width: contentWidth, align: "left" });
+      y += Math.max(16, doc.heightOfString(quote.customerName, { width: contentWidth }) + 2);
 
       if (quote.customerTrn) {
         doc.fontSize(9).fillColor("#6B7280").font("Helvetica");

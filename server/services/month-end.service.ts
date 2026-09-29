@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { detectAnomalies } from "./anomaly-detection.service";
@@ -559,6 +560,24 @@ export async function lockPeriod(
   );
 
   return formatCloseRecord(result.rows[0]);
+}
+
+/**
+ * Same upsert as lockPeriod, run on a caller-owned drizzle transaction so a
+ * VAT filing and the locking of its months commit (or roll back) together.
+ */
+export async function lockPeriodInTx(
+  tx: { execute: (query: any) => Promise<unknown> },
+  companyId: string,
+  periodEnd: string,
+  userId: string
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at)
+    VALUES (${companyId}, ${periodEnd}::date, 'locked', ${userId}, now())
+    ON CONFLICT (company_id, period_end)
+    DO UPDATE SET status = 'locked', closed_by = EXCLUDED.closed_by, closed_at = now(), updated_at = now()
+  `);
 }
 
 /**

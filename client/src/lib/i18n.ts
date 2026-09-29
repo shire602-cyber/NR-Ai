@@ -9,18 +9,29 @@ interface I18nStore {
   setLocale: (locale: Locale) => void;
 }
 
+/** Mirror the language on <html lang dir> (no-op outside a browser). */
+export function applyDocumentLocale(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = locale;
+  document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+}
+
 export const useI18n = create<I18nStore>()(
   persist(
     (set) => ({
       locale: "en",
       setLocale: (locale) => {
         set({ locale });
-        document.documentElement.lang = locale;
-        document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+        applyDocumentLocale(locale);
       },
     }),
     {
       name: "i18n-storage",
+      // Restore <html lang dir> as soon as the saved language is read, i.e. before the
+      // first paint, so Arabic pages (login, public invoice ...) never flash left-to-right.
+      onRehydrateStorage: () => (state) => {
+        if (state) applyDocumentLocale(state.locale);
+      },
     }
   )
 );

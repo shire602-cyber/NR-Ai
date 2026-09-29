@@ -54,6 +54,7 @@ import {
   type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./ReportLaunchPicker.i18n";
 
 export interface ReportLaunchDeliveryPreview {
   status?: string;
@@ -316,19 +317,22 @@ function suiteSearchValues(suite: LaunchReportSuite): ReportLaunchSearchValue[] 
   ];
 }
 
-const reportLaunchPinnedCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
-  retry: "Retry recovery",
-  review: "Review guardrails",
-  queue: "Queue next pack",
-  comparison: "Open comparison",
-};
+const getReportLaunchPinnedCommandLabels = (): Record<ReportDeliveryAutomationCommand, string> => ({
+  retry: pageMessages.t("retryRecovery"),
+  review: pageMessages.t("reviewGuardrails"),
+  queue: pageMessages.t("queueNextPack"),
+  comparison: pageMessages.t("openComparison"),
+});
 
-const reportLaunchPinnedCommandDescriptions: Record<ReportDeliveryAutomationCommand, string> = {
-  retry: "Jump back to delivery recovery when a scheduled report pack fails.",
-  review: "Open the first delivery subscription that needs guardrail or setup review.",
-  queue: "Queue the next scheduled report pack from the launcher.",
-  comparison: "Open the persona comparison pack that explains current-vs-prior movement.",
-};
+const getReportLaunchPinnedCommandDescriptions = (): Record<
+  ReportDeliveryAutomationCommand,
+  string
+> => ({
+  retry: pageMessages.t("jumpBackToDeliveryRecoveryWhen"),
+  review: pageMessages.t("openTheFirstDeliverySubscriptionThat"),
+  queue: pageMessages.t("queueTheNextScheduledReportPack"),
+  comparison: pageMessages.t("openThePersonaComparisonPackThat"),
+});
 
 export function ReportLaunchPicker({
   persona = "owner",
@@ -345,6 +349,8 @@ export function ReportLaunchPicker({
   companyId = null,
   className,
 }: ReportLaunchPickerProps) {
+  const tr = pageMessages.useT();
+
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
   const [query, setQuery] = useState(() => getPreferredReportWorkflowSearch(persona));
   const [storedWorkflowGapFilter, setStoredWorkflowGapFilter] =
@@ -539,12 +545,12 @@ export function ReportLaunchPicker({
         ? starterHref(visibleStarters[0])
         : reportSectionHref(workspace, "automation-starters");
   const matchingAutomationPackLabel = visibleSuites[0]
-    ? "Open matching suite"
+    ? tr("openMatchingSuite")
     : visiblePackTemplates[0]
-      ? "Open matching pack"
+      ? tr("openMatchingPack")
       : visibleStarters[0]
-        ? "Open matching automation"
-        : "Open automations";
+        ? tr("openMatchingAutomation")
+        : tr("openAutomations");
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
   const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
@@ -608,14 +614,16 @@ export function ReportLaunchPicker({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-              {isDeliveryMode ? "Delivery setup" : "Report launcher"}
+              {isDeliveryMode ? tr("deliverySetup") : tr("reportLauncher")}
             </div>
             <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
               {workspace.navLabel}
             </h3>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
               {isDeliveryMode
-                ? `Choose the reports, guardrails, and automation starters that should feed scheduled sends for ${workspace.navLabel.toLowerCase()}.`
+                ? tr("chooseTheReportsGuardrailsAndAutomation", {
+                    navLabel: workspace.navLabel.toLowerCase(),
+                  })
                 : workspace.automationOutcome}
             </p>
           </div>
@@ -627,7 +635,7 @@ export function ReportLaunchPicker({
             ) : null}
             {trimmedQuery ? (
               <Badge variant="outline" data-testid="report-launch-search-context">
-                <span className="max-w-[12rem] truncate">Search: {trimmedQuery}</span>
+                <span className="max-w-[12rem] truncate">{tr("search", { trimmedQuery })}</span>
               </Badge>
             ) : null}
             <Badge
@@ -635,10 +643,12 @@ export function ReportLaunchPicker({
               data-testid="report-launch-sync"
             >
               {catalogQuery.isLoading
-                ? "Syncing"
+                ? tr("syncing")
                 : catalogQuery.isError
-                  ? "Local catalog"
-                  : `${syncedCatalog?.summary.liveReportCount ?? reports.length} synced reports`}
+                  ? tr("localCatalog")
+                  : tr("syncedReports", {
+                      value: syncedCatalog?.summary.liveReportCount ?? reports.length,
+                    })}
             </Badge>
           </div>
         </div>
@@ -651,7 +661,7 @@ export function ReportLaunchPicker({
                 type="button"
                 onClick={() => setSelectedPersona(item)}
                 className={cn(
-                  "w-full rounded-md border px-2.5 py-2 text-left text-xs font-medium transition-colors",
+                  "w-full rounded-md border px-2.5 py-2 text-start text-xs font-medium transition-colors",
                   item === selectedPersona
                     ? "border-accent bg-accent/5 text-foreground"
                     : "border-border/70 text-muted-foreground hover:border-accent hover:bg-accent/5"
@@ -666,12 +676,12 @@ export function ReportLaunchPicker({
 
           <div className="min-w-0">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => updateLauncherQuery(event.target.value)}
-                placeholder="Search reports, questions, and automations"
-                className="pl-9"
+                placeholder={tr("searchReportsQuestionsAndAutomations")}
+                className="ps-9"
                 data-testid="report-launch-search"
               />
             </div>
@@ -679,7 +689,7 @@ export function ReportLaunchPicker({
               <Button asChild size="sm" variant="outline" className="h-8 px-2">
                 <Link href={workflowFinderHref} data-testid="report-launch-open-workflow-finder">
                   <Search className="h-3.5 w-3.5" />
-                  {storedWorkflowGapFilter ? "Open gap" : "Open finder"}
+                  {storedWorkflowGapFilter ? tr("openGap") : tr("openFinder")}
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline" className="h-8 px-2">
@@ -697,11 +707,11 @@ export function ReportLaunchPicker({
               <div className="overflow-hidden rounded-md border border-border/70">
                 <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
                   <div className="text-xs font-semibold uppercase text-muted-foreground">
-                    Reports
+                    {tr("reports")}
                   </div>
                   <Link href={workspaceHref(workspace)}>
                     <Button variant="ghost" size="sm" className="h-7 gap-1 text-accent">
-                      Workspace <ArrowRight className="h-3.5 w-3.5" />
+                      {tr("workspace")} <ArrowRight className="h-3.5 w-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -722,13 +732,13 @@ export function ReportLaunchPicker({
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <Badge variant="outline">{report.category}</Badge>
                             {reportAutomationContext?.starter ? (
-                              <Badge variant="info">Autopilot</Badge>
+                              <Badge variant="info">{tr("autopilot")}</Badge>
                             ) : null}
                             {reportAutomationContext?.delivery ? (
-                              <Badge variant="success">Scheduled</Badge>
+                              <Badge variant="success">{tr("scheduled")}</Badge>
                             ) : null}
                             {reportAutomationContext?.comparison ? (
-                              <Badge variant="neutral">Comparison</Badge>
+                              <Badge variant="neutral">{tr("comparison")}</Badge>
                             ) : null}
                           </div>
                         </div>
@@ -740,7 +750,7 @@ export function ReportLaunchPicker({
                                 reportItemHref(report, selectedPersona)
                               }
                             >
-                              Open report <ArrowRight className="h-3.5 w-3.5" />
+                              {tr("openReport")} <ArrowRight className="h-3.5 w-3.5" />
                             </Link>
                           </Button>
                           {reportAutomationContext?.starter ? (
@@ -749,7 +759,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.starter.href}
                                 data-testid={`report-launch-report-automation-${report.id}`}
                               >
-                                Autopilot
+                                {tr("autopilot")}
                               </Link>
                             </Button>
                           ) : null}
@@ -759,7 +769,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.delivery.href}
                                 data-testid={`report-launch-report-delivery-${report.id}`}
                               >
-                                Delivery
+                                {tr("delivery")}
                               </Link>
                             </Button>
                           ) : null}
@@ -769,7 +779,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.comparison.href}
                                 data-testid={`report-launch-report-comparison-${report.id}`}
                               >
-                                Compare
+                                {tr("compare")}
                               </Link>
                             </Button>
                           ) : null}
@@ -779,7 +789,7 @@ export function ReportLaunchPicker({
                                 href={reportAutomationContext.suite.href}
                                 data-testid={`report-launch-report-suite-${report.id}`}
                               >
-                                Suite
+                                {tr("suite")}
                               </Link>
                             </Button>
                           ) : null}
@@ -790,7 +800,7 @@ export function ReportLaunchPicker({
                 </div>
               </div>
 
-              <div className="max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+              <div className="max-h-[30rem] space-y-3 overflow-y-auto pe-1">
                 {pinnedDeliveryAutomationCommand ? (
                   <div
                     className="rounded-md border border-accent/40 bg-accent/5 p-3"
@@ -798,17 +808,17 @@ export function ReportLaunchPicker({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                        <Pin className="h-3.5 w-3.5" /> Pinned automation
+                        <Pin className="h-3.5 w-3.5" /> {tr("pinnedAutomation")}
                       </div>
                       <Badge
                         variant="success"
                         data-testid={`report-launch-pinned-command-${pinnedDeliveryAutomationCommand}`}
                       >
-                        {reportLaunchPinnedCommandLabels[pinnedDeliveryAutomationCommand]}
+                        {getReportLaunchPinnedCommandLabels()[pinnedDeliveryAutomationCommand]}
                       </Badge>
                     </div>
                     <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                      {reportLaunchPinnedCommandDescriptions[pinnedDeliveryAutomationCommand]}
+                      {getReportLaunchPinnedCommandDescriptions()[pinnedDeliveryAutomationCommand]}
                     </div>
                     <div className="mt-3">
                       {pinnedDeliveryAutomationCommand === "queue" &&
@@ -827,10 +837,10 @@ export function ReportLaunchPicker({
                         >
                           <Send className="h-3.5 w-3.5" />
                           {queueingDeliverySubscriptionId === primaryDeliverySubscription.id
-                            ? "Queueing"
+                            ? tr("queueing")
                             : primaryDeliveryRequiresHandoffAcknowledgement
-                              ? "Acknowledge handoff"
-                              : "Queue pinned pack"}
+                              ? tr("acknowledgeHandoff")
+                              : tr("queuePinnedPack")}
                         </Button>
                       ) : pinnedDeliveryAutomationCommand === "retry" &&
                         onRetryDeliveryRun &&
@@ -846,8 +856,8 @@ export function ReportLaunchPicker({
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                           {retryingDeliveryRunId === primaryDeliveryRetryRunId
-                            ? "Retrying"
-                            : "Retry pinned delivery"}
+                            ? tr("retrying")
+                            : tr("retryPinnedDelivery")}
                         </Button>
                       ) : (
                         <Button asChild size="sm" variant="outline" className="h-7 px-2">
@@ -855,7 +865,7 @@ export function ReportLaunchPicker({
                             href={pinnedDeliveryCommandHref}
                             data-testid="report-launch-pinned-command-open"
                           >
-                            Open command <ArrowRight className="h-3.5 w-3.5" />
+                            {tr("openCommand")} <ArrowRight className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
                       )}
@@ -866,7 +876,7 @@ export function ReportLaunchPicker({
                 {isDeliveryMode ? (
                   <div className="rounded-md border border-border/70 p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                      <FileSpreadsheet className="h-3.5 w-3.5" /> Delivery subscriptions
+                      <FileSpreadsheet className="h-3.5 w-3.5" /> {tr("deliverySubscriptions")}
                     </div>
                     <div className="mt-3 space-y-2">
                       {visibleDeliverySubscriptions.slice(0, 2).map((subscription) => {
@@ -921,25 +931,29 @@ export function ReportLaunchPicker({
                               data-testid={`report-launch-delivery-preview-${subscription.id}`}
                             >
                               <div>
-                                <span className="font-medium text-foreground">Next:</span>{" "}
+                                <span className="font-medium text-foreground">{tr("next")}</span>{" "}
                                 {deliveryPreview?.nextRunLabel || subscription.cadence}
                               </div>
                               <div>
-                                <span className="font-medium text-foreground">Channel:</span>{" "}
+                                <span className="font-medium text-foreground">{tr("channel")}</span>{" "}
                                 {subscriptionChannel} · {subscriptionFormat}
                               </div>
                               {deliveryPreview?.suiteTitles?.length ? (
                                 <div>
-                                  <span className="font-medium text-foreground">Suite:</span>{" "}
+                                  <span className="font-medium text-foreground">
+                                    {tr("suite2")}
+                                  </span>{" "}
                                   {deliveryPreview.suiteTitles.join(", ")}
                                 </div>
                               ) : null}
                               <div>
-                                <span className="font-medium text-foreground">To:</span>{" "}
+                                <span className="font-medium text-foreground">{tr("to")}</span>{" "}
                                 {subscriptionRecipients}
                               </div>
                               <div>
-                                <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                                <span className="font-medium text-foreground">
+                                  {tr("guardrail")}
+                                </span>{" "}
                                 {subscriptionGuardrail}
                               </div>
                             </div>
@@ -949,7 +963,7 @@ export function ReportLaunchPicker({
                                 data-testid={`report-launch-delivery-handoff-${subscription.id}`}
                               >
                                 <div className="font-medium text-foreground">
-                                  Accountant handoff
+                                  {tr("accountantHandoff")}
                                 </div>
                                 {deliveryPreview.handoffRows.slice(0, 3).map((row) => (
                                   <div key={row.label}>
@@ -1000,8 +1014,8 @@ export function ReportLaunchPicker({
                                   >
                                     <RotateCcw className="h-3.5 w-3.5" />
                                     {retryingDeliveryRunId === retryLatestDeliveryRunId
-                                      ? "Retrying"
-                                      : "Retry delivery"}
+                                      ? tr("retrying")
+                                      : tr("retryDelivery")}
                                   </Button>
                                 ) : null}
                               </div>
@@ -1009,7 +1023,7 @@ export function ReportLaunchPicker({
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Button asChild size="sm" variant="outline" className="h-7 px-2">
                                 <Link href={deliveryHref(subscription)}>
-                                  Open <ArrowRight className="h-3.5 w-3.5" />
+                                  {tr("open")} <ArrowRight className="h-3.5 w-3.5" />
                                 </Link>
                               </Button>
                               {onQueueDeliverySubscription ? (
@@ -1024,10 +1038,10 @@ export function ReportLaunchPicker({
                                 >
                                   <Send className="h-3.5 w-3.5" />
                                   {queueingDeliverySubscriptionId === subscription.id
-                                    ? "Queueing"
+                                    ? tr("queueing")
                                     : requiresHandoffAcknowledgement
-                                      ? "Acknowledge"
-                                      : "Queue"}
+                                      ? tr("acknowledge")
+                                      : tr("queue")}
                                 </Button>
                               ) : null}
                             </div>
@@ -1036,7 +1050,7 @@ export function ReportLaunchPicker({
                       })}
                       {visibleDeliverySubscriptions.length === 0 ? (
                         <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                          No delivery subscriptions match this role or search yet.
+                          {tr("noDeliverySubscriptionsMatchThisRole")}
                         </div>
                       ) : null}
                     </div>
@@ -1045,7 +1059,7 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Report suites
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> {tr("reportSuites")}
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleSuites.slice(0, 2).map((suite) => {
@@ -1069,18 +1083,20 @@ export function ReportLaunchPicker({
                           <div className="flex items-start justify-between gap-2">
                             <div className="font-medium text-foreground">{suite.title}</div>
                             <Badge variant="outline" className="shrink-0">
-                              {suite.reportIds.length} reports
+                              {tr("reports2", { reportIdsCount: suite.reportIds.length })}
                             </Badge>
                           </div>
                           <div className="mt-1 text-muted-foreground">{suite.workflow}</div>
                           <div className="mt-1 text-muted-foreground">{suite.outcome}</div>
                           <div className="mt-1 text-muted-foreground">
-                            {suite.triggerRuleIds.length} trigger rules · scheduled delivery linked
+                            {tr("triggerRulesScheduledDeliveryLinked", {
+                              triggerRuleIdsCount: suite.triggerRuleIds.length,
+                            })}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Button asChild size="sm" variant="outline" className="h-7 px-2">
                               <Link href={suiteHref(suite)}>
-                                Open <ArrowRight className="h-3.5 w-3.5" />
+                                {tr("open")} <ArrowRight className="h-3.5 w-3.5" />
                               </Link>
                             </Button>
                             {onQueueDeliverySubscription ? (
@@ -1097,10 +1113,10 @@ export function ReportLaunchPicker({
                               >
                                 <Send className="h-3.5 w-3.5" />
                                 {queueingDeliverySubscriptionId === suite.deliverySubscriptionId
-                                  ? "Queueing"
+                                  ? tr("queueing")
                                   : requiresHandoffAcknowledgement
-                                    ? "Acknowledge"
-                                    : "Queue delivery"}
+                                    ? tr("acknowledge")
+                                    : tr("queueDelivery")}
                               </Button>
                             ) : null}
                           </div>
@@ -1109,7 +1125,7 @@ export function ReportLaunchPicker({
                     })}
                     {visibleSuites.length === 0 ? (
                       <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                        No report suites match this role or search yet.
+                        {tr("noReportSuitesMatchThisRole")}
                       </div>
                     ) : null}
                   </div>
@@ -1117,7 +1133,7 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Decision shortcuts
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> {tr("decisionShortcuts")}
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleShortcuts.slice(0, 2).map((shortcut) => (
@@ -1133,7 +1149,7 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Comparison packs
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> {tr("comparisonPacks")}
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleComparisonPresets.slice(0, 2).map((preset) => (
@@ -1155,7 +1171,7 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Pack templates
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> {tr("packTemplates")}
                   </div>
                   <div className="mt-3 space-y-2">
                     {visiblePackTemplates.slice(0, 2).map((template) => (
@@ -1177,7 +1193,7 @@ export function ReportLaunchPicker({
 
                 <div className="rounded-md border border-border/70 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <Sparkles className="h-3.5 w-3.5" /> Automation starters
+                    <Sparkles className="h-3.5 w-3.5" /> {tr("automationStarters")}
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleStarters.slice(0, 2).map((starter) => (

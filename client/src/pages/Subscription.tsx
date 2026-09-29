@@ -27,6 +27,7 @@ import {
   Star,
   Clock,
 } from "lucide-react";
+import { messages as pageMessages } from "./Subscription.i18n";
 
 interface BillingStatus {
   plan: string;
@@ -41,6 +42,8 @@ interface BillingStatus {
  * for paying, free, grandfathered and firm-managed companies.
  */
 function TrialBanner({ companyId }: { companyId: string | null | undefined }) {
+  const tr = pageMessages.useT();
+
   const { locale } = useTranslation();
   const isAr = locale === "ar";
   const { data } = useQuery<BillingStatus>({
@@ -54,9 +57,7 @@ function TrialBanner({ companyId }: { companyId: string | null | undefined }) {
   const expired = data.status === "trial_expired";
   const days = data.daysLeft;
   const message = expired
-    ? isAr
-      ? "انتهت الفترة التجريبية. اختر خطة أدناه للاستمرار في استخدام الميزات المدفوعة."
-      : "Your trial has ended. Choose a plan below to keep using paid features."
+    ? tr("yourTrialHasEndedChooseA")
     : isAr
       ? days === 1
         ? "يوم واحد متبقٍ في فترتك التجريبية"
@@ -84,23 +85,23 @@ function TrialBanner({ companyId }: { companyId: string | null | undefined }) {
   );
 }
 
-const PLANS = [
+const getPlans = () => [
   {
     id: "free",
     name: "Free",
     monthlyPrice: 0,
     yearlyPrice: 0,
     icon: Layers,
-    description: "Get started with basic accounting",
+    description: pageMessages.t("getStartedWithBasicAccounting"),
     color: "from-gray-500 to-gray-600",
     features: [
-      "1 user",
-      "20 invoices/month",
-      "10 receipts/month",
-      "10 AI credits/month",
-      "Basic dashboard",
-      "VAT reports",
-      "Email support",
+      pageMessages.t("n1User"),
+      pageMessages.t("n20InvoicesMonth"),
+      pageMessages.t("n10ReceiptsMonth"),
+      pageMessages.t("n10AiCreditsMonth"),
+      pageMessages.t("basicDashboard"),
+      pageMessages.t("vatReports"),
+      pageMessages.t("emailSupport"),
     ],
     limits: {
       invoices: 20,
@@ -115,21 +116,21 @@ const PLANS = [
     monthlyPrice: 49,
     yearlyPrice: 39,
     icon: Zap,
-    description: "For freelancers and small teams",
+    description: pageMessages.t("forFreelancersAndSmallTeams"),
     color: "from-blue-500 to-cyan-600",
     features: [
-      "3 users",
-      "200 invoices/month",
-      "100 receipts/month",
-      "50 AI credits/month",
-      "OCR receipt scanning",
-      "Bank imports & reconciliation",
-      "E-invoicing XML workflow",
-      "Quotes & estimates",
-      "Credit notes",
-      "Recurring invoices",
-      "Multi-currency",
-      "Priority email support",
+      pageMessages.t("n3Users"),
+      pageMessages.t("n200InvoicesMonth"),
+      pageMessages.t("n100ReceiptsMonth"),
+      pageMessages.t("n50AiCreditsMonth"),
+      pageMessages.t("ocrReceiptScanning"),
+      pageMessages.t("bankImportsReconciliation"),
+      pageMessages.t("eInvoicingXmlWorkflow"),
+      pageMessages.t("quotesEstimates"),
+      pageMessages.t("creditNotes"),
+      pageMessages.t("recurringInvoices"),
+      pageMessages.t("multiCurrency"),
+      pageMessages.t("priorityEmailSupport"),
     ],
     limits: {
       invoices: 200,
@@ -144,22 +145,22 @@ const PLANS = [
     monthlyPrice: 129,
     yearlyPrice: 99,
     icon: Crown,
-    description: "For growing businesses",
+    description: pageMessages.t("forGrowingBusinesses"),
     popular: true,
     color: "from-primary to-violet-600",
     features: [
-      "10 users",
-      "Unlimited invoices",
-      "Unlimited receipts",
-      "500 AI credits/month",
-      "Everything in Starter",
-      "AI CFO financial advisor",
-      "Purchase orders",
-      "Advanced reports",
-      "Bulk operations",
-      "Payroll integration",
-      "Inventory management",
-      "Phone & chat support",
+      pageMessages.t("n10Users"),
+      pageMessages.t("unlimitedInvoices"),
+      pageMessages.t("unlimitedReceipts"),
+      pageMessages.t("n500AiCreditsMonth"),
+      pageMessages.t("everythingInStarter"),
+      pageMessages.t("aiCfoFinancialAdvisor"),
+      pageMessages.t("purchaseOrders"),
+      pageMessages.t("advancedReports"),
+      pageMessages.t("bulkOperations"),
+      pageMessages.t("payrollIntegration"),
+      pageMessages.t("inventoryManagement"),
+      pageMessages.t("phoneChatSupport"),
     ],
     limits: {
       invoices: -1,
@@ -174,19 +175,19 @@ const PLANS = [
     monthlyPrice: 299,
     yearlyPrice: 249,
     icon: Gem,
-    description: "For large organizations",
+    description: pageMessages.t("forLargeOrganizations"),
     color: "from-amber-500 to-orange-600",
     features: [
-      "Unlimited users",
-      "Unlimited everything",
-      "Unlimited AI credits",
-      "Everything in Professional",
-      "API access",
-      "White-label options",
-      "Dedicated accountant",
-      "Custom integrations",
-      "Enterprise support terms",
-      "Multi-company support",
+      pageMessages.t("unlimitedUsers"),
+      pageMessages.t("unlimitedEverything"),
+      pageMessages.t("unlimitedAiCredits"),
+      pageMessages.t("everythingInProfessional"),
+      pageMessages.t("apiAccess"),
+      pageMessages.t("whiteLabelOptions"),
+      pageMessages.t("dedicatedAccountant"),
+      pageMessages.t("customIntegrations"),
+      pageMessages.t("enterpriseSupportTerms"),
+      pageMessages.t("multiCompanySupport"),
     ],
     limits: {
       invoices: -1,
@@ -208,6 +209,8 @@ function UsageMeter({
   limit: number;
   icon: React.ElementType;
 }) {
+  const tr = pageMessages.useT();
+
   const isUnlimited = limit === -1;
   const percentage = isUnlimited ? 0 : Math.min((used / limit) * 100, 100);
   const isNearLimit = !isUnlimited && percentage >= 80;
@@ -223,7 +226,7 @@ function UsageMeter({
         <span
           className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
         >
-          {isUnlimited ? `${used} used` : `${used} / ${limit}`}
+          {isUnlimited ? tr("used", { used }) : `${used} / ${limit}`}
         </span>
       </div>
       {!isUnlimited && (
@@ -242,6 +245,8 @@ function UsageMeter({
 }
 
 export default function Subscription() {
+  const tr = pageMessages.useT();
+
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const { subscription, usage, tierName, isLoading } = useSubscription();
   const { companyId } = useDefaultCompany();
@@ -281,14 +286,14 @@ export default function Subscription() {
     );
   }
 
-  const currentPlan = PLANS.find((p) => p.id === tierName) || PLANS[0];
+  const currentPlan = getPlans().find((p) => p.id === tierName) || getPlans()[0];
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       <PageHeader
-        eyebrow="Settings"
-        title="Subscription & Billing"
-        description="Manage your plan, usage, and billing details"
+        eyebrow={tr("settings")}
+        title={tr("subscriptionBilling")}
+        description={tr("manageYourPlanUsageAndBilling")}
       />
 
       <TrialBanner companyId={companyId} />
@@ -299,12 +304,12 @@ export default function Subscription() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Current Plan</CardTitle>
+              <CardTitle className="text-lg">{tr("currentPlan")}</CardTitle>
               <Badge
                 variant={tierName === "free" ? "secondary" : "default"}
                 className={tierName !== "free" ? "" : ""}
               >
-                <Star className="w-3 h-3 mr-1" />
+                <Star className="w-3 h-3 me-1" />
                 {currentPlan.name}
               </Badge>
             </div>
@@ -313,7 +318,7 @@ export default function Subscription() {
           <CardContent className="space-y-4">
             {subscription?.status && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Status</span>
+                <span className="text-muted-foreground">{tr("status")}</span>
                 <Badge variant={subscription.status === "active" ? "default" : "destructive"}>
                   {subscription.status}
                 </Badge>
@@ -321,13 +326,13 @@ export default function Subscription() {
             )}
             {subscription?.billingCycle && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Billing Cycle</span>
+                <span className="text-muted-foreground">{tr("billingCycle")}</span>
                 <span className="font-medium capitalize">{subscription.billingCycle}</span>
               </div>
             )}
             {subscription?.currentPeriodEnd && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Current Period Ends</span>
+                <span className="text-muted-foreground">{tr("currentPeriodEnds")}</span>
                 <span className="font-medium">
                   {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
                 </span>
@@ -341,11 +346,11 @@ export default function Subscription() {
                 disabled={portalMutation.isPending}
               >
                 {portalMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <ExternalLink className="w-4 h-4 mr-2" />
+                  <ExternalLink className="w-4 h-4 me-2" />
                 )}
-                Manage Billing
+                {tr("manageBilling")}
               </Button>
             )}
           </CardContent>
@@ -354,39 +359,37 @@ export default function Subscription() {
         {/* Usage Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Usage This Month</CardTitle>
-            <CardDescription>
-              Your resource consumption for the current billing period
-            </CardDescription>
+            <CardTitle className="text-lg">{tr("usageThisMonth")}</CardTitle>
+            <CardDescription>{tr("yourResourceConsumptionForTheCurrent")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <UsageMeter
-              label="Invoices"
+              label={tr("invoices")}
               used={usage?.invoices?.used ?? 0}
               limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
               icon={FileText}
             />
             <UsageMeter
-              label="Receipts"
+              label={tr("receipts")}
               used={usage?.receipts?.used ?? 0}
               limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
               icon={Receipt}
             />
             <UsageMeter
-              label="AI Credits"
+              label={tr("aiCredits")}
               used={usage?.aiCredits?.used ?? 0}
               limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
               icon={Brain}
             />
             <UsageMeter
-              label="Team Members"
+              label={tr("teamMembers")}
               used={usage?.users?.used ?? 0}
               limit={usage?.users?.limit ?? currentPlan.limits.users}
               icon={Users}
             />
             {usage?.storage && (
               <UsageMeter
-                label="Storage"
+                label={tr("storage")}
                 used={usage.storage.used}
                 limit={usage.storage.limit}
                 icon={HardDrive}
@@ -401,7 +404,7 @@ export default function Subscription() {
         <span
           className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
         >
-          Monthly
+          {tr("monthly")}
         </span>
         <Switch
           checked={billingCycle === "yearly"}
@@ -410,18 +413,18 @@ export default function Subscription() {
         <span
           className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
         >
-          Yearly
+          {tr("yearly")}
         </span>
         {billingCycle === "yearly" && (
           <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
-            Save up to 23%
+            {tr("saveUpTo23")}
           </Badge>
         )}
       </div>
 
       {/* Plan Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {PLANS.map((plan) => {
+        {getPlans().map((plan) => {
           const isCurrent = plan.id === tierName;
           const price = billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice;
           const PlanIcon = plan.icon;
@@ -438,8 +441,8 @@ export default function Subscription() {
               }`}
             >
               {plan.popular && (
-                <div className="absolute top-0 right-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
-                  Most Popular
+                <div className="absolute top-0 end-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-es-lg">
+                  {tr("mostPopular")}
                 </div>
               )}
 
@@ -459,14 +462,16 @@ export default function Subscription() {
                 <div className="pt-3">
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-bold">
-                      {price === 0 ? "Free" : `AED ${price}`}
+                      {price === 0 ? tr("free") : `AED ${price}`}
                     </span>
-                    {price > 0 && <span className="text-muted-foreground text-sm">/mo</span>}
+                    {price > 0 && <span className="text-muted-foreground text-sm">{tr("mo")}</span>}
                   </div>
                   {billingCycle === "yearly" && plan.monthlyPrice > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      AED {plan.yearlyPrice * 12}/year (save AED{" "}
-                      {(plan.monthlyPrice - plan.yearlyPrice) * 12}/yr)
+                      {tr("aedYearSaveAedYr", {
+                        value: plan.yearlyPrice * 12,
+                        value2: (plan.monthlyPrice - plan.yearlyPrice) * 12,
+                      })}
                     </p>
                   )}
                 </div>
@@ -485,30 +490,26 @@ export default function Subscription() {
                 <div className="pt-2">
                   {isCurrent ? (
                     <Button variant="outline" className="w-full" disabled>
-                      Current Plan
+                      {tr("currentPlan")}
                     </Button>
                   ) : (
                     <Button
-                      className={`w-full ${
-                        plan.popular
-                          ? "hover:"
-                          : ""
-                      }`}
+                      className={`w-full ${plan.popular ? "hover:" : ""}`}
                       variant={plan.popular ? "default" : "outline"}
                       onClick={() => checkoutMutation.mutate(plan.id)}
                       disabled={checkoutMutation.isPending}
                     >
                       {checkoutMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
                       ) : (
-                        <CreditCard className="w-4 h-4 mr-2" />
+                        <CreditCard className="w-4 h-4 me-2" />
                       )}
                       {plan.monthlyPrice === 0
-                        ? "Downgrade"
-                        : PLANS.findIndex((p) => p.id === tierName) >
-                            PLANS.findIndex((p) => p.id === plan.id)
-                          ? "Downgrade"
-                          : "Upgrade"}
+                        ? tr("downgrade")
+                        : getPlans().findIndex((p) => p.id === tierName) >
+                            getPlans().findIndex((p) => p.id === plan.id)
+                          ? tr("downgrade")
+                          : tr("upgrade")}
                     </Button>
                   )}
                 </div>
@@ -521,16 +522,18 @@ export default function Subscription() {
       {/* Feature Comparison */}
       <Card>
         <CardHeader>
-          <CardTitle>Feature Comparison</CardTitle>
-          <CardDescription>See what each plan includes at a glance</CardDescription>
+          <CardTitle>{tr("featureComparison")}</CardTitle>
+          <CardDescription>{tr("seeWhatEachPlanIncludesAt")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-3 pr-4 font-medium text-muted-foreground">Feature</th>
-                  {PLANS.map((plan) => (
+                  <th className="text-start py-3 pe-4 font-medium text-muted-foreground">
+                    {tr("feature")}
+                  </th>
+                  {getPlans().map((plan) => (
                     <th key={plan.id} className="text-center py-3 px-4 font-medium">
                       {plan.name}
                     </th>
@@ -539,30 +542,36 @@ export default function Subscription() {
               </thead>
               <tbody>
                 {[
-                  { label: "Invoices/month", values: ["20", "200", "Unlimited", "Unlimited"] },
-                  { label: "Receipts/month", values: ["10", "100", "Unlimited", "Unlimited"] },
-                  { label: "AI Credits/month", values: ["5", "50", "500", "Unlimited"] },
-                  { label: "Team members", values: ["1", "3", "10", "Unlimited"] },
-                  { label: "OCR receipt scanning", values: [false, true, true, true] },
-                  { label: "Bank reconciliation", values: [false, true, true, true] },
-                  { label: "E-invoicing", values: [false, true, true, true] },
-                  { label: "Quotes & estimates", values: [false, true, true, true] },
-                  { label: "Credit notes", values: [false, true, true, true] },
-                  { label: "Recurring invoices", values: [false, true, true, true] },
-                  { label: "Multi-currency", values: [false, true, true, true] },
-                  { label: "Purchase orders", values: [false, false, true, true] },
-                  { label: "Advanced reports", values: [false, false, true, true] },
-                  { label: "Bulk operations", values: [false, false, true, true] },
-                  { label: "AI CFO advisor", values: [false, false, true, true] },
-                  { label: "Payroll integration", values: [false, false, true, true] },
-                  { label: "Inventory management", values: [false, false, true, true] },
-                  { label: "API access", values: [false, false, false, true] },
-                  { label: "White-label", values: [false, false, false, true] },
-                  { label: "Dedicated accountant", values: [false, false, false, true] },
-                  { label: "Enterprise support terms", values: [false, false, false, true] },
+                  {
+                    label: tr("invoicesMonth"),
+                    values: ["20", "200", tr("unlimited"), tr("unlimited")],
+                  },
+                  {
+                    label: tr("receiptsMonth"),
+                    values: ["10", "100", tr("unlimited"), tr("unlimited")],
+                  },
+                  { label: tr("aiCreditsMonth"), values: ["5", "50", "500", tr("unlimited")] },
+                  { label: tr("teamMembers2"), values: ["1", "3", "10", tr("unlimited")] },
+                  { label: tr("ocrReceiptScanning"), values: [false, true, true, true] },
+                  { label: tr("bankReconciliation"), values: [false, true, true, true] },
+                  { label: tr("eInvoicing"), values: [false, true, true, true] },
+                  { label: tr("quotesEstimates"), values: [false, true, true, true] },
+                  { label: tr("creditNotes"), values: [false, true, true, true] },
+                  { label: tr("recurringInvoices"), values: [false, true, true, true] },
+                  { label: tr("multiCurrency"), values: [false, true, true, true] },
+                  { label: tr("purchaseOrders"), values: [false, false, true, true] },
+                  { label: tr("advancedReports"), values: [false, false, true, true] },
+                  { label: tr("bulkOperations"), values: [false, false, true, true] },
+                  { label: tr("aiCfoAdvisor"), values: [false, false, true, true] },
+                  { label: tr("payrollIntegration"), values: [false, false, true, true] },
+                  { label: tr("inventoryManagement"), values: [false, false, true, true] },
+                  { label: tr("apiAccess"), values: [false, false, false, true] },
+                  { label: tr("whiteLabel"), values: [false, false, false, true] },
+                  { label: tr("dedicatedAccountant"), values: [false, false, false, true] },
+                  { label: tr("enterpriseSupportTerms"), values: [false, false, false, true] },
                 ].map((row) => (
                   <tr key={row.label} className="border-b last:border-0">
-                    <td className="py-3 pr-4 text-muted-foreground">{row.label}</td>
+                    <td className="py-3 pe-4 text-muted-foreground">{row.label}</td>
                     {row.values.map((value, i) => (
                       <td key={i} className="text-center py-3 px-4">
                         {typeof value === "boolean" ? (

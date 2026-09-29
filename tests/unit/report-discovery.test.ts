@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { readSourceWithMessages } from "../helpers/read-source";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -65,7 +66,7 @@ import {
 } from "../../client/src/lib/reportCatalog";
 
 function read(path: string): string {
-  return readFileSync(join(process.cwd(), path), "utf8");
+  return readSourceWithMessages(process.cwd(), path);
 }
 
 function createMemoryLocalStorage(seed: Record<string, string> = {}): Storage {
@@ -359,18 +360,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("commandReportSuites.find");
     expect(commandSource).toContain("const actionKeywords = [");
     expect(commandSource).toContain("id: `report-action-${report.id}`");
-    expect(commandSource).toContain("label: `Automate ${report.name}`");
+    expect(commandSource).toContain('label: tr("automate", { name: report.name })');
     expect(commandSource).toContain("reportWorkflowContextHref({");
     expect(commandSource).toContain("search: report.name");
     expect(commandSource).toContain("href: context.workflowHref");
     expect(commandSource).toContain("id: `report-schedule-${report.id}`");
-    expect(commandSource).toContain("label: `Schedule ${report.name}`");
+    expect(commandSource).toContain('label: tr("schedule", { name: report.name })');
     expect(commandSource).toContain("href: context.delivery.href");
     expect(commandSource).toContain("id: `report-compare-${report.id}`");
-    expect(commandSource).toContain("label: `Compare ${report.name}`");
+    expect(commandSource).toContain('label: tr("compare", { name: report.name })');
     expect(commandSource).toContain("href: context.comparison.href");
     expect(commandSource).toContain("id: `report-suite-action-${report.id}`");
-    expect(commandSource).toContain("label: `Open ${report.name} suite`");
+    expect(commandSource).toContain('label: tr("openSuite", { name: report.name })');
     expect(commandSource).toContain("href: context.suite.href");
     expect(commandSource).toContain("context.starter?.commandKeywords");
     expect(commandSource).toContain("context.delivery?.commandKeywords");
@@ -410,7 +411,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("acknowledgeHandoffGaps ? { acknowledgeHandoffGaps: true }");
     expect(commandSource).toContain("Acknowledge handoff for");
     expect(commandSource).toContain(
-      "`Send ${subscription.channel} pack to ${subscription.recipients}`"
+      'tr("sendPackTo", {'
     );
     expect(commandSource).toContain("Select the queue command again");
     expect(commandSource).toContain("acknowledge handoff gaps before queueing");
@@ -418,7 +419,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-retry-delivery-${run.id}`");
     expect(commandSource).toContain("/report-delivery/runs/${runId}/retry");
     expect(commandSource).toContain(
-      'description: run.errorMessage ?? "Recover failed automated report delivery"'
+      'description: run.errorMessage ?? tr("recoverFailedAutomatedReportDelivery")'
     );
     expect(commandSource).toContain(
       'queryKey: ["/api/companies", selectedCompanyId, "report-delivery"]'
@@ -472,7 +473,7 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('url: "/reports"');
     expect(sidebarSource).toContain("items: []");
     expect(sidebarSource).not.toContain("/reports?tab=");
-    expect(mobileNavSource).toContain("Role setup - ${workspace.title}");
+    expect(mobileNavSource).toContain('pageMessages.t("roleSetup", { title: workspace.title })');
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
     expect(dashboardSource).toContain("clearPreferredReportWorkflowSearch");
@@ -699,7 +700,7 @@ describe("report discoverability", () => {
       'reportsHref({ tab: "pl", persona: preferredReportWorkspace.persona })'
     );
     expect(dashboardSource).toContain("href={row.href}");
-    expect(dashboardSource).toContain("Open <ArrowUpRight");
+    expect(dashboardSource).toContain('{tr("open")} <ArrowUpRight');
     expect(dashboardSource).toContain("reportCatalog");
     expect(dashboardSource).toContain('data-testid="dashboard-report-workspace"');
     expect(dashboardSource).toContain('data-testid="dashboard-open-report-workspace"');
@@ -863,22 +864,22 @@ describe("report discoverability", () => {
     expect(mobileNavSource).toContain("reportSuiteHref(suite)");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "report-suites")');
     expect(mobileNavSource).toContain("reportQuickAccessProfiles");
-    expect(mobileNavSource).toContain("Quick access reports - ${workspace.title}");
+    expect(mobileNavSource).toContain('pageMessages.t("quickAccessReports", { title: workspace.title })');
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "quick-access")');
     expect(mobileNavSource).toContain("reportSavedViewProfiles.map");
     expect(mobileNavSource).toContain("reportSavedViewHref(view)");
-    expect(mobileNavSource).toContain("Saved report views - ${workspace.title}");
+    expect(mobileNavSource).toContain('pageMessages.t("savedReportViews", { title: workspace.title })');
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "saved-views")');
     expect(mobileNavSource).toContain("workspace.automationNavLabel");
     expect(mobileNavSource).toContain("description: workspace.focus");
     expect(mobileNavSource).toContain("description: workspace.automationOutcome");
     expect(mobileNavSource).toContain("description: workspace.packSchedule.automation");
     expect(mobileNavSource).toContain("reportAutomationImpactProfiles");
-    expect(mobileNavSource).toContain("Automation impact - ${workspace.title}");
+    expect(mobileNavSource).toContain('pageMessages.t("automationImpact", { title: workspace.title })');
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-impact")');
     expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-operations")');
-    expect(mobileNavSource).toContain("Report operations - ${workspace.title}");
+    expect(mobileNavSource).toContain('pageMessages.t("reportOperations", { title: workspace.title })');
     expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
     expect(mobileNavSource).toContain("reportDecisionShortcuts.map");
     expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
@@ -1070,7 +1071,7 @@ describe("report discoverability", () => {
       '{ titleKey: "evidenceCenter", icon: Shield, url: "/evidence-center" }'
     );
     expect(sidebarSource).toContain("{CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}");
-    expect(sidebarSource).toContain('{t.compliance ?? "Compliance"}');
+    expect(sidebarSource).toContain('{t.compliance ?? tr("compliance")}');
     expect(vatFilingSource).toContain("VatWorkpaperPanel");
     expect(vatFilingSource).toContain('data-testid="button-vat-proof-trail"');
     expect(vatFilingSource).toContain('data-testid="button-vat-refund-support"');
@@ -1206,7 +1207,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("commandQuickAccessProfiles");
     expect(commandSource).toContain("syncedReportCatalog?.quickAccessProfiles");
     expect(commandSource).toContain("id: `report-quick-access-${workspace.persona}`");
-    expect(commandSource).toContain("Quick access reports - ${workspace.title}");
+    expect(commandSource).toContain('tr("quickAccessReports", { title: workspace.title })');
     expect(commandSource).toContain("quick access favorite daily reports open from anywhere");
     expect(commandSource).toContain("commandSavedViewProfiles.map");
     expect(commandSource).toContain("syncedReportCatalog?.savedViews");
@@ -1214,11 +1215,11 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("href: syncedHref(view) ?? reportSavedViewHref(view)");
     expect(commandSource).toContain("saved report view date range comparison currency dimension");
     expect(commandSource).toContain("id: `report-saved-views-${workspace.persona}`");
-    expect(commandSource).toContain("Saved report views - ${workspace.title}");
+    expect(commandSource).toContain('tr("savedReportViews", { title: workspace.title })');
     expect(commandSource).toContain("commandAutomationImpactProfiles");
     expect(commandSource).toContain("syncedReportCatalog?.automationImpactProfiles");
     expect(commandSource).toContain("id: `report-automation-impact-${workspace.persona}`");
-    expect(commandSource).toContain("Automation impact - ${workspace.title}");
+    expect(commandSource).toContain('tr("automationImpact", { title: workspace.title })');
     expect(commandSource).toContain("automation impact time saved work removed reports");
     expect(commandSource).toContain("commandDecisionShortcuts.map");
     expect(commandSource).toContain("id: `report-decision-shortcut-${shortcut.id}`");
@@ -1281,7 +1282,7 @@ describe("report discoverability", () => {
       "report suite role based reports comparison pack automation delivery trigger rules"
     );
     expect(commandSource).toContain("id: `report-suites-${workspace.persona}`");
-    expect(commandSource).toContain("Report suites - ${workspace.title}");
+    expect(commandSource).toContain('tr("reportSuites", { title: workspace.title })');
     expect(commandSource).toContain("id: `report-automation-operations-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-suites-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-saved-views-${workspace.persona}`");
@@ -1294,18 +1295,18 @@ describe("report discoverability", () => {
     expect(commandSource).toContain("id: `report-automation-rules-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-automation-command-center-${workspace.persona}`");
     expect(commandSource).toContain("id: `report-pack-automation-${workspace.persona}`");
-    expect(commandSource).toContain("Report automation operations - ${workspace.title}");
-    expect(commandSource).toContain("Report suites - ${workspace.title}");
-    expect(commandSource).toContain("Saved report views - ${workspace.title}");
-    expect(commandSource).toContain("Decision shortcuts - ${workspace.title}");
-    expect(commandSource).toContain("Trigger rules - ${workspace.title}");
-    expect(commandSource).toContain("Delivery subscriptions - ${workspace.title}");
-    expect(commandSource).toContain("Automation starters - ${workspace.title}");
-    expect(commandSource).toContain("Recommended reports - ${workspace.title}");
-    expect(commandSource).toContain("Report pack readiness - ${workspace.title}");
-    expect(commandSource).toContain("Report automation rules - ${workspace.title}");
-    expect(commandSource).toContain("Automation command center - ${workspace.title}");
-    expect(commandSource).toContain("Report pack automation - ${workspace.title}");
+    expect(commandSource).toContain('tr("reportAutomationOperations", { title: workspace.title })');
+    expect(commandSource).toContain('tr("reportSuites", { title: workspace.title })');
+    expect(commandSource).toContain('tr("savedReportViews", { title: workspace.title })');
+    expect(commandSource).toContain('tr("decisionShortcuts", { title: workspace.title })');
+    expect(commandSource).toContain('tr("triggerRules", { title: workspace.title })');
+    expect(commandSource).toContain('tr("deliverySubscriptions", { title: workspace.title })');
+    expect(commandSource).toContain('tr("automationStarters", { title: workspace.title })');
+    expect(commandSource).toContain('tr("recommendedReports", { title: workspace.title })');
+    expect(commandSource).toContain('tr("reportPackReadiness", { title: workspace.title })');
+    expect(commandSource).toContain('tr("reportAutomationRules", { title: workspace.title })');
+    expect(commandSource).toContain('tr("automationCommandCenter", { title: workspace.title })');
+    expect(commandSource).toContain('tr("reportPackAutomation", { title: workspace.title })');
 
     for (const report of liveReportCatalog) {
       expect(
@@ -2586,10 +2587,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('id: "schedule"');
     expect(reportsSource).toContain('id: "alert"');
     expect(reportsSource).toContain('id: "delivery"');
-    expect(reportsSource).toContain('label: packTemplate ? "Pack" : "No pack"');
-    expect(reportsSource).toContain('label: deliverySubscription ? "Scheduled" : "No schedule"');
-    expect(reportsSource).toContain('label: triggerRule ? "Alert rule" : "No alert"');
-    expect(reportsSource).toContain('label: deliverySubscription ? "Delivery" : "No delivery"');
+    expect(reportsSource).toContain('label: packTemplate ? tr("pack") : tr("noPack")');
+    expect(reportsSource).toContain('label: deliverySubscription ? tr("scheduled") : tr("noSchedule")');
+    expect(reportsSource).toContain('label: triggerRule ? tr("alertRule") : tr("noAlert")');
+    expect(reportsSource).toContain('label: deliverySubscription ? tr("delivery") : tr("noDelivery")');
     expect(reportsSource).toContain('data-testid="report-workflow-finder"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-summary"');
     expect(reportsSource).toContain('data-testid="reports-workflow-context-role"');
@@ -2741,7 +2742,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("reportDeliverySchedulerHandoffReviews");
     expect(reportsSource).toContain("retryReportDeliveryRun");
     expect(reportsSource).toContain("ReportDeliveryRunStatusFilter");
-    expect(reportsSource).toContain("reportDeliveryRunStatusFilters");
+    expect(reportsSource).toContain("getReportDeliveryRunStatusFilters");
     expect(reportsSource).toContain("reportDeliveryRunStatusFilter");
     expect(reportsSource).toContain("setReportDeliveryRunStatusFilter");
     expect(reportsSource).toContain("matchesReportDeliveryRunStatusFilter");
@@ -2854,7 +2855,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Roadmap prerequisites");
     expect(reportsSource).toContain("Roadmap status");
     expect(reportsSource).toContain("Top roadmap priority");
-    expect(reportsSource).toContain("roadmapImpactMeta");
+    expect(reportsSource).toContain("getRoadmapImpactMeta");
     expect(reportsSource).toContain("Priority Score");
     expect(reportsSource).toContain("Persona Impact");
     expect(reportsSource).toContain("Priority Rationale");
@@ -2938,61 +2939,61 @@ describe("report discoverability", () => {
         reportsSource.indexOf('<TabsContent value="tax"'),
         reportsSource.indexOf('<TabsContent value="sales"')
       )
-    ).not.toContain("Sales by product/service");
+    ).not.toContain("salesByProductService");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="sales"'),
         reportsSource.indexOf('<TabsContent value="balances"')
       )
-    ).toContain("Sales by product/service");
+    ).toContain("salesByProductService");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="tax"'),
         reportsSource.indexOf('<TabsContent value="sales"')
       )
-    ).not.toContain("Audit Trail");
+    ).not.toContain("auditTrail2");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="tax"'),
         reportsSource.indexOf('<TabsContent value="sales"')
       )
-    ).not.toContain("Expense claims");
+    ).not.toContain("expenseClaims");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="tax"'),
         reportsSource.indexOf('<TabsContent value="sales"')
       )
-    ).not.toContain("Inventory valuation");
+    ).not.toContain("inventoryValuation");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="balances"'),
         reportsSource.indexOf('<TabsContent value="expenses"')
       )
-    ).toContain("Inventory valuation");
+    ).toContain("inventoryValuation");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="balances"'),
         reportsSource.indexOf('<TabsContent value="expenses"')
       )
-    ).toContain("Inventory movement");
+    ).toContain("inventoryMovement");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="balances"'),
         reportsSource.indexOf('<TabsContent value="expenses"')
       )
-    ).toContain("Depreciation schedule");
+    ).toContain("depreciationSchedule");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="expenses"'),
         reportsSource.indexOf('<TabsContent value="payroll"')
       )
-    ).toContain("Expense claims");
+    ).toContain("expenseClaims");
     expect(
       reportsSource.slice(
         reportsSource.indexOf('<TabsContent value="close"'),
         reportsSource.indexOf('<TabsContent value="planning"')
       )
-    ).toContain("Audit Trail");
+    ).toContain("auditTrail2");
     expect(exportSource).toContain("Sales by Product Service");
     expect(reportsSource).toContain("sales-product-service");
     expect(reportsRouteSource).toContain("/api/companies/:id/reports/sales-product-service");
@@ -3027,7 +3028,7 @@ describe("report discoverability", () => {
     expect(portalRouteSource).toContain("/api/companies/:companyId/activity-logs");
     expect(reportsSource).toContain("fixedAssetRegisterReport");
     expect(reportsSource).toContain("inventoryValuationReport");
-    expect(reportsSource).toContain("Inventory valuation");
+    expect(reportsSource).toContain("inventoryValuation");
     expect(reportsSource).toContain("inventoryMovementReport");
     expect(reportsSource).toContain("Inventory movement");
     expect(reportsSource).toContain("/inventory-movements");
@@ -3301,7 +3302,7 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("reportComparisonPresetHref");
     expect(reportLaunchPickerSource).toContain("reportComparisonPresets");
     expect(reportLaunchPickerSource).toContain("reportSectionHref");
-    expect(reportLaunchPickerSource).toContain("reportLaunchPinnedCommandLabels");
+    expect(reportLaunchPickerSource).toContain("getReportLaunchPinnedCommandLabels");
     expect(reportLaunchPickerSource).toContain("report-delivery-launch-picker");
     expect(reportLaunchPickerSource).toContain("onQueueDeliverySubscription");
     expect(reportLaunchPickerSource).toContain("onRetryDeliveryRun");
@@ -3436,7 +3437,7 @@ describe("report discoverability", () => {
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.delivery.href}");
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.comparison.href}");
     expect(reportLaunchPickerSource).toContain("href={reportAutomationContext.suite.href}");
-    expect(reportLaunchPickerSource).toContain("Open report <ArrowRight");
+    expect(reportLaunchPickerSource).toContain('{tr("openReport")} <ArrowRight');
     expect(reportLaunchPickerSource).toContain("Autopilot");
     expect(reportLaunchPickerSource).toContain("Scheduled");
     expect(reportLaunchPickerSource).toContain(
@@ -3769,7 +3770,7 @@ describe("report discoverability", () => {
       "Tax cash flow",
       "Close activity",
     ]) {
-      expect(reportsSource).toContain(`signal: "${signal}"`);
+      expect(reportsSource).toContain(`: "${signal}"`);
     }
   });
 
@@ -3784,7 +3785,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("primary-${workspace.persona}-${workspace.topReadyReport.id}");
     expect(reportsSource).toContain("formatComparisonPercent(row.percentChange)");
     expect(reportsSource).toContain("comparisonBadgeVariant(row)");
-    expect(reportsSource).toContain("reportStatusMeta[workspace.topReadyReport.status]");
+    expect(reportsSource).toContain("getReportStatusMeta()[workspace.topReadyReport.status]");
     expect(reportsSource).toContain("recommendations.slice(0, 3)");
   });
 
@@ -3806,8 +3807,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Reporting workflow map");
     expect(reportsSource).toContain("visibleReportProductDepthAreas");
     expect(reportsSource).toContain("visibleReportProductDepthSubgoalCount");
-    expect(reportsSource).toContain("productDepthStatusMeta");
-    expect(reportsSource).toContain("productDepthEvidenceCheckpointStatusMeta");
+    expect(reportsSource).toContain("getProductDepthStatusMeta");
+    expect(reportsSource).toContain("getProductDepthEvidenceCheckpointStatusMeta");
     expect(reportsSource).toContain("data-testid={`report-product-depth-${area.id}`}");
     expect(reportsSource).toContain("data-testid={`report-product-depth-subgoal-${subgoal.id}`}");
     expect(reportsSource).toContain("data-testid={`report-source-drilldown-target-${target.id}`}");
@@ -3867,7 +3868,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Trigger rules");
     expect(reportsSource).toContain("visibleReportAutomationTriggerRules");
     expect(reportsSource).toContain("data-testid={`report-trigger-rule-${rule.id}`}");
-    expect(reportsSource).toContain("triggerSeverityMeta[rule.severity]");
+    expect(reportsSource).toContain("getTriggerSeverityMeta()[rule.severity]");
     expect(reportsSource).toContain("Open question");
     expect(reportsSource).toContain("Delivery subscriptions");
     expect(reportsSource).toContain("visibleReportDeliverySubscriptions");
@@ -4160,22 +4161,22 @@ describe("report discoverability", () => {
       expect(reportsSource).toContain(metric);
     }
     expect(reportsSource).toMatch(
-      /id: "depreciation-review-items"[\s\S]*?currentLabel: "Review items"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Depreciation setup queue"[\s\S]*?personas: \["freelancer", "accountant"\]/
+      /id: "depreciation-review-items"[\s\S]*?currentLabel: tr\("reviewItems"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("depreciationSetupQueue"\)[\s\S]*?personas: \["freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("depreciationScheduleReport.reviewCount");
     expect(reportsSource).toMatch(
-      /id: "depreciation-review-value"[\s\S]*?currentLabel: "Review value"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "AED"[\s\S]*?signal: "Depreciable value at review"[\s\S]*?personas: \["freelancer", "accountant"\]/
+      /id: "depreciation-review-value"[\s\S]*?currentLabel: tr\("reviewValue"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("depreciableValueAtReview"\)[\s\S]*?personas: \["freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("depreciationScheduleReport.reviewValueAed");
     expect(reportsSource).toContain(
       "reviewRows.reduce((sum, row) => sum + Math.max(0, row.remainingDepreciable), 0)"
     );
     expect(reportsSource).toMatch(
-      /id: "depreciation-ready-items"[\s\S]*?currentLabel: "Ready items"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Depreciation posting queue"[\s\S]*?personas: \["freelancer", "accountant"\]/
+      /id: "depreciation-ready-items"[\s\S]*?currentLabel: tr\("readyItems"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("depreciationPostingQueue"\)[\s\S]*?personas: \["freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("depreciationScheduleReport.readyToPostCount");
     expect(reportsSource).toMatch(
-      /id: "depreciation-ready-share"[\s\S]*?currentLabel: "Ready share"[\s\S]*?previousLabel: "Ready"[\s\S]*?currency: "%"[\s\S]*?signal: "Depreciation readiness"[\s\S]*?personas: \["freelancer", "accountant"\]/
+      /id: "depreciation-ready-share"[\s\S]*?currentLabel: tr\("readyShare"\)[\s\S]*?previousLabel: tr\("ready"\)[\s\S]*?currency: "%"[\s\S]*?signal: tr\("depreciationReadiness"\)[\s\S]*?personas: \["freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("depreciationScheduleReport.readyToPostCount");
     expect(reportsSource).toContain(
@@ -4191,16 +4192,16 @@ describe("report discoverability", () => {
       /id: "net-profit"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "net-margin"[\s\S]*?currency: "%"[\s\S]*?signal: "Profit efficiency"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "net-margin"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("profitEfficiency"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "expense-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: "Cost efficiency"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "expense-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("costEfficiency"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "revenue-expense-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Revenue covers expenses"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "revenue-expense-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("revenueCoversExpenses"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "break-even-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: "Break-even shortfall"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "break-even-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("breakEvenShortfall"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentRevenueExpenseCoverage");
     expect(reportsSource).toContain("currentBreakEvenGap");
@@ -4208,19 +4209,19 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("comparisonCurrentBalanceSheet");
     expect(reportsSource).toContain("comparisonPreviousBalanceSheet");
     expect(reportsSource).toMatch(
-      /id: "liability-asset-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: "Balance leverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "liability-asset-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("balanceLeverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "debt-to-equity-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: "Capital structure"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "debt-to-equity-ratio"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("capitalStructure"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "paid-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Collections effectiveness"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "paid-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("collectionsEffectiveness"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Invoice volume"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("invoiceVolume"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Deal size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("dealSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentInvoices.length");
     expect(reportsSource).toContain("previousInvoices.length");
@@ -4233,21 +4234,21 @@ describe("report discoverability", () => {
       /id: "cash-runway-days"[\s\S]*?currency: "days"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "projected-cash-shortfall"[\s\S]*?currentLabel: "Forecast"[\s\S]*?previousLabel: "Zero shortfall"[\s\S]*?currency: "AED"[\s\S]*?signal: "Negative cash risk"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "projected-cash-shortfall"[\s\S]*?currentLabel: tr\("forecast"\)[\s\S]*?previousLabel: tr\("zeroShortfall"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("negativeCashRisk"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "cash-risk-week-count"[\s\S]*?currentLabel: "Forecast"[\s\S]*?previousLabel: "Clear weeks"[\s\S]*?currency: "count"[\s\S]*?signal: "Forecast risk weeks"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "cash-risk-week-count"[\s\S]*?currentLabel: tr\("forecast"\)[\s\S]*?previousLabel: tr\("clearWeeks"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("forecastRiskWeeks"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "operating-cash-flow"[\s\S]*?signal: "Cash movement"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "operating-cash-flow"[\s\S]*?signal: tr\("cashMovement"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("operatingCashFlowForRow");
     expect(reportsSource).toMatch(
-      /id: "budget-actual-variance"[\s\S]*?currentLabel: "Actual"[\s\S]*?previousLabel: "Budget"[\s\S]*?signal: "Budget vs actual"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "budget-actual-variance"[\s\S]*?currentLabel: tr\("actual"\)[\s\S]*?previousLabel: tr\("budget"\)[\s\S]*?signal: tr\("budgetVsActual"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("budgetComparisonLines");
     expect(reportsSource).toContain("varianceReport?.varianceLines");
-    expect(reportsSource).toContain('TableHead className="text-right">Baseline</TableHead>');
+    expect(reportsSource).toContain('<TableHead className="text-end">{tr("baseline")}</TableHead>');
     expect(reportsSource).toContain("normalizeMonthlyBurn");
     expect(reportsSource).toContain("runwayCoverageDays");
     expect(reportsSource).toContain("cashFlowForecast?.currentBalance");
@@ -4258,28 +4259,28 @@ describe("report discoverability", () => {
       /id: "open-receivables"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Collections workload"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("collectionsWorkload"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-open-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Open invoice size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-open-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("openInvoiceSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-invoice-value-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Collections value mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-invoice-value-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("collectionsValueMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: "7-day collections queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("n7DayCollectionsQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "7-day cash collection"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("n7DayCashCollection"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-due-soon-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "7-day invoice size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-due-soon-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("n7DayInvoiceSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: "7-day collections mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("n7DayCollectionsMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Collections workload mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("collectionsWorkloadMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentAverageOpenInvoiceValue");
     expect(reportsSource).toContain("previousAverageOpenInvoiceValue");
@@ -4296,41 +4297,41 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("previousDueSoonInvoiceShare");
     expect(reportsSource).toContain("dueWithinDaysAfterRangeEnd");
     expect(reportsSource).toMatch(
-      /id: "overdue-receivables"[\s\S]*?currency: "AED"[\s\S]*?signal: "A\/R at risk"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-receivables"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("aRAtRisk"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-receivable-share"[\s\S]*?currency: "%"[\s\S]*?signal: "A\/R overdue mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-receivable-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("aROverdueMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Customer follow-ups"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-invoice-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("customerFollowUps"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-overdue-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Overdue invoice size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-overdue-invoice-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("overdueInvoiceSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-overdue-invoice-days"[\s\S]*?currency: "days"[\s\S]*?signal: "Overdue aging"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-overdue-invoice-days"[\s\S]*?currency: "days"[\s\S]*?signal: tr\("overdueAging"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Overdue workload mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-invoice-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("overdueWorkloadMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentAverageOverdueInvoiceValue");
     expect(reportsSource).toContain("previousAverageOverdueInvoiceValue");
     expect(reportsSource).toContain("currentAverageOverdueInvoiceDays");
     expect(reportsSource).toContain("previousAverageOverdueInvoiceDays");
     expect(reportsSource).toMatch(
-      /id: "vendor-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Supplier spend"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "vendor-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("supplierSpend"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "vendor-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Supplier bill volume"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "vendor-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("supplierBillVolume"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Supplier bill size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("supplierBillSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "top-vendor-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Supplier concentration"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "top-vendor-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("supplierConcentration"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "paid-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Supplier payment coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "paid-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("supplierPaymentCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentVendorBillValue");
     expect(reportsSource).toContain("previousVendorBillValue");
@@ -4359,46 +4360,46 @@ describe("report discoverability", () => {
       /id: "open-payables"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-bill-value-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Bill-pay value mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-bill-value-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("billPayValueMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: "Net unpaid pressure"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("netUnpaidPressure"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Open bill coverage"[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("openBillCoverage"\)[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: "Net unpaid workload"[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("netUnpaidWorkload"\)[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Bill-pay workload"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("billPayWorkload"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-open-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Open bill size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-open-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("openBillSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: "7-day bill-pay queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("n7DayBillPayQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "7-day cash need"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("n7DayCashNeed"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-due-soon-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "7-day bill size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-due-soon-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("n7DayBillSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: "7-day bill-pay mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("n7DayBillPayMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: "7-day net cash need"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("n7DayNetCashNeed"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "7-day bill coverage"[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("n7DayBillCoverage"\)[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "due-soon-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: "7-day net workload"[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "due-soon-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("n7DayNetWorkload"\)[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "open-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Bill-pay workload mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "open-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("billPayWorkloadMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentVendorBills.length");
     expect(reportsSource).toContain("previousVendorBills.length");
@@ -4430,19 +4431,19 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("currentOpenBillShare");
     expect(reportsSource).toContain("previousOpenBillShare");
     expect(reportsSource).toMatch(
-      /id: "overdue-payables"[\s\S]*?currency: "AED"[\s\S]*?signal: "A\/P at risk"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-payables"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("aPAtRisk"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: "Net overdue pressure"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-cash-gap"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("netOverduePressure"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Overdue bill coverage"[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-cash-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("overdueBillCoverage"\)[\s\S]*?favorable: "increase"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: "Net overdue workload"[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-workload-gap"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("netOverdueWorkload"\)[\s\S]*?favorable: "neutral"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-payable-share"[\s\S]*?currency: "%"[\s\S]*?signal: "A\/P overdue mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-payable-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("aPOverdueMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentOverdueCashGap");
     expect(reportsSource).toContain("previousOverdueCashGap");
@@ -4451,16 +4452,16 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("currentOverdueWorkloadGap");
     expect(reportsSource).toContain("previousOverdueWorkloadGap");
     expect(reportsSource).toMatch(
-      /id: "overdue-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Vendor follow-ups"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-bill-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("vendorFollowUps"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-overdue-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Overdue bill size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-overdue-bill-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("overdueBillSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-overdue-bill-days"[\s\S]*?currency: "days"[\s\S]*?signal: "Overdue aging"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-overdue-bill-days"[\s\S]*?currency: "days"[\s\S]*?signal: tr\("overdueAging"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "overdue-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Overdue bill mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "overdue-bill-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("overdueBillMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentAverageOverdueBillValue");
     expect(reportsSource).toContain("previousAverageOverdueBillValue");
@@ -4473,7 +4474,7 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("currentOverdueBillShare");
     expect(reportsSource).toContain("previousOverdueBillShare");
     expect(reportsSource).toMatch(
-      /id: "working-capital-proxy"[\s\S]*?signal: "A\/R less A\/P"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "working-capital-proxy"[\s\S]*?signal: tr\("aRLessAP"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
       /id: "collection-days"[\s\S]*?currency: "days"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
@@ -4482,7 +4483,7 @@ describe("report discoverability", () => {
       /id: "payable-days"[\s\S]*?currency: "days"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "cash-conversion-gap"[\s\S]*?currency: "days"[\s\S]*?signal: "DSO less DPO"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "cash-conversion-gap"[\s\S]*?currency: "days"[\s\S]*?signal: tr\("dsoLessDpo"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("vendorBillOutstandingAed");
     expect(reportsSource).toContain("vendorBillTotalAed");
@@ -4495,37 +4496,37 @@ describe("report discoverability", () => {
       /id: "top-product-service-share"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "unposted-expense-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Bookkeeping backlog"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "unposted-expense-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("bookkeepingBacklog"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Receipt workload"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("receiptWorkload"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "average-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Receipt size"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "average-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("receiptSize"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "unposted-receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Posting queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "unposted-receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("postingQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "unposted-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Posting value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "unposted-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("postingValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "expense-claim-review-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Claims queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "expense-claim-review-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("claimsQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "expense-claim-review-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Claims awaiting review"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "expense-claim-review-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("claimsAwaitingReview"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "submitted-expense-claim-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Claim approvals"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "submitted-expense-claim-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("claimApprovals"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "submitted-expense-claim-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Claim approval value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "submitted-expense-claim-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("claimApprovalValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "approved-expense-claim-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Reimbursement follow-up"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "approved-expense-claim-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("reimbursementFollowUp"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "approved-expense-claim-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Reimbursement value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "approved-expense-claim-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("reimbursementValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("expenseClaimReviewRows");
     expect(reportsSource).toContain("submittedExpenseClaimRows");
@@ -4553,10 +4554,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("previousUnpostedReceiptValue");
     expect(reportsSource).toContain("unpostedExpenseShare");
     expect(reportsSource).toMatch(
-      /id: "auto-posted-receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Receipts automated"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "auto-posted-receipt-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("receiptsAutomated"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "auto-posted-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Automated expense value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "auto-posted-receipt-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("automatedExpenseValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("autoPostedReceiptRows");
     expect(reportsSource).toContain("autoPostedReceiptValue");
@@ -4565,55 +4566,55 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("currentAutoPostedReceiptValue");
     expect(reportsSource).toContain("previousAutoPostedReceiptValue");
     expect(reportsSource).toMatch(
-      /id: "receipt-automation-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Auto-post coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "receipt-automation-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("autoPostCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("receiptAutomationCoverage");
     expect(reportsSource).toMatch(
-      /id: "receipt-automation-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Auto-posted value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "receipt-automation-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("autoPostedValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("receiptAutomationValueCoverage");
     expect(reportsSource).toContain("currentReceiptAutomationValueCoverage");
     expect(reportsSource).toMatch(
-      /id: "bank-reconciliation-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Bank automation coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-reconciliation-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("bankAutomationCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "reconciled-bank-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Bank transactions cleared"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "reconciled-bank-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("bankTransactionsCleared"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "reconciled-bank-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Bank value cleared"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "reconciled-bank-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("bankValueCleared"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "unreconciled-bank-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Bank review queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "unreconciled-bank-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("bankReviewQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "unreconciled-bank-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Bank value at review"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "unreconciled-bank-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("bankValueAtReview"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-match-suggestion-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Suggested match coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-match-suggestion-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("suggestedMatchCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-match-suggestion-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Suggested match value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-match-suggestion-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("suggestedMatchValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "suggested-bank-match-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Review-ready matches"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "suggested-bank-match-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("reviewReadyMatches"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-assisted-transaction-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Bank work assisted"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-assisted-transaction-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("bankWorkAssisted"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-assisted-transaction-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Assisted bank value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-assisted-transaction-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("assistedBankValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-assisted-transaction-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Bank work coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-assisted-transaction-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("bankWorkCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "bank-assisted-transaction-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: "Assisted bank value coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "bank-assisted-transaction-value-coverage"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("assistedBankValueCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "automation-work-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Action queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "automation-work-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("actionQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "automation-work-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Queue value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "automation-work-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("queueValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
       /const currentAutomationWorkQueueCount =[\s\S]*?currentOverdueInvoiceCount[\s\S]*?currentDueSoonReceivableInvoices\.length[\s\S]*?currentOverdueBillCount[\s\S]*?currentDueSoonBills\.length/
@@ -4622,19 +4623,19 @@ describe("report discoverability", () => {
       /const currentAutomationWorkQueueValue =[\s\S]*?currentOverdueReceivableValue[\s\S]*?currentDueSoonReceivableValue[\s\S]*?currentOverduePayableValue[\s\S]*?currentDueSoonBillValue/
     );
     expect(reportsSource).toMatch(
-      /id: "ledger-automation-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Ledger automation coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "ledger-automation-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("ledgerAutomationCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "manual-ledger-activity"[\s\S]*?currency: "AED"[\s\S]*?signal: "Manual ledger value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "manual-ledger-activity"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("manualLedgerValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "automated-ledger-activity"[\s\S]*?currency: "AED"[\s\S]*?signal: "Automated ledger value"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "automated-ledger-activity"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("automatedLedgerValue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "automation-adoption-index"[\s\S]*?currency: "%"[\s\S]*?signal: "Automation adoption"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "automation-adoption-index"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("automationAdoption"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "automation-value-adoption-index"[\s\S]*?currency: "%"[\s\S]*?signal: "Automation value adoption"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "automation-value-adoption-index"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("automationValueAdoption"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("bankReconciliationCoverage");
     expect(reportsSource).toContain("reconciledBankTransactionRows");
@@ -4684,22 +4685,22 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("comparisonPreviousCorporateTaxEstimate");
     expect(reportsSource).toContain("corporateTaxPreviousParams");
     expect(reportsSource).toMatch(
-      /id: "corporate-tax-payable"[\s\S]*?signal: "Tax exposure"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "corporate-tax-payable"[\s\S]*?signal: tr\("taxExposure"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "total-tax-exposure"[\s\S]*?signal: "VAT plus corporate tax"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "total-tax-exposure"[\s\S]*?signal: tr\("vatPlusCorporateTax"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "tax-exposure-rate"[\s\S]*?currency: "%"[\s\S]*?signal: "Tax load"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "tax-exposure-rate"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("taxLoad"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "tax-reserve-coverage"[\s\S]*?currentLabel: "Current cash"[\s\S]*?previousLabel: "Fully funded"[\s\S]*?currency: "%"[\s\S]*?signal: "Tax cash coverage"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "tax-reserve-coverage"[\s\S]*?currentLabel: tr\("currentCash"\)[\s\S]*?previousLabel: tr\("fullyFunded"\)[\s\S]*?currency: "%"[\s\S]*?signal: tr\("taxCashCoverage"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "tax-funding-gap"[\s\S]*?currentLabel: "Current gap"[\s\S]*?previousLabel: "Zero gap"[\s\S]*?currency: "AED"[\s\S]*?signal: "Tax cash gap"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "tax-funding-gap"[\s\S]*?currentLabel: tr\("currentGap"\)[\s\S]*?previousLabel: tr\("zeroGap"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("taxCashGap"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "tax-adjusted-runway-days"[\s\S]*?currentLabel: "After tax reserve"[\s\S]*?previousLabel: "Before tax reserve"[\s\S]*?currency: "days"[\s\S]*?signal: "Post-tax runway"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "tax-adjusted-runway-days"[\s\S]*?currentLabel: tr\("afterTaxReserve"\)[\s\S]*?previousLabel: tr\("beforeTaxReserve"\)[\s\S]*?currency: "days"[\s\S]*?signal: tr\("postTaxRunway"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("currentTotalTaxExposure");
     expect(reportsSource).toContain("previousTotalTaxExposure");
@@ -4715,37 +4716,37 @@ describe("report discoverability", () => {
       /id: "inventory-movement"[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "inventory-review-items"[\s\S]*?currentLabel: "Review items"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Stock review queue"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "inventory-review-items"[\s\S]*?currentLabel: tr\("reviewItems"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("stockReviewQueue"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("inventoryValuationReport.reviewCount");
     expect(reportsSource).toMatch(
-      /id: "inventory-review-share"[\s\S]*?currentLabel: "Review share"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "%"[\s\S]*?signal: "Stock review mix"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "inventory-review-share"[\s\S]*?currentLabel: tr\("reviewShare"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "%"[\s\S]*?signal: tr\("stockReviewMix"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("inventoryValuationReport.activeProductCount");
     expect(reportsSource).toMatch(
-      /id: "inventory-review-value"[\s\S]*?currentLabel: "Review value"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "AED"[\s\S]*?signal: "Stock value at review"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "inventory-review-value"[\s\S]*?currentLabel: tr\("reviewValue"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("stockValueAtReview"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("inventoryValuationReport.reviewValueAed");
     expect(reportsSource).toMatch(
-      /id: "fixed-asset-review-items"[\s\S]*?currentLabel: "Review items"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Asset review queue"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "fixed-asset-review-items"[\s\S]*?currentLabel: tr\("reviewItems"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("assetReviewQueue"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("fixedAssetRegisterReport.reviewCount");
     expect(reportsSource).toMatch(
-      /id: "fixed-asset-review-share"[\s\S]*?currentLabel: "Review share"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "%"[\s\S]*?signal: "Asset review mix"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "fixed-asset-review-share"[\s\S]*?currentLabel: tr\("reviewShare"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "%"[\s\S]*?signal: tr\("assetReviewMix"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("fixedAssetRegisterReport.activeRows.length");
     expect(reportsSource).toMatch(
-      /id: "fixed-asset-review-value"[\s\S]*?currentLabel: "Review value"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "AED"[\s\S]*?signal: "Asset value at review"[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
+      /id: "fixed-asset-review-value"[\s\S]*?currentLabel: tr\("reviewValue"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("assetValueAtReview"\)[\s\S]*?personas: \["owner", "freelancer", "accountant"\]/
     );
     expect(reportsSource).toContain("fixedAssetRegisterReport.reviewValueAed");
     expect(reportsSource).toMatch(
-      /id: "consolidated-revenue"[\s\S]*?currency: "AED"[\s\S]*?signal: "Group revenue"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidated-revenue"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("groupRevenue"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "consolidated-expenses"[\s\S]*?currency: "AED"[\s\S]*?signal: "Group expenses"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidated-expenses"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("groupExpenses"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "consolidated-margin"[\s\S]*?currency: "%"[\s\S]*?signal: "Group profitability"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidated-margin"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("groupProfitability"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentConsolidatedMargin");
     expect(reportsSource).toContain("previousConsolidatedMargin");
@@ -4754,50 +4755,50 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("consolidatedStatementsReport.currentComparisonExpenses");
     expect(reportsSource).toContain("consolidatedStatementsReport.previousExpenses");
     expect(reportsSource).toMatch(
-      /id: "month-end-open-checks"[\s\S]*?currentLabel: "Open checks"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Close checklist"[\s\S]*?personas: \["accountant"\]/
+      /id: "month-end-open-checks"[\s\S]*?currentLabel: tr\("openChecks"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("closeChecklist"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "consolidation-review-items"[\s\S]*?currentLabel: "Review items"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "count"[\s\S]*?signal: "Consolidation review queue"[\s\S]*?personas: \["accountant"\]/
+      /id: "consolidation-review-items"[\s\S]*?currentLabel: tr\("reviewItems"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "count"[\s\S]*?signal: tr\("consolidationReviewQueue"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("consolidatedStatementsReport.reviewCount");
     expect(reportsSource).toMatch(
-      /id: "month-end-readiness"[\s\S]*?currentLabel: "Checklist"[\s\S]*?previousLabel: "Ready"[\s\S]*?currency: "%"[\s\S]*?signal: "Close readiness"[\s\S]*?personas: \["accountant"\]/
+      /id: "month-end-readiness"[\s\S]*?currentLabel: tr\("checklist"\)[\s\S]*?previousLabel: tr\("ready"\)[\s\S]*?currency: "%"[\s\S]*?signal: tr\("closeReadiness"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentMonthEndOpenChecks");
     expect(reportsSource).toContain("currentMonthEndReadiness");
     expect(reportsSource).toContain("monthEndChecklistItems");
     expect(reportsSource).toContain("monthEndCloseStatus?.checklist");
     expect(reportsSource).toMatch(
-      /id: "audit-high-risk-event-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Risky audit activity"[\s\S]*?personas: \["accountant"\]/
+      /id: "audit-high-risk-event-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("riskyAuditActivity"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentHighRiskActivityCount");
     expect(reportsSource).toContain('activityLogRiskLevel(log) === "High"');
     expect(reportsSource).toMatch(
-      /id: "audit-high-risk-event-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Risky activity mix"[\s\S]*?personas: \["accountant"\]/
+      /id: "audit-high-risk-event-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("riskyActivityMix"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentHighRiskActivityShare");
     expect(reportsSource).toContain("previousHighRiskActivityShare");
     expect(reportsSource).toContain("currentActivityLogs.length");
     expect(reportsSource).toContain("previousActivityLogs.length");
     expect(reportsSource).toMatch(
-      /id: "audit-review-event-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Audit review workload"[\s\S]*?personas: \["accountant"\]/
+      /id: "audit-review-event-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("auditReviewWorkload"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentReviewActivityCount");
     expect(reportsSource).toContain("previousReviewActivityCount");
     expect(reportsSource).toContain('activityLogRiskLevel(log) !== "Low"');
     expect(reportsSource).toMatch(
-      /id: "audit-review-event-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Audit review mix"[\s\S]*?personas: \["accountant"\]/
+      /id: "audit-review-event-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("auditReviewMix"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentReviewActivityShare");
     expect(reportsSource).toContain("previousReviewActivityShare");
     expect(reportsSource).toMatch(
-      /id: "fx-unrealized-exposure"[\s\S]*?currentLabel: "Exposure"[\s\S]*?previousLabel: "Clear baseline"[\s\S]*?currency: "AED"[\s\S]*?signal: "FX exposure at review"[\s\S]*?personas: \["accountant"\]/
+      /id: "fx-unrealized-exposure"[\s\S]*?currentLabel: tr\("exposure"\)[\s\S]*?previousLabel: tr\("clearBaseline"\)[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("fxExposureAtReview"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("currentFxUnrealizedExposure");
     expect(reportsSource).toContain("fxGainsLosses?.totalUnrealizedGain");
     expect(reportsSource).toContain("fxGainsLosses?.totalUnrealizedLoss");
     expect(reportsSource).toMatch(
-      /id: "manual-ledger-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Manual source coverage"[\s\S]*?personas: \["accountant"\]/
+      /id: "manual-ledger-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("manualSourceCoverage"\)[\s\S]*?personas: \["accountant"\]/
     );
     expect(reportsSource).toContain("ledgerActivityBreakdownForRange");
     expect(reportsSource).toContain("currentManualLedgerShare");
@@ -4811,12 +4812,12 @@ describe("report discoverability", () => {
     );
     expect(reportsSource).toMatch(/id: "payroll-cost"[\s\S]*?personas: \["owner", "accountant"\]/);
     expect(reportsSource).toMatch(
-      /id: "payroll-run-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Payroll run volume"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-run-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("payrollRunVolume"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollRuns.length");
     expect(reportsSource).toContain("previousPayrollRuns.length");
     expect(reportsSource).toMatch(
-      /id: "payroll-deduction-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Gross-to-net payroll"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-deduction-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("grossToNetPayroll"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollDeductionShare");
     expect(reportsSource).toContain("previousPayrollDeductionShare");
@@ -4824,37 +4825,37 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("run.total_allowances");
     expect(reportsSource).toContain("run.total_deductions");
     expect(reportsSource).toMatch(
-      /id: "average-payroll-run-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Payroll run size"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "average-payroll-run-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("payrollRunSize"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentAveragePayrollRunValue");
     expect(reportsSource).toContain("previousAveragePayrollRunValue");
     expect(reportsSource).toMatch(
-      /id: "payroll-covered-employees"[\s\S]*?currency: "count"[\s\S]*?signal: "Payroll headcount"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-covered-employees"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("payrollHeadcount"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollCoveredEmployees");
     expect(reportsSource).toMatch(
-      /id: "payroll-cost-per-covered-employee"[\s\S]*?currency: "AED"[\s\S]*?signal: "Payroll unit cost"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-cost-per-covered-employee"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("payrollUnitCost"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollCostPerCoveredEmployee");
     expect(reportsSource).toContain("previousPayrollCostPerCoveredEmployee");
     expect(reportsSource).toMatch(
-      /id: "payroll-approval-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Payroll approvals"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-approval-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("payrollApprovals"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollApprovalQueueCount");
     expect(reportsSource).toContain("previousPayrollApprovalQueueCount");
     expect(reportsSource).toMatch(
-      /id: "payroll-approval-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Payroll approval value"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-approval-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("payrollApprovalValue"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("payrollApprovalQueueRows");
     expect(reportsSource).toContain("payrollApprovalQueueValue");
     expect(reportsSource).toContain("currentPayrollApprovalQueueValue");
     expect(reportsSource).toContain("previousPayrollApprovalQueueValue");
     expect(reportsSource).toMatch(
-      /id: "payroll-readiness-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: "Payroll approvals and WPS"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-readiness-queue-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("payrollApprovalsAndWps"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollReadinessQueueCount");
     expect(reportsSource).toMatch(
-      /id: "payroll-readiness-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "Payroll readiness value"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-readiness-queue-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("payrollReadinessValue"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentPayrollReadinessQueueValue");
     expect(reportsSource).toContain("previousPayrollReadinessQueueValue");
@@ -4862,22 +4863,22 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('run.status === "calculated"');
     expect(reportsSource).toContain("!run.sif_file_content");
     expect(reportsSource).toMatch(
-      /id: "wps-missing-run-count"[\s\S]*?currency: "count"[\s\S]*?signal: "WPS file gap"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "wps-missing-run-count"[\s\S]*?currency: "count"[\s\S]*?signal: tr\("wpsFileGap"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("currentWpsMissingRunCount");
     expect(reportsSource).toContain("previousWpsMissingRunCount");
     expect(reportsSource).toMatch(
-      /id: "wps-missing-run-value"[\s\S]*?currency: "AED"[\s\S]*?signal: "WPS file value gap"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "wps-missing-run-value"[\s\S]*?currency: "AED"[\s\S]*?signal: tr\("wpsFileValueGap"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("wpsMissingRunRows");
     expect(reportsSource).toContain("wpsMissingRunValue");
     expect(reportsSource).toContain("currentWpsMissingRunValue");
     expect(reportsSource).toContain("previousWpsMissingRunValue");
     expect(reportsSource).toMatch(
-      /id: "payroll-expense-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Payroll burden"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "payroll-expense-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("payrollBurden"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toMatch(
-      /id: "wps-ready-share"[\s\S]*?currency: "%"[\s\S]*?signal: "Payroll file readiness"[\s\S]*?personas: \["owner", "accountant"\]/
+      /id: "wps-ready-share"[\s\S]*?currency: "%"[\s\S]*?signal: tr\("payrollFileReadiness"\)[\s\S]*?personas: \["owner", "accountant"\]/
     );
     expect(reportsSource).toContain("wpsReadyShare");
     expect(reportsSource).toContain('run.status === "calculated" || run.status === "approved"');

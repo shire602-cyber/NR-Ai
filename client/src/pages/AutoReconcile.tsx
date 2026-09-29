@@ -34,6 +34,7 @@ import {
   Unlink,
   ChevronRight,
 } from "lucide-react";
+import { messages as pageMessages } from "./AutoReconcile.i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -61,16 +62,26 @@ interface AutoReconcileResult {
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
-const matchTypeConfig = {
+const getMatchTypeConfig = () => ({
   journal_entry: {
     icon: BookOpen,
-    label: "Journal Entry",
+    label: pageMessages.t("journalEntry"),
     color: "text-chart-5",
     bg: "bg-chart-5/10",
   },
-  invoice: { icon: FileText, label: "Invoice", color: "text-info", bg: "bg-info-subtle" },
-  receipt: { icon: Receipt, label: "Receipt", color: "text-success", bg: "bg-success-subtle" },
-};
+  invoice: {
+    icon: FileText,
+    label: pageMessages.t("invoice"),
+    color: "text-info",
+    bg: "bg-info-subtle",
+  },
+  receipt: {
+    icon: Receipt,
+    label: pageMessages.t("receipt"),
+    color: "text-success",
+    bg: "bg-success-subtle",
+  },
+});
 
 function getConfidenceStyle(confidence: number) {
   if (confidence >= 80)
@@ -78,20 +89,20 @@ function getConfidenceStyle(confidence: number) {
       textColor: "text-success",
       barClass: "[&>div]:bg-success",
       badge: "bg-success-subtle text-success-subtle-foreground",
-      label: "High",
+      label: pageMessages.t("high"),
     };
   if (confidence >= 60)
     return {
       textColor: "text-warning",
       barClass: "[&>div]:bg-warning",
       badge: "bg-warning-subtle text-warning-subtle-foreground",
-      label: "Medium",
+      label: pageMessages.t("medium"),
     };
   return {
     textColor: "text-destructive",
     barClass: "[&>div]:bg-destructive",
     badge: "bg-danger-subtle text-danger-subtle-foreground",
-    label: "Low",
+    label: pageMessages.t("low"),
   };
 }
 
@@ -107,6 +118,8 @@ function formatDate(dateStr?: string) {
 // ─── Component ────────────────────────────────────────────────────────────
 
 export default function AutoReconcile() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [result, setResult] = useState<AutoReconcileResult | null>(null);
@@ -124,12 +137,15 @@ export default function AutoReconcile() {
       );
       setSelectedMatches(highConf);
       toast({
-        title: "Scan complete",
-        description: `Found ${data.matches.length} potential match(es) for ${data.totalUnreconciled} unreconciled transaction(s).`,
+        title: tr("scanComplete"),
+        description: tr("foundPotentialMatchEsForUnreconciled", {
+          matchesCount: data.matches.length,
+          totalUnreconciled: data.totalUnreconciled,
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Scan failed", description: error?.message, variant: "destructive" });
+      toast({ title: tr("scanFailed"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -148,12 +164,12 @@ export default function AutoReconcile() {
       });
     },
     onSuccess: (data: any) => {
-      toast({ title: "Reconciliation applied", description: data.message });
+      toast({ title: tr("reconciliationApplied"), description: data.message });
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       scanMutation.mutate();
     },
     onError: (error: Error) => {
-      toast({ title: "Apply failed", description: error?.message, variant: "destructive" });
+      toast({ title: tr("applyFailed"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -193,9 +209,7 @@ export default function AutoReconcile() {
       <div className="p-6">
         <Card>
           <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground">
-              Please create a company first to use auto-reconciliation.
-            </p>
+            <p className="text-muted-foreground">{tr("pleaseCreateACompanyFirstTo")}</p>
           </CardContent>
         </Card>
       </div>
@@ -211,19 +225,19 @@ export default function AutoReconcile() {
             <Sparkles className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Auto-Reconciliation</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{tr("aiAutoReconciliation")}</h1>
             <p className="text-muted-foreground text-sm">
-              Automatically match bank transactions with journal entries, invoices, and receipts
+              {tr("automaticallyMatchBankTransactionsWithJournal")}
             </p>
           </div>
         </div>
         <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="lg">
           {scanMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Loader2 className="h-4 w-4 me-2 animate-spin" />
           ) : (
-            <ArrowRightLeft className="h-4 w-4 mr-2" />
+            <ArrowRightLeft className="h-4 w-4 me-2" />
           )}
-          {scanMutation.isPending ? "Scanning..." : "Run Auto-Reconcile"}
+          {scanMutation.isPending ? tr("scanning") : tr("runAutoReconcile")}
         </Button>
       </div>
 
@@ -233,7 +247,7 @@ export default function AutoReconcile() {
           <Card>
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Unlink className="h-3 w-3" /> Unreconciled
+                <Unlink className="h-3 w-3" /> {tr("unreconciled")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -243,7 +257,7 @@ export default function AutoReconcile() {
           <Card>
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Link2 className="h-3 w-3" /> Total Matches
+                <Link2 className="h-3 w-3" /> {tr("totalMatches")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -253,23 +267,23 @@ export default function AutoReconcile() {
           <Card className="border-success/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-success" /> High Confidence
+                <CheckCircle2 className="h-3 w-3 text-success" /> {tr("highConfidence")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <div className="text-3xl font-bold text-success">{result.autoMatchedCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">≥75% — auto-selected</p>
+              <p className="text-xs text-muted-foreground mt-1">{tr("n75AutoSelected")}</p>
             </CardContent>
           </Card>
           <Card className="border-warning/30">
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-warning" /> Needs Review
+                <AlertTriangle className="h-3 w-3 text-warning" /> {tr("needsReview")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <div className="text-3xl font-bold text-warning">{result.manualReviewCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">&lt;75% confidence</p>
+              <p className="text-xs text-muted-foreground mt-1">{tr("n75Confidence")}</p>
             </CardContent>
           </Card>
         </div>
@@ -282,33 +296,33 @@ export default function AutoReconcile() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Link2 className="h-5 w-5 text-primary" /> Suggested Matches
+                  <Link2 className="h-5 w-5 text-primary" /> {tr("suggestedMatches")}
                 </CardTitle>
                 <CardDescription>
-                  Review and apply auto-detected reconciliation matches.
-                  {selectedMatches.size > 0 && ` ${selectedMatches.size} selected.`}
+                  {tr("reviewAndApplyAutoDetectedReconciliation")}
+                  {selectedMatches.size > 0 && tr("selected", { size: selectedMatches.size })}
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={selectHighConf}>
-                  High Confidence
+                  {tr("highConfidence")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={selectAll}>
-                  Select All
+                  {tr("selectAll")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={deselectAll}>
-                  Clear
+                  {tr("clear")}
                 </Button>
                 <Button
                   onClick={() => applyMutation.mutate()}
                   disabled={selectedMatches.size === 0 || applyMutation.isPending}
                 >
                   {applyMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 me-2 animate-spin" />
                   ) : (
-                    <Check className="h-4 w-4 mr-2" />
+                    <Check className="h-4 w-4 me-2" />
                   )}
-                  Apply {selectedMatches.size > 0 ? `(${selectedMatches.size})` : ""}
+                  {tr("apply")} {selectedMatches.size > 0 ? `(${selectedMatches.size})` : ""}
                 </Button>
               </div>
             </div>
@@ -319,18 +333,18 @@ export default function AutoReconcile() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
-                    <TableHead>Bank Transaction</TableHead>
+                    <TableHead>{tr("bankTransaction")}</TableHead>
                     <TableHead className="w-8 text-center">
                       <ChevronRight className="h-4 w-4 mx-auto text-muted-foreground" />
                     </TableHead>
-                    <TableHead>Matched With</TableHead>
-                    <TableHead className="w-48">Confidence</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead>{tr("matchedWith")}</TableHead>
+                    <TableHead className="w-48">{tr("confidence")}</TableHead>
+                    <TableHead>{tr("reason")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {result.matches.map((match) => {
-                    const typeConfig = matchTypeConfig[match.matchedType];
+                    const typeConfig = getMatchTypeConfig()[match.matchedType];
                     const TypeIcon = typeConfig.icon;
                     const confStyle = getConfidenceStyle(match.confidence);
                     const isSelected = selectedMatches.has(match.bankTransactionId);
@@ -359,6 +373,7 @@ export default function AutoReconcile() {
                               <span>{formatDate(match.bankDate)}</span>
                               {match.bankAmount != null && (
                                 <span
+                                  dir="ltr"
                                   className={`font-mono font-medium ${match.bankAmount >= 0 ? "text-success" : "text-destructive"}`}
                                 >
                                   {formatCurrency(match.bankAmount)}
@@ -389,7 +404,7 @@ export default function AutoReconcile() {
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <span>{formatDate(match.matchedDate)}</span>
                                 {match.matchedAmount != null && (
-                                  <span className="font-mono font-medium">
+                                  <span dir="ltr" className="font-mono font-medium">
                                     {formatCurrency(match.matchedAmount)}
                                   </span>
                                 )}
@@ -438,10 +453,9 @@ export default function AutoReconcile() {
           <CardContent className="pt-6">
             <div className="text-center py-12 space-y-4">
               <ArrowRightLeft className="h-12 w-12 text-muted-foreground mx-auto" />
-              <h3 className="text-lg font-semibold">Ready to Reconcile</h3>
+              <h3 className="text-lg font-semibold">{tr("readyToReconcile")}</h3>
               <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                Click "Run Auto-Reconcile" to scan your unreconciled bank transactions and
-                automatically find matching journal entries, invoices, and receipts.
+                {tr("clickRunAutoReconcileToScan")}
               </p>
             </div>
           </CardContent>
@@ -455,18 +469,19 @@ export default function AutoReconcile() {
               {result.totalUnreconciled === 0 ? (
                 <>
                   <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
-                  <h3 className="text-lg font-semibold">All Caught Up</h3>
+                  <h3 className="text-lg font-semibold">{tr("allCaughtUp")}</h3>
                   <p className="text-muted-foreground text-sm">
-                    All bank transactions are already reconciled.
+                    {tr("allBankTransactionsAreAlreadyReconciled")}
                   </p>
                 </>
               ) : (
                 <>
                   <XCircle className="h-12 w-12 text-warning mx-auto" />
-                  <h3 className="text-lg font-semibold">No Matches Found</h3>
+                  <h3 className="text-lg font-semibold">{tr("noMatchesFound")}</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic
-                    matches could be determined. Try reconciling manually in Bank Reconciliation.
+                    {tr("unreconciledTransactionSFoundButNo", {
+                      totalUnreconciled: result.totalUnreconciled,
+                    })}
                   </p>
                 </>
               )}

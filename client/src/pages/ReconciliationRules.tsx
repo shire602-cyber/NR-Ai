@@ -47,6 +47,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Trash2, Edit, Zap, Loader2 } from "lucide-react";
+import { messages as pageMessages } from "./ReconciliationRules.i18n";
 
 interface ReconciliationRule {
   id: string;
@@ -71,11 +72,11 @@ interface AutoMatchResult {
 }
 
 const ruleFormSchema = z.object({
-  name: z.string().min(1, "Rule name is required"),
+  name: z.string().min(1, pageMessages.marker("ruleNameIsRequired")),
   priority: z.coerce.number().int().min(0).default(0),
   matchField: z.enum(["description", "reference", "amount"]),
   matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
-  matchValue: z.string().min(1, "Match value is required"),
+  matchValue: z.string().min(1, pageMessages.marker("matchValueIsRequired")),
   category: z.string().optional(),
   memo: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -83,20 +84,22 @@ const ruleFormSchema = z.object({
 
 type RuleFormData = z.infer<typeof ruleFormSchema>;
 
-const matchFieldLabels: Record<string, string> = {
-  description: "Description",
-  reference: "Reference",
-  amount: "Amount",
-};
+const getMatchFieldLabels = (): Record<string, string> => ({
+  description: pageMessages.t("description"),
+  reference: pageMessages.t("reference"),
+  amount: pageMessages.t("amount"),
+});
 
-const matchTypeLabels: Record<string, string> = {
-  contains: "Contains",
-  exact: "Exact Match",
-  starts_with: "Starts With",
-  regex: "Regex",
-};
+const getMatchTypeLabels = (): Record<string, string> => ({
+  contains: pageMessages.t("contains"),
+  exact: pageMessages.t("exactMatch"),
+  starts_with: pageMessages.t("startsWith"),
+  regex: pageMessages.t("regex"),
+});
 
 export default function ReconciliationRules() {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
@@ -137,13 +140,13 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule created",
-        description: "Reconciliation rule has been created successfully.",
+        title: tr("ruleCreated"),
+        description: tr("reconciliationRuleHasBeenCreatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -156,13 +159,13 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule updated",
-        description: "Reconciliation rule has been updated successfully.",
+        title: tr("ruleUpdated"),
+        description: tr("reconciliationRuleHasBeenUpdatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -174,10 +177,10 @@ export default function ReconciliationRules() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
-      toast({ title: "Rule deleted", description: "Reconciliation rule has been deleted." });
+      toast({ title: tr("ruleDeleted"), description: tr("reconciliationRuleHasBeenDeleted") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -191,7 +194,7 @@ export default function ReconciliationRules() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -210,12 +213,16 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "bank-transactions"],
       });
       toast({
-        title: "Auto-match completed",
-        description: `Matched ${result.matched} of ${result.totalUnreconciled} unreconciled transactions using ${result.rulesEvaluated} rules.`,
+        title: tr("autoMatchCompleted"),
+        description: tr("matchedOfUnreconciledTransactionsUsingRules", {
+          matched: result.matched,
+          totalUnreconciled: result.totalUnreconciled,
+          rulesEvaluated: result.rulesEvaluated,
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Auto-match failed", description: error?.message, variant: "destructive" });
+      toast({ title: tr("autoMatchFailed"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -272,9 +279,7 @@ export default function ReconciliationRules() {
       <div className="p-6">
         <Card>
           <CardContent className="p-6">
-            <p className="text-muted-foreground">
-              Please select a company to manage reconciliation rules.
-            </p>
+            <p className="text-muted-foreground">{tr("pleaseSelectACompanyToManage")}</p>
           </CardContent>
         </Card>
       </div>
@@ -284,9 +289,9 @@ export default function ReconciliationRules() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Reconciliation Rules"
-        description="Define rules to automatically match and categorize bank transactions."
+        eyebrow={tr("accounting")}
+        title={tr("reconciliationRules")}
+        description={tr("defineRulesToAutomaticallyMatchAnd")}
         actions={
           <>
             <Button
@@ -295,15 +300,15 @@ export default function ReconciliationRules() {
               disabled={autoMatchMutation.isPending}
             >
               {autoMatchMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
               ) : (
-                <Zap className="mr-2 h-4 w-4" />
+                <Zap className="me-2 h-4 w-4" />
               )}
-              Run Auto-Match
+              {tr("runAutoMatch")}
             </Button>
             <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Rule
+              <Plus className="me-2 h-4 w-4" />
+              {tr("addRule")}
             </Button>
           </>
         }
@@ -311,11 +316,8 @@ export default function ReconciliationRules() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Rules</CardTitle>
-          <CardDescription>
-            Rules are evaluated in priority order (lowest number first). The first matching rule
-            wins.
-          </CardDescription>
+          <CardTitle>{tr("rules")}</CardTitle>
+          <CardDescription>{tr("rulesAreEvaluatedInPriorityOrder")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -326,21 +328,21 @@ export default function ReconciliationRules() {
             </div>
           ) : !rules || rules.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No reconciliation rules yet. Create one to get started.
+              {tr("noReconciliationRulesYetCreateOne")}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[60px]">Priority</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Match Field</TableHead>
-                  <TableHead>Match Type</TableHead>
-                  <TableHead>Match Value</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-center">Applied</TableHead>
-                  <TableHead className="text-center">Active</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[60px]">{tr("priority")}</TableHead>
+                  <TableHead>{tr("name")}</TableHead>
+                  <TableHead>{tr("matchField")}</TableHead>
+                  <TableHead>{tr("matchType")}</TableHead>
+                  <TableHead>{tr("matchValue")}</TableHead>
+                  <TableHead>{tr("category")}</TableHead>
+                  <TableHead className="text-center">{tr("applied")}</TableHead>
+                  <TableHead className="text-center">{tr("active")}</TableHead>
+                  <TableHead className="text-end">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -350,12 +352,12 @@ export default function ReconciliationRules() {
                     <TableCell className="font-medium">{rule.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {matchFieldLabels[rule.matchField] || rule.matchField}
+                        {getMatchFieldLabels()[rule.matchField] || rule.matchField}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
-                        {matchTypeLabels[rule.matchType] || rule.matchType}
+                        {getMatchTypeLabels()[rule.matchType] || rule.matchType}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate font-mono text-sm">
@@ -373,7 +375,7 @@ export default function ReconciliationRules() {
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openEditDialog(rule)}>
                           <Edit className="h-4 w-4" />
@@ -400,11 +402,11 @@ export default function ReconciliationRules() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{editingRule ? "Edit Rule" : "Create Rule"}</DialogTitle>
+            <DialogTitle>{editingRule ? tr("editRule") : tr("createRule")}</DialogTitle>
             <DialogDescription>
               {editingRule
-                ? "Update this reconciliation rule."
-                : "Define a new rule to automatically match bank transactions."}
+                ? tr("updateThisReconciliationRule")
+                : tr("defineANewRuleToAutomatically")}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -414,9 +416,9 @@ export default function ReconciliationRules() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Rule Name</FormLabel>
+                    <FormLabel>{tr("ruleName")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Office Rent Payment" {...field} />
+                      <Input placeholder={tr("eGOfficeRentPayment")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -428,7 +430,7 @@ export default function ReconciliationRules() {
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Priority</FormLabel>
+                    <FormLabel>{tr("priority")}</FormLabel>
                     <FormControl>
                       <Input type="number" min={0} placeholder="0" {...field} />
                     </FormControl>
@@ -443,17 +445,17 @@ export default function ReconciliationRules() {
                   name="matchField"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Field</FormLabel>
+                      <FormLabel>{tr("matchField")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select field" />
+                            <SelectValue placeholder={tr("selectField")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="description">Description</SelectItem>
-                          <SelectItem value="reference">Reference</SelectItem>
-                          <SelectItem value="amount">Amount</SelectItem>
+                          <SelectItem value="description">{tr("description")}</SelectItem>
+                          <SelectItem value="reference">{tr("reference")}</SelectItem>
+                          <SelectItem value="amount">{tr("amount")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -466,18 +468,18 @@ export default function ReconciliationRules() {
                   name="matchType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Match Type</FormLabel>
+                      <FormLabel>{tr("matchType")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
+                            <SelectValue placeholder={tr("selectType")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="contains">Contains</SelectItem>
-                          <SelectItem value="exact">Exact Match</SelectItem>
-                          <SelectItem value="starts_with">Starts With</SelectItem>
-                          <SelectItem value="regex">Regex</SelectItem>
+                          <SelectItem value="contains">{tr("contains")}</SelectItem>
+                          <SelectItem value="exact">{tr("exactMatch")}</SelectItem>
+                          <SelectItem value="starts_with">{tr("startsWith")}</SelectItem>
+                          <SelectItem value="regex">{tr("regex")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -491,9 +493,9 @@ export default function ReconciliationRules() {
                 name="matchValue"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Match Value</FormLabel>
+                    <FormLabel>{tr("matchValue")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. RENT or ^SALARY.*" {...field} />
+                      <Input placeholder={tr("eGRentOrSalary")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -505,9 +507,9 @@ export default function ReconciliationRules() {
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category (optional)</FormLabel>
+                    <FormLabel>{tr("categoryOptional")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Rent, Salary, Utilities" {...field} />
+                      <Input placeholder={tr("eGRentSalaryUtilities")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -519,9 +521,9 @@ export default function ReconciliationRules() {
                 name="memo"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Memo (optional)</FormLabel>
+                    <FormLabel>{tr("memoOptional")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Internal note for this rule" {...field} />
+                      <Input placeholder={tr("internalNoteForThisRule")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -534,9 +536,9 @@ export default function ReconciliationRules() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div>
-                      <FormLabel className="text-base">Active</FormLabel>
+                      <FormLabel className="text-base">{tr("active")}</FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        Enable this rule for auto-matching
+                        {tr("enableThisRuleForAutoMatching")}
                       </p>
                     </div>
                     <FormControl>
@@ -548,16 +550,16 @@ export default function ReconciliationRules() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={closeDialog}>
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
                   )}
-                  {editingRule ? "Update Rule" : "Create Rule"}
+                  {editingRule ? tr("updateRule") : tr("createRule")}
                 </Button>
               </div>
             </form>

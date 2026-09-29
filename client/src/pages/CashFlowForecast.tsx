@@ -35,6 +35,7 @@ import {
   ArrowDownRight,
   Wallet,
 } from "lucide-react";
+import { messages as pageMessages } from "./CashFlowForecast.i18n";
 
 interface WeeklyProjection {
   week: number;
@@ -61,6 +62,8 @@ interface MonthlyCashHistory {
 }
 
 export default function CashFlowForecast() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [forecastDays, setForecastDays] = useState("90");
@@ -98,9 +101,7 @@ export default function CashFlowForecast() {
       <div className="p-6">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground text-center">
-              Please create a company first to use cash flow forecasting.
-            </p>
+            <p className="text-muted-foreground text-center">{tr("pleaseCreateACompanyFirstTo")}</p>
           </CardContent>
         </Card>
       </div>
@@ -123,16 +124,20 @@ export default function CashFlowForecast() {
     if (lower.includes("warning") || lower.includes("negative")) {
       return (
         <Badge variant="destructive" className="text-xs">
-          Risk
+          {tr("risk")}
         </Badge>
       );
     }
     if (lower.includes("positive") || lower.includes("improve")) {
-      return <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">Positive</Badge>;
+      return (
+        <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">
+          {tr("positive")}
+        </Badge>
+      );
     }
     return (
       <Badge variant="secondary" className="text-xs">
-        Info
+        {tr("info")}
       </Badge>
     );
   };
@@ -152,10 +157,8 @@ export default function CashFlowForecast() {
             <TrendingUp className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Cash Flow Forecast</h1>
-            <p className="text-muted-foreground text-sm">
-              AI-powered projections based on your financial history
-            </p>
+            <h1 className="text-2xl font-bold tracking-tight">{tr("cashFlowForecast")}</h1>
+            <p className="text-muted-foreground text-sm">{tr("aiPoweredProjectionsBasedOnYour")}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -164,9 +167,9 @@ export default function CashFlowForecast() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="30">30 Days</SelectItem>
-              <SelectItem value="60">60 Days</SelectItem>
-              <SelectItem value="90">90 Days</SelectItem>
+              <SelectItem value="30">{tr("n30Days")}</SelectItem>
+              <SelectItem value="60">{tr("n60Days")}</SelectItem>
+              <SelectItem value="90">{tr("n90Days")}</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -175,8 +178,8 @@ export default function CashFlowForecast() {
             onClick={() => refetchForecast()}
             disabled={isFetchingForecast}
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCw className={`h-4 w-4 me-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
+            {tr("refresh")}
           </Button>
         </div>
       </div>
@@ -194,7 +197,7 @@ export default function CashFlowForecast() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
                 <Wallet className="h-4 w-4" />
-                Current Balance
+                {tr("currentBalance")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -210,7 +213,7 @@ export default function CashFlowForecast() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
                 <ArrowUpRight className="h-4 w-4 text-success" />
-                Projected Inflows ({forecastDays}d)
+                {tr("projectedInflowsD", { forecastDays })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -224,7 +227,7 @@ export default function CashFlowForecast() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
                 <ArrowDownRight className="h-4 w-4 text-destructive" />
-                Projected Outflows ({forecastDays}d)
+                {tr("projectedOutflowsD", { forecastDays })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -242,11 +245,9 @@ export default function CashFlowForecast() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-primary" />
-              AI Insights
+              {tr("aiInsights")}
             </CardTitle>
-            <CardDescription>
-              Key observations and recommendations from your financial data
-            </CardDescription>
+            <CardDescription>{tr("keyObservationsAndRecommendationsFromYour")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -270,10 +271,10 @@ export default function CashFlowForecast() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Calendar className="h-5 w-5 text-primary" />
-            Weekly Projections
+            {tr("weeklyProjections")}
           </CardTitle>
           <CardDescription>
-            Projected cash inflows and outflows for the next {forecastDays} days
+            {tr("projectedCashInflowsAndOutflowsFor", { forecastDays })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -288,33 +289,35 @@ export default function CashFlowForecast() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Week</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Expected In</TableHead>
-                    <TableHead className="text-right">Expected Out</TableHead>
-                    <TableHead className="text-right">Projected Balance</TableHead>
+                    <TableHead>{tr("week")}</TableHead>
+                    <TableHead>{tr("period")}</TableHead>
+                    <TableHead className="text-end">{tr("expectedIn")}</TableHead>
+                    <TableHead className="text-end">{tr("expectedOut")}</TableHead>
+                    <TableHead className="text-end">{tr("projectedBalance")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {forecast.projections.map((proj) => (
                     <TableRow key={proj.week}>
-                      <TableCell className="font-medium">Week {proj.week}</TableCell>
+                      <TableCell className="font-medium">
+                        {tr("week2", { week: proj.week })}
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {proj.weekStart} - {proj.weekEnd}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <span className="text-success flex items-center justify-end gap-1">
                           <TrendingUp className="h-3 w-3" />
                           {formatCurrency(proj.expectedInflows, "AED", locale)}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <span className="text-destructive flex items-center justify-end gap-1">
                           <TrendingDown className="h-3 w-3" />
                           {formatCurrency(proj.expectedOutflows, "AED", locale)}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <span
                           className={`font-semibold ${
                             proj.projectedBalance >= 0 ? "text-success" : "text-destructive"
@@ -330,7 +333,7 @@ export default function CashFlowForecast() {
             </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
-              No projection data available. Add journal entries and invoices to generate forecasts.
+              {tr("noProjectionDataAvailableAddJournal")}
             </p>
           )}
         </CardContent>
@@ -341,11 +344,9 @@ export default function CashFlowForecast() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
-            Cash Flow History (Last 6 Months)
+            {tr("cashFlowHistoryLast6Months")}
           </CardTitle>
-          <CardDescription>
-            Actual monthly cash inflows and outflows from posted journal entries
-          </CardDescription>
+          <CardDescription>{tr("actualMonthlyCashInflowsAndOutflows")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingHistory ? (
@@ -359,10 +360,10 @@ export default function CashFlowForecast() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead className="text-right">Total Inflows</TableHead>
-                    <TableHead className="text-right">Total Outflows</TableHead>
-                    <TableHead className="text-right">Net Cash Flow</TableHead>
+                    <TableHead>{tr("month")}</TableHead>
+                    <TableHead className="text-end">{tr("totalInflows")}</TableHead>
+                    <TableHead className="text-end">{tr("totalOutflows")}</TableHead>
+                    <TableHead className="text-end">{tr("netCashFlow")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -371,13 +372,13 @@ export default function CashFlowForecast() {
                       <TableCell className="font-medium">
                         {h.month} {h.year}
                       </TableCell>
-                      <TableCell className="text-right text-success">
+                      <TableCell className="text-end text-success">
                         {formatCurrency(h.totalInflows, "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right text-destructive">
+                      <TableCell className="text-end text-destructive">
                         {formatCurrency(h.totalOutflows, "AED", locale)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <span
                           className={`font-semibold ${
                             h.netCashFlow >= 0 ? "text-success" : "text-destructive"
@@ -393,7 +394,7 @@ export default function CashFlowForecast() {
             </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
-              No historical data available yet. Post journal entries to build cash flow history.
+              {tr("noHistoricalDataAvailableYetPost")}
             </p>
           )}
         </CardContent>

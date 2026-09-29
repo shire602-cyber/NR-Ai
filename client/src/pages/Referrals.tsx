@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { ReferralCode, Referral } from "@shared/schema";
 import { formatCurrency } from "@/lib/format";
+import { messages as pageMessages } from "./Referrals.i18n";
 
 interface ReferralStats {
   code: string | null;
@@ -36,6 +37,8 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
@@ -52,10 +55,10 @@ export default function Referrals() {
     try {
       await navigator.clipboard.writeText(referralLink);
       setCopied(true);
-      toast({ title: "Link copied to clipboard!" });
+      toast({ title: tr("linkCopiedToClipboard") });
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      toast({ title: "Failed to copy", variant: "destructive" });
+      toast({ title: tr("failedToCopy"), variant: "destructive" });
     }
   };
 
@@ -64,8 +67,8 @@ export default function Referrals() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: "Join Muhasib.ai",
-          text: "Get 20% off your first month with my referral link!",
+          title: tr("joinMuhasibAi"),
+          text: tr("get20OffYourFirstMonth"),
           url: referralLink,
         });
       } catch (err) {
@@ -81,29 +84,29 @@ export default function Referrals() {
       case "rewarded":
         return (
           <Badge className="bg-success">
-            <Trophy className="w-3 h-3 mr-1" />
-            Rewarded
+            <Trophy className="w-3 h-3 me-1" />
+            {tr("rewarded")}
           </Badge>
         );
       case "qualified":
         return (
           <Badge className="bg-info">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Qualified
+            <CheckCircle className="w-3 h-3 me-1" />
+            {tr("qualified")}
           </Badge>
         );
       case "signed_up":
         return (
           <Badge className="bg-warning">
-            <Users className="w-3 h-3 mr-1" />
-            Signed Up
+            <Users className="w-3 h-3 me-1" />
+            {tr("signedUp")}
           </Badge>
         );
       case "pending":
         return (
           <Badge variant="secondary">
-            <Clock className="w-3 h-3 mr-1" />
-            Pending
+            <Clock className="w-3 h-3 me-1" />
+            {tr("pending")}
           </Badge>
         );
       default:
@@ -116,9 +119,9 @@ export default function Referrals() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
-        title="Referral Program"
-        description="Invite friends and earn rewards when they sign up"
+        eyebrow={tr("workspace")}
+        title={tr("referralProgram")}
+        description={tr("inviteFriendsAndEarnRewardsWhen")}
       />
 
       {isLoading ? (
@@ -132,53 +135,53 @@ export default function Referrals() {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalReferrals")}</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-total-referrals">
                   {stats?.totalReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">People you've invited</p>
+                <p className="text-xs text-muted-foreground">{tr("peopleYouVeInvited")}</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Successful</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("successful")}</CardTitle>
                 <CheckCircle className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-successful">
                   {stats?.successfulReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Qualified referrals</p>
+                <p className="text-xs text-muted-foreground">{tr("qualifiedReferrals")}</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pending</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("pending")}</CardTitle>
                 <Clock className="h-4 w-4 text-warning" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-pending">
                   {stats?.pendingReferrals || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Awaiting qualification</p>
+                <p className="text-xs text-muted-foreground">{tr("awaitingQualification")}</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Rewards Earned</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("rewardsEarned")}</CardTitle>
                 <DollarSign className="h-4 w-4 text-success" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-rewards">
                   {formatCurrency(stats?.totalRewardsEarned || 0)}
                 </div>
-                <p className="text-xs text-muted-foreground">Total credits earned</p>
+                <p className="text-xs text-muted-foreground">{tr("totalCreditsEarned")}</p>
               </CardContent>
             </Card>
           </div>
@@ -187,11 +190,11 @@ export default function Referrals() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />
-                <CardTitle>Your Referral Link</CardTitle>
+                <CardTitle>{tr("yourReferralLink")}</CardTitle>
               </div>
               <CardDescription>
-                Share this link with friends. They get {referralCode?.refereeRewardValue || 20}%
-                off, you get AED {referralCode?.referrerRewardValue || 50} credit!
+                {tr("shareThisLinkWithFriendsThey")} {referralCode?.refereeRewardValue || 20}
+                {tr("offYouGetAed")} {referralCode?.referrerRewardValue || 50} {tr("credit")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -200,10 +203,10 @@ export default function Referrals() {
                   <Input
                     value={`${window.location.origin}/register?ref=${referralCode?.code || ""}`}
                     readOnly
-                    className="pr-10 bg-background"
+                    className="pe-10 bg-background"
                     data-testid="input-referral-link"
                   />
-                  <Link2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Link2 className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -211,21 +214,21 @@ export default function Referrals() {
                     variant="outline"
                     data-testid="button-copy-link"
                   >
-                    <Copy className="w-4 h-4 mr-2" />
-                    {copied ? "Copied!" : "Copy"}
+                    <Copy className="w-4 h-4 me-2" />
+                    {copied ? tr("copied") : tr("copy")}
                   </Button>
                   <Button onClick={shareReferral} data-testid="button-share-link">
-                    <Share2 className="w-4 h-4 mr-2" />
-                    Share
+                    <Share2 className="w-4 h-4 me-2" />
+                    {tr("share")}
                   </Button>
                 </div>
               </div>
 
               <div className="mt-6 p-4 rounded-lg bg-background border">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Your Referral Code</span>
+                  <span className="text-sm font-medium">{tr("yourReferralCode")}</span>
                   <Badge variant="outline" className="font-mono text-lg px-3">
-                    {referralCode?.code || "Loading..."}
+                    {referralCode?.code || tr("loading")}
                   </Badge>
                 </div>
               </div>
@@ -237,7 +240,7 @@ export default function Referrals() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Gift className="w-5 h-5" />
-                  How It Works
+                  {tr("howItWorks")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -247,9 +250,9 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">1</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">Share Your Link</h4>
+                      <h4 className="font-medium">{tr("shareYourLink")}</h4>
                       <p className="text-sm text-muted-foreground">
-                        Send your unique referral link to friends and colleagues
+                        {tr("sendYourUniqueReferralLinkTo")}
                       </p>
                     </div>
                   </div>
@@ -258,9 +261,9 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">2</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">They Sign Up</h4>
+                      <h4 className="font-medium">{tr("theySignUp")}</h4>
                       <p className="text-sm text-muted-foreground">
-                        Your friend creates an account using your link
+                        {tr("yourFriendCreatesAnAccountUsing")}
                       </p>
                     </div>
                   </div>
@@ -269,10 +272,11 @@ export default function Referrals() {
                       <span className="text-sm font-bold text-primary">3</span>
                     </div>
                     <div>
-                      <h4 className="font-medium">Both Get Rewarded</h4>
+                      <h4 className="font-medium">{tr("bothGetRewarded")}</h4>
                       <p className="text-sm text-muted-foreground">
-                        They get {referralCode?.refereeRewardValue || 20}% off, you get AED{" "}
-                        {referralCode?.referrerRewardValue || 50} credit
+                        {tr("theyGet")} {referralCode?.refereeRewardValue || 20}
+                        {tr("offYouGetAed")}
+                        {referralCode?.referrerRewardValue || 50} {tr("credit2")}
                       </p>
                     </div>
                   </div>
@@ -284,15 +288,15 @@ export default function Referrals() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Trophy className="w-5 h-5" />
-                  Recent Referrals
+                  {tr("recentReferrals")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {!stats?.recentReferrals?.length ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No referrals yet</p>
-                    <p className="text-sm">Share your link to get started!</p>
+                    <p>{tr("noReferralsYet")}</p>
+                    <p className="text-sm">{tr("shareYourLinkToGetStarted")}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -303,7 +307,9 @@ export default function Referrals() {
                         data-testid={`referral-${referral.id}`}
                       >
                         <div>
-                          <div className="font-medium">{referral.refereeEmail || "Anonymous"}</div>
+                          <div className="font-medium">
+                            {referral.refereeEmail || tr("anonymous")}
+                          </div>
                           <div className="text-sm text-muted-foreground">
                             {formatDistanceToNow(new Date(referral.createdAt), { addSuffix: true })}
                           </div>
@@ -319,14 +325,14 @@ export default function Referrals() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Referral Milestones</CardTitle>
-              <CardDescription>Unlock bonus rewards as you refer more users</CardDescription>
+              <CardTitle>{tr("referralMilestones")}</CardTitle>
+              <CardDescription>{tr("unlockBonusRewardsAsYouRefer")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">5 Referrals - Bronze</span>
+                    <span className="text-sm font-medium">{tr("n5ReferralsBronze")}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 5)}/5
                     </span>
@@ -335,7 +341,7 @@ export default function Referrals() {
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">10 Referrals - Silver</span>
+                    <span className="text-sm font-medium">{tr("n10ReferralsSilver")}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 10)}/10
                     </span>
@@ -344,7 +350,7 @@ export default function Referrals() {
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">25 Referrals - Gold</span>
+                    <span className="text-sm font-medium">{tr("n25ReferralsGold")}</span>
                     <span className="text-sm text-muted-foreground">
                       {Math.min(stats?.successfulReferrals || 0, 25)}/25
                     </span>

@@ -32,6 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useTranslation } from "@/lib/i18n";
+import YearEndCloseSection from "@/components/compliance/YearEndCloseSection";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -685,6 +686,8 @@ export default function MonthEndClose() {
           )}
         </CardContent>
       </Card>
+
+      <YearEndCloseSection companyId={companyId} />
     </div>
   );
 }

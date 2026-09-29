@@ -60,7 +60,7 @@ export function registerAnalyticsRoutes(app: Express) {
       // Get historical data
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
 
       // Calculate monthly trends
       const monthlyData: { [key: string]: { inflow: number; outflow: number } } = {};
@@ -486,7 +486,7 @@ export function registerAnalyticsRoutes(app: Express) {
       const [invoices, accounts, entries, allLines, receipts] = await Promise.all([
         storage.getInvoicesByCompanyId(companyId),
         storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getJournalLinesByCompanyId(companyId),
         storage.getReceiptsByCompanyId(companyId),
       ]);
@@ -625,7 +625,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
       const [accounts, entries, allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getJournalLinesByCompanyId(companyId),
       ]);
 

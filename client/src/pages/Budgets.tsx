@@ -67,6 +67,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { messages as pageMessages } from "./Budgets.i18n";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -141,17 +142,17 @@ interface VarianceData {
 // ─── Schemas ─────────────────────────────────────────────
 
 const budgetFormSchema = z.object({
-  name: z.string().min(1, "Budget name is required"),
+  name: z.string().min(1, pageMessages.marker("budgetNameIsRequired")),
   fiscalYear: z.coerce.number().int().min(2000).max(2100),
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
+  startDate: z.string().min(1, pageMessages.marker("startDateIsRequired")),
+  endDate: z.string().min(1, pageMessages.marker("endDateIsRequired")),
   notes: z.string().optional().nullable(),
 });
 
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
 
 const budgetLineFormSchema = z.object({
-  category: z.string().min(1, "Category is required"),
+  category: z.string().min(1, pageMessages.marker("categoryIsRequired")),
   description: z.string().optional().nullable(),
   jan: z.coerce.number().min(0).optional(),
   feb: z.coerce.number().min(0).optional(),
@@ -183,21 +184,22 @@ const MONTH_KEYS = [
   "nov",
   "dec",
 ] as const;
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
+const getMonthLabels = () => [
+  pageMessages.t("jan"),
+  pageMessages.t("feb"),
+  pageMessages.t("mar"),
+  pageMessages.t("apr"),
+  pageMessages.t("may"),
+  pageMessages.t("jun"),
+  pageMessages.t("jul"),
+  pageMessages.t("aug"),
+  pageMessages.t("sep"),
+  pageMessages.t("oct"),
+  pageMessages.t("nov"),
+  pageMessages.t("dec"),
 ];
 
+// i18n-ignore-start: category ids stored with each record; the UI shows translated labels (budgetCategoryLabel)
 const BUDGET_CATEGORIES = [
   "Revenue",
   "Cost of Goods Sold",
@@ -213,10 +215,35 @@ const BUDGET_CATEGORIES = [
   "Miscellaneous",
   "Other",
 ];
+// i18n-ignore-end
+
+const BUDGET_CATEGORIES_LABEL_KEYS = {
+  Revenue: "budgetCategoryRevenue",
+  "Cost of Goods Sold": "budgetCategoryCostofGoodsSold",
+  "Salaries & Wages": "budgetCategorySalariesWages",
+  "Rent & Utilities": "budgetCategoryRentUtilities",
+  Marketing: "budgetCategoryMarketing",
+  "Travel & Entertainment": "budgetCategoryTravelEntertainment",
+  "Office Supplies": "budgetCategoryOfficeSupplies",
+  "Professional Services": "budgetCategoryProfessionalServices",
+  Insurance: "budgetCategoryInsurance",
+  Depreciation: "budgetCategoryDepreciation",
+  Technology: "budgetCategoryTechnology",
+  Miscellaneous: "budgetCategoryMiscellaneous",
+  Other: "budgetCategoryOther",
+} as const;
+
+/** Display label for a stored category id (the id itself stays English). */
+function budgetCategoryLabel(category: string): string {
+  const key = BUDGET_CATEGORIES_LABEL_KEYS[category as keyof typeof BUDGET_CATEGORIES_LABEL_KEYS];
+  return key ? pageMessages.t(key) : category;
+}
 
 // ─── Component ───────────────────────────────────────────
 
 export default function Budgets() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -288,14 +315,14 @@ export default function Budgets() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
       toast({
-        title: "Budget Created",
-        description: "The budget plan has been created successfully.",
+        title: tr("budgetCreated"),
+        description: tr("theBudgetPlanHasBeenCreated"),
       });
       setBudgetDialogOpen(false);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -304,13 +331,13 @@ export default function Budgets() {
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Updated", description: "The budget plan has been updated." });
+      toast({ title: tr("budgetUpdated"), description: tr("theBudgetPlanHasBeenUpdated") });
       setBudgetDialogOpen(false);
       setEditingBudget(null);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -318,11 +345,11 @@ export default function Budgets() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Deleted", description: "The budget plan has been deleted." });
+      toast({ title: tr("budgetDeleted"), description: tr("theBudgetPlanHasBeenDeleted") });
       if (selectedBudget) setSelectedBudget(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -330,10 +357,10 @@ export default function Budgets() {
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Approved", description: "The budget has been approved." });
+      toast({ title: tr("budgetApproved"), description: tr("theBudgetHasBeenApproved") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -345,13 +372,13 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Added", description: "Budget line has been added." });
+      toast({ title: tr("lineAdded"), description: tr("budgetLineHasBeenAdded") });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -363,13 +390,13 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Updated", description: "Budget line has been updated." });
+      toast({ title: tr("lineUpdated"), description: tr("budgetLineHasBeenUpdated") });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -380,10 +407,10 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Deleted", description: "Budget line has been removed." });
+      toast({ title: tr("lineDeleted"), description: tr("budgetLineHasBeenRemoved") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -494,11 +521,15 @@ export default function Budgets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <Badge variant="secondary">Draft</Badge>;
+        return <Badge variant="secondary">{tr("draft")}</Badge>;
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            {tr("approved")}
+          </Badge>
+        );
       case "closed":
-        return <Badge className="bg-muted text-foreground hover:bg-muted">Closed</Badge>;
+        return <Badge className="bg-muted text-foreground hover:bg-muted">{tr("closed")}</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -533,7 +564,7 @@ export default function Budgets() {
   if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
+        <div className="text-muted-foreground">{t.loading || tr("loading")}</div>
       </div>
     );
   }
@@ -541,7 +572,7 @@ export default function Budgets() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground">{tr("pleaseCreateACompanyFirst")}</div>
       </div>
     );
   }
@@ -555,26 +586,26 @@ export default function Budgets() {
         <div className="flex items-center gap-4">
           {selectedBudget && (
             <Button variant="ghost" size="sm" onClick={handleBackToBudgets}>
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
+              <ArrowLeft className="w-4 h-4 me-1" />
+              {tr("back")}
             </Button>
           )}
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
               <Wallet className="w-8 h-8" />
-              {selectedBudget ? selectedBudget.name : "Budgets"}
+              {selectedBudget ? selectedBudget.name : tr("budgets")}
             </h1>
             <p className="text-muted-foreground mt-1">
               {selectedBudget
                 ? `FY ${selectedBudget.fiscal_year} - ${getStatusBadge(selectedBudget.status).props.children}`
-                : "Plan, track, and analyze your budgets"}
+                : tr("planTrackAndAnalyzeYourBudgets")}
             </p>
           </div>
         </div>
         {!selectedBudget && (
           <Button onClick={handleOpenCreateBudget} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            New Budget
+            {tr("newBudget")}
           </Button>
         )}
       </div>
@@ -583,17 +614,17 @@ export default function Budgets() {
         <TabsList>
           <TabsTrigger value="budgets" className="flex items-center gap-2">
             <Wallet className="w-4 h-4" />
-            Budgets
+            {tr("budgets")}
           </TabsTrigger>
           {selectedBudget && (
             <>
               <TabsTrigger value="detail" className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4" />
-                Budget Detail
+                {tr("budgetDetail")}
               </TabsTrigger>
               <TabsTrigger value="variance" className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4" />
-                Variance
+                {tr("variance")}
               </TabsTrigger>
             </>
           )}
@@ -603,31 +634,29 @@ export default function Budgets() {
         <TabsContent value="budgets">
           <Card>
             <CardHeader>
-              <CardTitle>Budget Plans</CardTitle>
-              <CardDescription>
-                {budgetPlans.length} budget plan{budgetPlans.length !== 1 ? "s" : ""}
-              </CardDescription>
+              <CardTitle>{tr("budgetPlans")}</CardTitle>
+              <CardDescription>{tr.plural("budgetPlansCount", budgetPlans.length)}</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingBudgets ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
+                  {t.loading || tr("loading")}
                 </div>
               ) : budgetPlans.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No budget plans yet. Create your first budget to get started.
+                  {tr("noBudgetPlansYetCreateYour")}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Year</TableHead>
-                        <TableHead>Period</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Total Budget</TableHead>
-                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+                        <TableHead>{tr("name")}</TableHead>
+                        <TableHead>{tr("year")}</TableHead>
+                        <TableHead>{tr("period")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
+                        <TableHead className="text-end">{tr("totalBudget")}</TableHead>
+                        <TableHead className="text-end">{t.actions || tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -647,10 +676,10 @@ export default function Budgets() {
                             {budget.end_date ? format(new Date(budget.end_date), "MMM yyyy") : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(budget.status)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {formatCurrency(parseFloat(budget.total_budget || "0"), "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <div
                               className="flex items-center justify-end gap-1"
                               onClick={(e) => e.stopPropagation()}
@@ -660,7 +689,7 @@ export default function Budgets() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => approveBudgetMutation.mutate(budget.id)}
-                                  title="Approve"
+                                  title={tr("approve")}
                                   className="text-success hover:text-success"
                                 >
                                   <CheckCircle className="w-4 h-4" />
@@ -670,7 +699,7 @@ export default function Budgets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleOpenEditBudget(budget)}
-                                title="Edit"
+                                title={tr("edit")}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -678,7 +707,7 @@ export default function Budgets() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setBudgetToDelete(budget.id)}
-                                title="Delete"
+                                title={tr("delete")}
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -702,44 +731,44 @@ export default function Budgets() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Budget Lines - {selectedBudget.name}</CardTitle>
+                    <CardTitle>{tr("budgetLines", { name: selectedBudget.name })}</CardTitle>
                     <CardDescription>
-                      Monthly budget allocation by category. Click a row to edit.
+                      {tr("monthlyBudgetAllocationByCategoryClick")}
                     </CardDescription>
                   </div>
                   <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
                     <Plus className="w-4 h-4" />
-                    Add Line
+                    {tr("addLine")}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 {isLoadingLines ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
+                    {t.loading || tr("loading")}
                   </div>
                 ) : budgetLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No budget lines yet. Add categories and monthly allocations.
+                    {tr("noBudgetLinesYetAddCategories")}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
+                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
+                            {tr("category")}
                           </TableHead>
-                          {MONTH_LABELS.map((label) => (
-                            <TableHead key={label} className="text-right min-w-[90px]">
+                          {getMonthLabels().map((label) => (
+                            <TableHead key={label} className="text-end min-w-[90px]">
                               {label}
                             </TableHead>
                           ))}
-                          <TableHead className="text-right min-w-[110px] font-bold">
-                            Annual Total
+                          <TableHead className="text-end min-w-[110px] font-bold">
+                            {tr("annualTotal")}
                           </TableHead>
-                          <TableHead className="text-right min-w-[80px]">
-                            {t.actions || "Actions"}
+                          <TableHead className="text-end min-w-[80px]">
+                            {t.actions || tr("actions")}
                           </TableHead>
                         </TableRow>
                       </TableHeader>
@@ -750,9 +779,9 @@ export default function Budgets() {
                             className="cursor-pointer hover:bg-muted/50"
                             onClick={() => handleOpenEditLine(line)}
                           >
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
-                                {line.category}
+                                {budgetCategoryLabel(line.category)}
                                 {line.description && (
                                   <div className="text-xs text-muted-foreground">
                                     {line.description}
@@ -761,7 +790,7 @@ export default function Budgets() {
                               </div>
                             </TableCell>
                             {MONTH_KEYS.map((key) => (
-                              <TableCell key={key} className="text-right font-mono text-sm">
+                              <TableCell key={key} className="text-end font-mono text-sm">
                                 {formatCurrency(
                                   parseFloat((line as any)[key] || "0"),
                                   "AED",
@@ -769,15 +798,15 @@ export default function Budgets() {
                                 )}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right font-mono font-bold text-sm">
+                            <TableCell className="text-end font-mono font-bold text-sm">
                               {formatCurrency(parseFloat(line.annual_total || "0"), "AED", locale)}
                             </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
-                                title="Delete"
+                                title={tr("delete")}
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -787,13 +816,15 @@ export default function Budgets() {
                         ))}
                         {/* Totals Row */}
                         <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky left-0 bg-muted/50 z-10">TOTAL</TableCell>
+                          <TableCell className="sticky start-0 bg-muted/50 z-10">
+                            {tr("total")}
+                          </TableCell>
                           {MONTH_KEYS.map((key) => (
-                            <TableCell key={key} className="text-right font-mono text-sm">
+                            <TableCell key={key} className="text-end font-mono text-sm">
                               {formatCurrency(lineTotals()[key], "AED", locale)}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right font-mono text-sm">
+                          <TableCell className="text-end font-mono text-sm">
                             {formatCurrency(lineTotals().annual, "AED", locale)}
                           </TableCell>
                           <TableCell />
@@ -812,46 +843,44 @@ export default function Budgets() {
           <TabsContent value="variance">
             <Card>
               <CardHeader>
-                <CardTitle>Budget vs Actual Variance - {selectedBudget.name}</CardTitle>
+                <CardTitle>{tr("budgetVsActualVariance", { name: selectedBudget.name })}</CardTitle>
                 <CardDescription>
-                  Comparing budgeted amounts against actual journal entries. Green = under budget,
-                  Red = over budget.
+                  {tr("comparingBudgetedAmountsAgainstActualJournal")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingVariance ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
+                    {t.loading || tr("loading")}
                   </div>
                 ) : !varianceData || varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No variance data available. Add budget lines with account links to compare
-                    against actuals.
+                    {tr("noVarianceDataAvailableAddBudget")}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
+                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
+                            {tr("category")}
                           </TableHead>
-                          {MONTH_LABELS.map((label) => (
+                          {getMonthLabels().map((label) => (
                             <TableHead key={label} className="text-center min-w-[200px]">
                               <div>{label}</div>
                               <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-right pr-1">Budget</span>
-                                <span className="flex-1 text-right pr-1">Actual</span>
-                                <span className="flex-1 text-right">Var</span>
+                                <span className="flex-1 text-end pe-1">{tr("budget")}</span>
+                                <span className="flex-1 text-end pe-1">{tr("actual")}</span>
+                                <span className="flex-1 text-end">{tr("var")}</span>
                               </div>
                             </TableHead>
                           ))}
                           <TableHead className="text-center min-w-[200px]">
-                            <div>Annual</div>
+                            <div>{tr("annual")}</div>
                             <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-right pr-1">Budget</span>
-                              <span className="flex-1 text-right pr-1">Actual</span>
-                              <span className="flex-1 text-right">Var %</span>
+                              <span className="flex-1 text-end pe-1">{tr("budget")}</span>
+                              <span className="flex-1 text-end pe-1">{tr("actual")}</span>
+                              <span className="flex-1 text-end">{tr("var2")}</span>
                             </div>
                           </TableHead>
                         </TableRow>
@@ -859,9 +888,9 @@ export default function Budgets() {
                       <TableBody>
                         {varianceData.varianceLines.map((line) => (
                           <TableRow key={line.id}>
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
-                                {line.category}
+                                {budgetCategoryLabel(line.category)}
                                 {line.description && (
                                   <div className="text-xs text-muted-foreground">
                                     {line.description}
@@ -872,16 +901,16 @@ export default function Budgets() {
                             {MONTH_KEYS.map((key) => {
                               const m = line.months[key];
                               return (
-                                <TableCell key={key} className="text-right">
+                                <TableCell key={key} className="text-end">
                                   <div className="flex text-xs font-mono">
-                                    <span className="flex-1 text-right pr-1">
+                                    <span className="flex-1 text-end pe-1">
                                       {m.budget.toFixed(0)}
                                     </span>
-                                    <span className="flex-1 text-right pr-1">
+                                    <span className="flex-1 text-end pe-1">
                                       {m.actual.toFixed(0)}
                                     </span>
                                     <span
-                                      className={`flex-1 text-right font-semibold ${getVarianceColor(m.variance)}`}
+                                      className={`flex-1 text-end font-semibold ${getVarianceColor(m.variance)}`}
                                     >
                                       {m.variance >= 0 ? "+" : ""}
                                       {m.variance.toFixed(0)}
@@ -890,16 +919,16 @@ export default function Budgets() {
                                 </TableCell>
                               );
                             })}
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <div className="flex text-xs font-mono">
-                                <span className="flex-1 text-right pr-1">
+                                <span className="flex-1 text-end pe-1">
                                   {line.totals.budget.toFixed(0)}
                                 </span>
-                                <span className="flex-1 text-right pr-1">
+                                <span className="flex-1 text-end pe-1">
                                   {line.totals.actual.toFixed(0)}
                                 </span>
                                 <span
-                                  className={`flex-1 text-right font-bold ${getVarianceColor(line.totals.variance)}`}
+                                  className={`flex-1 text-end font-bold ${getVarianceColor(line.totals.variance)}`}
                                 >
                                   {line.totals.variancePercent >= 0 ? "+" : ""}
                                   {line.totals.variancePercent.toFixed(1)}%
@@ -918,7 +947,7 @@ export default function Budgets() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
+                        <CardTitle className="text-sm font-medium">{tr("totalBudget")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -932,7 +961,7 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Actual</CardTitle>
+                        <CardTitle className="text-sm font-medium">{tr("totalActual")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -946,7 +975,7 @@ export default function Budgets() {
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Variance</CardTitle>
+                        <CardTitle className="text-sm font-medium">{tr("totalVariance")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         {(() => {
@@ -965,7 +994,7 @@ export default function Budgets() {
                               )}
                               {formatCurrency(Math.abs(totalVar), "AED", locale)}
                               <span className="text-sm font-normal">
-                                {totalVar >= 0 ? "under budget" : "over budget"}
+                                {totalVar >= 0 ? tr("underBudget") : tr("overBudget")}
                               </span>
                             </div>
                           );
@@ -984,9 +1013,11 @@ export default function Budgets() {
       <Dialog open={budgetDialogOpen} onOpenChange={setBudgetDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingBudget ? "Edit Budget Plan" : "Create Budget Plan"}</DialogTitle>
+            <DialogTitle>
+              {editingBudget ? tr("editBudgetPlan") : tr("createBudgetPlan")}
+            </DialogTitle>
             <DialogDescription>
-              {editingBudget ? "Update budget details." : "Create a new annual budget plan."}
+              {editingBudget ? tr("updateBudgetDetails") : tr("createANewAnnualBudgetPlan")}
             </DialogDescription>
           </DialogHeader>
 
@@ -997,9 +1028,9 @@ export default function Budgets() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Budget Name *</FormLabel>
+                    <FormLabel>{tr("budgetName")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., FY 2026 Operating Budget" {...field} />
+                      <Input placeholder={tr("eGFy2026OperatingBudget")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1011,7 +1042,7 @@ export default function Budgets() {
                 name="fiscalYear"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Fiscal Year *</FormLabel>
+                    <FormLabel>{tr("fiscalYear")}</FormLabel>
                     <FormControl>
                       <Input type="number" min="2000" max="2100" {...field} />
                     </FormControl>
@@ -1026,7 +1057,7 @@ export default function Budgets() {
                   name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Start Date *</FormLabel>
+                      <FormLabel>{tr("startDate")}</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -1040,7 +1071,7 @@ export default function Budgets() {
                   name="endDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>End Date *</FormLabel>
+                      <FormLabel>{tr("endDate")}</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -1055,9 +1086,13 @@ export default function Budgets() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{tr("notes")}</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
+                      <Textarea
+                        placeholder={tr("optionalNotes")}
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1066,17 +1101,17 @@ export default function Budgets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setBudgetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}
                 >
                   {createBudgetMutation.isPending || updateBudgetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading || tr("loading")
                     : editingBudget
-                      ? t.save || "Save"
-                      : "Create Budget"}
+                      ? t.save || tr("save")
+                      : tr("createBudget")}
                 </Button>
               </div>
             </form>
@@ -1088,11 +1123,9 @@ export default function Budgets() {
       <Dialog open={addLineDialogOpen} onOpenChange={setAddLineDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingLine ? "Edit Budget Line" : "Add Budget Line"}</DialogTitle>
+            <DialogTitle>{editingLine ? tr("editBudgetLine") : tr("addBudgetLine")}</DialogTitle>
             <DialogDescription>
-              {editingLine
-                ? "Update monthly allocations."
-                : "Add a category with monthly budget amounts."}
+              {editingLine ? tr("updateMonthlyAllocations") : tr("addACategoryWithMonthlyBudget")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1104,17 +1137,17 @@ export default function Budgets() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category *</FormLabel>
+                      <FormLabel>{tr("category2")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
+                            <SelectValue placeholder={tr("selectCategory")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {BUDGET_CATEGORIES.map((cat) => (
                             <SelectItem key={cat} value={cat}>
-                              {cat}
+                              {budgetCategoryLabel(cat)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1129,9 +1162,13 @@ export default function Budgets() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel>{tr("description")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Optional detail" {...field} value={field.value || ""} />
+                        <Input
+                          placeholder={tr("optionalDetail")}
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1140,7 +1177,7 @@ export default function Budgets() {
               </div>
 
               <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-3">Monthly Amounts (AED)</h4>
+                <h4 className="font-medium mb-3">{tr("monthlyAmountsAed")}</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {MONTH_KEYS.map((key, idx) => (
                     <FormField
@@ -1149,7 +1186,7 @@ export default function Budgets() {
                       name={key}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">{MONTH_LABELS[idx]}</FormLabel>
+                          <FormLabel className="text-xs">{getMonthLabels()[idx]}</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
@@ -1165,7 +1202,7 @@ export default function Budgets() {
                   ))}
                 </div>
                 <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                  <span className="font-medium text-sm">Annual Total:</span>
+                  <span className="font-medium text-sm">{tr("annualTotal2")}</span>
                   <span className="font-bold text-lg">
                     {formatCurrency(computedAnnualTotal, "AED", locale)}
                   </span>
@@ -1174,17 +1211,17 @@ export default function Budgets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setAddLineDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={addLineMutation.isPending || updateLineMutation.isPending}
                 >
                   {addLineMutation.isPending || updateLineMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading || tr("loading")
                     : editingLine
-                      ? t.save || "Save"
-                      : "Add Line"}
+                      ? t.save || tr("save")
+                      : tr("addLine")}
                 </Button>
               </div>
             </form>
@@ -1200,14 +1237,13 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Plan?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteBudgetPlan")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget plan and all its lines. This action cannot be
-              undone.
+              {tr("thisWillPermanentlyDeleteThisBudget")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (budgetToDelete) {
@@ -1217,7 +1253,7 @@ export default function Budgets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1231,13 +1267,13 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Line?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteBudgetLine")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget line. This action cannot be undone.
+              {tr("thisWillPermanentlyDeleteThisBudget2")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (lineToDelete) {
@@ -1247,7 +1283,7 @@ export default function Budgets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

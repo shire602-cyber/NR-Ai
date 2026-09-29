@@ -25,6 +25,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FileText, Save, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./InvoiceSettings.i18n";
 
 const invoiceSettingsSchema = z.object({
   invoiceShowLogo: z.boolean().default(true),
@@ -45,6 +46,8 @@ const invoiceSettingsSchema = z.object({
 type InvoiceSettingsFormData = z.infer<typeof invoiceSettingsSchema>;
 
 export default function InvoiceSettings() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
 
@@ -89,15 +92,15 @@ export default function InvoiceSettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Invoice settings updated",
-        description: "Your invoice customization settings have been saved successfully.",
+        title: tr("invoiceSettingsUpdated"),
+        description: tr("yourInvoiceCustomizationSettingsHaveBeen"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update settings",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateSettings"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -119,7 +122,7 @@ export default function InvoiceSettings() {
   if (!company) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground">Company not found</p>
+        <p className="text-muted-foreground">{tr("companyNotFound")}</p>
       </div>
     );
   }
@@ -127,18 +130,16 @@ export default function InvoiceSettings() {
   return (
     <div className="space-y-8 max-w-3xl">
       <PageHeader
-        eyebrow="Settings"
-        title="Invoice Settings"
-        description="Customize how your invoices appear to customers"
+        eyebrow={tr("settings")}
+        title={tr("invoiceSettings")}
+        description={tr("customizeHowYourInvoicesAppearTo")}
       />
 
       {isVATRegistered && (
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Your company is VAT registered. All invoices will automatically display your TRN (
-            {company.trnVatNumber}) and be labeled as "Tax Invoice" to comply with UAE FTA
-            requirements.
+            {tr("yourCompanyIsVatRegisteredAll", { trnVatNumber: company.trnVatNumber })}
           </AlertDescription>
         </Alert>
       )}
@@ -150,11 +151,9 @@ export default function InvoiceSettings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                Company Details Display
+                {tr("companyDetailsDisplay")}
               </CardTitle>
-              <CardDescription>
-                Choose which company information to display on invoices
-              </CardDescription>
+              <CardDescription>{tr("chooseWhichCompanyInformationToDisplay")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -163,12 +162,12 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Company Logo</FormLabel>
+                      <FormLabel className="text-base">{tr("showCompanyLogo")}</FormLabel>
                       <FormDescription>
-                        Display your company logo at the top of invoices
+                        {tr("displayYourCompanyLogoAtThe")}
                         {!company.logoUrl && (
                           <span className="block text-xs text-warning mt-1">
-                            Note: Set your logo in Company Profile first
+                            {tr("noteSetYourLogoInCompany")}
                           </span>
                         )}
                       </FormDescription>
@@ -191,12 +190,12 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Business Address</FormLabel>
+                      <FormLabel className="text-base">{tr("showBusinessAddress")}</FormLabel>
                       <FormDescription>
-                        Display your business address on invoices
+                        {tr("displayYourBusinessAddressOnInvoices")}
                         {!company.businessAddress && (
                           <span className="block text-xs text-warning mt-1">
-                            Note: Set your address in Company Profile first
+                            {tr("noteSetYourAddressInCompany")}
                           </span>
                         )}
                       </FormDescription>
@@ -219,12 +218,12 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Phone Number</FormLabel>
+                      <FormLabel className="text-base">{tr("showPhoneNumber")}</FormLabel>
                       <FormDescription>
-                        Display your business phone number on invoices
+                        {tr("displayYourBusinessPhoneNumberOn")}
                         {!company.contactPhone && (
                           <span className="block text-xs text-warning mt-1">
-                            Note: Set your phone in Company Profile first
+                            {tr("noteSetYourPhoneInCompany")}
                           </span>
                         )}
                       </FormDescription>
@@ -247,12 +246,12 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Email Address</FormLabel>
+                      <FormLabel className="text-base">{tr("showEmailAddress")}</FormLabel>
                       <FormDescription>
-                        Display your business email on invoices
+                        {tr("displayYourBusinessEmailOnInvoices")}
                         {!company.contactEmail && (
                           <span className="block text-xs text-warning mt-1">
-                            Note: Set your email in Company Profile first
+                            {tr("noteSetYourEmailInCompany")}
                           </span>
                         )}
                       </FormDescription>
@@ -275,12 +274,12 @@ export default function InvoiceSettings() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Show Website</FormLabel>
+                      <FormLabel className="text-base">{tr("showWebsite")}</FormLabel>
                       <FormDescription>
-                        Display your website URL on invoices
+                        {tr("displayYourWebsiteUrlOnInvoices")}
                         {!company.websiteUrl && (
                           <span className="block text-xs text-warning mt-1">
-                            Note: Set your website in Company Profile first
+                            {tr("noteSetYourWebsiteInCompany")}
                           </span>
                         )}
                       </FormDescription>
@@ -302,8 +301,8 @@ export default function InvoiceSettings() {
           {/* Customization Section */}
           <Card>
             <CardHeader>
-              <CardTitle>Invoice Customization</CardTitle>
-              <CardDescription>Customize the appearance and text of your invoices</CardDescription>
+              <CardTitle>{tr("invoiceCustomization")}</CardTitle>
+              <CardDescription>{tr("customizeTheAppearanceAndTextOf")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -311,11 +310,11 @@ export default function InvoiceSettings() {
                 name="invoiceCustomTitle"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Invoice Title</FormLabel>
+                    <FormLabel>{tr("invoiceTitle")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder={
-                          isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"
+                          isVATRegistered ? tr("taxInvoiceDefault") : tr("invoiceDefault")
                         }
                         {...field}
                         data-testid="input-invoice-title"
@@ -323,8 +322,8 @@ export default function InvoiceSettings() {
                     </FormControl>
                     <FormDescription>
                       {isVATRegistered
-                        ? 'For VAT-registered companies, invoices default to "Tax Invoice". You can customize this, but it must comply with FTA regulations.'
-                        : 'Custom title for your invoices. Leave blank to use "Invoice".'}
+                        ? tr("forVatRegisteredCompaniesInvoicesDefault")
+                        : tr("customTitleForYourInvoicesLeave")}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -336,20 +335,17 @@ export default function InvoiceSettings() {
                 name="invoiceFooterNote"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Footer Note</FormLabel>
+                    <FormLabel>{tr("footerNote")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Thank you for your business"
+                        placeholder={tr("thankYouForYourBusiness")}
                         className="resize-none"
                         rows={3}
                         {...field}
                         data-testid="textarea-footer-note"
                       />
                     </FormControl>
-                    <FormDescription>
-                      Add a custom message at the bottom of your invoices (e.g., payment terms,
-                      thank you message)
-                    </FormDescription>
+                    <FormDescription>{tr("addACustomMessageAtThe")}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -363,8 +359,8 @@ export default function InvoiceSettings() {
               disabled={updateMutation.isPending}
               data-testid="button-save-settings"
             >
-              <Save className="w-4 h-4 mr-2" />
-              {updateMutation.isPending ? "Saving..." : "Save Settings"}
+              <Save className="w-4 h-4 me-2" />
+              {updateMutation.isPending ? tr("saving") : tr("saveSettings")}
             </Button>
           </div>
         </form>

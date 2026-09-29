@@ -27,19 +27,20 @@ import { useTranslation } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { UserPlus } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
+import { messages as pageMessages } from "./RegisterForm.i18n";
 
 // TRN is optional at sign-up — many users register before they have one — but
 // when supplied it must match the FTA's 15-digit format so the company record
 // isn't seeded with a malformed value that breaks VAT filing later.
 const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().min(2, pageMessages.marker("nameMustBeAtLeast2")),
+  email: z.string().email(pageMessages.marker("pleaseEnterAValidEmail")),
+  password: z.string().min(8, pageMessages.marker("passwordMustBeAtLeast8")),
   trn: z
     .string()
     .trim()
     .optional()
-    .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
+    .refine((v) => !v || /^[0-9]{15}$/.test(v), pageMessages.marker("uaeTrnMustBeExactly15")),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -49,6 +50,8 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -88,14 +91,14 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       await onSuccess(result.user);
 
       toast({
-        title: "Account created!",
-        description: "Welcome to AI Bookkeeping. Let's get started!",
+        title: tr("accountCreated"),
+        description: tr("welcomeToAiBookkeepingLetS"),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Registration failed",
-        description: error?.message || "Please try again.",
+        title: tr("registrationFailed"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     } finally {
       setIsLoading(false);
@@ -106,9 +109,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     <Card className="w-full max-w-md border-border/60 shadow-xl">
       <CardHeader className="space-y-1.5">
         <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          Start your books<span className="text-accent">.</span>
+          {tr("startYourBooks")}
+          <span className="text-accent">.</span>
         </CardTitle>
-        <CardDescription>Create your account to start managing your books</CardDescription>
+        <CardDescription>{tr("createYourAccountToStartManaging")}</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -122,7 +126,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="John Doe"
+                      placeholder={tr("johnDoe")}
                       disabled={isLoading}
                       data-testid="input-name"
                     />
@@ -165,7 +169,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       data-testid="input-password"
                     />
                   </FormControl>
-                  <FormDescription>Use at least 8 characters.</FormDescription>
+                  <FormDescription>{tr("useAtLeast8Characters")}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -176,7 +180,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    UAE TRN <span className="text-muted-foreground font-normal">(optional)</span>
+                    {tr("uaeTrn")}{" "}
+                    <span className="text-muted-foreground font-normal">{tr("optional")}</span>
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -188,10 +193,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       data-testid="input-trn"
                     />
                   </FormControl>
-                  <FormDescription>
-                    Your 15-digit FTA Tax Registration Number. You can add this later from the
-                    company profile.
-                  </FormDescription>
+                  <FormDescription>{tr("your15DigitFtaTaxRegistration")}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -202,7 +204,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               disabled={isLoading}
               data-testid="button-register"
             >
-              <UserPlus className="w-4 h-4 mr-2" />
+              <UserPlus className="w-4 h-4 me-2" />
               {isLoading ? t.loading : t.signUp}
             </Button>
           </form>

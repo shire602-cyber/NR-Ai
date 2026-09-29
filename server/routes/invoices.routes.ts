@@ -13,6 +13,7 @@ import {
 } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
+import { resolveEInvoiceContext } from "../services/einvoice-context";
 import { getEInvoiceProvider } from "../services/einvoice-provider";
 import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
@@ -372,6 +373,8 @@ export function registerInvoiceRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
       const { lines, date, ...invoiceData } = req.body;
+      // Only the opening-balance flow may mark an invoice as an opening balance.
+      delete (invoiceData as any).isOpeningBalance;
       const parsedLines = invoiceLinesInputSchema.parse(lines);
 
       // Check if user has access to this company
@@ -610,11 +613,18 @@ export function registerInvoiceRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
       const { lines, date, ...invoiceData } = req.body;
+      delete (invoiceData as any).isOpeningBalance;
       const parsedLines = invoiceLinesInputSchema.parse(lines);
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      if ((invoice as any).isOpeningBalance) {
+        return res.status(409).json({
+          message: "This invoice was entered as an opening balance and cannot be edited. Reverse the opening balances to change it.",
+          code: "OPENING_BALANCE_INVOICE",
+        });
       }
 
       if (isTerminal(invoice.status) || invoice.status === "credited") {
@@ -1046,7 +1056,8 @@ export function registerInvoiceRoutes(app: Express) {
       if (!company) {
         return res.status(404).json({ message: "Company not found" });
       }
-      const issues = validateForEInvoicing(invoice, lines, company);
+      const context = await resolveEInvoiceContext(invoice, company);
+      const issues = validateForEInvoicing(invoice, lines, company, context.validation);
       res.json({ valid: issues.length === 0, issues });
     })
   );
@@ -1071,7 +1082,8 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       // A payload an ASP/FTA would reject must never be generated and stored.
-      const issues = validateForEInvoicing(invoice, lines, company);
+      const context = await resolveEInvoiceContext(invoice, company);
+      const issues = validateForEInvoicing(invoice, lines, company, context.validation);
       if (issues.length > 0) {
         return res.status(422).json({
           message: "Invoice is not e-invoicing ready",
@@ -1084,7 +1096,7 @@ export function registerInvoiceRoutes(app: Express) {
         ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
         : undefined;
 
-      const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
+      const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer, context.xml);
 
       // Save e-invoice data to the invoice record
       await storage.updateInvoice(id, invoice.companyId, {
@@ -1152,7 +1164,8 @@ export function registerInvoiceRoutes(app: Express) {
           code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
         });
       }
-      const result = await submitEInvoice({ invoice, lines, company, provider });
+      const context = await resolveEInvoiceContext(invoice, company);
+      const result = await submitEInvoice({ invoice, lines, company, provider, context });
       if (!result.ok) {
         return res
           .status(result.status)
@@ -1540,6 +1553,16 @@ export function registerInvoiceRoutes(app: Express) {
       const original = await storage.getInvoice(invoiceId, companyId);
       if (!original) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // An opening-balance invoice recognised no revenue or VAT (it is inside the opening
+      // balances), so a credit note would reverse amounts that never posted.
+      if ((original as any).isOpeningBalance) {
+        return res.status(409).json({
+          message:
+            "This invoice was entered as an opening balance and has no revenue or VAT posting to reverse. Record a customer credit or reverse the opening balances instead.",
+          code: "OPENING_BALANCE_INVOICE",
+        });
       }
 
       // A credit note reverses revenue that was RECOGNISED. A draft was never

@@ -87,6 +87,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { messages as pageMessages } from "./Receipts.i18n";
 
 interface ExtractedData {
   merchant?: string;
@@ -119,9 +120,9 @@ function isOcrRetryable(receipt: ProcessedReceipt): boolean {
 }
 
 const receiptSchema = z.object({
-  merchant: z.string().min(1, "Merchant name is required"),
-  date: z.string().min(1, "Date is required"),
-  amount: z.coerce.number().min(0, "Amount must be positive"),
+  merchant: z.string().min(1, pageMessages.marker("merchantNameIsRequired")),
+  date: z.string().min(1, pageMessages.marker("dateIsRequired")),
+  amount: z.coerce.number().min(0, pageMessages.marker("amountMustBePositive")),
   vatAmount: z.coerce.number().nullable(),
   category: z.string().nullable(),
   currency: z.string().default("AED"),
@@ -241,6 +242,8 @@ interface ReceiptThumbnailProps {
 }
 
 function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailProps) {
+  const tr = pageMessages.useT();
+
   const hasImage = !!(receipt.imagePath || receipt.imageData);
   const url = useReceiptImageUrl(companyId, receipt.id, hasImage);
 
@@ -265,7 +268,7 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
       type="button"
       onClick={() => onPreview(url, receipt.merchant ?? undefined)}
       className="group relative w-12 h-12 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      aria-label={`Preview receipt image for ${receipt.merchant ?? "this receipt"}`}
+      aria-label={tr("previewReceiptImageFor", { value: receipt.merchant ?? "this receipt" })}
       data-testid={`receipt-thumbnail-${receipt.id}`}
     >
       <img src={url} alt="" className="w-full h-full object-cover" />
@@ -289,14 +292,16 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 
 // Human-readable labels for how a category suggestion was derived, shown on
 // the review card so users understand why a category was pre-filled.
-const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
+const getClassifierMethodLabels = (): Record<string, string> => ({
   rule: "your company rules",
-  keyword: "UAE keyword match",
+  keyword: pageMessages.t("uaeKeywordMatch"),
   statistical: "your past classifications",
-  openai: "AI vision",
-};
+  openai: pageMessages.t("aiVision"),
+});
 
 export default function Receipts() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -373,8 +378,8 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
       toast({
-        title: "Receipt updated successfully",
-        description: "Your receipt has been updated.",
+        title: tr("receiptUpdatedSuccessfully"),
+        description: tr("yourReceiptHasBeenUpdated"),
       });
       setEditDialogOpen(false);
       setEditingReceipt(null);
@@ -382,8 +387,8 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update receipt",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateReceipt"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -411,8 +416,8 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal-entries"] });
       toast({
-        title: "Expense posted successfully",
-        description: "Journal entry has been created.",
+        title: tr("expensePostedSuccessfully"),
+        description: tr("journalEntryHasBeenCreated"),
       });
       setPostDialogOpen(false);
       setPostingReceipt(null);
@@ -425,8 +430,8 @@ export default function Receipts() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to post expense",
-        description: error?.message || "Please try again.",
+        title: tr("failedToPostExpense"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
     onSettled: () => {
@@ -449,8 +454,8 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
       toast({
-        title: "Expense created successfully",
-        description: "The expense has been added. You can now post it to the journal.",
+        title: tr("expenseCreatedSuccessfully"),
+        description: tr("theExpenseHasBeenAddedYou"),
       });
       setManualExpenseDialogOpen(false);
       manualExpenseForm.reset();
@@ -458,8 +463,8 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create expense",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateExpense"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -469,8 +474,8 @@ export default function Receipts() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "accounts"] });
       toast({
-        title: "Account created successfully",
-        description: `${data.nameEn} has been added.`,
+        title: tr("accountCreatedSuccessfully"),
+        description: tr("hasBeenAdded", { nameEn: data.nameEn }),
       });
       setCreateAccountDialogOpen(false);
       setNewAccountCode("");
@@ -485,8 +490,8 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create account",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateAccount"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -510,8 +515,8 @@ export default function Receipts() {
     },
     onSuccess: () => {
       toast({
-        title: "Expense deleted",
-        description: "The expense has been deleted successfully.",
+        title: tr("expenseDeleted"),
+        description: tr("theExpenseHasBeenDeletedSuccessfully"),
       });
     },
     onError: (error: any, _id, context: any) => {
@@ -520,8 +525,8 @@ export default function Receipts() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to delete expense",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeleteExpense"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
     onSettled: () => {
@@ -530,9 +535,7 @@ export default function Receipts() {
   });
 
   const handleDeleteReceipt = (receipt: any) => {
-    if (
-      window.confirm("Are you sure you want to delete this expense? This action cannot be undone.")
-    ) {
+    if (window.confirm(tr("areYouSureYouWantTo"))) {
       deleteMutation.mutate(receipt.id);
     }
   };
@@ -561,8 +564,8 @@ export default function Receipts() {
     if (!postingReceipt || !selectedExpenseAccount || !selectedPaymentAccount) {
       toast({
         variant: "destructive",
-        title: "Missing information",
-        description: "Please select both expense and payment accounts.",
+        title: tr("missingInformation"),
+        description: tr("pleaseSelectBothExpenseAndPayment"),
       });
       return;
     }
@@ -663,8 +666,8 @@ export default function Receipts() {
 
         if (!isImage && !isPdf) {
           toast({
-            title: "Invalid file",
-            description: `${file.name} must be an image or PDF file`,
+            title: tr("invalidFile"),
+            description: tr("mustBeAnImageOrPdf", { name: file.name }),
             variant: "destructive",
           });
           continue;
@@ -673,8 +676,8 @@ export default function Receipts() {
         if (isPdf) {
           try {
             toast({
-              title: "Converting PDF",
-              description: `Reading all pages of ${file.name}...`,
+              title: tr("convertingPdf"),
+              description: tr("readingAllPagesOf", { name: file.name }),
             });
 
             const { pages, total, rendered } = await convertPdfToImages(file);
@@ -693,17 +696,22 @@ export default function Receipts() {
             setProcessedReceipts((prev) => [...prev, ...newReceipts]);
 
             toast({
-              title: "PDF ready",
+              title: tr("pdfReady"),
               description:
                 rendered < total
-                  ? `${file.name}: ${rendered} of ${total} pages added (capped at ${MAX_PDF_PAGES}). Each page is a separate receipt to scan.`
-                  : `${file.name}: ${rendered} page${rendered === 1 ? "" : "s"} added — each is a separate receipt to scan.`,
+                  ? tr("ofPagesAddedCappedAtEach", {
+                      name: file.name,
+                      rendered,
+                      total,
+                      MAX_PDF_PAGES,
+                    })
+                  : tr.plural("pdfPagesAdded", rendered, { name: file.name }),
             });
           } catch (error: any) {
             console.error("PDF conversion error:", error);
             toast({
-              title: "PDF conversion failed",
-              description: `Could not convert ${file.name}. Please upload an image instead (JPG, PNG, HEIC).`,
+              title: tr("pdfConversionFailed"),
+              description: tr("couldNotConvertPleaseUploadAn", { name: file.name }),
               variant: "destructive",
             });
           }
@@ -714,8 +722,8 @@ export default function Receipts() {
             const converted = await normalizeImageToJpeg(file);
             if (!converted) {
               toast({
-                title: "Couldn't read this photo",
-                description: `${file.name} is in a format this browser can't open (often iPhone HEIC). Open the app in Safari, or convert it to JPEG and re-upload.`,
+                title: tr("couldnTReadThisPhoto"),
+                description: tr("isInAFormatThisBrowser", { name: file.name }),
                 variant: "destructive",
               });
               continue;
@@ -798,13 +806,13 @@ export default function Receipts() {
 
       const normaliseOcrError = (status: number | null, message: string | null) => {
         if (status && status >= 500) {
-          return "OCR service is temporarily unavailable. Please try again in a moment.";
+          return tr("ocrServiceIsTemporarilyUnavailablePlease");
         }
         if (message && /failed to fetch|load failed|networkerror/i.test(message)) {
-          return "Could not reach the OCR service. Please try again.";
+          return tr("couldNotReachTheOcrService");
         }
         if (!message || /internal server error/i.test(message)) {
-          return "OCR processing failed. Please try again.";
+          return tr("ocrProcessingFailedPleaseTryAgain");
         }
         return message;
       };
@@ -841,6 +849,7 @@ export default function Receipts() {
         if (response.ok) {
           const result = await response.json();
           parsed = {
+            // i18n-ignore: persisted data value, must not depend on the UI language
             merchant: result.merchant || "Unknown Merchant",
             date: result.date || new Date().toISOString().split("T")[0],
             invoiceNumber: result.invoiceNumber || null,
@@ -853,6 +862,7 @@ export default function Receipts() {
             lineItems: result.lineItems || [],
             rawText: result.rawText || "",
             confidence: result.confidence ?? 0.85,
+            // i18n-ignore: category id (matches the category select values)
             suggestedCategory: result.category || "Other",
             classifier: result.classifier || null,
           };
@@ -926,7 +936,7 @@ export default function Receipts() {
           // If Tesseract itself blew up (worker/WASM load failure under strict
           // CSP, etc.), surface the backend reason instead of a vague Tesseract
           // stack trace — that's almost always the actionable cause.
-          const tessMsg = tesseractError?.message || "Tesseract failed to initialize";
+          const tessMsg = tesseractError?.message || tr("tesseractFailedToInitialize");
           const composed = backendErrorMessage
             ? `${backendErrorMessage} (local OCR fallback also failed: ${tessMsg})`
             : `OCR fallback failed: ${tessMsg}`;
@@ -944,6 +954,7 @@ export default function Receipts() {
 
         parsed = parseReceiptText(tesseractText);
         if (!parsed.merchant && !parsed.total) {
+          // i18n-ignore: persisted data value, must not depend on the UI language
           parsed.merchant = "Unknown Merchant";
           parsed.total = 0;
         }
@@ -970,7 +981,7 @@ export default function Receipts() {
         updated[index] = {
           ...updated[index],
           status: "error",
-          error: error?.message || "OCR processing failed. Try a clearer image.",
+          error: error?.message || tr("ocrProcessingFailedTryAClearer"),
           progress: 0,
         };
         return updated;
@@ -993,8 +1004,8 @@ export default function Receipts() {
 
     setIsProcessingBulk(false);
     toast({
-      title: "Processing Complete",
-      description: `Processed ${indexesToProcess.length} receipt(s)`,
+      title: tr("processingComplete"),
+      description: tr("processedReceiptS", { indexesToProcessCount: indexesToProcess.length }),
     });
   };
 
@@ -1050,8 +1061,8 @@ export default function Receipts() {
 
     if (completedIndices.length === 0) {
       toast({
-        title: "No receipts to save",
-        description: "Please process receipts before saving",
+        title: tr("noReceiptsToSave"),
+        description: tr("pleaseProcessReceiptsBeforeSaving"),
         variant: "destructive",
       });
       return;
@@ -1059,8 +1070,8 @@ export default function Receipts() {
 
     if (!companyId) {
       toast({
-        title: "Error",
-        description: "Company not found. Please try refreshing the page.",
+        title: tr("error"),
+        description: tr("companyNotFoundPleaseTryRefreshing"),
         variant: "destructive",
       });
       return;
@@ -1073,8 +1084,8 @@ export default function Receipts() {
   const performSave = async (completedIndices: any[]) => {
     if (!companyId) {
       toast({
-        title: "Error",
-        description: "Company not found. Please try refreshing the page.",
+        title: tr("error"),
+        description: tr("companyNotFoundPleaseTryRefreshing"),
         variant: "destructive",
       });
       return;
@@ -1093,6 +1104,7 @@ export default function Receipts() {
       try {
         const receiptData = {
           companyId: companyId,
+          // i18n-ignore: persisted data value, must not depend on the UI language
           merchant: receipt.data!.merchant || "Unknown",
           date: receipt.data!.date || new Date().toISOString().split("T")[0],
           invoiceNumber: receipt.data!.invoiceNumber || null,
@@ -1125,7 +1137,7 @@ export default function Receipts() {
         console.error("Failed to save receipt:", error);
 
         // Extract error message
-        const errorMessage = error?.message || "Failed to save to database";
+        const errorMessage = error?.message || tr("failedToSaveToDatabase");
         if (!firstSaveError) firstSaveError = errorMessage;
 
         // Mark this receipt as failed to save
@@ -1150,8 +1162,10 @@ export default function Receipts() {
 
     if (successCount > 0) {
       toast({
-        title: "Receipts Saved",
-        description: `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
+        title: tr("receiptsSaved"),
+        description:
+          tr.plural("receiptsSavedCount", successCount) +
+          (errorCount > 0 ? ` ${tr("receiptsSaveFailedSuffix", { errorCount })}` : ""),
       });
 
       // Only clear successfully saved receipts
@@ -1163,10 +1177,10 @@ export default function Receipts() {
       }
     } else {
       toast({
-        title: "Save Failed",
+        title: tr("saveFailed"),
         description: firstSaveError
-          ? `Couldn't save: ${firstSaveError}`
-          : "Failed to save any receipts. Please try again.",
+          ? tr("couldnTSave", { firstSaveError })
+          : tr("failedToSaveAnyReceiptsPlease"),
         variant: "destructive",
       });
     }
@@ -1221,7 +1235,7 @@ export default function Receipts() {
 
   const handleExportExcel = () => {
     if (!filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({ variant: "destructive", title: tr("noData"), description: tr("noExpensesToExport") });
       return;
     }
 
@@ -1232,14 +1246,16 @@ export default function Receipts() {
 
     exportToExcel([prepareReceiptsForExport(filteredReceipts, locale)], `expenses${dateRangeStr}`);
     toast({
-      title: "Export successful",
-      description: `${filteredReceipts.length} expenses exported to Excel`,
+      title: tr("exportSuccessful"),
+      description: tr("expensesExportedToExcel", {
+        filteredReceiptsCount: filteredReceipts.length,
+      }),
     });
   };
 
   const handleExportGoogleSheets = async () => {
     if (!companyId || !filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({ variant: "destructive", title: tr("noData"), description: tr("noExpensesToExport") });
       return;
     }
 
@@ -1259,8 +1275,10 @@ export default function Receipts() {
 
     if (result.success) {
       toast({
-        title: "Export successful",
-        description: `${filteredReceipts.length} expenses exported to Google Sheets`,
+        title: tr("exportSuccessful"),
+        description: tr("expensesExportedToGoogleSheets", {
+          filteredReceiptsCount: filteredReceipts.length,
+        }),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -1268,8 +1286,8 @@ export default function Receipts() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result.error || "Failed to export to Google Sheets",
+        title: tr("exportFailed"),
+        description: result.error || tr("failedToExportToGoogleSheets"),
       });
     }
   };
@@ -1285,8 +1303,8 @@ export default function Receipts() {
     if (rows.length === 0) {
       toast({
         variant: "destructive",
-        title: "Nothing to export",
-        description: "Process at least one receipt before downloading.",
+        title: tr("nothingToExport"),
+        description: tr("processAtLeastOneReceiptBefore"),
       });
       return;
     }
@@ -1295,14 +1313,14 @@ export default function Receipts() {
     try {
       await downloadOcrExcel(rows);
       toast({
-        title: "Excel ready",
-        description: `${rows.length} receipt${rows.length === 1 ? "" : "s"} exported to Excel.`,
+        title: tr("excelReady"),
+        description: tr.plural("receiptsExportedToExcel", rows.length),
       });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: err?.message || "Could not generate the spreadsheet.",
+        title: tr("exportFailed"),
+        description: err?.message || tr("couldNotGenerateTheSpreadsheet"),
       });
     } finally {
       setIsOcrExporting(false);
@@ -1314,7 +1332,7 @@ export default function Receipts() {
   // in-flight scans and historical data.
   const handleDownloadReceiptsExcel = async () => {
     if (!companyId || !filteredReceipts.length) {
-      toast({ variant: "destructive", title: "No data", description: "No expenses to export" });
+      toast({ variant: "destructive", title: tr("noData"), description: tr("noExpensesToExport") });
       return;
     }
     setIsExporting(true);
@@ -1323,14 +1341,14 @@ export default function Receipts() {
         ids: filteredReceipts.map((r: any) => r.id),
       });
       toast({
-        title: "Excel ready",
-        description: `${filteredReceipts.length} receipts exported.`,
+        title: tr("excelReady"),
+        description: tr("receiptsExported", { filteredReceiptsCount: filteredReceipts.length }),
       });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: err?.message || "Could not generate the spreadsheet.",
+        title: tr("exportFailed"),
+        description: err?.message || tr("couldNotGenerateTheSpreadsheet"),
       });
     } finally {
       setIsExporting(false);
@@ -1340,19 +1358,17 @@ export default function Receipts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={tr("purchases")}
         title={t.receiptScanner}
-        description={
-          (t as any).receiptScannerSubtitle ?? "Upload receipts for AI extraction or enter manually"
-        }
+        description={(t as any).receiptScannerSubtitle ?? tr("uploadReceiptsForAiExtractionOr")}
         actions={
           <Button
             onClick={() => setManualExpenseDialogOpen(true)}
             className="w-full sm:w-auto"
             data-testid="button-add-manual-expense"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Expense Manually
+            <Plus className="w-4 h-4 me-2" />
+            {tr("addExpenseManually")}
           </Button>
         }
       />
@@ -1362,11 +1378,9 @@ export default function Receipts() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="w-5 h-5" />
-            Upload Receipts
+            {tr("uploadReceipts")}
           </CardTitle>
-          <CardDescription>
-            Drag & drop receipt images or click to browse (supports bulk upload)
-          </CardDescription>
+          <CardDescription>{tr("dragDropReceiptImagesOrClick")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Drop Zone */}
@@ -1389,7 +1403,7 @@ export default function Receipts() {
               accept="image/*,application/pdf"
               multiple
               className="sr-only"
-              aria-label="Upload receipt images or PDFs"
+              aria-label={tr("uploadReceiptImagesOrPdfs")}
               onChange={(e) => {
                 const files = e.target.files;
                 if (files && files.length > 0) handleFilesSelect(files);
@@ -1401,11 +1415,11 @@ export default function Receipts() {
               <div className="space-y-4">
                 <div className="flex items-center justify-center gap-2 text-[hsl(var(--chart-5))]">
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>{processedReceipts.length} image(s) loaded</span>
+                  <span>
+                    {tr("imageSLoaded", { processedReceiptsCount: processedReceipts.length })}
+                  </span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Click or drop more images to add them
-                </p>
+                <p className="text-sm text-muted-foreground">{tr("clickOrDropMoreImagesTo")}</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1415,14 +1429,12 @@ export default function Receipts() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-lg font-medium">Drop your receipts here</p>
+                  <p className="text-lg font-medium">{tr("dropYourReceiptsHere")}</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    or click to browse files (multiple selection supported)
+                    {tr("orClickToBrowseFilesMultiple")}
                   </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
-                </p>
+                <p className="text-xs text-muted-foreground">{tr("supportsJpgPngHeicPdfBulk")}</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -1432,7 +1444,7 @@ export default function Receipts() {
                   }}
                   data-testid="button-browse-receipts"
                 >
-                  Browse files
+                  {tr("browseFiles")}
                 </Button>
               </div>
             )}
@@ -1450,17 +1462,17 @@ export default function Receipts() {
               >
                 {isProcessingBulk ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Processing...
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                    {tr("processing")}
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles className="w-4 h-4 me-2" />
                     {errorCount > 0 && pendingCount === 0
-                      ? `Retry Failed OCR (${errorCount})`
+                      ? tr("retryFailedOcr", { errorCount })
                       : errorCount > 0
-                        ? `Process / Retry OCR (${retryableOcrCount})`
-                        : `Process All Receipts (${pendingCount})`}
+                        ? tr("processRetryOcr", { retryableOcrCount })
+                        : tr("processAllReceipts", { pendingCount })}
                   </>
                 )}
               </Button>
@@ -1474,13 +1486,13 @@ export default function Receipts() {
               >
                 {isSavingAll ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving ({savedCount}/{totalToSave})...
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                    {tr("saving", { savedCount, totalToSave })}
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Save All ({completedCount})
+                    <CheckCircle2 className="w-4 h-4 me-2" />
+                    {tr("saveAll", { completedCount })}
                   </>
                 )}
               </Button>
@@ -1494,13 +1506,13 @@ export default function Receipts() {
               >
                 {isOcrExporting ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Preparing...
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                    {tr("preparing")}
                   </>
                 ) : (
                   <>
-                    <FileSpreadsheet className="w-4 h-4 mr-2" />
-                    Download Excel ({completedCount})
+                    <FileSpreadsheet className="w-4 h-4 me-2" />
+                    {tr("downloadExcel", { completedCount })}
                   </>
                 )}
               </Button>
@@ -1519,15 +1531,23 @@ export default function Receipts() {
           {/* Status Summary */}
           {processedReceipts.length > 0 && (
             <div className="flex flex-wrap gap-2 text-sm">
-              {pendingCount > 0 && <Badge variant="outline">{pendingCount} pending</Badge>}
-              {processingCount > 0 && <Badge variant="outline">{processingCount} processing</Badge>}
-              {completedCount > 0 && (
-                <StatusBadge tone="success">{completedCount} ready to save</StatusBadge>
+              {pendingCount > 0 && (
+                <Badge variant="outline">{tr("pending", { pendingCount })}</Badge>
               )}
-              {savedCount > 0 && <StatusBadge tone="info">{savedCount} saved</StatusBadge>}
-              {errorCount > 0 && <StatusBadge tone="danger">{errorCount} OCR errors</StatusBadge>}
+              {processingCount > 0 && (
+                <Badge variant="outline">{tr("processing2", { processingCount })}</Badge>
+              )}
+              {completedCount > 0 && (
+                <StatusBadge tone="success">{tr("readyToSave", { completedCount })}</StatusBadge>
+              )}
+              {savedCount > 0 && (
+                <StatusBadge tone="info">{tr("saved", { savedCount })}</StatusBadge>
+              )}
+              {errorCount > 0 && (
+                <StatusBadge tone="danger">{tr("ocrErrors", { errorCount })}</StatusBadge>
+              )}
               {saveErrorCount > 0 && (
-                <StatusBadge tone="warning">{saveErrorCount} save failed</StatusBadge>
+                <StatusBadge tone="warning">{tr("saveFailed2", { saveErrorCount })}</StatusBadge>
               )}
             </div>
           )}
@@ -1549,12 +1569,12 @@ export default function Receipts() {
                         setImagePreview({ src: receipt.preview, merchant: receipt.data?.merchant })
                       }
                       className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      aria-label="Preview source image"
+                      aria-label={tr("previewSourceImage")}
                       data-testid={`ocr-thumbnail-${index}`}
                     >
                       <img
                         src={receipt.preview}
-                        alt={`Receipt ${index + 1}`}
+                        alt={tr("receipt", { value: index + 1 })}
                         className="w-full h-full object-cover"
                       />
                       <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -1564,7 +1584,7 @@ export default function Receipts() {
                     <Button
                       variant="destructive"
                       size="icon"
-                      className="absolute -top-2 -right-2 h-6 w-6"
+                      className="absolute -top-2 -end-2 h-6 w-6"
                       onClick={() => removeReceipt(index)}
                       disabled={isProcessingBulk}
                       data-testid={`button-remove-${index}`}
@@ -1577,8 +1597,8 @@ export default function Receipts() {
                   <div className="flex-1 space-y-3">
                     {receipt.status === "pending" && (
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">Pending</Badge>
-                        <p className="text-sm text-muted-foreground">Ready to process</p>
+                        <Badge variant="outline">{tr("pending2")}</Badge>
+                        <p className="text-sm text-muted-foreground">{tr("readyToProcess")}</p>
                       </div>
                     )}
 
@@ -1587,7 +1607,7 @@ export default function Receipts() {
                         <div className="flex items-center justify-between text-sm">
                           <span className="flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            Processing with OCR...
+                            {tr("processingWithOcr")}
                           </span>
                           <span>{receipt.progress}%</span>
                         </div>
@@ -1603,13 +1623,13 @@ export default function Receipts() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="ml-0 text-foreground sm:ml-2"
+                          className="ms-0 text-foreground sm:ms-2"
                           onClick={() => processReceipt(index)}
                           disabled={isProcessingBulk}
                           data-testid={`button-retry-ocr-${index}`}
                         >
-                          <RefreshCw className="w-3 h-3 mr-1" />
-                          Try again
+                          <RefreshCw className="w-3 h-3 me-1" />
+                          {tr("tryAgain")}
                         </Button>
                       </div>
                     )}
@@ -1617,21 +1637,23 @@ export default function Receipts() {
                     {receipt.status === "saved" && (
                       <div className="flex items-center gap-2 text-[hsl(var(--chart-1))]">
                         <CheckCircle2 className="w-4 h-4" />
-                        <span className="text-sm font-medium">Successfully saved to database</span>
+                        <span className="text-sm font-medium">
+                          {tr("successfullySavedToDatabase")}
+                        </span>
                       </div>
                     )}
 
                     {receipt.status === "save_error" && (
                       <div className="flex items-center gap-2 text-[hsl(var(--chart-4))]">
                         <XCircle className="w-4 h-4" />
-                        <span className="text-sm">{receipt.error || "Failed to save"}</span>
+                        <span className="text-sm">{receipt.error || tr("failedToSave")}</span>
                       </div>
                     )}
 
                     {receipt.status === "completed" && receipt.data && (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1">
-                          <Label className="text-xs">Merchant / Supplier</Label>
+                          <Label className="text-xs">{tr("merchantSupplier")}</Label>
                           <Input
                             value={receipt.data.merchant || ""}
                             onChange={(e) => updateReceiptData(index, { merchant: e.target.value })}
@@ -1641,7 +1663,7 @@ export default function Receipts() {
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-xs">Date</Label>
+                          <Label className="text-xs">{tr("date")}</Label>
                           <Input
                             type="date"
                             value={receipt.data.date || ""}
@@ -1653,7 +1675,7 @@ export default function Receipts() {
 
                         {receipt.data.invoiceNumber && (
                           <div className="space-y-1 col-span-2">
-                            <Label className="text-xs">Invoice / Receipt Number</Label>
+                            <Label className="text-xs">{tr("invoiceReceiptNumber")}</Label>
                             <Input
                               value={receipt.data.invoiceNumber || ""}
                               onChange={(e) =>
@@ -1665,7 +1687,7 @@ export default function Receipts() {
                         )}
 
                         <div className="space-y-1">
-                          <Label className="text-xs">Subtotal (excl. VAT)</Label>
+                          <Label className="text-xs">{tr("subtotalExclVat")}</Label>
                           <Input
                             type="number"
                             step="0.01"
@@ -1679,7 +1701,8 @@ export default function Receipts() {
 
                         <div className="space-y-1">
                           <Label className="text-xs">
-                            VAT ({receipt.data.vatPercentage ?? 5}%)
+                            {tr("vat")}
+                            {receipt.data.vatPercentage ?? 5}%)
                           </Label>
                           <Input
                             type="number"
@@ -1693,7 +1716,7 @@ export default function Receipts() {
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                          <Label className="text-xs font-semibold">{tr("totalInclVat")}</Label>
                           <Input
                             type="number"
                             step="0.01"
@@ -1707,41 +1730,43 @@ export default function Receipts() {
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-xs">Category</Label>
+                          <Label className="text-xs">{tr("category")}</Label>
                           <Select
                             value={receipt.data.category}
                             onValueChange={(value) => updateReceiptData(index, { category: value })}
                           >
                             <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
-                              <SelectValue placeholder="Category" />
+                              <SelectValue placeholder={tr("category")} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
-                              <SelectItem value="Travel">Travel</SelectItem>
-                              <SelectItem value="Utilities">Utilities</SelectItem>
-                              <SelectItem value="Marketing">Marketing</SelectItem>
-                              <SelectItem value="Equipment">Equipment</SelectItem>
-                              <SelectItem value="Communication">Communication</SelectItem>
-                              <SelectItem value="Professional Services">
-                                Professional Services
+                              <SelectItem value="Office Supplies">
+                                {tr("officeSupplies")}
                               </SelectItem>
-                              <SelectItem value="Insurance">Insurance</SelectItem>
-                              <SelectItem value="Maintenance">Maintenance</SelectItem>
-                              <SelectItem value="Rent">Rent</SelectItem>
-                              <SelectItem value="Other">Other</SelectItem>
+                              <SelectItem value="Meals">{tr("mealsEntertainment")}</SelectItem>
+                              <SelectItem value="Travel">{tr("travel")}</SelectItem>
+                              <SelectItem value="Utilities">{tr("utilities")}</SelectItem>
+                              <SelectItem value="Marketing">{tr("marketing")}</SelectItem>
+                              <SelectItem value="Equipment">{tr("equipment")}</SelectItem>
+                              <SelectItem value="Communication">{tr("communication")}</SelectItem>
+                              <SelectItem value="Professional Services">
+                                {tr("professionalServices")}
+                              </SelectItem>
+                              <SelectItem value="Insurance">{tr("insurance")}</SelectItem>
+                              <SelectItem value="Maintenance">{tr("maintenance")}</SelectItem>
+                              <SelectItem value="Rent">{tr("rent")}</SelectItem>
+                              <SelectItem value="Other">{tr("other")}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
                           <div className="col-span-2 space-y-1">
-                            <Label className="text-xs">Line Items</Label>
+                            <Label className="text-xs">{tr("lineItems")}</Label>
                             <div className="rounded border text-xs divide-y">
                               {receipt.data.lineItems.map((item, i) => (
                                 <div key={i} className="flex justify-between px-2 py-1">
                                   <span className="truncate max-w-[60%]">{item.description}</span>
-                                  <span className="text-muted-foreground ml-2">
+                                  <span className="text-muted-foreground ms-2">
                                     {item.quantity > 1 ? `×${item.quantity}  ` : ""}
                                     {item.total.toFixed(2)}
                                   </span>
@@ -1754,10 +1779,12 @@ export default function Receipts() {
                         {receipt.data.confidence && (
                           <div className="col-span-2">
                             <p className="text-xs text-muted-foreground">
-                              AI Confidence: {Math.round(receipt.data.confidence * 100)}%
-                              <Badge variant="secondary" className="ml-2">
-                                <Sparkles className="w-2 h-2 mr-1" />
-                                GPT-4o Vision
+                              {tr("aiConfidence", {
+                                round: Math.round(receipt.data.confidence * 100),
+                              })}
+                              <Badge variant="secondary" className="ms-2">
+                                <Sparkles className="w-2 h-2 me-1" />
+                                {tr("gpt4oVision")}
                               </Badge>
                             </p>
                           </div>
@@ -1770,19 +1797,20 @@ export default function Receipts() {
                               data-testid={`text-classifier-why-${index}`}
                               title={receipt.data.classifier.reason || undefined}
                             >
-                              Category suggested by{" "}
+                              {tr("categorySuggestedBy")}
                               <span className="font-medium text-foreground">
-                                {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
+                                {getClassifierMethodLabels()[receipt.data.classifier.method] ??
                                   receipt.data.classifier.method}
                               </span>
                               {typeof receipt.data.classifier.confidence === "number" && (
                                 <>
                                   {" "}
-                                  · {Math.round(receipt.data.classifier.confidence * 100)}%
-                                  confident
+                                  {tr("confident", {
+                                    round: Math.round(receipt.data.classifier.confidence * 100),
+                                  })}
                                 </>
                               )}
-                              . You can change it above — your correction trains the model.
+                              {tr("youCanChangeItAboveYour")}
                             </p>
                           </div>
                         )}
@@ -1801,8 +1829,8 @@ export default function Receipts() {
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <CardTitle>Recent Expenses</CardTitle>
-              <CardDescription>Previously scanned and saved expenses</CardDescription>
+              <CardTitle>{tr("recentExpenses")}</CardTitle>
+              <CardDescription>{tr("previouslyScannedAndSavedExpenses")}</CardDescription>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1811,8 +1839,8 @@ export default function Receipts() {
                   disabled={isExporting}
                   data-testid="button-export-expenses"
                 >
-                  <Download className="w-4 h-4 mr-2" />
-                  {isExporting ? "Exporting..." : "Export"}
+                  <Download className="w-4 h-4 me-2" />
+                  {isExporting ? tr("exporting") : tr("export")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1820,22 +1848,22 @@ export default function Receipts() {
                   onClick={handleExportExcel}
                   data-testid="menu-export-expenses-excel"
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export to Excel (full)
+                  <FileSpreadsheet className="w-4 h-4 me-2" />
+                  {tr("exportToExcelFull")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleDownloadReceiptsExcel}
                   data-testid="menu-export-expenses-excel-ocr"
                 >
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Download Excel (OCR format)
+                  <FileSpreadsheet className="w-4 h-4 me-2" />
+                  {tr("downloadExcelOcrFormat")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-expenses-sheets"
                 >
-                  <SiGooglesheets className="w-4 h-4 mr-2" />
-                  Export to Google Sheets
+                  <SiGooglesheets className="w-4 h-4 me-2" />
+                  {tr("exportToGoogleSheets")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1843,7 +1871,7 @@ export default function Receipts() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4 flex-wrap pb-4 border-b">
-            <span className="text-sm font-medium">Filter by date:</span>
+            <span className="text-sm font-medium">{tr("filterByDate")}</span>
             <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
           </div>
           {isLoading ? (
@@ -1868,26 +1896,28 @@ export default function Receipts() {
                       onPreview={(src, merchant) => setImagePreview({ src, merchant })}
                     />
                     <div>
-                      <p className="font-medium">{receipt.merchant || "Unknown Merchant"}</p>
+                      <p className="font-medium">{receipt.merchant || tr("unknownMerchant")}</p>
                       <p className="text-sm text-muted-foreground">{receipt.date}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    <div className="text-left sm:text-right">
-                      <p className="font-mono font-semibold">
+                    <div className="text-start sm:text-end">
+                      <p dir="ltr" className="font-mono font-semibold">
                         {formatCurrency(receipt.amount || 0, "AED", locale)}
                       </p>
                       <div className="flex gap-2 mt-1 flex-wrap sm:justify-end">
-                        <Badge variant="outline">{receipt.category || "Uncategorized"}</Badge>
+                        <Badge variant="outline">{receipt.category || tr("uncategorized")}</Badge>
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
                             variant="secondary"
                             className="bg-info/10 text-info border-info/30"
                             data-testid={`badge-classifier-internal-${receipt.id}`}
-                            title={`Classified by internal ${receipt.classifierMethod} stage`}
+                            title={tr("classifiedByInternalStage", {
+                              classifierMethod: receipt.classifierMethod,
+                            })}
                           >
-                            <Brain className="w-3 h-3 mr-1" />
-                            Internal
+                            <Brain className="w-3 h-3 me-1" />
+                            {tr("internal")}
                           </Badge>
                         )}
                         {receipt.classifierMethod === "openai" && (
@@ -1895,10 +1925,10 @@ export default function Receipts() {
                             variant="secondary"
                             className="bg-chart-5/10 text-chart-5 border-chart-5/30"
                             data-testid={`badge-classifier-ai-${receipt.id}`}
-                            title="Classified by OpenAI fallback"
+                            title={tr("classifiedByOpenaiFallback")}
                           >
-                            <Bot className="w-3 h-3 mr-1" />
-                            AI
+                            <Bot className="w-3 h-3 me-1" />
+                            {tr("ai")}
                           </Badge>
                         )}
                         {receipt.autoPosted && (
@@ -1906,14 +1936,14 @@ export default function Receipts() {
                             variant="default"
                             className="bg-success hover:bg-success"
                             data-testid={`badge-auto-posted-${receipt.id}`}
-                            title="Auto-posted by Receipt Autopilot"
+                            title={tr("autoPostedByReceiptAutopilot")}
                           >
-                            <Zap className="w-3 h-3 mr-1" />
-                            Auto-posted
+                            <Zap className="w-3 h-3 me-1" />
+                            {tr("autoPosted")}
                           </Badge>
                         )}
                         {receipt.posted && !receipt.autoPosted && (
-                          <StatusBadge tone="success">Posted</StatusBadge>
+                          <StatusBadge tone="success">{tr("posted")}</StatusBadge>
                         )}
                       </div>
                     </div>
@@ -1926,8 +1956,8 @@ export default function Receipts() {
                           onClick={() => handlePostExpense(receipt)}
                           data-testid={`button-post-receipt-${receipt.id}`}
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Post
+                          <CheckCircle2 className="w-4 h-4 me-2" />
+                          {tr("post")}
                         </Button>
                       )}
                       <Button
@@ -1937,8 +1967,8 @@ export default function Receipts() {
                         onClick={() => handleEditReceipt(receipt)}
                         data-testid={`button-edit-receipt-${receipt.id}`}
                       >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit
+                        <Edit className="w-4 h-4 me-2" />
+                        {tr("edit")}
                       </Button>
                       <Button
                         asChild
@@ -1948,8 +1978,8 @@ export default function Receipts() {
                         data-testid={`button-proof-receipt-${receipt.id}`}
                       >
                         <Link href={evidenceSourceHref("receipt", receipt.id)}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Proof
+                          <FileText className="w-4 h-4 me-2" />
+                          {tr("proof")}
                         </Link>
                       </Button>
                       <Button
@@ -1972,18 +2002,18 @@ export default function Receipts() {
               icon={Upload}
               title={
                 dateRange.from || dateRange.to
-                  ? "No receipts in this date range"
-                  : "No receipts yet"
+                  ? tr("noReceiptsInThisDateRange")
+                  : tr("noReceiptsYet")
               }
               description={
                 dateRange.from || dateRange.to
-                  ? "Try widening the filter or clearing it to see all receipts."
-                  : "Snap a photo or upload a PDF — AI extracts merchant, VAT, and category automatically."
+                  ? tr("tryWideningTheFilterOrClearing")
+                  : tr("snapAPhotoOrUploadA")
               }
               action={
                 !(dateRange.from || dateRange.to)
                   ? {
-                      label: "Upload receipt",
+                      label: tr("uploadReceipt"),
                       icon: Upload,
                       onClick: () => document.getElementById("file-input")?.click(),
                       testId: "button-upload-first-receipt",
@@ -1993,7 +2023,7 @@ export default function Receipts() {
               secondaryAction={
                 dateRange.from || dateRange.to
                   ? {
-                      label: "Clear filter",
+                      label: tr("clearFilter"),
                       onClick: () => setDateRange({ from: undefined, to: undefined }),
                     }
                   : undefined
@@ -2008,18 +2038,18 @@ export default function Receipts() {
       <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Source receipt image</DialogTitle>
+            <DialogTitle>{tr("sourceReceiptImage")}</DialogTitle>
             <DialogDescription>
               {imagePreview?.merchant
-                ? `Original scanned image for ${imagePreview.merchant}`
-                : "Original scanned image"}
+                ? tr("originalScannedImageFor", { merchant: imagePreview.merchant })
+                : tr("originalScannedImage")}
             </DialogDescription>
           </DialogHeader>
           {imagePreview && (
             <div className="flex items-center justify-center bg-muted/30 rounded-md p-2 max-h-[75vh] overflow-auto">
               <img
                 src={imagePreview.src}
-                alt="Source receipt"
+                alt={tr("sourceReceipt")}
                 className="max-w-full h-auto rounded"
                 data-testid="image-preview-full"
               />
@@ -2032,8 +2062,8 @@ export default function Receipts() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Receipt</DialogTitle>
-            <DialogDescription>Update receipt details</DialogDescription>
+            <DialogTitle>{tr("editReceipt")}</DialogTitle>
+            <DialogDescription>{tr("updateReceiptDetails")}</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
@@ -2042,7 +2072,7 @@ export default function Receipts() {
                 name="merchant"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Merchant</FormLabel>
+                    <FormLabel>{tr("merchant")}</FormLabel>
                     <FormControl>
                       <Input {...field} data-testid="input-edit-merchant" />
                     </FormControl>
@@ -2055,7 +2085,7 @@ export default function Receipts() {
                 name="date"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Date</FormLabel>
+                    <FormLabel>{tr("date")}</FormLabel>
                     <FormControl>
                       <Input {...field} type="date" data-testid="input-edit-date" />
                     </FormControl>
@@ -2068,7 +2098,7 @@ export default function Receipts() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount</FormLabel>
+                    <FormLabel>{tr("amount")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -2090,7 +2120,7 @@ export default function Receipts() {
                 name="vatAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>VAT Amount (Optional)</FormLabel>
+                    <FormLabel>{tr("vatAmountOptional")}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -2113,21 +2143,23 @@ export default function Receipts() {
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category</FormLabel>
+                    <FormLabel>{tr("category")}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                       <FormControl>
                         <SelectTrigger data-testid="select-edit-category">
-                          <SelectValue placeholder="Select category" />
+                          <SelectValue placeholder={tr("selectCategory")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
-                        <SelectItem value="Travel">Travel</SelectItem>
-                        <SelectItem value="Utilities">Utilities</SelectItem>
-                        <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Software">Software</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
+                        <SelectItem value="Office Supplies">{tr("officeSupplies")}</SelectItem>
+                        <SelectItem value="Meals & Entertainment">
+                          {tr("mealsEntertainment")}
+                        </SelectItem>
+                        <SelectItem value="Travel">{tr("travel")}</SelectItem>
+                        <SelectItem value="Utilities">{tr("utilities")}</SelectItem>
+                        <SelectItem value="Marketing">{tr("marketing")}</SelectItem>
+                        <SelectItem value="Software">{tr("software")}</SelectItem>
+                        <SelectItem value="Other">{tr("other")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -2141,7 +2173,7 @@ export default function Receipts() {
                   onClick={() => setEditDialogOpen(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
@@ -2149,7 +2181,7 @@ export default function Receipts() {
                   className="flex-1"
                   data-testid="button-submit-edit-receipt"
                 >
-                  {editMutation.isPending ? "Saving..." : "Save"}
+                  {editMutation.isPending ? tr("saving2") : tr("save")}
                 </Button>
               </div>
             </form>
@@ -2163,11 +2195,9 @@ export default function Receipts() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="w-5 h-5 text-[hsl(var(--chart-4))]" />
-              Similar Transactions Found
+              {tr("similarTransactionsFound")}
             </DialogTitle>
-            <DialogDescription>
-              We found similar transactions that might be duplicates. Review them before proceeding.
-            </DialogDescription>
+            <DialogDescription>{tr("weFoundSimilarTransactionsThatMight")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -2175,7 +2205,7 @@ export default function Receipts() {
                 <div key={idx} className="p-3 border rounded-md bg-muted/50">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-medium">{transaction.merchant || "Unknown Merchant"}</p>
+                      <p className="font-medium">{transaction.merchant || tr("unknownMerchant")}</p>
                       <p className="text-sm text-muted-foreground">{transaction.date}</p>
                       {transaction.category && (
                         <Badge variant="outline" className="mt-1">
@@ -2183,7 +2213,7 @@ export default function Receipts() {
                         </Badge>
                       )}
                     </div>
-                    <p className="font-mono font-semibold">
+                    <p dir="ltr" className="font-mono font-semibold">
                       {formatCurrency(transaction.amount || 0, "AED", locale)}
                     </p>
                   </div>
@@ -2201,7 +2231,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-cancel-similar-warning"
               >
-                Cancel
+                {tr("cancel")}
               </Button>
               <Button
                 onClick={async () => {
@@ -2215,7 +2245,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-save-anyway"
               >
-                Save Anyway
+                {tr("saveAnyway")}
               </Button>
             </div>
           </div>
@@ -2226,14 +2256,15 @@ export default function Receipts() {
       <Dialog open={createAccountDialogOpen} onOpenChange={setCreateAccountDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Account</DialogTitle>
+            <DialogTitle>{tr("createNewAccount")}</DialogTitle>
             <DialogDescription>
-              Add a new {newAccountType === "expense" ? "expense" : "payment"} account
+              {tr("addANew")} {newAccountType === "expense" ? tr("expense") : tr("payment")}{" "}
+              {tr("account")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="account-code">Account Code</Label>
+              <Label htmlFor="account-code">{tr("accountCode")}</Label>
               <Input
                 id="account-code"
                 value={newAccountCode}
@@ -2243,12 +2274,12 @@ export default function Receipts() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="account-name">Account Name</Label>
+              <Label htmlFor="account-name">{tr("accountName")}</Label>
               <Input
                 id="account-name"
                 value={newAccountName}
                 onChange={(e) => setNewAccountName(e.target.value)}
-                placeholder="e.g., Travel Expenses"
+                placeholder={tr("eGTravelExpenses")}
                 data-testid="input-account-name"
               />
             </div>
@@ -2260,7 +2291,7 @@ export default function Receipts() {
                 className="flex-1"
                 disabled={createAccountMutation.isPending}
               >
-                Cancel
+                {tr("cancel")}
               </Button>
               <Button
                 type="button"
@@ -2268,8 +2299,8 @@ export default function Receipts() {
                   if (!newAccountCode.trim() || !newAccountName.trim()) {
                     toast({
                       variant: "destructive",
-                      title: "Missing information",
-                      description: "Please enter both account code and name.",
+                      title: tr("missingInformation"),
+                      description: tr("pleaseEnterBothAccountCodeAnd"),
                     });
                     return;
                   }
@@ -2289,7 +2320,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-create-account-submit"
               >
-                {createAccountMutation.isPending ? "Creating..." : "Create Account"}
+                {createAccountMutation.isPending ? tr("creating") : tr("createAccount")}
               </Button>
             </div>
           </div>
@@ -2300,20 +2331,20 @@ export default function Receipts() {
       <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Post Expense to Journal</DialogTitle>
-            <DialogDescription>
-              Select accounts to create journal entry for this expense
-            </DialogDescription>
+            <DialogTitle>{tr("postExpenseToJournal")}</DialogTitle>
+            <DialogDescription>{tr("selectAccountsToCreateJournalEntry")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {postingReceipt && (
               <div className="p-4 rounded-md bg-muted">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="font-medium">{postingReceipt.merchant || "Unknown Merchant"}</p>
+                    <p className="font-medium">
+                      {postingReceipt.merchant || tr("unknownMerchant")}
+                    </p>
                     <p className="text-sm text-muted-foreground">{postingReceipt.date}</p>
                   </div>
-                  <p className="font-mono font-semibold text-lg">
+                  <p dir="ltr" className="font-mono font-semibold text-lg">
                     {formatCurrency(
                       (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
                       "AED",
@@ -2326,7 +2357,7 @@ export default function Receipts() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="expense-account">Expense Account (Debit)</Label>
+                <Label htmlFor="expense-account">{tr("expenseAccountDebit")}</Label>
                 <Button
                   type="button"
                   size="sm"
@@ -2337,12 +2368,12 @@ export default function Receipts() {
                   }}
                   data-testid="button-create-expense-account"
                 >
-                  + Create
+                  {tr("create")}
                 </Button>
               </div>
               <Select value={selectedExpenseAccount} onValueChange={setSelectedExpenseAccount}>
                 <SelectTrigger id="expense-account" data-testid="select-expense-account">
-                  <SelectValue placeholder="Select expense account" />
+                  <SelectValue placeholder={tr("selectExpenseAccount")} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts
@@ -2354,14 +2385,12 @@ export default function Receipts() {
                     ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                The account that will be debited (increased) for this expense
-              </p>
+              <p className="text-xs text-muted-foreground">{tr("theAccountThatWillBeDebited")}</p>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="payment-account">Payment Account (Credit)</Label>
+                <Label htmlFor="payment-account">{tr("paymentAccountCredit")}</Label>
                 <Button
                   type="button"
                   size="sm"
@@ -2372,12 +2401,12 @@ export default function Receipts() {
                   }}
                   data-testid="button-create-payment-account"
                 >
-                  + Create
+                  {tr("create")}
                 </Button>
               </div>
               <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
                 <SelectTrigger id="payment-account" data-testid="select-payment-account">
-                  <SelectValue placeholder="Select payment account" />
+                  <SelectValue placeholder={tr("selectPaymentAccount")} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts
@@ -2389,19 +2418,17 @@ export default function Receipts() {
                     ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                The cash or bank account that was used to pay (will be credited/decreased)
-              </p>
+              <p className="text-xs text-muted-foreground">{tr("theCashOrBankAccountThat")}</p>
             </div>
 
             <div className="p-4 rounded-md border bg-card">
-              <p className="text-sm font-medium mb-2">Journal Entry Preview:</p>
+              <p className="text-sm font-medium mb-2">{tr("journalEntryPreview")}</p>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>
-                    Dr.{" "}
+                    {tr("dr")}
                     {accounts?.find((a) => a.id === selectedExpenseAccount)?.nameEn ||
-                      "Expense Account"}
+                      tr("expenseAccount")}
                   </span>
                   <span>
                     {formatCurrency(
@@ -2411,11 +2438,11 @@ export default function Receipts() {
                     )}
                   </span>
                 </div>
-                <div className="flex justify-between pl-4">
+                <div className="flex justify-between ps-4">
                   <span>
-                    Cr.{" "}
+                    {tr("cr")}
                     {accounts?.find((a) => a.id === selectedPaymentAccount)?.nameEn ||
-                      "Payment Account"}
+                      tr("paymentAccount")}
                   </span>
                   <span>
                     {formatCurrency(
@@ -2436,7 +2463,7 @@ export default function Receipts() {
                 className="flex-1"
                 disabled={postExpenseMutation.isPending}
               >
-                Cancel
+                {tr("cancel")}
               </Button>
               <Button
                 type="button"
@@ -2449,7 +2476,7 @@ export default function Receipts() {
                 className="flex-1"
                 data-testid="button-submit-post-expense"
               >
-                {postExpenseMutation.isPending ? "Posting..." : "Post to Journal"}
+                {postExpenseMutation.isPending ? tr("posting") : tr("postToJournal")}
               </Button>
             </div>
           </div>
@@ -2460,8 +2487,8 @@ export default function Receipts() {
       <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Expense Manually</DialogTitle>
-            <DialogDescription>Enter expense details without OCR scanning</DialogDescription>
+            <DialogTitle>{tr("addExpenseManually")}</DialogTitle>
+            <DialogDescription>{tr("enterExpenseDetailsWithoutOcrScanning")}</DialogDescription>
           </DialogHeader>
           <Form {...manualExpenseForm}>
             <form
@@ -2473,10 +2500,10 @@ export default function Receipts() {
                 name="merchant"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Merchant/Vendor</FormLabel>
+                    <FormLabel>{tr("merchantVendor")}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g., Office Depot"
+                        placeholder={tr("eGOfficeDepot")}
                         {...field}
                         data-testid="input-manual-merchant"
                       />
@@ -2490,7 +2517,7 @@ export default function Receipts() {
                 name="date"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Date</FormLabel>
+                    <FormLabel>{tr("date")}</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} data-testid="input-manual-date" />
                     </FormControl>
@@ -2503,7 +2530,7 @@ export default function Receipts() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount (AED)</FormLabel>
+                    <FormLabel>{tr("amountAed")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -2522,7 +2549,7 @@ export default function Receipts() {
                 name="vatAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>VAT Amount (Optional)</FormLabel>
+                    <FormLabel>{tr("vatAmountOptional")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -2542,10 +2569,10 @@ export default function Receipts() {
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category (Optional)</FormLabel>
+                    <FormLabel>{tr("categoryOptional")}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g., Office Supplies"
+                        placeholder={tr("eGOfficeSupplies")}
                         {...field}
                         value={field.value ?? ""}
                         data-testid="input-manual-category"
@@ -2562,7 +2589,7 @@ export default function Receipts() {
                   onClick={() => setManualExpenseDialogOpen(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
@@ -2570,7 +2597,7 @@ export default function Receipts() {
                   className="flex-1"
                   data-testid="button-submit-manual-expense"
                 >
-                  {manualExpenseMutation.isPending ? "Creating..." : "Create Expense"}
+                  {manualExpenseMutation.isPending ? tr("creating") : tr("createExpense")}
                 </Button>
               </div>
             </form>

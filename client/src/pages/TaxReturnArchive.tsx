@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import FiledReturnsCard from "@/components/compliance/FiledReturnsCard";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -328,6 +329,8 @@ export default function TaxReturnArchive() {
           </CardContent>
         </Card>
       </div>
+
+      {companyId && <FiledReturnsCard companyId={companyId} />}
 
       <Card>
         <CardHeader>

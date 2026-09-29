@@ -51,6 +51,7 @@ import {
   Filter,
   ArrowLeft,
 } from "lucide-react";
+import { messages as pageMessages } from "./ClientDocuments.i18n";
 
 interface Document {
   id: string;
@@ -77,24 +78,26 @@ interface Company {
   name: string;
 }
 
-const DOCUMENT_CATEGORIES = [
-  { value: "invoice", label: "Invoice" },
-  { value: "bill", label: "Bill/Expense" },
-  { value: "receipt", label: "Receipt" },
-  { value: "quote", label: "Quote/Quotation" },
-  { value: "purchase_order", label: "Purchase Order" },
-  { value: "trade_license", label: "Trade License" },
-  { value: "contract", label: "Contract" },
-  { value: "tax_certificate", label: "Tax Certificate" },
-  { value: "audit_report", label: "Audit Report" },
-  { value: "bank_statement", label: "Bank Statement" },
-  { value: "insurance", label: "Insurance" },
+const getDocumentCategories = () => [
+  { value: "invoice", label: pageMessages.t("invoice") },
+  { value: "bill", label: pageMessages.t("billExpense") },
+  { value: "receipt", label: pageMessages.t("receipt") },
+  { value: "quote", label: pageMessages.t("quoteQuotation") },
+  { value: "purchase_order", label: pageMessages.t("purchaseOrder") },
+  { value: "trade_license", label: pageMessages.t("tradeLicense") },
+  { value: "contract", label: pageMessages.t("contract") },
+  { value: "tax_certificate", label: pageMessages.t("taxCertificate") },
+  { value: "audit_report", label: pageMessages.t("auditReport") },
+  { value: "bank_statement", label: pageMessages.t("bankStatement") },
+  { value: "insurance", label: pageMessages.t("insurance") },
   { value: "visa", label: "Visa/Emirates ID" },
-  { value: "vat_return", label: "VAT Return" },
-  { value: "other", label: "Other" },
+  { value: "vat_return", label: pageMessages.t("vatReturn") },
+  { value: "other", label: pageMessages.t("other") },
 ];
 
 export default function ClientDocuments() {
+  const tr = pageMessages.useT();
+
   const { id: clientId } = useParams<{ id: string }>();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -142,8 +145,8 @@ export default function ClientDocuments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
       toast({
-        title: "Upload Successful",
-        description: "Document has been saved",
+        title: tr("uploadSuccessful"),
+        description: tr("documentHasBeenSaved"),
       });
       setUploadDialogOpen(false);
       resetForm();
@@ -151,7 +154,7 @@ export default function ClientDocuments() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Upload Failed",
+        title: tr("uploadFailed"),
         description: error?.message,
       });
     },
@@ -162,8 +165,8 @@ export default function ClientDocuments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
       toast({
-        title: "Deleted",
-        description: "Document has been deleted",
+        title: tr("deleted"),
+        description: tr("documentHasBeenDeleted"),
       });
     },
   });
@@ -184,8 +187,8 @@ export default function ClientDocuments() {
     if (!newDocument.name) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Please enter document name",
+        title: tr("missingInformation"),
+        description: tr("pleaseEnterDocumentName"),
       });
       return;
     }
@@ -269,21 +272,21 @@ export default function ClientDocuments() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              Documents - {company?.name || "Client"}
+              {tr("documents")} {company?.name || tr("client")}
             </h1>
-            <p className="text-muted-foreground">Manage documents for this client</p>
+            <p className="text-muted-foreground">{tr("manageDocumentsForThisClient")}</p>
           </div>
         </div>
         <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
-          <Plus className="w-4 h-4 mr-2" />
-          Upload Document
+          <Plus className="w-4 h-4 me-2" />
+          {tr("uploadDocument")}
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalDocuments")}</CardTitle>
             <FolderOpen className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -293,23 +296,23 @@ export default function ClientDocuments() {
 
         <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("expiringSoon")}</CardTitle>
             <Clock className="w-4 h-4 text-warning" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-warning">{expiringDocs.length}</div>
-            <p className="text-xs text-muted-foreground">Within 30 days</p>
+            <p className="text-xs text-muted-foreground">{tr("within30Days")}</p>
           </CardContent>
         </Card>
 
         <Card className={expiredDocs.length > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expired</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("expired")}</CardTitle>
             <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
-            <p className="text-xs text-muted-foreground">Need renewal</p>
+            <p className="text-xs text-muted-foreground">{tr("needRenewal")}</p>
           </CardContent>
         </Card>
       </div>
@@ -318,23 +321,23 @@ export default function ClientDocuments() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="Search documents..."
+                placeholder={tr("searchDocuments")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-documents"
               />
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Filter by category" />
+                <Filter className="w-4 h-4 me-2" />
+                <SelectValue placeholder={tr("filterByCategory")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {DOCUMENT_CATEGORIES.map((cat) => (
+                <SelectItem value="all">{tr("allCategories")}</SelectItem>
+                {getDocumentCategories().map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
                     {cat.label}
                   </SelectItem>
@@ -347,9 +350,9 @@ export default function ClientDocuments() {
           {filteredDocuments.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No documents found</p>
+              <p>{tr("noDocumentsFound")}</p>
               <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                Upload first document
+                {tr("uploadFirstDocument")}
               </Button>
             </div>
           ) : (
@@ -357,18 +360,18 @@ export default function ClientDocuments() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Document Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Expiry Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Upload Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{tr("documentName")}</TableHead>
+                    <TableHead>{tr("category")}</TableHead>
+                    <TableHead>{tr("expiryDate")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("uploadDate")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredDocuments.map((doc) => {
                     const expiryStatus = getExpiryStatus(doc.expiryDate);
-                    const category = DOCUMENT_CATEGORIES.find((c) => c.value === doc.category);
+                    const category = getDocumentCategories().find((c) => c.value === doc.category);
 
                     return (
                       <TableRow key={doc.id} data-testid={`row-document-${doc.id}`}>
@@ -406,22 +409,22 @@ export default function ClientDocuments() {
                               }
                             >
                               {expiryStatus.status === "expired" &&
-                                `Expired ${expiryStatus.days}d ago`}
+                                tr("expiredDAgo", { days: expiryStatus.days })}
                               {expiryStatus.status === "expiring_soon" &&
-                                `Expires in ${expiryStatus.days}d`}
+                                tr("expiresInD", { days: expiryStatus.days })}
                               {expiryStatus.status === "valid" && (
                                 <>
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Valid
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
+                                  {tr("valid")}
                                 </>
                               )}
                             </Badge>
                           ) : (
-                            <Badge variant="outline">No Expiry</Badge>
+                            <Badge variant="outline">{tr("noExpiry")}</Badge>
                           )}
                         </TableCell>
                         <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <div className="flex justify-end gap-2">
                             <Button
                               size="icon"
@@ -449,7 +452,7 @@ export default function ClientDocuments() {
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
-                                if (confirm("Are you sure you want to delete this document?")) {
+                                if (confirm(tr("areYouSureYouWantTo"))) {
                                   deleteMutation.mutate(doc.id);
                                 }
                               }}
@@ -472,24 +475,22 @@ export default function ClientDocuments() {
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Upload New Document</DialogTitle>
-            <DialogDescription>
-              Upload an important document like trade license or contracts
-            </DialogDescription>
+            <DialogTitle>{tr("uploadNewDocument")}</DialogTitle>
+            <DialogDescription>{tr("uploadAnImportantDocumentLikeTrade")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Document Name (English)</Label>
+                <Label>{tr("documentNameEnglish")}</Label>
                 <Input
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
-                  placeholder="Trade License 2025"
+                  placeholder={tr("tradeLicense2025")}
                   data-testid="input-document-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Document Name (Arabic)</Label>
+                <Label>{tr("documentNameArabic")}</Label>
                 <Input
                   value={newDocument.nameAr}
                   onChange={(e) => setNewDocument({ ...newDocument, nameAr: e.target.value })}
@@ -501,7 +502,7 @@ export default function ClientDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>Category</Label>
+              <Label>{tr("category")}</Label>
               <Select
                 value={newDocument.category}
                 onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
@@ -510,7 +511,7 @@ export default function ClientDocuments() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DOCUMENT_CATEGORIES.map((cat) => (
+                  {getDocumentCategories().map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {cat.label}
                     </SelectItem>
@@ -520,18 +521,18 @@ export default function ClientDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>Description (Optional)</Label>
+              <Label>{tr("descriptionOptional")}</Label>
               <Textarea
                 value={newDocument.description}
                 onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
-                placeholder="Add notes about this document..."
+                placeholder={tr("addNotesAboutThisDocument")}
                 data-testid="input-document-description"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Expiry Date (Optional)</Label>
+                <Label>{tr("expiryDateOptional")}</Label>
                 <Input
                   type="date"
                   value={newDocument.expiryDate}
@@ -540,7 +541,7 @@ export default function ClientDocuments() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Remind Before (Days)</Label>
+                <Label>{tr("remindBeforeDays")}</Label>
                 <Input
                   type="number"
                   value={newDocument.reminderDays}
@@ -555,7 +556,7 @@ export default function ClientDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>File</Label>
+              <Label>{tr("file")}</Label>
               <Input
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -564,7 +565,10 @@ export default function ClientDocuments() {
               />
               {selectedFile && (
                 <p className="text-sm text-muted-foreground">
-                  Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  {tr("selectedKb", {
+                    name: selectedFile.name,
+                    value: (selectedFile.size / 1024).toFixed(1),
+                  })}
                 </p>
               )}
             </div>
@@ -577,7 +581,7 @@ export default function ClientDocuments() {
                 resetForm();
               }}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleUpload}
@@ -586,13 +590,13 @@ export default function ClientDocuments() {
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {tr("uploading")}
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload
+                  <Upload className="w-4 h-4 me-2" />
+                  {tr("upload")}
                 </>
               )}
             </Button>

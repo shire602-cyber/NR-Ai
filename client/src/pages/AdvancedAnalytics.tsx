@@ -55,6 +55,7 @@ import {
   Activity,
   Zap,
 } from "lucide-react";
+import { messages as pageMessages } from "./AdvancedAnalytics.i18n";
 
 interface CashFlowForecast {
   id: string;
@@ -98,6 +99,8 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
@@ -166,15 +169,15 @@ export default function AdvancedAnalytics() {
         queryKey: ["/api/analytics/forecasts", companyId, forecastPeriod],
       });
       toast({
-        title: "Forecast Generated",
-        description: "AI has generated new cash flow predictions",
+        title: tr("forecastGenerated"),
+        description: tr("aiHasGeneratedNewCashFlow"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to generate forecast",
+        title: tr("error"),
+        description: error?.message || tr("failedToGenerateForecast"),
       });
     },
   });
@@ -246,18 +249,18 @@ export default function AdvancedAnalytics() {
   };
 
   const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
+    tr("jan"),
+    tr("feb"),
+    tr("mar"),
+    tr("apr"),
+    tr("may"),
+    tr("jun"),
+    tr("jul"),
+    tr("aug"),
+    tr("sep"),
+    tr("oct"),
+    tr("nov"),
+    tr("dec"),
   ];
 
   return (
@@ -271,35 +274,35 @@ export default function AdvancedAnalytics() {
             </div>
             <div>
               <h1 className="text-3xl font-bold" data-testid="text-analytics-title">
-                Advanced Analytics & Forecasts
+                {tr("advancedAnalyticsForecasts")}
               </h1>
               <p className="text-muted-foreground mt-1">
-                AI-powered financial intelligence for strategic decision making
+                {tr("aiPoweredFinancialIntelligenceForStrategic")}
               </p>
             </div>
           </div>
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-info/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-chart-5/5 rounded-full -ml-24 -mb-24 blur-3xl" />
+        <div className="absolute top-0 end-0 w-64 h-64 bg-info/5 rounded-full -me-32 -mt-32 blur-3xl" />
+        <div className="absolute bottom-0 start-0 w-48 h-48 bg-chart-5/5 rounded-full -ms-24 -mb-24 blur-3xl" />
       </div>
 
       <Tabs defaultValue="forecasts" className="space-y-6">
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="forecasts" className="gap-2" data-testid="tab-forecasts">
             <TrendingUp className="w-4 h-4" />
-            <span className="hidden sm:inline">Cash Flow</span>
+            <span className="hidden sm:inline">{tr("cashFlow")}</span>
           </TabsTrigger>
           <TabsTrigger value="budget" className="gap-2" data-testid="tab-budget">
             <Target className="w-4 h-4" />
-            <span className="hidden sm:inline">Budget</span>
+            <span className="hidden sm:inline">{tr("budget")}</span>
           </TabsTrigger>
           <TabsTrigger value="kpis" className="gap-2" data-testid="tab-kpis">
             <Activity className="w-4 h-4" />
-            <span className="hidden sm:inline">KPIs</span>
+            <span className="hidden sm:inline">{tr("kpis")}</span>
           </TabsTrigger>
           <TabsTrigger value="insights" className="gap-2" data-testid="tab-insights">
             <Brain className="w-4 h-4" />
-            <span className="hidden sm:inline">AI Insights</span>
+            <span className="hidden sm:inline">{tr("aiInsights")}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -309,12 +312,12 @@ export default function AdvancedAnalytics() {
             <div className="flex items-center gap-3">
               <Select value={forecastPeriod} onValueChange={setForecastPeriod}>
                 <SelectTrigger className="w-40" data-testid="select-forecast-period">
-                  <SelectValue placeholder="Period" />
+                  <SelectValue placeholder={tr("period")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="3months">3 Months</SelectItem>
-                  <SelectItem value="6months">6 Months</SelectItem>
-                  <SelectItem value="12months">12 Months</SelectItem>
+                  <SelectItem value="3months">{tr("n3Months")}</SelectItem>
+                  <SelectItem value="6months">{tr("n6Months")}</SelectItem>
+                  <SelectItem value="12months">{tr("n12Months")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -324,11 +327,11 @@ export default function AdvancedAnalytics() {
               data-testid="button-generate-forecast"
             >
               {generateForecastMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Sparkles className="w-4 h-4 me-2" />
               )}
-              Generate AI Forecast
+              {tr("generateAiForecast")}
             </Button>
           </div>
 
@@ -336,44 +339,48 @@ export default function AdvancedAnalytics() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Projected Inflow</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("projectedInflow")}</CardTitle>
                 <ArrowUp className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-success ">
+                <div dir="ltr" className="text-2xl font-bold font-mono text-success ">
                   {formatCurrency(forecastSummary.inflow, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Next{" "}
-                  {forecastPeriod === "3months" ? "3" : forecastPeriod === "6months" ? "6" : "12"}{" "}
-                  months
+                  {tr("next")}
+                  {forecastPeriod === "3months"
+                    ? "3"
+                    : forecastPeriod === "6months"
+                      ? "6"
+                      : "12"}{" "}
+                  {tr("months")}
                 </p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Projected Outflow</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("projectedOutflow")}</CardTitle>
                 <ArrowDown className="w-4 h-4 text-info " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-info ">
+                <div dir="ltr" className="text-2xl font-bold font-mono text-info ">
                   {formatCurrency(forecastSummary.outflow, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Estimated expenses</p>
+                <p className="text-xs text-muted-foreground mt-1">{tr("estimatedExpenses")}</p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate border-success/30 ">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net Cash Position</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("netCashPosition")}</CardTitle>
                 <Wallet className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-success ">
+                <div dir="ltr" className="text-2xl font-bold font-mono text-success ">
                   {formatCurrency(forecastSummary.balance, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Projected balance</p>
+                <p className="text-xs text-muted-foreground mt-1">{tr("projectedBalance")}</p>
               </CardContent>
             </Card>
           </div>
@@ -381,10 +388,8 @@ export default function AdvancedAnalytics() {
           {/* Forecast Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Cash Flow Forecast</CardTitle>
-              <CardDescription>
-                AI-predicted inflows and outflows with confidence bands
-              </CardDescription>
+              <CardTitle className="text-base">{tr("cashFlowForecast")}</CardTitle>
+              <CardDescription>{tr("aiPredictedInflowsAndOutflowsWith")}</CardDescription>
             </CardHeader>
             <CardContent>
               {forecastsLoading ? (
@@ -428,10 +433,8 @@ export default function AdvancedAnalytics() {
               ) : (
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Calendar className="w-8 h-8 mb-3" />
-                  <p className="font-medium">No forecast generated yet</p>
-                  <p className="text-sm">
-                    Generate a forecast once invoices, receipts, or journals exist.
-                  </p>
+                  <p className="font-medium">{tr("noForecastGeneratedYet")}</p>
+                  <p className="text-sm">{tr("generateAForecastOnceInvoicesReceipts")}</p>
                 </div>
               )}
             </CardContent>
@@ -442,24 +445,23 @@ export default function AdvancedAnalytics() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                AI Forecast Confidence
+                {tr("aiForecastConfidence")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">
                   {hasForecastRows
-                    ? "Based on generated forecast history"
-                    : "Needs transaction history before confidence is meaningful"}
+                    ? tr("basedOnGeneratedForecastHistory")
+                    : tr("needsTransactionHistoryBeforeConfidenceIs")}
                 </span>
-                <span className="font-mono font-bold text-primary">
+                <span dir="ltr" className="font-mono font-bold text-primary">
                   {averageForecastConfidence}%
                 </span>
               </div>
               <Progress value={averageForecastConfidence} className="h-2" />
               <p className="text-xs text-muted-foreground mt-2">
-                Confidence increases with more transaction history. Empty demo data is not shown as
-                a real forecast.
+                {tr("confidenceIncreasesWithMoreTransactionHistory")}
               </p>
             </CardContent>
           </Card>
@@ -470,7 +472,7 @@ export default function AdvancedAnalytics() {
           <div className="flex items-center gap-3 flex-wrap">
             <Select value={budgetYear.toString()} onValueChange={(v) => setBudgetYear(parseInt(v))}>
               <SelectTrigger className="w-28" data-testid="select-budget-year">
-                <SelectValue placeholder="Year" />
+                <SelectValue placeholder={tr("year")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="2024">2024</SelectItem>
@@ -482,7 +484,7 @@ export default function AdvancedAnalytics() {
               onValueChange={(v) => setBudgetMonth(parseInt(v))}
             >
               <SelectTrigger className="w-36" data-testid="select-budget-month">
-                <SelectValue placeholder="Month" />
+                <SelectValue placeholder={tr("month")} />
               </SelectTrigger>
               <SelectContent>
                 {months.map((m, i) => (
@@ -498,45 +500,46 @@ export default function AdvancedAnalytics() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Budgeted</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalBudgeted")}</CardTitle>
                 <Target className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">
+                <div dir="ltr" className="text-2xl font-bold font-mono">
                   {formatCurrency(budgetSummary.budgeted, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Planned for {months[budgetMonth - 1]} {budgetYear}
+                  {tr("plannedFor", { value: months[budgetMonth - 1], budgetYear })}
                 </p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Actual</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalActual")}</CardTitle>
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">
+                <div dir="ltr" className="text-2xl font-bold font-mono">
                   {formatCurrency(budgetSummary.actual, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Recorded transactions</p>
+                <p className="text-xs text-muted-foreground mt-1">{tr("recordedTransactions")}</p>
               </CardContent>
             </Card>
 
             <Card className="hover-elevate border-success/30 ">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Net Variance</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("netVariance")}</CardTitle>
                 <PiggyBank className="w-4 h-4 text-success " />
               </CardHeader>
               <CardContent>
                 <div
+                  dir="ltr"
                   className={`text-2xl font-bold font-mono ${budgetSummary.variance > 0 ? "text-destructive " : "text-success "}`}
                 >
                   {formatCurrency(budgetSummary.variance, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {budgetSummary.variance > 0 ? "Over budget" : "Under or on budget"}
+                  {budgetSummary.variance > 0 ? tr("overBudget") : tr("underOrOnBudget")}
                 </p>
               </CardContent>
             </Card>
@@ -545,10 +548,8 @@ export default function AdvancedAnalytics() {
           {/* Budget vs Actual Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Budget vs Actual Comparison</CardTitle>
-              <CardDescription>
-                Category-wise breakdown of planned vs actual spending
-              </CardDescription>
+              <CardTitle className="text-base">{tr("budgetVsActualComparison")}</CardTitle>
+              <CardDescription>{tr("categoryWiseBreakdownOfPlannedVs")}</CardDescription>
             </CardHeader>
             <CardContent>
               {budgetLoading ? (
@@ -568,11 +569,8 @@ export default function AdvancedAnalytics() {
               ) : (
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Target className="w-8 h-8 mb-3" />
-                  <p className="font-medium">No budget data yet</p>
-                  <p className="text-sm">
-                    Create budgets and post transactions to compare planned versus actual
-                    performance.
-                  </p>
+                  <p className="font-medium">{tr("noBudgetDataYet")}</p>
+                  <p className="text-sm">{tr("createBudgetsAndPostTransactionsTo")}</p>
                 </div>
               )}
             </CardContent>
@@ -581,14 +579,14 @@ export default function AdvancedAnalytics() {
           {/* Variance Details */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Variance Analysis</CardTitle>
-              <CardDescription>Detailed breakdown by category</CardDescription>
+              <CardTitle className="text-base">{tr("varianceAnalysis")}</CardTitle>
+              <CardDescription>{tr("detailedBreakdownByCategory")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {budgetRows.length === 0 && !budgetLoading && (
                   <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    No variance analysis is available yet.
+                    {tr("noVarianceAnalysisIsAvailableYet")}
                   </div>
                 )}
                 {budgetRows.map((item, idx) => {
@@ -608,13 +606,16 @@ export default function AdvancedAnalytics() {
                         <div>
                           <p className="font-medium">{item.category}</p>
                           <p className="text-xs text-muted-foreground">
-                            Budget: {formatCurrency(item.budgeted, "AED")} | Actual:{" "}
-                            {formatCurrency(item.actual, "AED")}
+                            {tr("budgetActual", {
+                              formatCurrency: formatCurrency(item.budgeted, "AED"),
+                              formatCurrency2: formatCurrency(item.actual, "AED"),
+                            })}
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-end">
                         <p
+                          dir="ltr"
                           className={`font-mono font-bold ${isOverBudget ? "text-destructive " : item.variance === 0 ? "text-muted-foreground" : "text-success "}`}
                         >
                           {item.variance > 0 ? "+" : ""}
@@ -622,7 +623,11 @@ export default function AdvancedAnalytics() {
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {variancePercent.toFixed(1)}%{" "}
-                          {isOverBudget ? "over" : item.variance === 0 ? "on target" : "under"}
+                          {isOverBudget
+                            ? tr("over")
+                            : item.variance === 0
+                              ? tr("onTarget")
+                              : tr("under")}
                         </p>
                       </div>
                     </div>
@@ -637,11 +642,11 @@ export default function AdvancedAnalytics() {
         <TabsContent value="kpis" className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Real-time financial indicators updated automatically
+              {tr("realTimeFinancialIndicatorsUpdatedAutomatically")}
             </p>
             <Button variant="outline" size="sm" data-testid="button-refresh-kpis">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+              <RefreshCw className="w-4 h-4 me-2" />
+              {tr("refresh")}
             </Button>
           </div>
 
@@ -655,8 +660,8 @@ export default function AdvancedAnalytics() {
               <Card className="md:col-span-2 lg:col-span-3">
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Activity className="w-8 h-8 mx-auto mb-3" />
-                  <p className="font-medium">No KPI history yet</p>
-                  <p className="text-sm">KPIs will appear after financial activity is recorded.</p>
+                  <p className="font-medium">{tr("noKpiHistoryYet")}</p>
+                  <p className="text-sm">{tr("kpisWillAppearAfterFinancialActivity")}</p>
                 </CardContent>
               </Card>
             )}
@@ -674,7 +679,7 @@ export default function AdvancedAnalytics() {
               return (
                 <Card key={idx} className="hover-elevate relative overflow-hidden">
                   <div
-                    className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20
+                    className={`absolute top-0 end-0 w-24 h-24 rounded-full blur-2xl opacity-20
                     ${isPositiveTrend ? "bg-success" : "bg-destructive"}`}
                   />
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
@@ -682,24 +687,17 @@ export default function AdvancedAnalytics() {
                       <CardTitle className="text-sm font-medium">{kpi.label}</CardTitle>
                       {kpi.benchmark && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Benchmark: {kpi.benchmark}
-                          {kpi.unit}
+                          {tr("benchmark", { benchmark: kpi.benchmark, unit: kpi.unit })}
                         </p>
                       )}
                     </div>
                     {meetsOrExceedsBenchmark ? (
-                      <Badge
-                        variant="secondary"
-                        className="bg-success-subtle text-success "
-                      >
-                        On Track
+                      <Badge variant="secondary" className="bg-success-subtle text-success ">
+                        {tr("onTrack")}
                       </Badge>
                     ) : (
-                      <Badge
-                        variant="secondary"
-                        className="bg-warning-subtle text-warning "
-                      >
-                        Below Target
+                      <Badge variant="secondary" className="bg-warning-subtle text-warning ">
+                        {tr("belowTarget")}
                       </Badge>
                     )}
                   </CardHeader>
@@ -717,7 +715,7 @@ export default function AdvancedAnalytics() {
                           <span
                             className={`text-xs font-medium ${isPositiveTrend ? "text-success " : "text-destructive "}`}
                           >
-                            {Math.abs(kpi.changePercent).toFixed(1)}% vs last period
+                            {tr("vsLastPeriod", { abs: Math.abs(kpi.changePercent).toFixed(1) })}
                           </span>
                         </div>
                       </div>
@@ -731,16 +729,16 @@ export default function AdvancedAnalytics() {
           {/* KPI Trends Chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">KPI Trends Over Time</CardTitle>
-              <CardDescription>Historical performance of key financial indicators</CardDescription>
+              <CardTitle className="text-base">{tr("kpiTrendsOverTime")}</CardTitle>
+              <CardDescription>
+                {tr("historicalPerformanceOfKeyFinancialIndicators")}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
                 <BarChart3 className="w-8 h-8 mb-3" />
-                <p className="font-medium">Trend history is not available yet</p>
-                <p className="text-sm">
-                  This chart will populate once periodic KPI snapshots are recorded.
-                </p>
+                <p className="font-medium">{tr("trendHistoryIsNotAvailableYet")}</p>
+                <p className="text-sm">{tr("thisChartWillPopulateOncePeriodic")}</p>
               </div>
             </CardContent>
           </Card>
@@ -749,12 +747,10 @@ export default function AdvancedAnalytics() {
         {/* AI Insights */}
         <TabsContent value="insights" className="space-y-6">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              AI-generated insights based on your financial data patterns
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("aiGeneratedInsightsBasedOnYour")}</p>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
-              <Sparkles className="w-3 h-3 mr-1" />
-              {insightRows.length} Active Insights
+              <Sparkles className="w-3 h-3 me-1" />
+              {tr("activeInsights", { insightRowsCount: insightRows.length })}
             </Badge>
           </div>
 
@@ -767,18 +763,15 @@ export default function AdvancedAnalytics() {
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Brain className="w-8 h-8 mx-auto mb-3" />
-                  <p className="font-medium">No AI insights yet</p>
-                  <p className="text-sm">
-                    Insights will appear when real invoices, expenses, and patterns exist.
-                  </p>
+                  <p className="font-medium">{tr("noAiInsightsYet")}</p>
+                  <p className="text-sm">{tr("insightsWillAppearWhenRealInvoices")}</p>
                 </CardContent>
               </Card>
             )}
             {insightRows.map((insight) => {
               const priorityColors = {
                 high: "border-destructive/30 bg-danger-subtle/50 ",
-                medium:
-                  "border-warning/30 bg-warning-subtle/50 ",
+                medium: "border-warning/30 bg-warning-subtle/50 ",
                 low: "border-info/30 bg-info-subtle/50 ",
               };
 
@@ -798,10 +791,10 @@ export default function AdvancedAnalytics() {
                       </div>
                       <Badge variant={insight.priority === "high" ? "destructive" : "secondary"}>
                         {insight.priority === "high"
-                          ? "High Priority"
+                          ? tr("highPriority")
                           : insight.priority === "medium"
-                            ? "Medium"
-                            : "Low"}
+                            ? tr("medium")
+                            : tr("low")}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -828,14 +821,12 @@ export default function AdvancedAnalytics() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="w-4 h-4 text-primary" />
-                How AI Insights Work
+                {tr("howAiInsightsWork")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Our AI analyzes your transaction patterns, compares against industry benchmarks, and
-                identifies opportunities and risks. Insights are updated daily as new data comes in.
-                More transaction history improves accuracy.
+                {tr("ourAiAnalyzesYourTransactionPatterns")}
               </p>
             </CardContent>
           </Card>

@@ -69,24 +69,25 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { messages as pageMessages } from "./Quotes.i18n";
 
 const quoteLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const quoteSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, "Quote number is required"),
-  customerName: z.string().min(1, "Customer name is required"),
+  number: z.string().min(1, pageMessages.marker("quoteNumberIsRequired")),
+  customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
   date: z.date(),
   expiryDate: z.date(),
   currency: z.string().default("AED"),
   notes: z.string().optional(),
-  lines: z.array(quoteLineSchema).min(1, "At least one line item is required"),
+  lines: z.array(quoteLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 type QuoteFormData = z.infer<typeof quoteSchema>;
@@ -109,6 +110,8 @@ interface Quote {
 }
 
 export default function Quotes() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -152,7 +155,7 @@ export default function Quotes() {
       apiRequest("POST", `/api/companies/${selectedCompanyId}/quotes`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote created", description: "Your quote has been created successfully." });
+      toast({ title: tr("quoteCreated"), description: tr("yourQuoteHasBeenCreatedSuccessfully") });
       setDialogOpen(false);
       setEditingQuote(null);
       resetForm();
@@ -160,8 +163,8 @@ export default function Quotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create quote",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateQuote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -171,7 +174,7 @@ export default function Quotes() {
       apiRequest("PUT", `/api/quotes/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote updated", description: "Your quote has been updated successfully." });
+      toast({ title: tr("quoteUpdated"), description: tr("yourQuoteHasBeenUpdatedSuccessfully") });
       setDialogOpen(false);
       setEditingQuote(null);
       resetForm();
@@ -179,8 +182,8 @@ export default function Quotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update quote",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateQuote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -189,13 +192,13 @@ export default function Quotes() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/quotes/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote deleted", description: "The quote has been deleted." });
+      toast({ title: tr("quoteDeleted"), description: tr("theQuoteHasBeenDeleted") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete quote",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeleteQuote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -208,15 +211,15 @@ export default function Quotes() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Quote converted",
-        description: "The quote has been converted to an invoice.",
+        title: tr("quoteConverted"),
+        description: tr("theQuoteHasBeenConvertedTo"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to convert quote",
-        description: error?.message || "Please try again.",
+        title: tr("failedToConvertQuote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -255,8 +258,8 @@ export default function Quotes() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load quote details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadQuoteDetails"),
       });
     }
   };
@@ -314,9 +317,9 @@ export default function Quotes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={tr("sales")}
         title={t.quotes}
-        description={(t as any).quotesSubtitle ?? "Create and manage quotes for your customers"}
+        description={(t as any).quotesSubtitle ?? tr("createAndManageQuotesForYour")}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -329,17 +332,15 @@ export default function Quotes() {
         >
           <DialogTrigger asChild>
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              New Quote
+              <Plus className="w-4 h-4 me-2" />
+              {tr("newQuote")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingQuote ? "Edit Quote" : "New Quote"}</DialogTitle>
+              <DialogTitle>{editingQuote ? tr("editQuote") : tr("newQuote")}</DialogTitle>
               <DialogDescription>
-                {editingQuote
-                  ? "Update quote details"
-                  : "Create a new quote with automatic VAT calculation"}
+                {editingQuote ? tr("updateQuoteDetails") : tr("createANewQuoteWithAutomatic")}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -350,7 +351,7 @@ export default function Quotes() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Quote Number</FormLabel>
+                        <FormLabel>{tr("quoteNumber")}</FormLabel>
                         <FormControl>
                           <Input {...field} className="font-mono" />
                         </FormControl>
@@ -363,22 +364,22 @@ export default function Quotes() {
                     name="date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel>{tr("date")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full justify-start text-left font-normal",
+                                  "w-full justify-start text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{tr("pickADate")}</span>
                                 )}
                               </Button>
                             </FormControl>
@@ -404,7 +405,7 @@ export default function Quotes() {
                     name="customerName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer Name</FormLabel>
+                        <FormLabel>{tr("customerName")}</FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -417,9 +418,9 @@ export default function Quotes() {
                     name="customerTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer TRN</FormLabel>
+                        <FormLabel>{tr("customerTrn")}</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Optional" className="font-mono" />
+                          <Input {...field} placeholder={tr("optional")} className="font-mono" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -433,22 +434,22 @@ export default function Quotes() {
                     name="expiryDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Expiry Date</FormLabel>
+                        <FormLabel>{tr("expiryDate")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full justify-start text-left font-normal",
+                                  "w-full justify-start text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{tr("pickADate")}</span>
                                 )}
                               </Button>
                             </FormControl>
@@ -471,11 +472,11 @@ export default function Quotes() {
                     name="currency"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Currency</FormLabel>
+                        <FormLabel>{tr("currency")}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select currency" />
+                              <SelectValue placeholder={tr("selectCurrency")} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -497,11 +498,11 @@ export default function Quotes() {
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes</FormLabel>
+                      <FormLabel>{tr("notes")}</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="Optional notes for the customer"
+                          placeholder={tr("optionalNotesForTheCustomer")}
                           rows={3}
                         />
                       </FormControl>
@@ -512,7 +513,7 @@ export default function Quotes() {
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Line Items</h3>
+                    <h3 className="font-medium">{tr("lineItems")}</h3>
                     <Button
                       type="button"
                       variant="outline"
@@ -521,8 +522,8 @@ export default function Quotes() {
                         append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                       }
                     >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Line
+                      <Plus className="w-4 h-4 me-2" />
+                      {tr("addLine")}
                     </Button>
                   </div>
 
@@ -538,7 +539,7 @@ export default function Quotes() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input {...field} placeholder="Description" />
+                                <Input {...field} placeholder={tr("description")} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -554,7 +555,7 @@ export default function Quotes() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Qty"
+                                  placeholder={tr("qty")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -576,7 +577,7 @@ export default function Quotes() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Price"
+                                  placeholder={tr("price")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -641,20 +642,22 @@ export default function Quotes() {
 
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("subtotal")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(subtotal, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("vat")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(vatAmount, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>Total</span>
-                    <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
+                    <span>{tr("total")}</span>
+                    <span dir="ltr" className="font-mono">
+                      {formatCurrency(total, "AED", locale)}
+                    </span>
                   </div>
                 </div>
 
@@ -665,14 +668,14 @@ export default function Quotes() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending || editMutation.isPending}
                     className="flex-1"
                   >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
+                    {createMutation.isPending || editMutation.isPending ? tr("saving") : tr("save")}
                   </Button>
                 </div>
               </form>
@@ -689,13 +692,13 @@ export default function Quotes() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">Number</TableHead>
-                  <TableHead className="font-semibold">Customer</TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold">Expiry</TableHead>
-                  <TableHead className="font-semibold text-right">Total</TableHead>
-                  <TableHead className="font-semibold text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                  <TableHead className="font-semibold">{tr("number")}</TableHead>
+                  <TableHead className="font-semibold">{tr("customer")}</TableHead>
+                  <TableHead className="font-semibold">{tr("date")}</TableHead>
+                  <TableHead className="font-semibold">{tr("expiry")}</TableHead>
+                  <TableHead className="font-semibold text-end">{tr("total")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("status")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -710,7 +713,7 @@ export default function Quotes() {
                       <TableCell className="text-muted-foreground">
                         {formatDate(quote.expiryDate, locale)}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
+                      <TableCell className="text-end font-mono font-medium">
                         {formatCurrency(quote.total, quote.currency, locale)}
                       </TableCell>
                       <TableCell className="text-center">
@@ -727,32 +730,32 @@ export default function Quotes() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleEditQuote(quote)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
+                              <Edit className="w-4 h-4 me-2" />
+                              {tr("edit")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => convertMutation.mutate(quote.id)}
                               disabled={quote.status === "converted"}
                             >
-                              <ArrowRightLeft className="w-4 h-4 mr-2" />
-                              Convert to Invoice
+                              <ArrowRightLeft className="w-4 h-4 me-2" />
+                              {tr("convertToInvoice")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => window.open(`/api/quotes/${quote.id}/pdf`, "_blank")}
                             >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download PDF
+                              <Download className="w-4 h-4 me-2" />
+                              {tr("downloadPdf")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
-                                if (window.confirm("Are you sure you want to delete this quote?")) {
+                                if (window.confirm(tr("areYouSureYouWantTo"))) {
                                   deleteMutation.mutate(quote.id);
                                 }
                               }}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              <Trash2 className="w-4 h-4 me-2" />
+                              {tr("delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -764,13 +767,12 @@ export default function Quotes() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={FileText}
-                        title={(t as any).noQuotesYet ?? "No quotes yet"}
+                        title={(t as any).noQuotesYet ?? tr("noQuotesYet")}
                         description={
-                          (t as any).quotesEmptyDesc ??
-                          "Send a professional quote in minutes — accepted quotes convert to invoices with one click."
+                          (t as any).quotesEmptyDesc ?? tr("sendAProfessionalQuoteInMinutes")
                         }
                         action={{
-                          label: (t as any).newQuote ?? "New Quote",
+                          label: (t as any).newQuote ?? tr("newQuote"),
                           onClick: () => setDialogOpen(true),
                         }}
                         testId="empty-quotes"

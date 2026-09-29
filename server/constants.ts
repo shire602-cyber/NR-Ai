@@ -52,6 +52,18 @@ export const ACCOUNT_CODES = {
   FX_LOSS: "5140",
 } as const;
 
+/**
+ * Corporate tax accounts. NOT part of the default chart: a company that files
+ * corporate tax through Muhasib creates them (by these codes, or by these exact
+ * English names). Filing / paying returns 422 naming the missing account.
+ */
+export const CT_ACCOUNT_CODES = {
+  /** Corporate Tax Payable (current liability). */
+  PAYABLE: "2060",
+  /** Corporate Tax Expense (expense). */
+  EXPENSE: "5150",
+} as const;
+
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
 
 /**

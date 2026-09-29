@@ -73,8 +73,11 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
+import { messages as pageMessages } from "./Admin.i18n";
 
 export default function Admin() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
@@ -185,11 +188,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: "Setting updated successfully" });
+      toast({ title: tr("settingUpdatedSuccessfully") });
       setEditSettingDialog(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update setting" });
+      toast({ variant: "destructive", title: tr("failedToUpdateSetting") });
     },
   });
 
@@ -218,13 +221,13 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: "System settings saved successfully" });
+      toast({ title: tr("systemSettingsSavedSuccessfully") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save settings",
-        description: error?.message || "Please try again",
+        title: tr("failedToSaveSettings"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -235,11 +238,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan created successfully" });
+      toast({ title: tr("planCreatedSuccessfully") });
       setNewPlanDialogOpen(false);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to create plan" });
+      toast({ variant: "destructive", title: tr("failedToCreatePlan") });
     },
   });
 
@@ -249,11 +252,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan updated successfully" });
+      toast({ title: tr("planUpdatedSuccessfully") });
       setEditingPlan(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update plan" });
+      toast({ variant: "destructive", title: tr("failedToUpdatePlan") });
     },
   });
 
@@ -263,10 +266,10 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan deleted successfully" });
+      toast({ title: tr("planDeletedSuccessfully") });
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to delete plan" });
+      toast({ variant: "destructive", title: tr("failedToDeletePlan") });
     },
   });
 
@@ -276,11 +279,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      toast({ title: "User updated successfully" });
+      toast({ title: tr("userUpdatedSuccessfully") });
       setEditingUser(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update user" });
+      toast({ variant: "destructive", title: tr("failedToUpdateUser") });
     },
   });
 
@@ -290,11 +293,11 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/companies"] });
-      toast({ title: "Company updated successfully" });
+      toast({ title: tr("companyUpdatedSuccessfully") });
       setEditingCompany(null);
     },
     onError: () => {
-      toast({ variant: "destructive", title: "Failed to update company" });
+      toast({ variant: "destructive", title: tr("failedToUpdateCompany") });
     },
   });
 
@@ -324,19 +327,19 @@ export default function Admin() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="Admin Dashboard"
+        eyebrow={tr("admin")}
+        title={tr("adminDashboard")}
         testId="text-admin-title"
-        description="Manage platform settings, users, and subscriptions"
+        description={tr("managePlatformSettingsUsersAndSubscriptions")}
         actions={
           <>
             <Button variant="outline" size="sm" data-testid="button-export-data">
-              <Download className="w-4 h-4 mr-2" />
-              Export Data
+              <Download className="w-4 h-4 me-2" />
+              {tr("exportData")}
             </Button>
             <Button variant="outline" size="sm" data-testid="button-refresh">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+              <RefreshCw className="w-4 h-4 me-2" />
+              {tr("refresh")}
             </Button>
           </>
         }
@@ -345,28 +348,28 @@ export default function Admin() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-6 w-full max-w-4xl">
           <TabsTrigger value="overview" data-testid="tab-overview">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Overview
+            <BarChart3 className="w-4 h-4 me-2" />
+            {tr("overview")}
           </TabsTrigger>
           <TabsTrigger value="pricing" data-testid="tab-pricing">
-            <DollarSign className="w-4 h-4 mr-2" />
-            Pricing
+            <DollarSign className="w-4 h-4 me-2" />
+            {tr("pricing")}
           </TabsTrigger>
           <TabsTrigger value="users" data-testid="tab-users">
-            <Users className="w-4 h-4 mr-2" />
-            Users
+            <Users className="w-4 h-4 me-2" />
+            {tr("users")}
           </TabsTrigger>
           <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
+            <Settings className="w-4 h-4 me-2" />
+            {tr("settings")}
           </TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">
-            <Plug className="w-4 h-4 mr-2" />
-            Integrations
+            <Plug className="w-4 h-4 me-2" />
+            {tr("integrations")}
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit">
-            <Shield className="w-4 h-4 mr-2" />
-            Audit Log
+            <Shield className="w-4 h-4 me-2" />
+            {tr("auditLog")}
           </TabsTrigger>
         </TabsList>
 
@@ -376,7 +379,7 @@ export default function Admin() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("totalUsers")}</CardTitle>
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -384,14 +387,14 @@ export default function Admin() {
                   {stats?.totalUsers || 0}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+12%</span> from last month
+                  <span className="text-success">+12%</span> {tr("fromLastMonth")}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Active Companies</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("activeCompanies")}</CardTitle>
                 <Building2 className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -399,14 +402,14 @@ export default function Admin() {
                   {stats?.totalCompanies || 0}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+8%</span> from last month
+                  <span className="text-success">+8%</span> {tr("fromLastMonth")}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("monthlyRevenue")}</CardTitle>
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -414,21 +417,21 @@ export default function Admin() {
                   AED {(stats?.monthlyRevenue || 0).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-success">+15%</span> from last month
+                  <span className="text-success">+15%</span> {tr("fromLastMonth")}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">AI Credits Used</CardTitle>
+                <CardTitle className="text-sm font-medium">{tr("aiCreditsUsed")}</CardTitle>
                 <Activity className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="stat-ai-credits">
                   {stats?.aiCreditsUsed || 0}
                 </div>
-                <p className="text-xs text-muted-foreground">This month</p>
+                <p className="text-xs text-muted-foreground">{tr("thisMonth")}</p>
               </CardContent>
             </Card>
           </div>
@@ -437,35 +440,44 @@ export default function Admin() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">System Status</CardTitle>
-                <CardDescription>Current system health and status</CardDescription>
+                <CardTitle className="text-base">{tr("systemStatus")}</CardTitle>
+                <CardDescription>{tr("currentSystemHealthAndStatus")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>Database</span>
+                    <span>{tr("database")}</span>
                   </div>
-                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
-                    Healthy
+                  <Badge
+                    variant="outline"
+                    className="bg-success-subtle text-success border-success/30"
+                  >
+                    {tr("healthy")}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>API Services</span>
+                    <span>{tr("apiServices")}</span>
                   </div>
-                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
-                    Operational
+                  <Badge
+                    variant="outline"
+                    className="bg-success-subtle text-success border-success/30"
+                  >
+                    {tr("operational")}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>AI Services (OpenAI)</span>
+                    <span>{tr("aiServicesOpenai")}</span>
                   </div>
-                  <Badge variant="outline" className="bg-success-subtle text-success border-success/30">
-                    Connected
+                  <Badge
+                    variant="outline"
+                    className="bg-success-subtle text-success border-success/30"
+                  >
+                    {tr("connected")}
                   </Badge>
                 </div>
               </CardContent>
@@ -473,8 +485,8 @@ export default function Admin() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Quick Actions</CardTitle>
-                <CardDescription>Common administrative tasks</CardDescription>
+                <CardTitle className="text-base">{tr("quickActions")}</CardTitle>
+                <CardDescription>{tr("commonAdministrativeTasks")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <Button
@@ -483,19 +495,19 @@ export default function Admin() {
                   data-testid="button-backup-db"
                   onClick={() => {
                     toast({
-                      title: "Backup Started",
-                      description: "Database backup is in progress...",
+                      title: tr("backupStarted"),
+                      description: tr("databaseBackupIsInProgress"),
                     });
                     setTimeout(() => {
                       toast({
-                        title: "Backup Complete",
-                        description: "Database has been backed up successfully.",
+                        title: tr("backupComplete"),
+                        description: tr("databaseHasBeenBackedUpSuccessfully"),
                       });
                     }, 2000);
                   }}
                 >
-                  <Database className="w-4 h-4 mr-2" />
-                  Backup Database
+                  <Database className="w-4 h-4 me-2" />
+                  {tr("backupDatabase")}
                 </Button>
                 <Button
                   variant="outline"
@@ -503,14 +515,13 @@ export default function Admin() {
                   data-testid="button-send-newsletter"
                   onClick={() => {
                     toast({
-                      title: "Newsletter",
-                      description:
-                        "Newsletter feature will be available soon. Configure email settings first.",
+                      title: tr("newsletter"),
+                      description: tr("newsletterFeatureWillBeAvailableSoon"),
                     });
                   }}
                 >
-                  <Bell className="w-4 h-4 mr-2" />
-                  Send Newsletter
+                  <Bell className="w-4 h-4 me-2" />
+                  {tr("sendNewsletter")}
                 </Button>
                 <Button
                   variant="outline"
@@ -518,8 +529,8 @@ export default function Admin() {
                   data-testid="button-generate-report"
                   onClick={() => {
                     toast({
-                      title: "Generating Report",
-                      description: "Usage report is being generated...",
+                      title: tr("generatingReport"),
+                      description: tr("usageReportIsBeingGenerated"),
                     });
                     setTimeout(() => {
                       const reportData = {
@@ -542,14 +553,14 @@ export default function Admin() {
                       a.click();
                       URL.revokeObjectURL(url);
                       toast({
-                        title: "Report Generated",
-                        description: "Usage report has been downloaded.",
+                        title: tr("reportGenerated"),
+                        description: tr("usageReportHasBeenDownloaded"),
                       });
                     }, 1500);
                   }}
                 >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Generate Usage Report
+                  <FileText className="w-4 h-4 me-2" />
+                  {tr("generateUsageReport")}
                 </Button>
                 <Button
                   variant="outline"
@@ -557,19 +568,19 @@ export default function Admin() {
                   data-testid="button-sync-integrations"
                   onClick={() => {
                     toast({
-                      title: "Syncing Integrations",
-                      description: "Checking all integration connections...",
+                      title: tr("syncingIntegrations"),
+                      description: tr("checkingAllIntegrationConnections"),
                     });
                     setTimeout(() => {
                       toast({
-                        title: "Sync Complete",
-                        description: "All integrations are up to date.",
+                        title: tr("syncComplete"),
+                        description: tr("allIntegrationsAreUpToDate"),
                       });
                     }, 2000);
                   }}
                 >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Sync All Integrations
+                  <RefreshCw className="w-4 h-4 me-2" />
+                  {tr("syncAllIntegrations")}
                 </Button>
               </CardContent>
             </Card>
@@ -578,8 +589,8 @@ export default function Admin() {
           {/* Recent Activity */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Recent Activity</CardTitle>
-              <CardDescription>Latest actions across the platform</CardDescription>
+              <CardTitle className="text-base">{tr("recentActivity")}</CardTitle>
+              <CardDescription>{tr("latestActionsAcrossThePlatform")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -604,7 +615,7 @@ export default function Admin() {
                   </div>
                 ))}
                 {auditLogs.length === 0 && (
-                  <p className="text-center text-muted-foreground py-4">No recent activity</p>
+                  <p className="text-center text-muted-foreground py-4">{tr("noRecentActivity")}</p>
                 )}
               </div>
             </CardContent>
@@ -614,20 +625,18 @@ export default function Admin() {
         {/* Pricing Tab */}
         <TabsContent value="pricing" className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Subscription Plans</h2>
+            <h2 className="text-lg font-semibold">{tr("subscriptionPlans")}</h2>
             <Dialog open={newPlanDialogOpen} onOpenChange={setNewPlanDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-plan">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Plan
+                  <Plus className="w-4 h-4 me-2" />
+                  {tr("addPlan")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Create New Plan</DialogTitle>
-                  <DialogDescription>
-                    Add a new subscription plan for your customers
-                  </DialogDescription>
+                  <DialogTitle>{tr("createNewPlan")}</DialogTitle>
+                  <DialogDescription>{tr("addANewSubscriptionPlanFor")}</DialogDescription>
                 </DialogHeader>
                 <PlanForm
                   onSubmit={(data) => createPlanMutation.mutate(data)}
@@ -645,7 +654,7 @@ export default function Admin() {
             ) : plans.length === 0 ? (
               <Card className="col-span-full">
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No subscription plans configured. Add your first plan to get started.
+                  {tr("noSubscriptionPlansConfiguredAddYour")}
                 </CardContent>
               </Card>
             ) : (
@@ -655,7 +664,7 @@ export default function Admin() {
                     <div className="flex items-center justify-between gap-2">
                       <CardTitle className="text-lg">{plan.name}</CardTitle>
                       <Badge variant={plan.isActive ? "default" : "secondary"}>
-                        {plan.isActive ? "Active" : "Inactive"}
+                        {plan.isActive ? tr("active") : tr("inactive")}
                       </Badge>
                     </div>
                     <CardDescription>{plan.description}</CardDescription>
@@ -663,19 +672,21 @@ export default function Admin() {
                   <CardContent>
                     <div className="text-3xl font-bold mb-4">
                       {plan.currency} {plan.priceMonthly}
-                      <span className="text-sm font-normal text-muted-foreground">/month</span>
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {tr("month")}
+                      </span>
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Max Companies</span>
-                        <span>{plan.maxCompanies || "Unlimited"}</span>
+                        <span className="text-muted-foreground">{tr("maxCompanies")}</span>
+                        <span>{plan.maxCompanies || tr("unlimited")}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Max Users</span>
-                        <span>{plan.maxUsers || "Unlimited"}</span>
+                        <span className="text-muted-foreground">{tr("maxUsers")}</span>
+                        <span>{plan.maxUsers || tr("unlimited")}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">AI Credits/Month</span>
+                        <span className="text-muted-foreground">{tr("aiCreditsMonth")}</span>
                         <span>{plan.aiCreditsPerMonth}</span>
                       </div>
                     </div>
@@ -688,8 +699,8 @@ export default function Admin() {
                       onClick={() => setEditingPlan(plan)}
                       data-testid={`button-edit-plan-${plan.id}`}
                     >
-                      <Edit2 className="w-4 h-4 mr-2" />
-                      Edit
+                      <Edit2 className="w-4 h-4 me-2" />
+                      {tr("edit")}
                     </Button>
                     <Button
                       variant="outline"
@@ -709,8 +720,8 @@ export default function Admin() {
           <Dialog open={!!editingPlan} onOpenChange={(open) => !open && setEditingPlan(null)}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Edit Plan</DialogTitle>
-                <DialogDescription>Modify subscription plan details</DialogDescription>
+                <DialogTitle>{tr("editPlan")}</DialogTitle>
+                <DialogDescription>{tr("modifySubscriptionPlanDetails")}</DialogDescription>
               </DialogHeader>
               {editingPlan && (
                 <PlanForm
@@ -727,10 +738,10 @@ export default function Admin() {
         <TabsContent value="users" className="space-y-6">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search users..."
-                className="pl-10"
+                placeholder={tr("searchUsers")}
+                className="ps-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 data-testid="input-search-users"
@@ -738,12 +749,12 @@ export default function Admin() {
             </div>
             <Select defaultValue="all">
               <SelectTrigger className="w-40" data-testid="select-user-filter">
-                <SelectValue placeholder="Filter by status" />
+                <SelectValue placeholder={tr("filterByStatus")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Users</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="all">{tr("allUsers")}</SelectItem>
+                <SelectItem value="active">{tr("active")}</SelectItem>
+                <SelectItem value="inactive">{tr("inactive")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -753,12 +764,12 @@ export default function Admin() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Companies</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{tr("user")}</TableHead>
+                    <TableHead>{tr("email")}</TableHead>
+                    <TableHead>{tr("companies")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("joined")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -771,7 +782,7 @@ export default function Admin() {
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        No users found
+                        {tr("noUsersFound")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -781,16 +792,16 @@ export default function Admin() {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {companies.filter((c) => c.id).length} companies
+                            {companies.filter((c) => c.id).length} {tr("companies2")}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="bg-success-subtle text-success">
-                            Active
+                            {tr("active")}
                           </Badge>
                         </TableCell>
                         <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -812,8 +823,8 @@ export default function Admin() {
           <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Edit User</DialogTitle>
-                <DialogDescription>Update user information</DialogDescription>
+                <DialogTitle>{tr("editUser")}</DialogTitle>
+                <DialogDescription>{tr("updateUserInformation")}</DialogDescription>
               </DialogHeader>
               {editingUser && (
                 <form
@@ -832,7 +843,7 @@ export default function Admin() {
                 >
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-user-name">Name</Label>
+                      <Label htmlFor="edit-user-name">{tr("name")}</Label>
                       <Input
                         id="edit-user-name"
                         name="name"
@@ -841,7 +852,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-user-email">Email</Label>
+                      <Label htmlFor="edit-user-email">{tr("email")}</Label>
                       <Input
                         id="edit-user-email"
                         name="email"
@@ -856,15 +867,15 @@ export default function Admin() {
                         name="isAdmin"
                         defaultChecked={editingUser.isAdmin || false}
                       />
-                      <Label htmlFor="edit-user-admin">Admin User</Label>
+                      <Label htmlFor="edit-user-admin">{tr("adminUser")}</Label>
                     </div>
                   </div>
                   <DialogFooter className="mt-4">
                     <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
-                      Cancel
+                      {tr("cancel")}
                     </Button>
                     <Button type="submit" disabled={updateUserMutation.isPending}>
-                      {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updateUserMutation.isPending ? tr("saving") : tr("saveChanges")}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -873,17 +884,17 @@ export default function Admin() {
           </Dialog>
 
           {/* Companies Table */}
-          <h3 className="text-lg font-semibold mt-8">Companies</h3>
+          <h3 className="text-lg font-semibold mt-8">{tr("companies")}</h3>
           <Card>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Company Name</TableHead>
-                    <TableHead>TRN/VAT Number</TableHead>
-                    <TableHead>Currency</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{tr("companyName")}</TableHead>
+                    <TableHead>{tr("trnVatNumber")}</TableHead>
+                    <TableHead>{tr("currency")}</TableHead>
+                    <TableHead>{tr("created")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -896,7 +907,7 @@ export default function Admin() {
                   ) : filteredCompanies.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        No companies found
+                        {tr("noCompaniesFound")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -906,7 +917,7 @@ export default function Admin() {
                         <TableCell>{company.trnVatNumber || "-"}</TableCell>
                         <TableCell>{company.baseCurrency}</TableCell>
                         <TableCell>{new Date(company.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -928,8 +939,8 @@ export default function Admin() {
           <Dialog open={!!editingCompany} onOpenChange={(open) => !open && setEditingCompany(null)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Edit Company</DialogTitle>
-                <DialogDescription>Update company information</DialogDescription>
+                <DialogTitle>{tr("editCompany")}</DialogTitle>
+                <DialogDescription>{tr("updateCompanyInformation")}</DialogDescription>
               </DialogHeader>
               {editingCompany && (
                 <form
@@ -948,7 +959,7 @@ export default function Admin() {
                 >
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-company-name">Company Name</Label>
+                      <Label htmlFor="edit-company-name">{tr("companyName")}</Label>
                       <Input
                         id="edit-company-name"
                         name="name"
@@ -957,7 +968,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-company-trn">TRN/VAT Number</Label>
+                      <Label htmlFor="edit-company-trn">{tr("trnVatNumber")}</Label>
                       <Input
                         id="edit-company-trn"
                         name="trnVatNumber"
@@ -965,27 +976,27 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-company-currency">Base Currency</Label>
+                      <Label htmlFor="edit-company-currency">{tr("baseCurrency")}</Label>
                       <Select name="baseCurrency" defaultValue={editingCompany.baseCurrency}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="AED">AED - UAE Dirham</SelectItem>
-                          <SelectItem value="USD">USD - US Dollar</SelectItem>
-                          <SelectItem value="EUR">EUR - Euro</SelectItem>
-                          <SelectItem value="GBP">GBP - British Pound</SelectItem>
-                          <SelectItem value="SAR">SAR - Saudi Riyal</SelectItem>
+                          <SelectItem value="AED">{tr("aedUaeDirham")}</SelectItem>
+                          <SelectItem value="USD">{tr("usdUsDollar")}</SelectItem>
+                          <SelectItem value="EUR">{tr("eurEuro")}</SelectItem>
+                          <SelectItem value="GBP">{tr("gbpBritishPound")}</SelectItem>
+                          <SelectItem value="SAR">{tr("sarSaudiRiyal")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
                   <DialogFooter className="mt-4">
                     <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
-                      Cancel
+                      {tr("cancel")}
                     </Button>
                     <Button type="submit" disabled={updateCompanyMutation.isPending}>
-                      {updateCompanyMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updateCompanyMutation.isPending ? tr("saving") : tr("saveChanges")}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -1005,15 +1016,15 @@ export default function Admin() {
               {/* Feature Toggles */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Feature Toggles</CardTitle>
-                  <CardDescription>Enable or disable platform features</CardDescription>
+                  <CardTitle className="text-base">{tr("featureToggles")}</CardTitle>
+                  <CardDescription>{tr("enableOrDisablePlatformFeatures")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">AI Transaction Categorization</p>
+                      <p className="font-medium">{tr("aiTransactionCategorization")}</p>
                       <p className="text-sm text-muted-foreground">
-                        Use AI to automatically categorize transactions
+                        {tr("useAiToAutomaticallyCategorizeTransactions")}
                       </p>
                     </div>
                     <Switch
@@ -1027,9 +1038,9 @@ export default function Admin() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">OCR Receipt Scanning</p>
+                      <p className="font-medium">{tr("ocrReceiptScanning")}</p>
                       <p className="text-sm text-muted-foreground">
-                        Extract data from receipt images
+                        {tr("extractDataFromReceiptImages")}
                       </p>
                     </div>
                     <Switch
@@ -1043,9 +1054,9 @@ export default function Admin() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Smart Assistant</p>
+                      <p className="font-medium">{tr("smartAssistant")}</p>
                       <p className="text-sm text-muted-foreground">
-                        Natural language financial queries
+                        {tr("naturalLanguageFinancialQueries")}
                       </p>
                     </div>
                     <Switch
@@ -1059,8 +1070,10 @@ export default function Admin() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Referral Program</p>
-                      <p className="text-sm text-muted-foreground">Enable user referral rewards</p>
+                      <p className="font-medium">{tr("referralProgram")}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {tr("enableUserReferralRewards")}
+                      </p>
                     </div>
                     <Switch
                       checked={systemSettings.referralProgram}
@@ -1076,13 +1089,13 @@ export default function Admin() {
               {/* System Settings */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">System Settings</CardTitle>
-                  <CardDescription>Configure platform-wide settings</CardDescription>
+                  <CardTitle className="text-base">{tr("systemSettings")}</CardTitle>
+                  <CardDescription>{tr("configurePlatformWideSettings")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Default Currency</Label>
+                      <Label>{tr("defaultCurrency")}</Label>
                       <Select
                         value={systemSettings.defaultCurrency}
                         onValueChange={(value) =>
@@ -1093,16 +1106,16 @@ export default function Admin() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="AED">AED (UAE Dirham)</SelectItem>
-                          <SelectItem value="USD">USD (US Dollar)</SelectItem>
-                          <SelectItem value="EUR">EUR (Euro)</SelectItem>
-                          <SelectItem value="GBP">GBP (British Pound)</SelectItem>
-                          <SelectItem value="SAR">SAR (Saudi Riyal)</SelectItem>
+                          <SelectItem value="AED">{tr("aedUaeDirham2")}</SelectItem>
+                          <SelectItem value="USD">{tr("usdUsDollar2")}</SelectItem>
+                          <SelectItem value="EUR">{tr("eurEuro2")}</SelectItem>
+                          <SelectItem value="GBP">{tr("gbpBritishPound2")}</SelectItem>
+                          <SelectItem value="SAR">{tr("sarSaudiRiyal2")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Default VAT Rate (%)</Label>
+                      <Label>{tr("defaultVatRate")}</Label>
                       <Input
                         type="number"
                         value={systemSettings.defaultVatRate}
@@ -1113,7 +1126,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>AI Credits Per Free User</Label>
+                      <Label>{tr("aiCreditsPerFreeUser")}</Label>
                       <Input
                         type="number"
                         value={systemSettings.freeAiCredits}
@@ -1124,7 +1137,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Trial Period (Days)</Label>
+                      <Label>{tr("trialPeriodDays")}</Label>
                       <Input
                         type="number"
                         value={systemSettings.trialPeriod}
@@ -1143,13 +1156,13 @@ export default function Admin() {
                   >
                     {saveSystemSettingsMutation.isPending ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Saving...
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                        {tr("saving")}
                       </>
                     ) : (
                       <>
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Settings
+                        <Save className="w-4 h-4 me-2" />
+                        {tr("saveSettings")}
                       </>
                     )}
                   </Button>
@@ -1159,12 +1172,14 @@ export default function Admin() {
               {/* Email/Notification Settings */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Notification Settings</CardTitle>
-                  <CardDescription>Configure email and notification preferences</CardDescription>
+                  <CardTitle className="text-base">{tr("notificationSettings")}</CardTitle>
+                  <CardDescription>
+                    {tr("configureEmailAndNotificationPreferences")}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Support Email</Label>
+                    <Label>{tr("supportEmail")}</Label>
                     <Input
                       type="email"
                       placeholder="support@muhasib.ai"
@@ -1176,7 +1191,7 @@ export default function Admin() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>From Email (Notifications)</Label>
+                    <Label>{tr("fromEmailNotifications")}</Label>
                     <Input
                       type="email"
                       placeholder="noreply@muhasib.ai"
@@ -1189,9 +1204,9 @@ export default function Admin() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Send Welcome Email</p>
+                      <p className="font-medium">{tr("sendWelcomeEmail")}</p>
                       <p className="text-sm text-muted-foreground">
-                        Email new users upon registration
+                        {tr("emailNewUsersUponRegistration")}
                       </p>
                     </div>
                     <Switch
@@ -1204,8 +1219,10 @@ export default function Admin() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Payment Reminder Emails</p>
-                      <p className="text-sm text-muted-foreground">Send late payment reminders</p>
+                      <p className="font-medium">{tr("paymentReminderEmails")}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {tr("sendLatePaymentReminders")}
+                      </p>
                     </div>
                     <Switch
                       checked={systemSettings.paymentReminders}
@@ -1222,13 +1239,13 @@ export default function Admin() {
                   >
                     {saveSystemSettingsMutation.isPending ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Saving...
+                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                        {tr("saving")}
                       </>
                     ) : (
                       <>
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Notification Settings
+                        <Save className="w-4 h-4 me-2" />
+                        {tr("saveNotificationSettings")}
                       </>
                     )}
                   </Button>
@@ -1247,19 +1264,19 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-[#6772e5] rounded flex items-center justify-center">
                     <CreditCard className="w-4 h-4 text-white" />
                   </div>
-                  Stripe Integration
+                  {tr("stripeIntegration")}
                 </CardTitle>
-                <CardDescription>Payment processing and subscription billing</CardDescription>
+                <CardDescription>{tr("paymentProcessingAndSubscriptionBilling")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
+                  <span className="text-sm">{tr("status")}</span>
                   <Badge variant="outline" className="bg-warning-subtle text-warning">
-                    Not Configured
+                    {tr("notConfigured")}
                   </Badge>
                 </div>
                 <div className="space-y-2">
-                  <Label>Stripe Public Key</Label>
+                  <Label>{tr("stripePublicKey")}</Label>
                   <Input
                     type="password"
                     placeholder="pk_live_..."
@@ -1267,7 +1284,7 @@ export default function Admin() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Stripe Secret Key</Label>
+                  <Label>{tr("stripeSecretKey")}</Label>
                   <Input
                     type="password"
                     placeholder="sk_live_..."
@@ -1275,8 +1292,8 @@ export default function Admin() {
                   />
                 </div>
                 <Button className="w-full" data-testid="button-save-stripe">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
+                  <Save className="w-4 h-4 me-2" />
+                  {tr("saveConfiguration")}
                 </Button>
               </CardContent>
             </Card>
@@ -1287,37 +1304,37 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-black rounded flex items-center justify-center">
                     <Activity className="w-4 h-4 text-white" />
                   </div>
-                  OpenAI Integration
+                  {tr("openaiIntegration")}
                 </CardTitle>
-                <CardDescription>AI-powered features and categorization</CardDescription>
+                <CardDescription>{tr("aiPoweredFeaturesAndCategorization")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
+                  <span className="text-sm">{tr("status")}</span>
                   <Badge variant="outline" className="bg-success-subtle text-success">
-                    Connected
+                    {tr("connected")}
                   </Badge>
                 </div>
                 <div className="space-y-2">
-                  <Label>API Key</Label>
+                  <Label>{tr("apiKey")}</Label>
                   <Input type="password" placeholder="sk-..." data-testid="input-openai-key" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Model</Label>
+                  <Label>{tr("model")}</Label>
                   <Select defaultValue="gpt-4o">
                     <SelectTrigger data-testid="select-openai-model">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o">GPT-4o (Recommended)</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
+                      <SelectItem value="gpt-4o">{tr("gpt4oRecommended")}</SelectItem>
+                      <SelectItem value="gpt-4-turbo">{tr("gpt4Turbo")}</SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">{tr("gpt35Turbo")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <Button className="w-full" data-testid="button-save-openai">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
+                  <Save className="w-4 h-4 me-2" />
+                  {tr("saveConfiguration")}
                 </Button>
               </CardContent>
             </Card>
@@ -1328,23 +1345,23 @@ export default function Admin() {
                   <div className="w-8 h-8 bg-[#34A853] rounded flex items-center justify-center">
                     <FileText className="w-4 h-4 text-white" />
                   </div>
-                  Google Sheets
+                  {tr("googleSheets")}
                 </CardTitle>
-                <CardDescription>Export data to Google Sheets</CardDescription>
+                <CardDescription>{tr("exportDataToGoogleSheets")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
+                  <span className="text-sm">{tr("status")}</span>
                   <Badge variant="outline" className="bg-success-subtle text-success">
-                    Connected
+                    {tr("connected")}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Google Sheets integration is configured and ready to use.
+                  {tr("googleSheetsIntegrationIsConfiguredAnd")}
                 </p>
                 <Button variant="outline" className="w-full" data-testid="button-test-sheets">
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Test Connection
+                  <RefreshCw className="w-4 h-4 me-2" />
+                  {tr("testConnection")}
                 </Button>
               </CardContent>
             </Card>
@@ -1355,28 +1372,28 @@ export default function Admin() {
         <TabsContent value="audit" className="space-y-6">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search audit logs..."
-                className="pl-10"
+                placeholder={tr("searchAuditLogs")}
+                className="ps-10"
                 data-testid="input-search-audit"
               />
             </div>
             <Select defaultValue="all">
               <SelectTrigger className="w-40" data-testid="select-audit-filter">
-                <SelectValue placeholder="Filter by action" />
+                <SelectValue placeholder={tr("filterByAction")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Actions</SelectItem>
-                <SelectItem value="create">Create</SelectItem>
-                <SelectItem value="update">Update</SelectItem>
-                <SelectItem value="delete">Delete</SelectItem>
-                <SelectItem value="login">Login</SelectItem>
+                <SelectItem value="all">{tr("allActions")}</SelectItem>
+                <SelectItem value="create">{tr("create")}</SelectItem>
+                <SelectItem value="update">{tr("update")}</SelectItem>
+                <SelectItem value="delete">{tr("delete")}</SelectItem>
+                <SelectItem value="login">{tr("login")}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" data-testid="button-export-audit">
-              <Download className="w-4 h-4 mr-2" />
-              Export
+              <Download className="w-4 h-4 me-2" />
+              {tr("export")}
             </Button>
           </div>
 
@@ -1386,12 +1403,12 @@ export default function Admin() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Resource</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead>IP Address</TableHead>
+                      <TableHead>{tr("timestamp")}</TableHead>
+                      <TableHead>{tr("action")}</TableHead>
+                      <TableHead>{tr("resource")}</TableHead>
+                      <TableHead>{tr("user")}</TableHead>
+                      <TableHead>{tr("details")}</TableHead>
+                      <TableHead>{tr("ipAddress")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1404,7 +1421,7 @@ export default function Admin() {
                     ) : auditLogs.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          No audit logs found
+                          {tr("noAuditLogsFound")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1427,7 +1444,7 @@ export default function Admin() {
                             </Badge>
                           </TableCell>
                           <TableCell>{log.resourceType}</TableCell>
-                          <TableCell>{log.userId || "System"}</TableCell>
+                          <TableCell>{log.userId || tr("system")}</TableCell>
                           <TableCell className="max-w-xs truncate">{log.details || "-"}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {log.ipAddress || "-"}
@@ -1456,6 +1473,8 @@ function PlanForm({
   onSubmit: (data: Partial<SubscriptionPlan>) => void;
   isPending: boolean;
 }) {
+  const tr = pageMessages.useT();
+
   const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(
     initialData || {
       name: "",
@@ -1482,7 +1501,7 @@ function PlanForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Plan Name</Label>
+          <Label htmlFor="name">{tr("planName")}</Label>
           <Input
             id="name"
             value={formData.name || ""}
@@ -1492,7 +1511,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="currency">Currency</Label>
+          <Label htmlFor="currency">{tr("currency")}</Label>
           <Select
             value={formData.currency}
             onValueChange={(value) => setFormData({ ...formData, currency: value })}
@@ -1510,7 +1529,7 @@ function PlanForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="description">{tr("description")}</Label>
         <Textarea
           id="description"
           value={formData.description || ""}
@@ -1521,7 +1540,7 @@ function PlanForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="priceMonthly">Monthly Price</Label>
+          <Label htmlFor="priceMonthly">{tr("monthlyPrice")}</Label>
           <Input
             id="priceMonthly"
             type="number"
@@ -1532,7 +1551,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="priceYearly">Yearly Price</Label>
+          <Label htmlFor="priceYearly">{tr("yearlyPrice")}</Label>
           <Input
             id="priceYearly"
             type="number"
@@ -1545,7 +1564,7 @@ function PlanForm({
 
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="maxCompanies">Max Companies</Label>
+          <Label htmlFor="maxCompanies">{tr("maxCompanies")}</Label>
           <Input
             id="maxCompanies"
             type="number"
@@ -1555,7 +1574,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="maxUsers">Max Users</Label>
+          <Label htmlFor="maxUsers">{tr("maxUsers")}</Label>
           <Input
             id="maxUsers"
             type="number"
@@ -1565,7 +1584,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="aiCredits">AI Credits/Month</Label>
+          <Label htmlFor="aiCredits">{tr("aiCreditsMonth")}</Label>
           <Input
             id="aiCredits"
             type="number"
@@ -1580,7 +1599,7 @@ function PlanForm({
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label>Advanced Reports</Label>
+          <Label>{tr("advancedReports")}</Label>
           <Switch
             checked={formData.hasAdvancedReports || false}
             onCheckedChange={(checked) => setFormData({ ...formData, hasAdvancedReports: checked })}
@@ -1588,7 +1607,7 @@ function PlanForm({
           />
         </div>
         <div className="flex items-center justify-between">
-          <Label>API Access</Label>
+          <Label>{tr("apiAccess")}</Label>
           <Switch
             checked={formData.hasApiAccess || false}
             onCheckedChange={(checked) => setFormData({ ...formData, hasApiAccess: checked })}
@@ -1596,7 +1615,7 @@ function PlanForm({
           />
         </div>
         <div className="flex items-center justify-between">
-          <Label>Active</Label>
+          <Label>{tr("active")}</Label>
           <Switch
             checked={formData.isActive !== false}
             onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
@@ -1608,11 +1627,11 @@ function PlanForm({
       <DialogFooter>
         <Button type="submit" disabled={isPending} data-testid="button-save-plan">
           {isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <Save className="w-4 h-4 mr-2" />
+            <Save className="w-4 h-4 me-2" />
           )}
-          Save Plan
+          {tr("savePlan")}
         </Button>
       </DialogFooter>
     </form>

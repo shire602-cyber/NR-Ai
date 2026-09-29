@@ -3,7 +3,8 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { aggregateReturnSalesLines } from "../services/vat-sales-lines";
+import { computeVatReturnForPeriod } from "../services/vat-return-compute.service";
+import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.service";
 import { pool } from "../db";
 import { round2 } from "../services/financial-statements";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
@@ -443,7 +444,9 @@ export function registerVATRoutes(app: Express) {
       }
 
       const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
-      res.json(vatReturns.map((r) => stripLegacyVatReturnFields(r)));
+      // A filed return reads as the snapshot frozen at filing (never the live row).
+      const overlaid = await overlayVatReturns(vatReturns);
+      res.json(overlaid.map((r) => stripLegacyVatReturnFields(r)));
     })
   );
 
@@ -508,332 +511,14 @@ export function registerVATRoutes(app: Express) {
         await assertPeriodNotLocked(companyId, periodEnd);
       }
 
-      // Get company information for emirate and VAT registration
-      const company = await storage.getCompany(companyId);
-      if (!company) {
-        return res.status(404).json({ message: "Company not found" });
-      }
-
-      // Validate VAT registration
-      if (!company.trnVatNumber) {
-        return res.status(400).json({
-          message:
-            "Company must have a TRN/VAT number to generate VAT returns. Please update your company profile.",
-          code: "NO_TRN",
-        });
-      }
-
-      // H1 — never guess the emirate. Box 1a–1g attributes supplies to a
-      // specific emirate; defaulting to Dubai silently files a Sharjah (or Abu
-      // Dhabi, or RAK) company's entire turnover under the wrong box. If the
-      // company has not stated its emirate, refuse rather than guess.
-      if (!company.emirate) {
-        return res.status(422).json({
-          message:
-            "Set your company's emirate before generating a VAT return. Box 1 of the VAT 201 " +
-            "attributes supplies by emirate and must not be guessed.",
-          code: "EMIRATE_NOT_SET",
-        });
-      }
-      const companyEmirate = company.emirate;
-
-      // Calculate VAT from invoices and receipts
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
-
-      const startDate = new Date(periodStart);
-      // periodEnd is a calendar date — include the entire final day so
-      // invoices timestamped during it aren't dropped from the return.
-      const endDate = new Date(periodEnd);
-      if (typeof periodEnd === "string" && !periodEnd.includes("T")) {
-        endDate.setUTCHours(23, 59, 59, 999);
-      }
-
-      // Filter invoices for the period — drafts must be excluded too because
-      // they have not been issued and therefore create no VAT obligation.
-      const periodInvoices = invoices.filter((inv) => {
-        const invDate = new Date(inv.date);
-        return (
-          invDate >= startDate &&
-          invDate <= endDate &&
-          inv.status !== "void" &&
-          inv.status !== "draft" &&
-          inv.status !== "cancelled"
-        );
-      });
-
-      // Fetch all invoice lines for categorization by VAT supply type — single
-      // batched fetch instead of one per invoice.
-      let standardRatedAmount = 0;
-      let standardRatedVat = 0;
-      let zeroRatedAmount = 0;
-      let exemptAmount = 0;
-
-      const periodLines = await storage.getInvoiceLinesByInvoiceIds(
-        periodInvoices.map((i) => i.id)
-      );
-      // FTA reporting is AED — convert foreign-currency invoice lines at the
-      // invoice's stored transaction-date rate.
-      const rateByInvoiceId = new Map(
-        periodInvoices.map((i) => [
-          i.id,
-          Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1,
-        ])
-      );
-      // Placement of every line is decided by the shared classifyVatLineForReturn
-      // rule (also used by the autopilot and the firm workpaper pull), so the
-      // three engines cannot disagree: 0% out-of-scope lines land in no box.
-      const salesTotals = aggregateReturnSalesLines(periodLines as any[], rateByInvoiceId);
-      standardRatedAmount = salesTotals.standardRatedAmount;
-      standardRatedVat = salesTotals.standardRatedVat;
-      zeroRatedAmount = salesTotals.zeroRatedAmount;
-      exemptAmount = salesTotals.exemptAmount;
-
-      // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
-      // with negative invoice lines after A-B11, so the invoice loop above
-      // captures them exactly once and applies the invoice exchange rate.
-
-      // Calculate input tax from receipts — only posted receipts can be
-      // claimed for input VAT recovery on a VAT return.
-      const periodReceipts = receipts.filter((rec) => {
-        if (!rec.posted) return false;
-        const recDate = new Date(rec.date || rec.createdAt);
-        return recDate >= startDate && recDate <= endDate;
-      });
-
-      // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
-      // (input side, subject to partial-exemption recovery), ordinary receipts
-      // feed Box 9.
-      const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
-      const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
-
-      // FTA reporting is in AED. A receipt stores its DOCUMENT-currency amount
-      // plus the transaction-date rate, so both the expense base and the input
-      // VAT must be converted before they reach Boxes 9/10/11 — exactly as the
-      // invoice lines above and the vendor bills below already do.
-      //
-      // Without this, a USD 1,000 receipt (VAT USD 50) at 3.6725 reported AED
-      // 1,000 of expenses and AED 50 of recoverable input VAT instead of AED
-      // 3,672.50 and AED 183.63 — the business under-claims and OVERPAYS the
-      // FTA. For AED receipts the rate is 1, so this is a no-op.
-      const recRate = (rec: { exchangeRate?: number | string | null }): number => {
-        const r = Number(rec.exchangeRate);
-        return Number.isFinite(r) && r > 0 ? r : 1;
-      };
-
-      let totalExpenses = ordinaryReceipts.reduce(
-        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-        0
-      );
-      let inputTaxGross = ordinaryReceipts.reduce(
-        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-        0
-      );
-
-      let reverseChargeAmount = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-        0
-      );
-      let reverseChargeVatGross = reverseChargeReceipts.reduce(
-        (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-        0
-      );
-
-      // Vendor bills — pulled direct from vendor_bills since the bill module
-      // isn't in Drizzle yet. Reverse-charge bills feed Boxes 3/10; ordinary
-      // approved bills carry recoverable input VAT into Box 9 alongside
-      // posted receipts. Pending bills are excluded: input VAT is only
-      // claimable once the bill is approved (matching when it posts to GL).
-      try {
-        const billRes = await pool.query(
-          `SELECT
-             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-         FROM vendor_bills
-         WHERE company_id = $1
-           AND bill_date >= $2::date
-           AND bill_date <= $3::date
-           AND status NOT IN ('void','cancelled','draft','pending')`,
-          // Compare calendar dates, not timestamps — casting the JS Date to
-          // timestamptz shifts period boundaries in non-UTC server timezones.
-          [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
-        );
-        reverseChargeAmount += Number(billRes.rows[0]?.rc_amount || 0);
-        reverseChargeVatGross += Number(billRes.rows[0]?.rc_vat || 0);
-        totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
-        inputTaxGross += Number(billRes.rows[0]?.std_vat || 0);
-      } catch (err) {
-        // Bill-pay schema may not be installed in dev — fail open, log via parent.
-      }
-
-      // Expense claims — TD5 (found by blind-accountant audit): approval posts
-      // net→expense and VAT→input VAT (1050) to the GL, but the return never
-      // read them, so box 9/13 under-claimed recoverable input VAT and the GL
-      // could never reconcile to the filed return. Approved/paid claims with
-      // item dates inside the period now feed Box 9 exactly like bills.
-      // Entertainment-category items are excluded from VAT recovery
-      // (Art. 53 blocked input tax) to mirror the posting service.
-      try {
-        const claimRes = await pool.query(
-          `SELECT
-             COALESCE(SUM(i.amount), 0) AS claim_amount,
-             COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
-           FROM expense_claim_items i
-           JOIN expense_claims c ON c.id = i.claim_id
-           WHERE c.company_id = $1
-             AND c.status IN ('approved','paid')
-             AND i.expense_date >= $2::date
-             AND i.expense_date <= $3::date`,
-          [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
-        );
-        totalExpenses += Number(claimRes.rows[0]?.claim_amount || 0);
-        inputTaxGross += Number(claimRes.rows[0]?.claim_vat || 0);
-      } catch (err) {
-        // Expense-claims schema may not be installed — fail open like bills.
-      }
-
-      // Summing float line amounts leaves binary noise (3428.3300000000017);
-      // settle every accumulator to fils before deriving boxes from them.
-      standardRatedAmount = round2(standardRatedAmount);
-      standardRatedVat = round2(standardRatedVat);
-      zeroRatedAmount = round2(zeroRatedAmount);
-      exemptAmount = round2(exemptAmount);
-      totalExpenses = round2(totalExpenses);
-      inputTaxGross = round2(inputTaxGross);
-      reverseChargeAmount = round2(reverseChargeAmount);
-      reverseChargeVatGross = round2(reverseChargeVatGross);
-
-      // Partial-exemption apportionment (FTA Article 55). When a company makes
-      // both taxable and exempt supplies, only the taxable portion of input VAT
-      // is recoverable. Output VAT (including reverse-charge output in Box 3) is
-      // unaffected — only the input/recovery side is reduced.
-      const exemptRatio = Math.min(1, Math.max(0, Number(company.exemptSupplyRatio || 0)));
-      const recoverableRatio = 1 - exemptRatio;
-      const inputTax = Math.round(inputTaxGross * recoverableRatio * 100) / 100;
-      const irrecoverableInputTax = Math.round((inputTaxGross - inputTax) * 100) / 100;
-      const reverseChargeVat = reverseChargeVatGross; // output side
-      const reverseChargeVatRecoverable =
-        Math.round(reverseChargeVatGross * recoverableRatio * 100) / 100;
-
-      // Due date is 28 days after period end (FTA requirement)
-      const dueDate = new Date(endDate);
-      dueDate.setDate(dueDate.getDate() + 28);
-
-      // Determine VAT stagger from company settings or default to quarterly
-      const vatStagger = company.vatFilingFrequency === "Monthly" ? "monthly" : "quarterly";
-
-      // Initialize emirate breakdown - all to company's registered emirate
-      const emirateBreakdown = {
-        box1aAbuDhabiAmount: 0,
-        box1aAbuDhabiVat: 0,
-        box1aAbuDhabiAdj: 0,
-        box1bDubaiAmount: 0,
-        box1bDubaiVat: 0,
-        box1bDubaiAdj: 0,
-        box1cSharjahAmount: 0,
-        box1cSharjahVat: 0,
-        box1cSharjahAdj: 0,
-        box1dAjmanAmount: 0,
-        box1dAjmanVat: 0,
-        box1dAjmanAdj: 0,
-        box1eUmmAlQuwainAmount: 0,
-        box1eUmmAlQuwainVat: 0,
-        box1eUmmAlQuwainAdj: 0,
-        box1fRasAlKhaimahAmount: 0,
-        box1fRasAlKhaimahVat: 0,
-        box1fRasAlKhaimahAdj: 0,
-        box1gFujairahAmount: 0,
-        box1gFujairahVat: 0,
-        box1gFujairahAdj: 0,
-      };
-
-      // Assign standard rated sales to company's emirate
-      switch (companyEmirate) {
-        case "abu_dhabi":
-          emirateBreakdown.box1aAbuDhabiAmount = standardRatedAmount;
-          emirateBreakdown.box1aAbuDhabiVat = standardRatedVat;
-          break;
-        case "sharjah":
-          emirateBreakdown.box1cSharjahAmount = standardRatedAmount;
-          emirateBreakdown.box1cSharjahVat = standardRatedVat;
-          break;
-        case "ajman":
-          emirateBreakdown.box1dAjmanAmount = standardRatedAmount;
-          emirateBreakdown.box1dAjmanVat = standardRatedVat;
-          break;
-        case "umm_al_quwain":
-          emirateBreakdown.box1eUmmAlQuwainAmount = standardRatedAmount;
-          emirateBreakdown.box1eUmmAlQuwainVat = standardRatedVat;
-          break;
-        case "ras_al_khaimah":
-          emirateBreakdown.box1fRasAlKhaimahAmount = standardRatedAmount;
-          emirateBreakdown.box1fRasAlKhaimahVat = standardRatedVat;
-          break;
-        case "fujairah":
-          emirateBreakdown.box1gFujairahAmount = standardRatedAmount;
-          emirateBreakdown.box1gFujairahVat = standardRatedVat;
-          break;
-        case "dubai":
-        default:
-          emirateBreakdown.box1bDubaiAmount = standardRatedAmount;
-          emirateBreakdown.box1bDubaiVat = standardRatedVat;
-          break;
-      }
-
-      // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
-      // (input, partial-exemption-reduced). Standard input tax (Box 9) is also
-      // partial-exemption reduced via `inputTax`.
-      const totalOutputAmount = round2(
-        standardRatedAmount + zeroRatedAmount + exemptAmount + reverseChargeAmount
-      );
-      const totalOutputVat = round2(standardRatedVat + reverseChargeVat);
-      const totalInputAmount = round2(totalExpenses + reverseChargeAmount);
-      const totalInputVat = round2(inputTax + reverseChargeVatRecoverable);
-
-      const returnValues = buildGeneratedVatReturnValues({
+      const { returnValues, metadata } = await computeVatReturnForPeriod({
         companyId,
         userId,
-        periodStart: startDate,
-        periodEnd: endDate,
-        dueDate,
-        vatStagger,
-        emirateBreakdown,
-        zeroRatedAmount,
-        exemptAmount,
-        reverseChargeAmount,
-        reverseChargeVat,
-        reverseChargeVatRecoverable,
-        totalExpenses,
-        inputTax,
-        totalOutputAmount,
-        totalOutputVat,
-        totalInputAmount,
-        totalInputVat,
+        periodStart,
+        periodEnd,
       });
-
-      const metadata = {
-        invoicesProcessed: periodInvoices.length,
-        receiptsProcessed: periodReceipts.length,
-        companyEmirate,
-        trnNumber: company.trnVatNumber,
-        standardRatedSales: standardRatedAmount,
-        zeroRatedSales: zeroRatedAmount,
-        exemptSales: exemptAmount,
-        reverseChargeAmount,
-        reverseChargeVat,
-        reverseChargeVatRecoverable,
-        totalInputVat,
-        netVatPayable: round2(totalOutputVat - totalInputVat),
-        partialExemption: {
-          exemptSupplyRatio: exemptRatio,
-          recoverableRatio,
-          grossInputVat: inputTaxGross,
-          recoverableInputVat: inputTax,
-          irrecoverableInputVat: irrecoverableInputTax,
-        },
-      };
+      const startDate = returnValues.periodStart as Date;
+      const endDate = returnValues.periodEnd as Date;
 
       // Open period: compute-only draft preview. Nothing is persisted, so an
       // unfinished period can never be submitted, filed or listed as a return.
@@ -853,6 +538,7 @@ export function registerVATRoutes(app: Express) {
       const existingReturns = await storage.getVatReturnsByCompanyId(companyId);
       const samePeriod = existingReturns.find(
         (r) =>
+          !r.isAmendment &&
           new Date(r.periodStart).getTime() === startDate.getTime() &&
           new Date(r.periodEnd).getTime() === endDate.getTime()
       );
@@ -896,8 +582,41 @@ export function registerVATRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // A filed return is final: it is never re-submitted or overwritten.
+      if (existing.status === "filed") {
+        return res.status(409).json({
+          message: "This VAT return is already recorded as filed.",
+          code: "VAT_RETURN_ALREADY_FILED",
+        });
+      }
+
       // A return can only be submitted once its period has ended.
       assertVatPeriodEnded(existing.periodStart as any, existing.periodEnd as any);
+
+      // With an FTA reference this IS the filing record (reference + date +
+      // snapshot + period lock + clearing journal), handled by the filing service.
+      // Kept on this endpoint for older clients; `filedAt` is now required.
+      if (typeof ftaReferenceNumber === "string" && ftaReferenceNumber.trim() !== "") {
+        const u = (req as any).user;
+        const filing = await recordVatFiling({
+          user: { id: u.id, isAdmin: u.isAdmin === true, firmRole: u.firmRole ?? null },
+          returnId: id,
+          input: { ftaReferenceNumber, filedAt: req.body?.filedAt, notes },
+          req,
+        });
+        const filedReturn = await storage.getVatReturn(id);
+        return res.json({
+          ...stripLegacyVatReturnFields(filedReturn as any),
+          isDraftPreview: false,
+          filing: {
+            transmittedByMuhasib: false,
+            channel: "manual-emaratax",
+            id: filing.id,
+            snapshotHash: filing.snapshotHash,
+            message: `Recorded as filed with FTA reference ${filing.referenceNumber}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`,
+          },
+        });
+      }
 
       // Submitting the return finalises the VAT settlement against periodEnd —
       // refuse if the underlying period is already closed.
@@ -908,25 +627,18 @@ export function registerVATRoutes(app: Express) {
       // This application does NOT transmit anything to the FTA. There is no
       // EmaraTax integration. Two distinct things must never be conflated:
       //
-      //   "submitted" = internally finalised and locked for review. Nothing was
-      //                 sent anywhere. The user still has to file via EmaraTax.
-      //   "filed"     = the user has filed through the official channel and is
-      //                 recording the FTA's acknowledgement reference here.
-      //
-      // A reference number is the only evidence that a real filing happened, so
-      // it is what promotes the return to "filed". Without it we must not use
-      // any wording that implies the return reached the FTA.
-      const reference =
-        typeof ftaReferenceNumber === "string" && ftaReferenceNumber.trim() !== ""
-          ? ftaReferenceNumber.trim()
-          : null;
-
+      //   "submitted" = internally finalised for review. Nothing was sent
+      //                 anywhere. The user still has to file via EmaraTax.
+      //   "filed"     = the user has filed through the official channel and
+      //                 records the FTA reference, filing date and acknowledgement
+      //                 (POST /api/vat-returns/:id/file, or this endpoint with an
+      //                 ftaReferenceNumber above). Filing freezes the figures,
+      //                 clears the VAT accounts and locks the period.
       const vatReturn = await storage.updateVatReturn(id, {
-        status: reference ? "filed" : "submitted",
+        status: "submitted",
         adjustmentAmount: adjustmentAmount || 0,
         adjustmentReason: adjustmentReason || null,
         notes: notes || null,
-        ftaReferenceNumber: reference,
         submittedBy: userId,
         submittedAt: new Date(),
       });
@@ -936,10 +648,9 @@ export function registerVATRoutes(app: Express) {
         isDraftPreview: false,
         filing: {
           transmittedByMuhasib: false,
-          channel: reference ? "manual-emaratax" : "none",
-          message: reference
-            ? `Recorded as filed with FTA reference ${reference}. Muhasib did not transmit this return; this is your record of a filing you made through the official channel.`
-            : "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number here.",
+          channel: "none",
+          message:
+            "Finalised for review. Muhasib does NOT file with the FTA — you must still submit this return through EmaraTax, then record the FTA reference number and filing date here.",
         },
       });
     })

@@ -71,6 +71,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { messages as pageMessages } from "./FirmCommandCenter.i18n";
 
 // ─── Types (mirror server) ──────────────────────────────────────────────
 
@@ -218,6 +219,8 @@ function MetricCard({
 // ─── Main page ──────────────────────────────────────────────────────────
 
 export default function FirmCommandCenter() {
+  const tr = pageMessages.useT();
+
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -268,10 +271,10 @@ export default function FirmCommandCenter() {
     mutationFn: () => apiRequest("POST", "/api/firm/command-center/alerts/refresh"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
-      toast({ title: "Alerts refreshed" });
+      toast({ title: tr("alertsRefreshed") });
     },
     onError: (e: Error) =>
-      toast({ title: "Refresh failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("refreshFailed"), description: e.message, variant: "destructive" }),
   });
 
   const markRead = useMutation({
@@ -291,13 +294,13 @@ export default function FirmCommandCenter() {
       apiRequest("POST", "/api/firm/command-center/batch/vat-calculate", { companyIds }),
     onSuccess: (data: { results?: unknown[] }) => {
       toast({
-        title: "Batch VAT calc complete",
-        description: `${data.results?.length ?? 0} clients calculated.`,
+        title: tr("batchVatCalcComplete"),
+        description: tr("clientsCalculated", { value: data.results?.length ?? 0 }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Batch VAT failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("batchVatFailed"), description: e.message, variant: "destructive" }),
   });
 
   const batchChasePayments = useMutation({
@@ -305,13 +308,13 @@ export default function FirmCommandCenter() {
       apiRequest("POST", "/api/firm/command-center/batch/chase-payments", { companyIds }),
     onSuccess: (data: { chasedInvoiceCount?: number }) => {
       toast({
-        title: "Payment chase queued",
-        description: `${data.chasedInvoiceCount ?? 0} invoices queued.`,
+        title: tr("paymentChaseQueued"),
+        description: tr("invoicesQueued", { value: data.chasedInvoiceCount ?? 0 }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("chaseFailed"), description: e.message, variant: "destructive" }),
   });
 
   const batchChaseDocuments = useMutation({
@@ -320,13 +323,13 @@ export default function FirmCommandCenter() {
     onSuccess: (data: { chasedClientCount?: number }) => {
       qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
       toast({
-        title: "Document chase queued",
-        description: `${data.chasedClientCount ?? 0} clients notified.`,
+        title: tr("documentChaseQueued"),
+        description: tr("clientsNotified", { value: data.chasedClientCount ?? 0 }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("chaseFailed"), description: e.message, variant: "destructive" }),
   });
 
   // ─── Derived data ──────────────────────────────────────────────────
@@ -395,11 +398,11 @@ export default function FirmCommandCenter() {
         className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="firm-command-center-error"
       >
-        <div className="font-medium mb-1">Failed to load firm dashboard.</div>
+        <div className="font-medium mb-1">{tr("failedToLoadFirmDashboard")}</div>
         <div className="text-muted-foreground">
           {dashboardQuery.error instanceof Error
             ? dashboardQuery.error.message
-            : "An unexpected error occurred."}
+            : tr("anUnexpectedErrorOccurred")}
         </div>
         <Button
           variant="outline"
@@ -407,7 +410,7 @@ export default function FirmCommandCenter() {
           className="mt-3"
           onClick={() => dashboardQuery.refetch()}
         >
-          Retry
+          {tr("retry")}
         </Button>
       </div>
     );
@@ -416,10 +419,10 @@ export default function FirmCommandCenter() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Firm Command Center"
+        eyebrow={tr("firm")}
+        title={tr("firmCommandCenter")}
         testId="page-title"
-        description="Bird's-eye view across all clients with actionable insights and batch operations."
+        description={tr("birdSEyeViewAcrossAll")}
         actions={
           <Button
             variant="outline"
@@ -428,11 +431,11 @@ export default function FirmCommandCenter() {
             data-testid="button-refresh-alerts"
           >
             {refreshAlerts.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
             ) : (
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className="w-4 h-4 me-2" />
             )}
-            Refresh alerts
+            {tr("refreshAlerts")}
           </Button>
         }
       />
@@ -440,26 +443,30 @@ export default function FirmCommandCenter() {
       {/* Metrics row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Total clients"
+          title={tr("totalClients")}
           value={summary ? `${summary.totalClients}` : "—"}
-          subtitle={summary ? `${summary.activeClients} active` : undefined}
+          subtitle={summary ? tr("active", { activeClients: summary.activeClients }) : undefined}
           icon={Building2}
         />
         <MetricCard
-          title="Outstanding AR"
+          title={tr("outstandingAr")}
           value={summary ? formatAed(summary.totalOutstandingAr) : "—"}
           icon={DollarSign}
         />
         <MetricCard
-          title="VAT liability"
+          title={tr("vatLiability")}
           value={summary ? formatAed(summary.totalVatLiability) : "—"}
-          subtitle="Across unfiled returns"
+          subtitle={tr("acrossUnfiledReturns")}
           icon={Calculator}
         />
         <MetricCard
-          title="Receipts this month"
+          title={tr("receiptsThisMonth")}
           value={summary ? `${summary.receiptsProcessedThisMonth}` : "—"}
-          subtitle={summary ? `${summary.invoicesIssuedThisMonth} invoices issued` : undefined}
+          subtitle={
+            summary
+              ? tr("invoicesIssued", { invoicesIssuedThisMonth: summary.invoicesIssuedThisMonth })
+              : undefined
+          }
           icon={Activity}
         />
       </div>
@@ -468,18 +475,18 @@ export default function FirmCommandCenter() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Average health score</CardTitle>
+            <CardTitle className="text-sm">{tr("averageHealthScore")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold">{summary?.averageHealthScore ?? "—"}</div>
-            <p className="text-xs text-muted-foreground mt-1">across all managed clients</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("acrossAllManagedClients")}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-destructive" />
-              Critical alerts
+              {tr("criticalAlerts")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -492,7 +499,7 @@ export default function FirmCommandCenter() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <Bell className="w-4 h-4 text-warning" />
-              Warnings
+              {tr("warnings")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -505,10 +512,10 @@ export default function FirmCommandCenter() {
 
       <Tabs defaultValue="clients" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="clients">Client health</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="staff">Staff workload</TabsTrigger>
-          <TabsTrigger value="comparison">Period comparison</TabsTrigger>
+          <TabsTrigger value="clients">{tr("clientHealth")}</TabsTrigger>
+          <TabsTrigger value="alerts">{tr("alerts")}</TabsTrigger>
+          <TabsTrigger value="staff">{tr("staffWorkload")}</TabsTrigger>
+          <TabsTrigger value="comparison">{tr("periodComparison")}</TabsTrigger>
         </TabsList>
 
         {/* ─── Client health tab ─── */}
@@ -519,7 +526,7 @@ export default function FirmCommandCenter() {
                 <div className="flex items-center gap-2 flex-1 max-w-md">
                   <Search className="w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search clients..."
+                    placeholder={tr("searchClients")}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     data-testid="input-search-clients"
@@ -530,10 +537,10 @@ export default function FirmCommandCenter() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="health">Sort by health</SelectItem>
-                    <SelectItem value="revenue">Sort by revenue</SelectItem>
-                    <SelectItem value="overdue">Sort by overdue AR</SelectItem>
-                    <SelectItem value="compliance">Sort by compliance</SelectItem>
+                    <SelectItem value="health">{tr("sortByHealth")}</SelectItem>
+                    <SelectItem value="revenue">{tr("sortByRevenue")}</SelectItem>
+                    <SelectItem value="overdue">{tr("sortByOverdueAr")}</SelectItem>
+                    <SelectItem value="compliance">{tr("sortByCompliance")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -541,28 +548,28 @@ export default function FirmCommandCenter() {
             <CardContent>
               {selectedCount > 0 && (
                 <div className="flex items-center gap-2 mb-3 p-3 rounded-md bg-muted">
-                  <span className="text-sm font-medium">{selectedCount} selected</span>
-                  <div className="ml-auto flex gap-2">
+                  <span className="text-sm font-medium">{tr("selected", { selectedCount })}</span>
+                  <div className="ms-auto flex gap-2">
                     <BatchActionButton
-                      label="Run VAT calc"
+                      label={tr("runVatCalc")}
                       icon={Calculator}
                       onConfirm={() => batchVat.mutate(selectedIds)}
                       pending={batchVat.isPending}
-                      description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={tr.plural("runVatCalculationForClients", selectedCount)}
                     />
                     <BatchActionButton
-                      label="Chase payments"
+                      label={tr("chasePayments")}
                       icon={Mail}
                       onConfirm={() => batchChasePayments.mutate(selectedIds)}
                       pending={batchChasePayments.isPending}
-                      description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={tr.plural("queuePaymentChaseAcrossClients", selectedCount)}
                     />
                     <BatchActionButton
-                      label="Chase documents"
+                      label={tr("chaseDocuments")}
                       icon={FileSearch}
                       onConfirm={() => batchChaseDocuments.mutate(selectedIds)}
                       pending={batchChaseDocuments.isPending}
-                      description={`Queue document chase for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={tr.plural("queueDocumentChaseForClients", selectedCount)}
                     />
                   </div>
                 </div>
@@ -574,18 +581,18 @@ export default function FirmCommandCenter() {
                       <Checkbox
                         checked={allSelected}
                         onCheckedChange={toggleAll}
-                        aria-label="Select all"
+                        aria-label={tr("selectAll")}
                       />
                     </TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Health</TableHead>
-                    <TableHead>Rating</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Overdue AR</TableHead>
-                    <TableHead>VAT</TableHead>
-                    <TableHead>Last activity</TableHead>
+                    <TableHead>{tr("client")}</TableHead>
+                    <TableHead>{tr("health")}</TableHead>
+                    <TableHead>{tr("rating")}</TableHead>
+                    <TableHead className="text-end">{tr("revenue")}</TableHead>
+                    <TableHead className="text-end">{tr("overdueAr")}</TableHead>
+                    <TableHead>{tr("vat")}</TableHead>
+                    <TableHead>{tr("lastActivity")}</TableHead>
                     <TableHead>
-                      <span className="sr-only">Open client</span>
+                      <span className="sr-only">{tr("openClient")}</span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -596,7 +603,7 @@ export default function FirmCommandCenter() {
                         <Checkbox
                           checked={selectedClients.has(c.companyId)}
                           onCheckedChange={() => toggleClient(c.companyId)}
-                          aria-label={`Select ${c.companyName}`}
+                          aria-label={tr("select", { companyName: c.companyName })}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{c.companyName}</TableCell>
@@ -604,11 +611,11 @@ export default function FirmCommandCenter() {
                       <TableCell>
                         <Badge className={ratingColor(c.rating)}>{c.rating}</Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(c.revenue)}</TableCell>
-                      <TableCell className="text-right">{formatAed(c.overdueBalance)}</TableCell>
+                      <TableCell className="text-end">{formatAed(c.revenue)}</TableCell>
+                      <TableCell className="text-end">{formatAed(c.overdueBalance)}</TableCell>
                       <TableCell>
                         {c.factors.vatOverdue ? (
-                          <Badge variant="destructive">Overdue</Badge>
+                          <Badge variant="destructive">{tr("overdue")}</Badge>
                         ) : (
                           <Badge variant="secondary">OK</Badge>
                         )}
@@ -616,7 +623,7 @@ export default function FirmCommandCenter() {
                       <TableCell className="text-muted-foreground">
                         {c.factors.daysSinceActivity === null
                           ? "—"
-                          : `${c.factors.daysSinceActivity}d ago`}
+                          : tr("dAgo", { daysSinceActivity: c.factors.daysSinceActivity })}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -625,7 +632,7 @@ export default function FirmCommandCenter() {
                           onClick={() => navigate(`/firm/clients/${c.companyId}`)}
                           data-testid={`button-jump-${c.companyId}`}
                         >
-                          Open →
+                          {tr("open")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -633,7 +640,7 @@ export default function FirmCommandCenter() {
                   {filteredClients.length === 0 && !healthQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                        {search ? "No clients match your search." : "No clients yet."}
+                        {search ? tr("noClientsMatchYourSearch") : tr("noClientsYet")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -648,7 +655,7 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Alert feed</CardTitle>
+                <CardTitle>{tr("alertFeed")}</CardTitle>
                 <Select
                   value={severityFilter}
                   onValueChange={(v) => setSeverityFilter(v as Severity | "all")}
@@ -657,10 +664,10 @@ export default function FirmCommandCenter() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All severities</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="warning">Warning</SelectItem>
-                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="all">{tr("allSeverities")}</SelectItem>
+                    <SelectItem value="critical">{tr("critical")}</SelectItem>
+                    <SelectItem value="warning">{tr("warning")}</SelectItem>
+                    <SelectItem value="info">{tr("info")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -688,7 +695,7 @@ export default function FirmCommandCenter() {
                           disabled={markRead.isPending}
                           data-testid={`button-mark-read-${a.id}`}
                         >
-                          Mark read
+                          {tr("markRead")}
                         </Button>
                       )}
                       {!a.resolvedAt && (
@@ -699,7 +706,7 @@ export default function FirmCommandCenter() {
                           disabled={resolveAlert.isPending}
                           data-testid={`button-resolve-${a.id}`}
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> Resolve
+                          <CheckCircle2 className="w-4 h-4 me-1" /> {tr("resolve")}
                         </Button>
                       )}
                     </div>
@@ -707,7 +714,7 @@ export default function FirmCommandCenter() {
                 ))}
                 {(alertsQuery.data ?? []).length === 0 && !alertsQuery.isLoading && (
                   <div className="text-center text-muted-foreground py-8">
-                    No active alerts. Click "Refresh alerts" above to scan all clients.
+                    {tr("noActiveAlertsClickRefreshAlerts")}
                   </div>
                 )}
               </div>
@@ -720,7 +727,7 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Users className="w-4 h-4" /> Staff workload distribution
+                <Users className="w-4 h-4" /> {tr("staffWorkloadDistribution")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -736,16 +743,16 @@ export default function FirmCommandCenter() {
                 </ResponsiveContainer>
               ) : (
                 <p className="text-center text-muted-foreground py-8">
-                  No firm_admin staff configured yet.
+                  {tr("noFirmAdminStaffConfiguredYet")}
                 </p>
               )}
               <Table className="mt-4">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Staff</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead className="text-right">Clients</TableHead>
-                    <TableHead>Roles</TableHead>
+                    <TableHead>{tr("staff")}</TableHead>
+                    <TableHead>{tr("email")}</TableHead>
+                    <TableHead className="text-end">{tr("clients")}</TableHead>
+                    <TableHead>{tr("roles")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -753,10 +760,10 @@ export default function FirmCommandCenter() {
                     <TableRow key={w.userId}>
                       <TableCell className="font-medium">{w.userName}</TableCell>
                       <TableCell className="text-muted-foreground">{w.userEmail}</TableCell>
-                      <TableCell className="text-right">{w.clientCount}</TableCell>
+                      <TableCell className="text-end">{w.clientCount}</TableCell>
                       <TableCell>
                         {Object.entries(w.rolesByName).map(([role, n]) => (
-                          <Badge key={role} variant="outline" className="mr-1">
+                          <Badge key={role} variant="outline" className="me-1">
                             {role} × {n}
                           </Badge>
                         ))}
@@ -774,23 +781,32 @@ export default function FirmCommandCenter() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Period comparison</CardTitle>
+                <CardTitle>{tr("periodComparison")}</CardTitle>
                 <Select value={granularity} onValueChange={(v) => setGranularity(v as Granularity)}>
                   <SelectTrigger className="w-[160px]" data-testid="select-granularity">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="month">Month-over-month</SelectItem>
-                    <SelectItem value="quarter">Quarter-over-quarter</SelectItem>
+                    <SelectItem value="month">{tr("monthOverMonth")}</SelectItem>
+                    <SelectItem value="quarter">{tr("quarterOverQuarter")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4 mb-6">
-                <DeltaCard label="Revenue" value={comparisonQuery.data?.deltas.revenuePct ?? 0} />
-                <DeltaCard label="Receipts" value={comparisonQuery.data?.deltas.receiptsPct ?? 0} />
-                <DeltaCard label="Invoices" value={comparisonQuery.data?.deltas.invoicesPct ?? 0} />
+                <DeltaCard
+                  label={tr("revenue")}
+                  value={comparisonQuery.data?.deltas.revenuePct ?? 0}
+                />
+                <DeltaCard
+                  label={tr("receipts")}
+                  value={comparisonQuery.data?.deltas.receiptsPct ?? 0}
+                />
+                <DeltaCard
+                  label={tr("invoices")}
+                  value={comparisonQuery.data?.deltas.invoicesPct ?? 0}
+                />
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>
@@ -847,6 +863,8 @@ function BatchActionButton({
   pending: boolean;
   description: string;
 }) {
+  const tr = pageMessages.useT();
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -856,21 +874,21 @@ function BatchActionButton({
           data-testid={`button-batch-${label.toLowerCase().replace(/\s+/g, "-")}`}
         >
           {pending ? (
-            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            <Loader2 className="w-4 h-4 me-1 animate-spin" />
           ) : (
-            <Icon className="w-4 h-4 mr-1" />
+            <Icon className="w-4 h-4 me-1" />
           )}
           {label}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Confirm: {label}</AlertDialogTitle>
+          <AlertDialogTitle>{tr("confirm", { label })}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
+          <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>{tr("confirm2")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

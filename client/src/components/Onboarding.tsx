@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import type { UserOnboarding } from "@shared/schema";
+import { messages as pageMessages } from "./Onboarding.i18n";
 
 interface OnboardingStep {
   key: string;
@@ -38,12 +39,12 @@ interface OnboardingStep {
   path: string;
 }
 
-const ONBOARDING_STEPS: OnboardingStep[] = [
+const getOnboardingSteps = (): OnboardingStep[] => [
   {
     key: "welcome",
     field: "hasCompletedWelcome",
-    title: "Welcome to Muhasib.ai",
-    description: "Set up UAE accounting workflows, VAT tracking, and reporting for your business",
+    title: pageMessages.t("welcomeToMuhasibAi"),
+    description: pageMessages.t("setUpUaeAccountingWorkflowsVat"),
     icon: Sparkles,
     action: "Continue",
     path: "/dashboard",
@@ -51,8 +52,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "company",
     field: "hasCreatedCompany",
-    title: "Set Up Your Company",
-    description: "Add your company details and tax information",
+    title: pageMessages.t("setUpYourCompany"),
+    description: pageMessages.t("addYourCompanyDetailsAndTax"),
     icon: Building2,
     action: "Set Up Company",
     path: "/company-profile",
@@ -60,8 +61,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "accounts",
     field: "hasSetupChartOfAccounts",
-    title: "Chart of Accounts",
-    description: "Review and customize your UAE-focused chart of accounts",
+    title: pageMessages.t("chartOfAccounts"),
+    description: pageMessages.t("reviewAndCustomizeYourUaeFocused"),
     icon: BookOpen,
     action: "View Accounts",
     path: "/accounts",
@@ -69,8 +70,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "invoice",
     field: "hasCreatedFirstInvoice",
-    title: "Create Your First Invoice",
-    description: "Generate professional VAT-ready invoices",
+    title: pageMessages.t("createYourFirstInvoice"),
+    description: pageMessages.t("generateProfessionalVatReadyInvoices"),
     icon: FileText,
     action: "Create Invoice",
     path: "/invoices",
@@ -78,8 +79,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "receipt",
     field: "hasUploadedFirstReceipt",
-    title: "Upload a Receipt",
-    description: "Let AI extract and categorize your expenses",
+    title: pageMessages.t("uploadAReceipt"),
+    description: pageMessages.t("letAiExtractAndCategorizeYour"),
     icon: Receipt,
     action: "Upload Receipt",
     path: "/receipts",
@@ -87,8 +88,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "reports",
     field: "hasViewedReports",
-    title: "Explore Reports",
-    description: "View financial statements and VAT summaries",
+    title: pageMessages.t("exploreReports"),
+    description: pageMessages.t("viewFinancialStatementsAndVatSummaries"),
     icon: BarChart3,
     action: "View Reports",
     path: "/reports",
@@ -96,8 +97,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "ai",
     field: "hasExploredAI",
-    title: "Meet Your AI CFO",
-    description: "Get insights and recommendations from your AI financial advisor",
+    title: pageMessages.t("meetYourAiCfo"),
+    description: pageMessages.t("getInsightsAndRecommendationsFromYour"),
     icon: Bot,
     action: "Explore AI Features",
     path: "/ai-cfo",
@@ -105,8 +106,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "reminders",
     field: "hasConfiguredReminders",
-    title: "Set Up Reminders",
-    description: "Configure automatic payment reminders",
+    title: pageMessages.t("setUpReminders"),
+    description: pageMessages.t("configureAutomaticPaymentReminders"),
     icon: Bell,
     action: "Configure Reminders",
     path: "/reminders",
@@ -114,6 +115,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
 ];
 
 export function OnboardingWizard() {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const [showWizard, setShowWizard] = useState(false);
   // The /api/onboarding query refetches on focus and after unrelated
@@ -214,9 +217,11 @@ export function OnboardingWizard() {
   }
 
   const currentStep = onboarding.currentStep || 0;
-  const totalSteps = ONBOARDING_STEPS.length;
+  const totalSteps = getOnboardingSteps().length;
   const progress = (currentStep / totalSteps) * 100;
-  const nextStep = ONBOARDING_STEPS.find((step) => !onboarding[step.field as keyof UserOnboarding]);
+  const nextStep = getOnboardingSteps().find(
+    (step) => !onboarding[step.field as keyof UserOnboarding]
+  );
 
   if (!nextStep) {
     return null;
@@ -238,7 +243,7 @@ export function OnboardingWizard() {
         <DialogHeader>
           <div className="flex items-center">
             <Badge variant="secondary">
-              Step {currentStep + 1} of {totalSteps}
+              {tr("stepOf", { value: currentStep + 1, totalSteps })}
             </Badge>
           </div>
           <div className="pt-4">
@@ -252,24 +257,22 @@ export function OnboardingWizard() {
 
         <div className="py-4">
           <div className="flex justify-between text-sm text-muted-foreground mb-2">
-            <span>Progress</span>
-            <span>
-              {currentStep}/{totalSteps} completed
-            </span>
+            <span>{tr("progress")}</span>
+            <span>{tr("completed", { currentStep, totalSteps })}</span>
           </div>
           <Progress value={progress} className="h-2" />
         </div>
 
         <div className="flex gap-3 justify-center">
           <Button variant="outline" onClick={handleSkip} data-testid="button-skip-onboarding">
-            Skip for now
+            {tr("skipForNow")}
           </Button>
           <Button
             onClick={() => handleStepAction(nextStep)}
             data-testid="button-continue-onboarding"
           >
             {nextStep.action}
-            <ArrowRight className="w-4 h-4 ml-2" />
+            <ArrowRight className="w-4 h-4 ms-2" />
           </Button>
         </div>
       </DialogContent>
@@ -278,6 +281,8 @@ export function OnboardingWizard() {
 }
 
 export function OnboardingProgress() {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
 
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
@@ -334,7 +339,7 @@ export function OnboardingProgress() {
   }
 
   const currentStep = onboarding.currentStep || 0;
-  const totalSteps = ONBOARDING_STEPS.length;
+  const totalSteps = getOnboardingSteps().length;
   const progress = (currentStep / totalSteps) * 100;
 
   return (
@@ -343,42 +348,42 @@ export function OnboardingProgress() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-medium">Getting Started</span>
+            <span className="font-medium">{tr("gettingStarted")}</span>
           </div>
-          <Badge variant="outline">
-            {currentStep}/{totalSteps} completed
-          </Badge>
+          <Badge variant="outline">{tr("completed", { currentStep, totalSteps })}</Badge>
         </div>
 
         <Progress value={progress} className="h-2 mb-4" />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {ONBOARDING_STEPS.slice(0, 8).map((step) => {
-            const Icon = step.icon;
-            const isCompleted = onboarding[step.field as keyof UserOnboarding];
-            return (
-              <button
-                key={step.key}
-                onClick={() => {
-                  if (!isCompleted) {
-                    completeMutation.mutate(step.key);
-                  }
-                  setLocation(step.path);
-                }}
-                className={`flex items-center gap-2 p-2 rounded-lg text-sm transition-colors ${
-                  isCompleted ? "bg-success/10 text-success" : "bg-background hover:bg-accent"
-                }`}
-                data-testid={`onboarding-step-${step.key}`}
-              >
-                {isCompleted ? (
-                  <CheckCircle className="w-4 h-4 text-success shrink-0" />
-                ) : (
-                  <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                )}
-                <span className="truncate">{step.title.split(" ").slice(-2).join(" ")}</span>
-              </button>
-            );
-          })}
+          {getOnboardingSteps()
+            .slice(0, 8)
+            .map((step) => {
+              const Icon = step.icon;
+              const isCompleted = onboarding[step.field as keyof UserOnboarding];
+              return (
+                <button
+                  key={step.key}
+                  onClick={() => {
+                    if (!isCompleted) {
+                      completeMutation.mutate(step.key);
+                    }
+                    setLocation(step.path);
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-lg text-sm transition-colors ${
+                    isCompleted ? "bg-success/10 text-success" : "bg-background hover:bg-accent"
+                  }`}
+                  data-testid={`onboarding-step-${step.key}`}
+                >
+                  {isCompleted ? (
+                    <CheckCircle className="w-4 h-4 text-success shrink-0" />
+                  ) : (
+                    <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                  )}
+                  <span className="truncate">{step.title.split(" ").slice(-2).join(" ")}</span>
+                </button>
+              );
+            })}
         </div>
       </CardContent>
     </Card>
@@ -412,7 +417,7 @@ export function HelpTip({ tipKey, children }: { tipKey: string; children: React.
       <Button
         variant="ghost"
         size="sm"
-        className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-2 -end-2 opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={() => dismissMutation.mutate(tipKey)}
       >
         <X className="w-3 h-3" />

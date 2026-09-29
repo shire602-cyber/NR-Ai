@@ -56,10 +56,11 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, BookOpen, Search, Trash2, Edit } from "lucide-react";
 import type { Account } from "@shared/schema";
+import { messages as pageMessages } from "./Accounts.i18n";
 
 const accountSchema = z.object({
   companyId: z.string().uuid(),
-  nameEn: z.string().min(1, "Account name (EN) is required"),
+  nameEn: z.string().min(1, pageMessages.marker("accountNameEnIsRequired")),
   nameAr: z.string().optional(),
   type: z.enum(["asset", "liability", "equity", "income", "expense"]),
   isActive: z.boolean().default(true),
@@ -68,6 +69,8 @@ const accountSchema = z.object({
 type AccountFormData = z.infer<typeof accountSchema>;
 
 export default function Accounts() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
@@ -106,8 +109,8 @@ export default function Accounts() {
         queryKey: ["/api/companies", selectedCompanyId, "accounts"],
       });
       toast({
-        title: "Account created",
-        description: "New account has been added to the Chart of Accounts.",
+        title: tr("accountCreated"),
+        description: tr("newAccountHasBeenAddedTo"),
       });
       setDialogOpen(false);
       setEditingAccount(null);
@@ -116,8 +119,8 @@ export default function Accounts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create account",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateAccount"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -130,8 +133,8 @@ export default function Accounts() {
         queryKey: ["/api/companies", selectedCompanyId, "accounts"],
       });
       toast({
-        title: "Account updated successfully",
-        description: "Account has been updated in the Chart of Accounts.",
+        title: tr("accountUpdatedSuccessfully"),
+        description: tr("accountHasBeenUpdatedInThe"),
       });
       setDialogOpen(false);
       setEditingAccount(null);
@@ -140,8 +143,8 @@ export default function Accounts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update account",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateAccount"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -153,15 +156,15 @@ export default function Accounts() {
         queryKey: ["/api/companies", selectedCompanyId, "accounts"],
       });
       toast({
-        title: "Account deleted",
-        description: "Account has been removed from the Chart of Accounts.",
+        title: tr("accountDeleted"),
+        description: tr("accountHasBeenRemovedFromThe"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete account",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeleteAccount"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -231,13 +234,13 @@ export default function Accounts() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={tr("accounting")}
         title={t.accounts}
-        description="UAE Chart of Accounts with bilingual support"
+        description={tr("uaeChartOfAccountsWithBilingual")}
         actions={
           <Button onClick={() => setDialogOpen(true)} data-testid="button-create-account">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Account
+            <Plus className="w-4 h-4 me-2" />
+            {tr("addAccount")}
           </Button>
         }
       />
@@ -253,11 +256,9 @@ export default function Accounts() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingAccount ? "Edit Account" : "Add New Account"}</DialogTitle>
+            <DialogTitle>{editingAccount ? tr("editAccount") : tr("addNewAccount")}</DialogTitle>
             <DialogDescription>
-              {editingAccount
-                ? "Update account details"
-                : "Create a new account in your Chart of Accounts"}
+              {editingAccount ? tr("updateAccountDetails") : tr("createANewAccountInYour")}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -267,11 +268,11 @@ export default function Accounts() {
                 name="nameEn"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.accountName} (English)</FormLabel>
+                    <FormLabel>{tr("english", { accountName: t.accountName })}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="Equipment"
+                        placeholder={tr("equipment")}
                         data-testid="input-account-name-en"
                       />
                     </FormControl>
@@ -284,7 +285,7 @@ export default function Accounts() {
                 name="nameAr"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.accountName} (Arabic)</FormLabel>
+                    <FormLabel>{tr("arabic", { accountName: t.accountName })}</FormLabel>
                     <FormControl>
                       <Input {...field} placeholder="معدات" data-testid="input-account-name-ar" />
                     </FormControl>
@@ -340,12 +341,12 @@ export default function Accounts() {
       </Dialog>
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Search accounts..."
+          placeholder={tr("searchAccounts")}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
+          className="ps-10"
           data-testid="input-search"
         />
       </div>
@@ -360,8 +361,8 @@ export default function Accounts() {
                 <TableRow>
                   <TableHead className="font-semibold">{t.accountName}</TableHead>
                   <TableHead className="font-semibold">{t.type}</TableHead>
-                  <TableHead className="text-center font-semibold">Status</TableHead>
-                  <TableHead className="text-center font-semibold">Actions</TableHead>
+                  <TableHead className="text-center font-semibold">{tr("status")}</TableHead>
+                  <TableHead className="text-center font-semibold">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -378,7 +379,7 @@ export default function Accounts() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant={account.isActive ? "default" : "secondary"}>
-                          {account.isActive ? "Active" : "Inactive"}
+                          {account.isActive ? tr("active") : tr("inactive")}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
@@ -389,8 +390,8 @@ export default function Accounts() {
                             onClick={() => handleEditAccount(account)}
                             data-testid={`button-edit-account-${account.id}`}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            <Edit className="w-4 h-4 me-2" />
+                            {tr("edit")}
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -405,25 +406,25 @@ export default function Accounts() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Account?</AlertDialogTitle>
+                                <AlertDialogTitle>{tr("deleteAccount")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to delete account{" "}
-                                  <strong>{account.nameEn}</strong>? This action cannot be undone.
+                                  {tr("areYouSureYouWantTo")}
+                                  <strong>{account.nameEn}</strong>
+                                  {tr("thisActionCannotBeUndone")}
                                   {account.isActive && (
                                     <span className="block mt-2 text-destructive font-medium">
-                                      Note: This account cannot be deleted if it has existing
-                                      transactions.
+                                      {tr("noteThisAccountCannotBeDeleted")}
                                     </span>
                                   )}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => handleDelete(account.id)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 >
-                                  Delete
+                                  {tr("delete")}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>

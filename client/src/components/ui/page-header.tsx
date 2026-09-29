@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { messages as pageMessages } from "./page-header.i18n";
 
 // Section eyebrows are passed as English literals across ~65 pages; mapping
 // them to i18n keys HERE gives every page Arabic section labels from one
@@ -53,6 +54,8 @@ export function PageHeader({
   className,
   testId,
 }: PageHeaderProps) {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const translatedEyebrow =
     eyebrow && EYEBROW_KEYS[eyebrow]
@@ -65,7 +68,7 @@ export function PageHeader({
           <Link href={backHref}>
             <span className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
               <ArrowLeft className="w-3.5 h-3.5" />
-              {backLabel ?? "Back"}
+              {backLabel ?? tr("back")}
             </span>
           </Link>
         )}

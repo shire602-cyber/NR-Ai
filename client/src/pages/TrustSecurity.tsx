@@ -13,71 +13,74 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { messages as pageMessages } from "./TrustSecurity.i18n";
 
-const controls = [
+const getControls = () => [
   {
     icon: Lock,
-    title: "Authenticated access",
-    text: "Customer workspaces require signed-in access, scoped company membership, and role-aware route checks.",
+    title: pageMessages.t("authenticatedAccess"),
+    text: pageMessages.t("customerWorkspacesRequireSignedInAccess"),
   },
   {
     icon: KeyRound,
-    title: "Secure sessions",
-    text: "Session handling uses httpOnly cookies, token revocation, CSRF protection for cookie requests, and startup secret validation.",
+    title: pageMessages.t("secureSessions"),
+    text: pageMessages.t("sessionHandlingUsesHttponlyCookiesToken"),
   },
   {
     icon: Database,
-    title: "Data protection controls",
-    text: "Sensitive operational settings are separated from the public app surface, with encrypted transport expected in production.",
+    title: pageMessages.t("dataProtectionControls"),
+    text: pageMessages.t("sensitiveOperationalSettingsAreSeparatedFrom"),
   },
   {
     icon: FileCheck,
-    title: "Auditability",
-    text: "Accounting actions are designed around traceable records, period locks, retention rules, and exportable supporting schedules.",
+    title: pageMessages.t("auditability"),
+    text: pageMessages.t("accountingActionsAreDesignedAroundTraceable"),
   },
 ];
 
-const roadmap = [
-  "Publish formal uptime and incident-response history after launch traffic is measurable.",
-  "Complete external penetration testing after the launch environment is frozen.",
-  "Prepare SOC 2 / ISO 27001 readiness evidence once operational controls have live history.",
-  "Expand data-processing and residency documentation for enterprise customers.",
+const getRoadmap = () => [
+  pageMessages.t("publishFormalUptimeAndIncidentResponse"),
+  pageMessages.t("completeExternalPenetrationTestingAfterThe"),
+  pageMessages.t("prepareSoc2Iso27001Readiness"),
+  pageMessages.t("expandDataProcessingAndResidencyDocumentation"),
 ];
 
-const launchEvidence = [
+const getLaunchEvidence = () => [
   {
-    title: "Release gates",
-    text: "Type-check, unit tests, API contract checks, dependency audit, and production build run before release promotion.",
+    title: pageMessages.t("releaseGates"),
+    text: pageMessages.t("typeCheckUnitTestsApiContract"),
   },
   {
-    title: "Production smoke",
-    text: "Read-only smoke checks cover liveness, readiness, deployed version, and OAuth-provider response on the production URL.",
+    title: pageMessages.t("productionSmoke"),
+    text: pageMessages.t("readOnlySmokeChecksCoverLiveness"),
   },
   {
-    title: "Protected-route crawl",
-    text: "Authenticated firm-route smoke is supported with dedicated smoke credentials and recorded as internal release evidence.",
+    title: pageMessages.t("protectedRouteCrawl"),
+    text: pageMessages.t("authenticatedFirmRouteSmokeIsSupported"),
   },
 ];
 
-const trustPosture = [
+const getTrustPosture = () => [
   {
     icon: Database,
-    title: "Backup and restore proof",
-    text: "The application backup flow creates checksum-verified snapshots, restore previews, transactional restores, and a pre-restore safety backup. Operational backup cadence is confirmed for each production environment.",
+    title: pageMessages.t("backupAndRestoreProof"),
+    text: pageMessages.t("theApplicationBackupFlowCreatesChecksum"),
   },
   {
     icon: ShieldCheck,
-    title: "Incident process",
-    text: "The response checklist covers containment, audit-log review, key/API-token rotation, recovery from backup when integrity is in question, and UAE PDPL notification review.",
+    title: pageMessages.t("incidentProcess"),
+    text: pageMessages.t("theResponseChecklistCoversContainmentAudit"),
   },
   {
     icon: UserCheck,
-    title: "Privacy and DPA posture",
-    text: "The Privacy Policy is public. Enterprise DPA and security-questionnaire review is handled during onboarding while a standard downloadable DPA pack is prepared.",
+    title: pageMessages.t("privacyAndDpaPosture"),
+    text: pageMessages.t("thePrivacyPolicyIsPublicEnterprise"),
   },
 ];
 
 export default function TrustSecurity() {
+  const tr = pageMessages.useT();
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-background/95 backdrop-blur">
@@ -87,17 +90,17 @@ export default function TrustSecurity() {
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <Link href="/pricing" className="hover:text-foreground">
-              Pricing
+              {tr("pricing")}
             </Link>
             <Link href="/help" className="hover:text-foreground">
-              Help
+              {tr("help")}
             </Link>
             <Link href="/migration-guides" className="hover:text-foreground">
-              Migrate
+              {tr("migrate")}
             </Link>
           </nav>
           <Link href="/register">
-            <Button size="sm">Start Free</Button>
+            <Button size="sm">{tr("startFree")}</Button>
           </Link>
         </div>
       </header>
@@ -106,40 +109,36 @@ export default function TrustSecurity() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-16 lg:py-20">
             <Badge variant="outline" className="mb-5">
-              Trust and Security
+              {tr("trustAndSecurity")}
             </Badge>
             <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
               <div>
                 <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl">
-                  Built for cautious UAE finance teams, with claims kept honest.
+                  {tr("builtForCautiousUaeFinanceTeams")}
                 </h1>
                 <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-                  Muhasib.ai protects accounting workflows with access controls, secure sessions,
-                  auditable records, and a clear roadmap toward third-party assurance. We do not
-                  claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete.
+                  {tr("muhasibAiProtectsAccountingWorkflowsWith")}
                 </p>
               </div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <ShieldCheck className="h-5 w-5 text-success" />
-                    Launch posture
+                    {tr("launchPosture")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
-                    <span>High/critical production dependency audit gate is part of release.</span>
+                    <span>{tr("highCriticalProductionDependencyAuditGate")}</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" />
-                    <span>
-                      Automated test, build, type-check, and migration-secret gates run locally.
-                    </span>
+                    <span>{tr("automatedTestBuildTypeCheckAnd")}</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <Clock className="mt-0.5 h-4 w-4 text-warning" />
-                    <span>External certifications are roadmap items, not current claims.</span>
+                    <span>{tr("externalCertificationsAreRoadmapItemsNot")}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -150,17 +149,15 @@ export default function TrustSecurity() {
         <section className="container mx-auto max-w-6xl px-4 py-14">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-2xl font-semibold">Launch verification evidence</h2>
+              <h2 className="text-2xl font-semibold">{tr("launchVerificationEvidence")}</h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Release evidence is kept practical: automated gates, production health checks, and
-                authenticated route crawls for protected firm workflows when smoke credentials are
-                available.
+                {tr("releaseEvidenceIsKeptPracticalAutomated")}
               </p>
             </div>
-            <Badge variant="outline">Internal release gate</Badge>
+            <Badge variant="outline">{tr("internalReleaseGate")}</Badge>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {launchEvidence.map((item) => (
+            {getLaunchEvidence().map((item) => (
               <div key={item.title} className="rounded-lg border p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <FileCheck className="h-4 w-4 text-primary" />
@@ -174,7 +171,7 @@ export default function TrustSecurity() {
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
           <div className="grid gap-4 md:grid-cols-2">
-            {controls.map((item) => {
+            {getControls().map((item) => {
               const Icon = item.icon;
               return (
                 <Card key={item.title}>
@@ -196,14 +193,13 @@ export default function TrustSecurity() {
         <section className="border-y bg-muted/30">
           <div className="container mx-auto max-w-6xl px-4 py-14">
             <div>
-              <h2 className="text-2xl font-semibold">Operational trust posture</h2>
+              <h2 className="text-2xl font-semibold">{tr("operationalTrustPosture")}</h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                The public posture separates working product controls from environment-specific
-                operating procedures and future certifications.
+                {tr("thePublicPostureSeparatesWorkingProduct")}
               </p>
             </div>
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {trustPosture.map((item) => {
+              {getTrustPosture().map((item) => {
                 const Icon = item.icon;
                 return (
                   <Card key={item.title}>
@@ -226,34 +222,30 @@ export default function TrustSecurity() {
         <section className="border-y bg-muted/30">
           <div className="container mx-auto grid max-w-6xl gap-8 px-4 py-14 lg:grid-cols-2">
             <div>
-              <h2 className="text-2xl font-semibold">Support commitments during launch</h2>
+              <h2 className="text-2xl font-semibold">{tr("supportCommitmentsDuringLaunch")}</h2>
               <p className="mt-3 text-muted-foreground">
-                Paid launch customers get guided onboarding, implementation checklists, and support
-                through the onboarding team. Formal enterprise support commitments are confirmed
-                during setup based on the active hosting and support configuration.
+                {tr("paidLaunchCustomersGetGuidedOnboarding")}
               </p>
             </div>
             <div className="rounded-lg border bg-background p-5">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <UserCheck className="h-4 w-4 text-primary" />
-                What customers can expect
+                {tr("whatCustomersCanExpect")}
               </div>
               <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-                <li>Guided company setup and chart-of-accounts review.</li>
-                <li>Migration support from mazeed, Wafeq, Zoho Books, or Excel exports.</li>
-                <li>Escalation path for accounting workflow blockers during onboarding.</li>
-                <li>
-                  Security and data-processing questions answered before enterprise activation.
-                </li>
+                <li>{tr("guidedCompanySetupAndChartOf")}</li>
+                <li>{tr("migrationSupportFromMazeedWafeqZoho")}</li>
+                <li>{tr("escalationPathForAccountingWorkflowBlockers")}</li>
+                <li>{tr("securityAndDataProcessingQuestionsAnswered")}</li>
               </ul>
             </div>
           </div>
         </section>
 
         <section className="container mx-auto max-w-6xl px-4 py-14">
-          <h2 className="text-2xl font-semibold">Assurance roadmap</h2>
+          <h2 className="text-2xl font-semibold">{tr("assuranceRoadmap")}</h2>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {roadmap.map((item) => (
+            {getRoadmap().map((item) => (
               <div
                 key={item}
                 className="flex gap-3 rounded-lg border p-4 text-sm text-muted-foreground"
@@ -266,15 +258,15 @@ export default function TrustSecurity() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/help">
               <Button>
-                Visit Help Center
-                <ArrowRight className="ml-2 h-4 w-4" />
+                {tr("visitHelpCenter")}
+                <ArrowRight className="ms-2 h-4 w-4" />
               </Button>
             </Link>
             <Link href="/migration-guides">
-              <Button variant="outline">Migration Guides</Button>
+              <Button variant="outline">{tr("migrationGuides")}</Button>
             </Link>
             <Link href="/privacy">
-              <Button variant="outline">Privacy Policy</Button>
+              <Button variant="outline">{tr("privacyPolicy")}</Button>
             </Link>
           </div>
         </section>

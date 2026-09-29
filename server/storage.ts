@@ -464,7 +464,7 @@ export interface IStorage {
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; excludeClosing?: boolean }
   ): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
     companyId: string
@@ -1823,15 +1823,28 @@ export class DatabaseStorage implements IStorage {
 
   async getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; excludeClosing?: boolean }
   ): Promise<JournalEntry[]> {
     // S3: optional pagination. Default (no opts) returns all rows — the many
     // internal callers (financial statements, reports, CT) rely on the full set;
     // the list endpoint passes {limit, offset} to cap the payload.
+    //
+    // `excludeClosing` leaves out financial-year closing entries (and their reversals).
+    // Period profit-and-loss style reports need it: the closing entry zeroes every income
+    // and expense account on the last day of the year, so without it a closed year would
+    // report no profit. Balance-sheet style callers keep the default: the closing entry is
+    // how retained earnings carry forward.
     let q: any = db
       .select()
       .from(journalEntries)
-      .where(eq(journalEntries.companyId, companyId))
+      .where(
+        opts?.excludeClosing
+          ? and(
+              eq(journalEntries.companyId, companyId),
+              notInArray(journalEntries.source, ["year_end_close", "year_end_close_reversal"])
+            )
+          : eq(journalEntries.companyId, companyId)
+      )
       .orderBy(desc(journalEntries.date));
     if (opts?.limit != null) q = q.limit(opts.limit);
     if (opts?.offset != null) q = q.offset(opts.offset);
@@ -4206,7 +4219,8 @@ export class DatabaseStorage implements IStorage {
           lt(corporateTaxReturns.taxPeriodEnd, periodStart)
         )
       )
-      .orderBy(desc(corporateTaxReturns.taxPeriodEnd))
+      // An amendment supersedes the original of the same period (newest first).
+      .orderBy(desc(corporateTaxReturns.taxPeriodEnd), desc(corporateTaxReturns.createdAt))
       .limit(2);
     const prior = rows.find((r: { id: string }) => r.id !== excludeReturnId);
     return Number(prior?.lossCarriedForward ?? 0) || 0;

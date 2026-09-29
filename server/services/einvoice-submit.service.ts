@@ -6,6 +6,7 @@
 
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { validateForEInvoicing, generateEInvoiceXML, type EInvoiceIssue } from "./einvoice.service";
+import type { EInvoiceContext } from "./einvoice-context";
 import { assertEInvoiceTransition, type EInvoiceStatus } from "./einvoice-status";
 import type { EInvoiceProvider } from "./einvoice-provider";
 
@@ -27,9 +28,10 @@ type SubmitErr = { ok: false; status: number; code: string; message: string; iss
 export function buildEInvoiceDocument(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company
+  company: Company,
+  context?: EInvoiceContext
 ): { ok: true; xml: string; uuid: string; hash: string } | { ok: false; issues: EInvoiceIssue[] } {
-  const issues = validateForEInvoicing(invoice, lines, company);
+  const issues = validateForEInvoicing(invoice, lines, company, context?.validation);
   if (issues.length > 0) return { ok: false, issues };
   if (invoice.einvoiceXml && invoice.einvoiceUuid && invoice.einvoiceHash) {
     return { ok: true, xml: invoice.einvoiceXml, uuid: invoice.einvoiceUuid, hash: invoice.einvoiceHash };
@@ -37,7 +39,7 @@ export function buildEInvoiceDocument(
   const customer = invoice.customerName
     ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
     : undefined;
-  const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
+  const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer, context?.xml);
   return { ok: true, xml, uuid, hash };
 }
 
@@ -46,14 +48,15 @@ export async function submitEInvoice(args: {
   lines: InvoiceLine[];
   company: Company;
   provider: EInvoiceProvider;
+  context?: EInvoiceContext;
 }): Promise<SubmitOk | SubmitErr> {
-  const { invoice, lines, company, provider } = args;
+  const { invoice, lines, company, provider, context } = args;
   const current = (invoice.einvoiceStatus as string) || "not_generated";
   if (current === "accepted") {
     return { ok: false, status: 409, code: "EINVOICE_ALREADY_ACCEPTED", message: "This e-invoice has already been cleared." };
   }
 
-  const built = buildEInvoiceDocument(invoice, lines, company);
+  const built = buildEInvoiceDocument(invoice, lines, company, context);
   if (!built.ok) {
     return { ok: false, status: 422, code: "EINVOICE_VALIDATION_FAILED", message: "Invoice is not e-invoicing ready", issues: built.issues };
   }

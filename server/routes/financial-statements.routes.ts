@@ -66,7 +66,7 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       // Fetch all posted journal entries for this company
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const filteredEntries = entries.filter(
         (e) => e.status === "posted" && new Date(e.date) >= startDate && new Date(e.date) <= endDate
       );
@@ -317,7 +317,7 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       // Fetch posted entries in date range
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const filteredEntries = entries.filter(
         (e) => e.status === "posted" && new Date(e.date) >= startDate && new Date(e.date) <= endDate
       );

@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema";
+import { messages as pageMessages } from "./DocumentChasing.i18n";
 
 // ── Types echoed from server response shape ───────────────────────────
 interface Requirement {
@@ -111,6 +112,8 @@ function levelBadgeColor(level: string) {
 }
 
 export default function DocumentChasing() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const [showAddRequirement, setShowAddRequirement] = useState(false);
@@ -148,7 +151,7 @@ export default function DocumentChasing() {
         }
       ),
     onSuccess: (data: { whatsappLink?: string | null }) => {
-      toast({ title: "Chase recorded", description: "Marked as sent." });
+      toast({ title: tr("chaseRecorded"), description: tr("markedAsSent") });
       if (data?.whatsappLink) window.open(data.whatsappLink, "_blank", "noopener,noreferrer");
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-chases", "queue"],
@@ -162,14 +165,21 @@ export default function DocumentChasing() {
       setPreviewItem(null);
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message ?? "Send failed", variant: "destructive" }),
+      toast({
+        title: tr("failed"),
+        description: e.message ?? tr("sendFailed"),
+        variant: "destructive",
+      }),
   });
 
   const bulkSendMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/document-chases/bulk-send`, {}),
     onSuccess: (data: { sentCount: number }) => {
-      toast({ title: "Bulk chase complete", description: `Sent ${data.sentCount} reminders.` });
+      toast({
+        title: tr("bulkChaseComplete"),
+        description: tr("sentReminders", { sentCount: data.sentCount }),
+      });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-chases", "queue"],
       });
@@ -178,7 +188,7 @@ export default function DocumentChasing() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("failed"), description: e.message, variant: "destructive" }),
   });
 
   const markReceivedMutation = useMutation({
@@ -187,7 +197,7 @@ export default function DocumentChasing() {
         status: "received",
       }),
     onSuccess: () => {
-      toast({ title: "Marked received" });
+      toast({ title: tr("markedReceived") });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-requirements"],
       });
@@ -196,7 +206,7 @@ export default function DocumentChasing() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("failed"), description: e.message, variant: "destructive" }),
   });
 
   const requirements = requirementsQuery.data ?? [];
@@ -231,7 +241,7 @@ export default function DocumentChasing() {
   if (!companyId) {
     return (
       <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
-        No company selected.
+        {tr("noCompanySelected")}
       </div>
     );
   }
@@ -244,9 +254,9 @@ export default function DocumentChasing() {
         className="m-6 rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
         data-testid="document-chasing-error"
       >
-        <div className="font-medium mb-1">Failed to load document chasing data.</div>
+        <div className="font-medium mb-1">{tr("failedToLoadDocumentChasingData")}</div>
         <div className="text-muted-foreground">
-          {err instanceof Error ? err.message : "An unexpected error occurred."}
+          {err instanceof Error ? err.message : tr("anUnexpectedErrorOccurred")}
         </div>
         <Button
           variant="outline"
@@ -257,7 +267,7 @@ export default function DocumentChasing() {
             queueQuery.refetch();
           }}
         >
-          Retry
+          {tr("retry")}
         </Button>
       </div>
     );
@@ -266,9 +276,9 @@ export default function DocumentChasing() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="page-document-chasing">
       <PageHeader
-        eyebrow="Compliance"
-        title="Document Chasing Autopilot"
-        description="Track missing UAE compliance documents, escalate chase reminders, and keep deadlines visible."
+        eyebrow={tr("compliance")}
+        title={tr("documentChasingAutopilot")}
+        description={tr("trackMissingUaeComplianceDocumentsEscalate")}
         actions={
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -277,25 +287,19 @@ export default function DocumentChasing() {
                 disabled={queue.length === 0 || bulkSendMutation.isPending}
                 data-testid="btn-bulk-send"
               >
-                <Send className="w-4 h-4 mr-2" />
-                Send all ({queue.length})
+                <Send className="w-4 h-4 me-2" />
+                {tr("sendAll", { queueCount: queue.length })}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Send {queue.length} chase reminder{queue.length === 1 ? "" : "s"}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will record a chase event for every queued requirement and may trigger
-                  outbound WhatsApp/email messages depending on your channel configuration. This
-                  action can&apos;t be undone.
-                </AlertDialogDescription>
+                <AlertDialogTitle>{tr.plural("sendChaseReminders", queue.length)}</AlertDialogTitle>
+                <AlertDialogDescription>{tr("thisWillRecordAChaseEvent")}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                 <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
-                  Send all
+                  {tr("sendAll2")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -306,24 +310,24 @@ export default function DocumentChasing() {
       {/* Top stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
-          title="Missing Documents"
+          title={tr("missingDocuments")}
           value={stats.total}
           icon={<FileText className="w-5 h-5 text-info" />}
         />
         <StatCard
-          title="Overdue"
+          title={tr("overdue")}
           value={stats.overdue}
           icon={<AlertTriangle className="w-5 h-5 text-destructive" />}
           tone={stats.overdue > 0 ? "danger" : "normal"}
         />
         <StatCard
-          title="Due in 14 days"
+          title={tr("dueIn14Days")}
           value={stats.dueSoon}
           icon={<CalendarDays className="w-5 h-5 text-warning" />}
           tone={stats.dueSoon > 0 ? "warning" : "normal"}
         />
         <StatCard
-          title="Response Rate"
+          title={tr("responseRate")}
           value={
             effectivenessQuery.data
               ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
@@ -335,10 +339,10 @@ export default function DocumentChasing() {
 
       <Tabs defaultValue="missing" className="w-full">
         <TabsList>
-          <TabsTrigger value="missing">Missing</TabsTrigger>
-          <TabsTrigger value="queue">Chase queue ({queue.length})</TabsTrigger>
-          <TabsTrigger value="calendar">Compliance calendar</TabsTrigger>
-          <TabsTrigger value="metrics">Effectiveness</TabsTrigger>
+          <TabsTrigger value="missing">{tr("missing")}</TabsTrigger>
+          <TabsTrigger value="queue">{tr("chaseQueue", { queueCount: queue.length })}</TabsTrigger>
+          <TabsTrigger value="calendar">{tr("complianceCalendar")}</TabsTrigger>
+          <TabsTrigger value="metrics">{tr("effectiveness")}</TabsTrigger>
         </TabsList>
 
         {/* Missing documents */}
@@ -346,11 +350,11 @@ export default function DocumentChasing() {
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle>Missing Documents</CardTitle>
-                <CardDescription>What this client still owes you.</CardDescription>
+                <CardTitle>{tr("missingDocuments")}</CardTitle>
+                <CardDescription>{tr("whatThisClientStillOwesYou")}</CardDescription>
               </div>
               <Button onClick={() => setShowAddRequirement(true)} data-testid="btn-add-requirement">
-                <Plus className="w-4 h-4 mr-2" /> Add requirement
+                <Plus className="w-4 h-4 me-2" /> {tr("addRequirement")}
               </Button>
             </CardHeader>
             <CardContent>
@@ -358,7 +362,7 @@ export default function DocumentChasing() {
                 <Skeleton className="h-24 w-full" />
               ) : missingDocs.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
-                  Nothing missing — all caught up.
+                  {tr("nothingMissingAllCaughtUp")}
                 </div>
               ) : (
                 <div className="divide-y">
@@ -380,11 +384,15 @@ export default function DocumentChasing() {
                             </div>
                           )}
                         </div>
-                        <div className="text-sm text-muted-foreground">Due {format(due, "PP")}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {tr("due", { format: format(due, "PP") })}
+                        </div>
                         {isOverdue ? (
-                          <Badge variant="destructive">{daysFromDue}d overdue</Badge>
+                          <Badge variant="destructive">{tr("dOverdue", { daysFromDue })}</Badge>
                         ) : (
-                          <Badge variant="secondary">in {Math.abs(daysFromDue)}d</Badge>
+                          <Badge variant="secondary">
+                            {tr("inD", { abs: Math.abs(daysFromDue) })}
+                          </Badge>
                         )}
                         <Button
                           variant="outline"
@@ -392,7 +400,7 @@ export default function DocumentChasing() {
                           onClick={() => markReceivedMutation.mutate(r.id)}
                           data-testid="btn-mark-received"
                         >
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> Received
+                          <CheckCircle2 className="w-4 h-4 me-1" /> {tr("received")}
                         </Button>
                       </div>
                     );
@@ -407,17 +415,15 @@ export default function DocumentChasing() {
         <TabsContent value="queue">
           <Card>
             <CardHeader>
-              <CardTitle>Chase Queue</CardTitle>
-              <CardDescription>
-                Auto-built from due dates and recent send history. Preview a message before sending.
-              </CardDescription>
+              <CardTitle>{tr("chaseQueue2")}</CardTitle>
+              <CardDescription>{tr("autoBuiltFromDueDatesAnd")}</CardDescription>
             </CardHeader>
             <CardContent>
               {queueQuery.isLoading ? (
                 <Skeleton className="h-24 w-full" />
               ) : queue.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
-                  No pending chases right now.
+                  {tr("noPendingChasesRightNow")}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -430,8 +436,10 @@ export default function DocumentChasing() {
                       <div className="flex-1 min-w-0">
                         <div className="font-medium">{humanize(item.requirement.documentType)}</div>
                         <div className="text-sm text-muted-foreground">
-                          Due {format(parseISO(item.requirement.dueDate), "PP")} ·{" "}
-                          {item.daysOverdue > 0 ? `${item.daysOverdue}d overdue` : "due now"}
+                          {tr("due2", { format: format(parseISO(item.requirement.dueDate), "PP") })}
+                          {item.daysOverdue > 0
+                            ? tr("dOverdue2", { daysOverdue: item.daysOverdue })
+                            : tr("dueNow")}
                         </div>
                       </div>
                       <Badge className={levelBadgeColor(item.nextLevel)}>
@@ -443,7 +451,7 @@ export default function DocumentChasing() {
                         onClick={() => setPreviewItem(item)}
                         data-testid="btn-preview-chase"
                       >
-                        Preview
+                        {tr("preview")}
                       </Button>
                       <Button
                         size="sm"
@@ -456,7 +464,7 @@ export default function DocumentChasing() {
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
                       >
-                        <SiWhatsapp className="w-4 h-4 mr-2" /> Send
+                        <SiWhatsapp className="w-4 h-4 me-2" /> {tr("send")}
                       </Button>
                     </div>
                   ))}
@@ -471,13 +479,11 @@ export default function DocumentChasing() {
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle>Compliance Calendar</CardTitle>
-                <CardDescription>
-                  UAE deadlines (trade licence, visas, FTA filings, ESR).
-                </CardDescription>
+                <CardTitle>{tr("complianceCalendar2")}</CardTitle>
+                <CardDescription>{tr("uaeDeadlinesTradeLicenceVisasFta")}</CardDescription>
               </div>
               <Button onClick={() => setShowAddEvent(true)} data-testid="btn-add-event">
-                <Plus className="w-4 h-4 mr-2" /> Add deadline
+                <Plus className="w-4 h-4 me-2" /> {tr("addDeadline")}
               </Button>
             </CardHeader>
             <CardContent>
@@ -485,7 +491,7 @@ export default function DocumentChasing() {
                 <Skeleton className="h-24 w-full" />
               ) : events.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
-                  No deadlines tracked yet.
+                  {tr("noDeadlinesTrackedYet")}
                 </div>
               ) : (
                 <div className="divide-y">
@@ -506,11 +512,15 @@ export default function DocumentChasing() {
                         </div>
                         <div className="text-sm text-muted-foreground">{format(ed, "PP")}</div>
                         {dUntil < 0 ? (
-                          <Badge variant="destructive">{Math.abs(dUntil)}d overdue</Badge>
+                          <Badge variant="destructive">
+                            {tr("dOverdue3", { abs: Math.abs(dUntil) })}
+                          </Badge>
                         ) : dUntil <= 30 ? (
-                          <Badge className="bg-warning-subtle text-warning-subtle-foreground">in {dUntil}d</Badge>
+                          <Badge className="bg-warning-subtle text-warning-subtle-foreground">
+                            {tr("inD2", { dUntil })}
+                          </Badge>
                         ) : (
-                          <Badge variant="secondary">in {dUntil}d</Badge>
+                          <Badge variant="secondary">{tr("inD2", { dUntil })}</Badge>
                         )}
                       </div>
                     );
@@ -525,21 +535,24 @@ export default function DocumentChasing() {
         <TabsContent value="metrics">
           <Card>
             <CardHeader>
-              <CardTitle>Effectiveness</CardTitle>
-              <CardDescription>How well is the chase pipeline performing?</CardDescription>
+              <CardTitle>{tr("effectiveness")}</CardTitle>
+              <CardDescription>{tr("howWellIsTheChasePipeline")}</CardDescription>
             </CardHeader>
             <CardContent>
               {effectivenessQuery.isLoading ? (
                 <Skeleton className="h-24 w-full" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Metric label="Total chased" value={effectivenessQuery.data?.totalChased ?? 0} />
                   <Metric
-                    label="Total received"
+                    label={tr("totalChased")}
+                    value={effectivenessQuery.data?.totalChased ?? 0}
+                  />
+                  <Metric
+                    label={tr("totalReceived")}
                     value={effectivenessQuery.data?.totalReceived ?? 0}
                   />
                   <Metric
-                    label="Response rate"
+                    label={tr("responseRate2")}
                     value={
                       effectivenessQuery.data
                         ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
@@ -547,7 +560,7 @@ export default function DocumentChasing() {
                     }
                   />
                   <Metric
-                    label="Avg time to upload"
+                    label={tr("avgTimeToUpload")}
                     value={
                       effectivenessQuery.data?.avgDaysToUpload != null
                         ? `${effectivenessQuery.data.avgDaysToUpload.toFixed(1)} days`
@@ -565,10 +578,8 @@ export default function DocumentChasing() {
       <Dialog open={!!previewItem} onOpenChange={(o) => !o && setPreviewItem(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Preview chase message</DialogTitle>
-            <DialogDescription>
-              Edit the message if you like. Sending opens WhatsApp and records the chase.
-            </DialogDescription>
+            <DialogTitle>{tr("previewChaseMessage")}</DialogTitle>
+            <DialogDescription>{tr("editTheMessageIfYouLike")}</DialogDescription>
           </DialogHeader>
           {previewItem && (
             <PreviewBody
@@ -645,6 +656,8 @@ function PreviewBody(props: {
   onSend: (msg: string) => void;
   sending: boolean;
 }) {
+  const tr = pageMessages.useT();
+
   const [draft, setDraft] = useState(props.item.message);
   return (
     <div className="space-y-4">
@@ -653,18 +666,20 @@ function PreviewBody(props: {
           {humanize(props.item.nextLevel)}
         </Badge>
         <span className="text-sm text-muted-foreground">
-          {humanize(props.item.requirement.documentType)} · due{" "}
-          {format(parseISO(props.item.requirement.dueDate), "PP")}
+          {tr("due3", {
+            humanize: humanize(props.item.requirement.documentType),
+            format: format(parseISO(props.item.requirement.dueDate), "PP"),
+          })}
         </span>
       </div>
-      <Label>Message</Label>
+      <Label>{tr("message")}</Label>
       <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={10} />
       <DialogFooter>
         <Button variant="outline" onClick={props.onCancel}>
-          Cancel
+          {tr("cancel")}
         </Button>
         <Button onClick={() => props.onSend(draft)} disabled={props.sending}>
-          <SiWhatsapp className="w-4 h-4 mr-2" /> Send via WhatsApp
+          <SiWhatsapp className="w-4 h-4 me-2" /> {tr("sendViaWhatsapp")}
         </Button>
       </DialogFooter>
     </div>
@@ -672,6 +687,8 @@ function PreviewBody(props: {
 }
 
 function AddRequirementDialog(props: { open: boolean; onClose: () => void; companyId: string }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [form, setForm] = useState({
     documentType: "trade_license",
@@ -691,7 +708,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
         recurringIntervalDays: data.isRecurring ? data.recurringIntervalDays : null,
       }),
     onSuccess: () => {
-      toast({ title: "Requirement added" });
+      toast({ title: tr("requirementAdded") });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", props.companyId, "document-requirements"],
       });
@@ -701,19 +718,19 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
       props.onClose();
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("failed"), description: e.message, variant: "destructive" }),
   });
 
   return (
     <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New document requirement</DialogTitle>
-          <DialogDescription>What does this client owe you?</DialogDescription>
+          <DialogTitle>{tr("newDocumentRequirement")}</DialogTitle>
+          <DialogDescription>{tr("whatDoesThisClientOweYou")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="docType">Document type</Label>
+            <Label htmlFor="docType">{tr("documentType")}</Label>
             <Select
               value={form.documentType}
               onValueChange={(v) => setForm((f) => ({ ...f, documentType: v }))}
@@ -731,16 +748,16 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
             </Select>
           </div>
           <div>
-            <Label htmlFor="docDescription">Description (optional)</Label>
+            <Label htmlFor="docDescription">{tr("descriptionOptional")}</Label>
             <Input
               id="docDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Q1 2026 bank statement"
+              placeholder={tr("q12026BankStatement")}
             />
           </div>
           <div>
-            <Label htmlFor="docDueDate">Due date</Label>
+            <Label htmlFor="docDueDate">{tr("dueDate")}</Label>
             <Input
               id="docDueDate"
               type="date"
@@ -757,7 +774,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
               }
             />
             <Label htmlFor="isRecurring" className="cursor-pointer">
-              Recurring
+              {tr("recurring")}
             </Label>
             {form.isRecurring && (
               <>
@@ -772,22 +789,22 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                     }))
                   }
                   className="w-32"
-                  aria-label="Recurring interval in days"
+                  aria-label={tr("recurringIntervalInDays")}
                 />
-                <span className="text-sm text-muted-foreground">days</span>
+                <span className="text-sm text-muted-foreground">{tr("days")}</span>
               </>
             )}
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={props.onClose}>
-            Cancel
+            {tr("cancel")}
           </Button>
           <Button
             onClick={() => mutation.mutate(form)}
             disabled={mutation.isPending || !form.dueDate}
           >
-            Add
+            {tr("add")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -800,6 +817,8 @@ function AddComplianceEventDialog(props: {
   onClose: () => void;
   companyId: string;
 }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [form, setForm] = useState({
     eventType: "trade_license_renewal",
@@ -816,26 +835,26 @@ function AddComplianceEventDialog(props: {
         reminderDays: [30, 14, 7, 0],
       }),
     onSuccess: () => {
-      toast({ title: "Deadline added" });
+      toast({ title: tr("deadlineAdded") });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", props.companyId, "compliance-calendar"],
       });
       props.onClose();
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({ title: tr("failed"), description: e.message, variant: "destructive" }),
   });
 
   return (
     <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New compliance deadline</DialogTitle>
-          <DialogDescription>UAE compliance event to track and remind on.</DialogDescription>
+          <DialogTitle>{tr("newComplianceDeadline")}</DialogTitle>
+          <DialogDescription>{tr("uaeComplianceEventToTrackAnd")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="eventType">Event type</Label>
+            <Label htmlFor="eventType">{tr("eventType")}</Label>
             <Select
               value={form.eventType}
               onValueChange={(v) => setForm((f) => ({ ...f, eventType: v }))}
@@ -853,16 +872,16 @@ function AddComplianceEventDialog(props: {
             </Select>
           </div>
           <div>
-            <Label htmlFor="eventDescription">Description</Label>
+            <Label htmlFor="eventDescription">{tr("description")}</Label>
             <Input
               id="eventDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Trade licence renewal at Dubai Economy"
+              placeholder={tr("tradeLicenceRenewalAtDubaiEconomy")}
             />
           </div>
           <div>
-            <Label htmlFor="eventDate">Date</Label>
+            <Label htmlFor="eventDate">{tr("date")}</Label>
             <Input
               id="eventDate"
               type="date"
@@ -873,13 +892,13 @@ function AddComplianceEventDialog(props: {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={props.onClose}>
-            Cancel
+            {tr("cancel")}
           </Button>
           <Button
             onClick={() => mutation.mutate(form)}
             disabled={mutation.isPending || !form.description.trim() || !form.eventDate}
           >
-            Add
+            {tr("add")}
           </Button>
         </DialogFooter>
       </DialogContent>

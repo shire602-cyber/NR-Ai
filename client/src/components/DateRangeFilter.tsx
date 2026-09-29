@@ -24,6 +24,7 @@ import {
 import { CalendarIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { messages as pageMessages } from "./DateRangeFilter.i18n";
 
 interface DateRange {
   from: Date | undefined;
@@ -37,18 +38,20 @@ interface DateRangeFilterProps {
 }
 
 export function DateRangeFilter({ dateRange, onDateRangeChange, className }: DateRangeFilterProps) {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
   const [preset, setPreset] = useState<string>("");
 
   const presetRanges = [
-    { label: tt.thisMonth ?? "This Month", value: "this-month" },
-    { label: tt.lastMonth ?? "Last Month", value: "last-month" },
-    { label: tt.thisQuarter ?? "This Quarter", value: "this-quarter" },
-    { label: tt.lastQuarter ?? "Last Quarter", value: "last-quarter" },
-    { label: tt.thisYear ?? "This Year", value: "this-year" },
-    { label: tt.lastYear ?? "Last Year", value: "last-year" },
-    { label: tt.custom ?? "Custom", value: "custom" },
+    { label: tt.thisMonth ?? tr("thisMonth"), value: "this-month" },
+    { label: tt.lastMonth ?? tr("lastMonth"), value: "last-month" },
+    { label: tt.thisQuarter ?? tr("thisQuarter"), value: "this-quarter" },
+    { label: tt.lastQuarter ?? tr("lastQuarter"), value: "last-quarter" },
+    { label: tt.thisYear ?? tr("thisYear"), value: "this-year" },
+    { label: tt.lastYear ?? tr("lastYear"), value: "last-year" },
+    { label: tt.custom ?? tr("custom"), value: "custom" },
   ];
 
   const handlePresetChange = (value: string) => {
@@ -96,7 +99,7 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <Select value={preset} onValueChange={handlePresetChange}>
         <SelectTrigger className="w-[140px]" data-testid="select-date-preset">
-          <SelectValue placeholder={tt.dateRange ?? "Date range"} />
+          <SelectValue placeholder={tt.dateRange ?? tr("dateRange")} />
         </SelectTrigger>
         <SelectContent>
           {presetRanges.map((range) => (
@@ -112,15 +115,15 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
           <Button
             variant="outline"
             className={cn(
-              "justify-start text-left font-normal",
+              "justify-start text-start font-normal",
               !dateRange.from && "text-muted-foreground"
             )}
             data-testid="button-date-from"
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
+            <CalendarIcon className="me-2 h-4 w-4" />
             {dateRange.from
               ? format(dateRange.from, "MMM dd, yyyy")
-              : (tt.startDate ?? "Start date")}
+              : (tt.startDate ?? tr("startDate"))}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
@@ -136,20 +139,20 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
         </PopoverContent>
       </Popover>
 
-      <span className="text-muted-foreground">{tt.dateTo ?? "to"}</span>
+      <span className="text-muted-foreground">{tt.dateTo ?? tr("to")}</span>
 
       <Popover>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             className={cn(
-              "justify-start text-left font-normal",
+              "justify-start text-start font-normal",
               !dateRange.to && "text-muted-foreground"
             )}
             data-testid="button-date-to"
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : (tt.endDate ?? "End date")}
+            <CalendarIcon className="me-2 h-4 w-4" />
+            {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : (tt.endDate ?? tr("endDate"))}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">

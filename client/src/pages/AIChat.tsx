@@ -36,6 +36,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./AIChat.i18n";
 
 interface Message {
   id: string;
@@ -56,6 +57,8 @@ interface Conversation {
 }
 
 export default function AIChat() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -238,16 +241,16 @@ export default function AIChat() {
     onError: (error: any) => {
       if (error.name === "AbortError") {
         toast({
-          title: "Request cancelled",
-          description: "The request was cancelled.",
+          title: tr("requestCancelled"),
+          description: tr("theRequestWasCancelled"),
         });
         // For cancelled requests, remove the streaming message
         setMessages((prev) => prev.filter((msg) => msg.streaming !== true));
       } else {
         toast({
           variant: "destructive",
-          title: "Error",
-          description: error?.message || "Failed to get response",
+          title: tr("error"),
+          description: error?.message || tr("failedToGetResponse"),
         });
         // Preserve partial content but mark message as error and stop streaming
         setMessages((prev) =>
@@ -296,8 +299,8 @@ export default function AIChat() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to get response",
+        title: tr("error"),
+        description: error?.message || tr("failedToGetResponse"),
       });
     },
   });
@@ -361,25 +364,23 @@ export default function AIChat() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle>AI Assistant</CardTitle>
-                <Badge variant="outline" className="ml-2">
+                <CardTitle>{tr("aiAssistant")}</CardTitle>
+                <Badge variant="outline" className="ms-2">
                   {model}
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
-                  <History className="h-4 w-4 mr-2" />
-                  History
+                  <History className="h-4 w-4 me-2" />
+                  {tr("history")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowSettings(!showSettings)}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
+                  <Settings className="h-4 w-4 me-2" />
+                  {tr("settings")}
                 </Button>
               </div>
             </div>
-            <CardDescription>
-              Ask questions about your accounting and financial management
-            </CardDescription>
+            <CardDescription>{tr("askQuestionsAboutYourAccountingAnd")}</CardDescription>
           </CardHeader>
 
           {/* Settings Panel */}
@@ -387,23 +388,25 @@ export default function AIChat() {
             <div className="border-b p-4 bg-muted/50 animate-slide-down">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="model">Model</Label>
+                  <Label htmlFor="model">{tr("model")}</Label>
                   <Select value={model} onValueChange={(v: any) => setModel(v)}>
                     <SelectTrigger className="w-48">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o-mini">GPT-4o Mini (Recommended)</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo (Legacy fallback)</SelectItem>
+                      <SelectItem value="gpt-4o-mini">{tr("gpt4oMiniRecommended")}</SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">
+                        {tr("gpt35TurboLegacyFallback")}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="streaming">Streaming Response</Label>
+                  <Label htmlFor="streaming">{tr("streamingResponse")}</Label>
                   <Switch id="streaming" checked={streaming} onCheckedChange={setStreaming} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="custom-prompt">Custom System Prompt</Label>
+                  <Label htmlFor="custom-prompt">{tr("customSystemPrompt")}</Label>
                   <Switch
                     id="custom-prompt"
                     checked={useCustomSystemPrompt}
@@ -412,12 +415,12 @@ export default function AIChat() {
                 </div>
                 {useCustomSystemPrompt && (
                   <div>
-                    <Label htmlFor="system-prompt">System Prompt</Label>
+                    <Label htmlFor="system-prompt">{tr("systemPrompt")}</Label>
                     <Textarea
                       id="system-prompt"
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Enter custom system prompt..."
+                      placeholder={tr("enterCustomSystemPrompt")}
                       rows={3}
                       className="mt-2"
                     />
@@ -433,7 +436,7 @@ export default function AIChat() {
               {messages.length === 0 && (
                 <div className="text-center py-12 text-muted-foreground animate-fade-in">
                   <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Start a conversation by asking a question</p>
+                  <p>{tr("startAConversationByAskingA")}</p>
                 </div>
               )}
               {messages.map((message) => (
@@ -462,7 +465,7 @@ export default function AIChat() {
                     {message.error && (
                       <div className="flex items-center gap-2 mb-2 text-destructive text-sm font-medium">
                         <X className="h-4 w-4" />
-                        Error occurred
+                        {tr("errorOccurred")}
                       </div>
                     )}
                     <div className="whitespace-pre-wrap break-words">
@@ -470,7 +473,7 @@ export default function AIChat() {
                         (message.streaming && (
                           <span className="inline-flex items-center gap-1">
                             <Loader2 className="h-3 w-3 animate-spin" />
-                            Thinking...
+                            {tr("thinking")}
                           </span>
                         ))}
                     </div>
@@ -504,7 +507,7 @@ export default function AIChat() {
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask a question..."
+                  placeholder={tr("askAQuestion")}
                   rows={2}
                   className="resize-none"
                   disabled={isPending}
@@ -544,7 +547,7 @@ export default function AIChat() {
           <Card className="w-full lg:w-80 flex-shrink-0 animate-slide-in-right">
             <CardHeader className="flex-shrink-0 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle>History</CardTitle>
+                <CardTitle>{tr("history")}</CardTitle>
                 <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>
                   <X className="h-4 w-4" />
                 </Button>
@@ -555,7 +558,7 @@ export default function AIChat() {
                 history.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No conversation history</p>
+                    <p>{tr("noConversationHistory")}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">

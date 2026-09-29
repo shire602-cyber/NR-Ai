@@ -25,15 +25,17 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from "lucide-react";
+import { messages as pageMessages } from "./ResetPassword.i18n";
+import { LanguageToggle } from "@/components/LanguageToggle";
 
 const resetSchema = z
   .object({
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    confirmPassword: z.string().min(1, "Please confirm your password"),
+    password: z.string().min(8, pageMessages.marker("passwordMustBeAtLeast8")),
+    confirmPassword: z.string().min(1, pageMessages.marker("pleaseConfirmYourPassword")),
   })
   .refine((data) => data.password === data.confirmPassword, {
     path: ["confirmPassword"],
-    message: "Passwords do not match",
+    message: pageMessages.marker("passwordsDoNotMatch"),
   });
 
 type ResetFormData = z.infer<typeof resetSchema>;
@@ -45,6 +47,8 @@ function getTokenFromUrl(): string {
 }
 
 export default function ResetPassword() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -60,8 +64,8 @@ export default function ResetPassword() {
     if (!token) {
       toast({
         variant: "destructive",
-        title: "Invalid reset link",
-        description: "This link is missing its token. Request a new one.",
+        title: tr("invalidResetLink"),
+        description: tr("thisLinkIsMissingItsToken"),
       });
     }
   }, [token, toast]);
@@ -81,16 +85,16 @@ export default function ResetPassword() {
       }
       setDone(true);
       toast({
-        title: "Password reset",
-        description: "You can now sign in with your new password.",
+        title: tr("passwordReset"),
+        description: tr("youCanNowSignInWith"),
       });
       // Redirect to login after a brief moment so the user sees confirmation.
       setTimeout(() => setLocation("/login"), 1500);
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Reset failed",
-        description: error?.message || "Please try again or request a new link.",
+        title: tr("resetFailed"),
+        description: error?.message || tr("pleaseTryAgainOrRequestA"),
       });
     } finally {
       setIsLoading(false);
@@ -99,24 +103,25 @@ export default function ResetPassword() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
+      <LanguageToggle floating />
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
+        <div className="absolute top-0 start-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
         <div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
+          className="absolute bottom-0 end-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
           style={{ animationDelay: "1s" }}
         />
       </div>
 
-      <div className="absolute top-8 left-8">
+      <div className="absolute top-8 start-8">
         <Link href="/login">
           <Button variant="ghost" className="gap-2" data-testid="button-back-login">
             <ArrowLeft className="w-4 h-4" />
-            Back to sign in
+            {tr("backToSignIn")}
           </Button>
         </Link>
       </div>
 
-      <div className="absolute top-8 right-8">
+      <div className="absolute top-8 end-8">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
@@ -127,18 +132,16 @@ export default function ResetPassword() {
 
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">Set a new password</CardTitle>
-          <CardDescription>Choose a password of at least 8 characters.</CardDescription>
+          <CardTitle className="text-2xl font-semibold">{tr("setANewPassword")}</CardTitle>
+          <CardDescription>{tr("chooseAPasswordOfAtLeast")}</CardDescription>
         </CardHeader>
         <CardContent>
           {done ? (
             <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
               <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-success-subtle-foreground ">Password reset</p>
-                <p className="text-success mt-0.5">
-                  Redirecting you to sign in…
-                </p>
+                <p className="font-medium text-success-subtle-foreground ">{tr("passwordReset")}</p>
+                <p className="text-success mt-0.5">{tr("redirectingYouToSignIn")}</p>
               </div>
             </div>
           ) : (
@@ -149,7 +152,7 @@ export default function ResetPassword() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>New password</FormLabel>
+                      <FormLabel>{tr("newPassword")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -160,7 +163,7 @@ export default function ResetPassword() {
                           data-testid="input-password"
                         />
                       </FormControl>
-                      <FormDescription>Use at least 8 characters.</FormDescription>
+                      <FormDescription>{tr("useAtLeast8Characters")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -170,7 +173,7 @@ export default function ResetPassword() {
                   name="confirmPassword"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Confirm new password</FormLabel>
+                      <FormLabel>{tr("confirmNewPassword")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -191,8 +194,8 @@ export default function ResetPassword() {
                   disabled={isLoading || !token}
                   data-testid="button-reset-password"
                 >
-                  <KeyRound className="w-4 h-4 mr-2" />
-                  {isLoading ? "Resetting…" : "Reset password"}
+                  <KeyRound className="w-4 h-4 me-2" />
+                  {isLoading ? tr("resetting") : tr("resetPassword")}
                 </Button>
               </form>
             </Form>
@@ -200,9 +203,9 @@ export default function ResetPassword() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <div className="text-sm text-muted-foreground text-center">
-            Need a new link?{" "}
+            {tr("needANewLink")}
             <Link href="/forgot-password" className="text-primary hover:underline font-medium">
-              Start over
+              {tr("startOver")}
             </Link>
           </div>
         </CardFooter>

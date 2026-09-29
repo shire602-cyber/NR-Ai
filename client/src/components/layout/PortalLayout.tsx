@@ -13,16 +13,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { removeToken } from "@/lib/auth";
+import { messages as pageMessages } from "./PortalLayout.i18n";
 
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
-  { label: "Invoices", href: "/client-portal/invoices", icon: FileText },
-  { label: "Documents", href: "/client-portal/documents", icon: FolderOpen },
-  { label: "Statements", href: "/client-portal/statements", icon: BarChart2 },
-  { label: "Messages", href: "/client-portal/messages", icon: MessageSquare },
+const getNavItems = () => [
+  { label: pageMessages.t("dashboard"), href: "/client-portal/dashboard", icon: LayoutDashboard },
+  { label: pageMessages.t("invoices"), href: "/client-portal/invoices", icon: FileText },
+  { label: pageMessages.t("documents"), href: "/client-portal/documents", icon: FolderOpen },
+  { label: pageMessages.t("statements"), href: "/client-portal/statements", icon: BarChart2 },
+  { label: pageMessages.t("messages"), href: "/client-portal/messages", icon: MessageSquare },
 ];
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
+  const tr = pageMessages.useT();
+
   const [location, navigate] = useLocation();
 
   const { data: company } = useQuery({
@@ -39,12 +42,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen w-full bg-muted">
       {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 flex flex-col bg-card border-r border-border shadow-sm">
+      <aside className="w-60 flex-shrink-0 flex flex-col bg-card border-e border-border shadow-sm">
         {/* Company header */}
         <div className="px-5 py-6 border-b border-border">
           <div className="flex items-center gap-3">
             {company?.logoUrl ? (
-              <img src={company.logoUrl} alt="logo" className="w-9 h-9 rounded-lg object-cover" />
+              <img
+                src={company.logoUrl}
+                alt={tr("logo")}
+                className="w-9 h-9 rounded-lg object-cover"
+              />
             ) : (
               <div className="w-9 h-9 rounded-lg bg-info flex items-center justify-center">
                 <Building2 className="w-5 h-5 text-white" />
@@ -52,16 +59,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground truncate">
-                {company?.name ?? "My Company"}
+                {company?.name ?? tr("myCompany")}
               </p>
-              <p className="text-xs text-muted-foreground">Client Portal</p>
+              <p className="text-xs text-muted-foreground">{tr("clientPortal")}</p>
             </div>
           </div>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+          {getNavItems().map(({ label, href, icon: Icon }) => {
             const active = location === href || location.startsWith(href + "/");
             return (
               <Link key={href} href={href}>
@@ -74,7 +81,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   ].join(" ")}
                 >
                   <Icon
-                    className={["w-4 h-4", active ? "text-info" : "text-muted-foreground/70"].join(" ")}
+                    className={["w-4 h-4", active ? "text-info" : "text-muted-foreground/70"].join(
+                      " "
+                    )}
                   />
                   {label}
                 </a>
@@ -91,8 +100,8 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             className="w-full justify-start text-muted-foreground hover:text-foreground"
             onClick={handleLogout}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+            <LogOut className="w-4 h-4 me-2" />
+            {tr("signOut")}
           </Button>
         </div>
       </aside>
@@ -102,9 +111,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="h-14 flex items-center justify-between px-6 bg-card border-b border-border">
           <h1 className="text-sm font-semibold text-foreground">
-            {NAV_ITEMS.find((n) => location.startsWith(n.href))?.label ?? "Portal"}
+            {getNavItems().find((n) => location.startsWith(n.href))?.label ?? tr("portal")}
           </h1>
-          <span className="text-xs text-muted-foreground/70">NR Accounting — Client Portal</span>
+          <span className="text-xs text-muted-foreground/70">{tr("nrAccountingClientPortal")}</span>
         </header>
 
         <main className="flex-1 overflow-auto p-6">

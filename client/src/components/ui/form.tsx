@@ -14,6 +14,8 @@ import {
 
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/lib/i18n";
+import { resolveMessage } from "@/lib/i18n-messages";
 
 const Form = FormProvider;
 
@@ -138,7 +140,10 @@ const FormMessage = React.forwardRef<
   React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, children, ...props }, ref) => {
   const { error, formMessageId } = useFormField();
-  const body = error ? String(error?.message ?? "") : children;
+  const locale = useI18n((state) => state.locale);
+  // Schema messages are deferred markers (see i18n-messages `marker`) resolved
+  // here so a language switch re-translates errors already on screen.
+  const body = error ? resolveMessage(String(error?.message ?? ""), locale) : children;
 
   if (!body) {
     return null;

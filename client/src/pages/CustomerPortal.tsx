@@ -22,6 +22,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./CustomerPortal.i18n";
 
 interface PortalInfo {
   customerName: string;
@@ -65,15 +66,33 @@ function formatDate(date: string): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case "paid":
-      return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Paid</Badge>;
+      return (
+        <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+          {pageMessages.t("paid")}
+        </Badge>
+      );
     case "sent":
-      return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sent</Badge>;
+      return (
+        <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">
+          {pageMessages.t("sent")}
+        </Badge>
+      );
     case "draft":
-      return <Badge className="bg-muted text-foreground hover:bg-muted">Draft</Badge>;
+      return (
+        <Badge className="bg-muted text-foreground hover:bg-muted">{pageMessages.t("draft")}</Badge>
+      );
     case "credited":
-      return <Badge className="bg-muted text-foreground hover:bg-muted">Credited</Badge>;
+      return (
+        <Badge className="bg-muted text-foreground hover:bg-muted">
+          {pageMessages.t("credited")}
+        </Badge>
+      );
     case "void":
-      return <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">Void</Badge>;
+      return (
+        <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">
+          {pageMessages.t("void")}
+        </Badge>
+      );
     default:
       return <Badge className="bg-muted text-foreground hover:bg-muted">{status}</Badge>;
   }
@@ -96,6 +115,8 @@ function isOverdue(invoice: PortalInvoice): boolean {
 }
 
 export default function CustomerPortal() {
+  const tr = pageMessages.useT();
+
   const { token } = useParams<{ token: string }>();
 
   // Fetch portal info
@@ -142,7 +163,7 @@ export default function CustomerPortal() {
       <div className="min-h-screen bg-muted flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-info mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading portal...</p>
+          <p className="text-muted-foreground">{tr("loadingPortal")}</p>
         </div>
       </div>
     );
@@ -150,7 +171,7 @@ export default function CustomerPortal() {
 
   // Error state
   if (infoError || !info) {
-    const message = infoError instanceof Error ? infoError.message : "Portal not found";
+    const message = infoError instanceof Error ? infoError.message : tr("portalNotFound");
     const isExpired = message.includes("expired");
 
     return (
@@ -163,12 +184,10 @@ export default function CustomerPortal() {
               <AlertCircle className="w-16 h-16 text-destructive mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? "Link Expired" : "Invalid Portal Link"}
+              {isExpired ? tr("linkExpired") : tr("invalidPortalLink")}
             </h2>
             <p className="text-muted-foreground">
-              {isExpired
-                ? "This portal link has expired. Please contact the accounting firm for a new link."
-                : "This portal link is invalid or has been removed. Please contact the accounting firm for assistance."}
+              {isExpired ? tr("thisPortalLinkHasExpiredPlease") : tr("thisPortalLinkIsInvalidOr")}
             </p>
           </CardContent>
         </Card>
@@ -205,12 +224,14 @@ export default function CustomerPortal() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-foreground">{info.companyName}</h1>
-              <p className="text-muted-foreground mt-1">Client Portal</p>
+              <p className="text-muted-foreground mt-1">{tr("clientPortal")}</p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Welcome,</p>
+            <div className="text-end">
+              <p className="text-sm text-muted-foreground">{tr("welcome")}</p>
               <p className="text-lg font-semibold text-foreground">{info.customerName}</p>
-              {info.contactPerson && <p className="text-sm text-muted-foreground">{info.contactPerson}</p>}
+              {info.contactPerson && (
+                <p className="text-sm text-muted-foreground">{info.contactPerson}</p>
+              )}
             </div>
           </div>
         </div>
@@ -227,7 +248,7 @@ export default function CustomerPortal() {
                   <DollarSign className="w-5 h-5 text-destructive" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Outstanding</p>
+                  <p className="text-sm text-muted-foreground">{tr("totalOutstanding")}</p>
                   <p className="text-xl font-bold text-destructive">
                     {formatCurrency(totalOutstanding, defaultCurrency)}
                   </p>
@@ -243,7 +264,7 @@ export default function CustomerPortal() {
                   <FileCheck className="w-5 h-5 text-success" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Paid</p>
+                  <p className="text-sm text-muted-foreground">{tr("totalPaid")}</p>
                   <p className="text-xl font-bold text-success">
                     {formatCurrency(totalPaid, defaultCurrency)}
                   </p>
@@ -259,7 +280,7 @@ export default function CustomerPortal() {
                   <Receipt className="w-5 h-5 text-info" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <p className="text-sm text-muted-foreground">{tr("totalInvoices")}</p>
                   <p className="text-xl font-bold text-info">{invoiceCount}</p>
                 </div>
               </div>
@@ -272,7 +293,7 @@ export default function CustomerPortal() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Invoices
+              {tr("invoices")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -283,9 +304,9 @@ export default function CustomerPortal() {
             ) : invoices.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <FileText className="w-12 h-12 text-muted-foreground/70 mb-4" />
-                <p className="text-lg font-medium text-muted-foreground">No invoices found</p>
+                <p className="text-lg font-medium text-muted-foreground">{tr("noInvoicesFound")}</p>
                 <p className="text-sm text-muted-foreground/70 mt-1">
-                  Your invoices will appear here once they are created.
+                  {tr("yourInvoicesWillAppearHereOnce")}
                 </p>
               </div>
             ) : (
@@ -293,11 +314,11 @@ export default function CustomerPortal() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{tr("invoice")}</TableHead>
+                      <TableHead>{tr("date")}</TableHead>
+                      <TableHead className="text-end">{tr("amount")}</TableHead>
+                      <TableHead>{tr("status")}</TableHead>
+                      <TableHead className="text-end">{tr("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -307,25 +328,25 @@ export default function CustomerPortal() {
                         <TableRow key={invoice.id}>
                           <TableCell className="font-medium">{invoice.number}</TableCell>
                           <TableCell>{formatDate(invoice.date)}</TableCell>
-                          <TableCell className="text-right font-medium">
+                          <TableCell className="text-end font-medium">
                             {formatCurrency(invoice.total, invoice.currency)}
                           </TableCell>
                           <TableCell>
                             {overdue ? (
                               <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">
-                                Overdue
+                                {tr("overdue")}
                               </Badge>
                             ) : (
                               getStatusBadge(invoice.status)
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleDownloadPDF(invoice.id, invoice.number)}
                             >
-                              <Download className="w-4 h-4 mr-1" />
+                              <Download className="w-4 h-4 me-1" />
                               PDF
                             </Button>
                           </TableCell>
@@ -343,7 +364,9 @@ export default function CustomerPortal() {
       {/* Footer */}
       <footer className="border-t bg-card mt-12">
         <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-muted-foreground/70">Powered by {info.companyName}</p>
+          <p className="text-center text-sm text-muted-foreground/70">
+            {tr("poweredBy", { companyName: info.companyName })}
+          </p>
         </div>
       </footer>
     </div>

@@ -71,14 +71,17 @@ full suite 707 green):
 2. ~~Foreign-currency invoices: VAT total also in AED~~ ✅ DONE: `TaxCurrencyCode = AED` plus a second
    `cac:TaxTotal` with the VAT converted at the invoice's AED-per-foreign rate, emitted only when the
    document currency ≠ AED. Tested in `einvoice.test.ts`.
-3. **Full CreditNote document syntax:** strict PINT-AE credit notes use a `<CreditNote>` root, not an
-   `<Invoice>` with type 381. Current output (type 381 + BillingReference) is an interim that most validators
-   accept; a dedicated `<CreditNote>` serializer should be validated against the official PINT-AE artefacts /
-   an ASP sandbox before switching. DEFERRED to the validation phase.
-4. **Peppol routing identifiers (`cbc:EndpointID schemeID="…"`):** the exact Peppol EAS scheme code for the
-   UAE TRN is not confirmable from public sources (it's in the PINT-AE code list; ASPs often also set/override
-   routing). NOT added rather than ship a guessed routing code — confirm the EAS code against the spec/ASP,
-   then add seller+buyer EndpointID (one constant + element). DEFERRED to the validation phase.
+3. ~~Full CreditNote document syntax~~ ✅ DONE (Phase 4.5): a credit note is a true `<CreditNote>` root (UBL
+   CreditNote-2 namespace, `cbc:CreditNoteTypeCode` 381, `cac:CreditNoteLine`, `cbc:CreditedQuantity`, positive
+   amounts) with a `cac:BillingReference` to the original invoice NUMBER and date. The earlier `<Invoice>`-with-381
+   form stays behind one constant (`EINVOICE_CREDIT_NOTE_SYNTAX` in `einvoice-constants.ts`, or the `creditNoteSyntax`
+   option) in case a provider requires it. STILL TODO: validate against the official PINT-AE validation artefacts /
+   an ASP sandbox (element sequence follows UBL 2.1 and is asserted by unit tests, but no official validator has run).
+4. ~~Peppol routing identifiers~~ ✅ WIRED, NOT CONFIRMED (Phase 4.5): seller and buyer `cbc:EndpointID` carry
+   `schemeID` from ONE constant `PEPPOL_EAS_UAE_TRN = "0235"` and are emitted only while `EMIT_ENDPOINT_ID` is true.
+   "0235" is the scheme commonly cited for the UAE TIN/TRN in the Peppol EAS code list; it has NOT been confirmed and
+   MUST be confirmed with the chosen provider before go-live. The emirate codes written in `cbc:CountrySubentity`
+   (AUH, DXB, SHJ, AJM, UAQ, RAK, FUJ, in `EMIRATE_SUBENTITY_CODES`) are likewise unverified against the PINT-AE code list.
 5. **ASP adapter + status lifecycle (items 4–5):** SEAM BUILT (decision: Option A — adapter now, lean
    aggregator for go-live). `server/services/einvoice-provider.ts` defines the provider-agnostic
    `EInvoiceProvider` interface + a deterministic `MockEInvoiceProvider` + `getEInvoiceProvider()` env
@@ -87,3 +90,36 @@ full suite 707 green):
    `tests/unit/einvoice-lifecycle.test.ts` (9 cases). REMAINING for live: submit/refresh-status routes +
    provider-message-id schema columns; one real ASP adapter against the chosen aggregator's REST API (owner
    picks the ASP); and the XML gaps (EndpointID, AED tax total on foreign invoices, `<CreditNote>` syntax).
+
+
+## Progress (Phase 4.5) — provider-independent hardening
+
+No provider adapter was built and nothing calls an external service. Done and test-backed
+(`tests/unit/einvoice-xml.test.ts`, `einvoice-validation.test.ts`, golden files in `tests/fixtures/einvoice/`, and
+`tests/integration/phase4.test.mjs`):
+
+- **True `<CreditNote>` document** (see gap 3 above), with the old form kept behind one constant.
+- **Fuller party data**: seller and buyer postal address (street, city, emirate as `CountrySubentity`, country code),
+  `PartyTaxScheme` (TRN + VAT scheme), `PartyLegalEntity` registration name, seller contact; `PaymentMeans` (code 30,
+  credit transfer + the company's first active bank account IBAN) and `PaymentTerms` (+ `DueDate` on invoices);
+  `InvoicePeriod` / `Delivery` when a date or period is supplied; line unit codes (UN/ECE Rec 20, default `C62`, per-line
+  override) and an optional `CommodityClassification` per line.
+- **Endpoint IDs** (see gap 4 above).
+- **Validation gate v2** (`einvoice-validation.ts`): structured, user-fixable issues, each with a stable `code`, `field`,
+  `entity` (seller / buyer / invoice / line / credit_note), `lineIndex`, English `message` and Arabic `messageAr`.
+  New checks: seller address parts, buyer TRN and address for a business buyer, VAT category vs rate, VAT per category vs
+  the header, credit note without an original invoice reference, foreign-currency invoice without an AED exchange rate.
+  Buyer address checks run when the caller supplies the buyer details (the routes always do, from the customer contact).
+  Known limit: the data model has no explicit B2B flag, so a buyer is treated as a business when it has a TRN; a missing
+  buyer TRN is only reported when the caller marks the buyer as a business.
+- **Structure tests** with a real XML parser (`fast-xml-parser`, MIT, dev dependency): UBL element order, namespaces,
+  2dp amounts with full-precision unit prices, escaping and Arabic round trip.
+- **QR code**: `einvoice-qr.service.ts` builds a ZATCA-style (Saudi) 5-field TLV. The UAE has not been confirmed to
+  require it; it is kept, unchanged, because the invoice PDF prints it, and now says so in a header comment.
+
+### Still needs a provider sandbox / official artefacts
+
+1. Validate generated XML against the official PINT-AE Schematron / a real ASP sandbox (nothing official has run).
+2. Confirm `PEPPOL_EAS_UAE_TRN`, the emirate code list, and whether PINT-AE wants `TaxExemptionReasonCode` on Z / E / O categories (not emitted yet).
+3. Confirm whether the UAE needs the QR code at all, and in which format.
+4. ASP adapter, submit/refresh routes against a real provider, and the go-live status webhook handling (item 4-5 of the workstream).

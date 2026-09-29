@@ -938,6 +938,9 @@ export function mapBooksToVatWorkpaperRows(input: {
   }
 
   for (const invoice of invoices) {
+    // Pre-go-live documents are already in the opening balances; their VAT
+    // belongs to returns filed before the company started using the product.
+    if ((invoice as any).isOpeningBalance === true) continue;
     if (existingSourceIds.has(invoice.id)) continue;
     if (invoice.status === "void" || invoice.status === "draft" || invoice.status === "cancelled")
       continue;

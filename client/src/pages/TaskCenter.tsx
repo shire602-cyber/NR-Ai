@@ -51,6 +51,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { messages as pageMessages } from "./TaskCenter.i18n";
 
 interface ComplianceTask {
   id: string;
@@ -81,12 +82,29 @@ const CATEGORIES = [
 
 const PRIORITIES = [
   { value: "low", labelEn: "Low", labelAr: "منخفض", color: "bg-muted text-foreground" },
-  { value: "medium", labelEn: "Medium", labelAr: "متوسط", color: "bg-info-subtle text-info-subtle-foreground" },
-  { value: "high", labelEn: "High", labelAr: "مرتفع", color: "bg-warning-subtle text-warning-subtle-foreground" },
-  { value: "urgent", labelEn: "Urgent", labelAr: "عاجل", color: "bg-danger-subtle text-danger-subtle-foreground" },
+  {
+    value: "medium",
+    labelEn: "Medium",
+    labelAr: "متوسط",
+    color: "bg-info-subtle text-info-subtle-foreground",
+  },
+  {
+    value: "high",
+    labelEn: "High",
+    labelAr: "مرتفع",
+    color: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  {
+    value: "urgent",
+    labelEn: "Urgent",
+    labelAr: "عاجل",
+    color: "bg-danger-subtle text-danger-subtle-foreground",
+  },
 ];
 
 export default function TaskCenter() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -121,9 +139,8 @@ export default function TaskCenter() {
         queryKey: ["/api/companies", companyId, "compliance-tasks"],
       });
       toast({
-        title: locale === "ar" ? "تمت الإضافة" : "Task Created",
-        description:
-          locale === "ar" ? "تم إنشاء المهمة بنجاح" : "Task has been created successfully",
+        title: tr("taskCreated"),
+        description: tr("taskHasBeenCreatedSuccessfully"),
       });
       setAddDialogOpen(false);
       resetForm();
@@ -131,7 +148,7 @@ export default function TaskCenter() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "فشل الإنشاء" : "Creation Failed",
+        title: tr("creationFailed"),
         description: error?.message,
       });
     },
@@ -145,7 +162,7 @@ export default function TaskCenter() {
         queryKey: ["/api/companies", companyId, "compliance-tasks"],
       });
       toast({
-        title: locale === "ar" ? "تم التحديث" : "Updated",
+        title: tr("updated"),
       });
     },
   });
@@ -157,7 +174,7 @@ export default function TaskCenter() {
         queryKey: ["/api/companies", companyId, "compliance-tasks"],
       });
       toast({
-        title: locale === "ar" ? "تم الحذف" : "Deleted",
+        title: tr("deleted"),
       });
     },
   });
@@ -181,11 +198,8 @@ export default function TaskCenter() {
     if (!newTask.title || !newTask.dueDate) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
-        description:
-          locale === "ar"
-            ? "يرجى إدخال العنوان وتاريخ الاستحقاق"
-            : "Please enter title and due date",
+        title: tr("missingInformation"),
+        description: tr("pleaseEnterTitleAndDueDate"),
       });
       return;
     }
@@ -252,17 +266,13 @@ export default function TaskCenter() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
-        title={locale === "ar" ? "مركز المهام" : "Task Center"}
-        description={
-          locale === "ar"
-            ? "إدارة مهام الامتثال والتذكيرات"
-            : "Manage compliance tasks and reminders"
-        }
+        eyebrow={tr("compliance")}
+        title={tr("taskCenter")}
+        description={tr("manageComplianceTasksAndReminders")}
         actions={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-            <Plus className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "مهمة جديدة" : "New Task"}
+            <Plus className="w-4 h-4 me-2" />
+            {tr("newTask")}
           </Button>
         }
       />
@@ -270,9 +280,7 @@ export default function TaskCenter() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المهام" : "Total Tasks"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalTasks")}</CardTitle>
             <ListTodo className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -282,9 +290,7 @@ export default function TaskCenter() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "قيد التنفيذ" : "Pending"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("pending")}</CardTitle>
             <Clock className="w-4 h-4 text-info" />
           </CardHeader>
           <CardContent>
@@ -294,9 +300,7 @@ export default function TaskCenter() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "مكتملة" : "Completed"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("completed")}</CardTitle>
             <CheckCircle2 className="w-4 h-4 text-success" />
           </CardHeader>
           <CardContent>
@@ -306,9 +310,7 @@ export default function TaskCenter() {
 
         <Card className={stats.overdue > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "متأخرة" : "Overdue"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("overdue")}</CardTitle>
             <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
@@ -321,12 +323,12 @@ export default function TaskCenter() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder={locale === "ar" ? "بحث في المهام..." : "Search tasks..."}
+                placeholder={tr("searchTasks")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-tasks"
               />
             </div>
@@ -336,22 +338,18 @@ export default function TaskCenter() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">{locale === "ar" ? "نشطة" : "Active"}</SelectItem>
-                  <SelectItem value="completed">
-                    {locale === "ar" ? "مكتملة" : "Completed"}
-                  </SelectItem>
-                  <SelectItem value="overdue">{locale === "ar" ? "متأخرة" : "Overdue"}</SelectItem>
-                  <SelectItem value="all">{locale === "ar" ? "الكل" : "All"}</SelectItem>
+                  <SelectItem value="active">{tr("active")}</SelectItem>
+                  <SelectItem value="completed">{tr("completed")}</SelectItem>
+                  <SelectItem value="overdue">{tr("overdue")}</SelectItem>
+                  <SelectItem value="all">{tr("all")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="w-[160px]" data-testid="select-category-filter">
-                  <SelectValue placeholder={locale === "ar" ? "الفئة" : "Category"} />
+                  <SelectValue placeholder={tr("category")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "ar" ? "جميع الفئات" : "All Categories"}
-                  </SelectItem>
+                  <SelectItem value="all">{tr("allCategories")}</SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {locale === "ar" ? cat.labelAr : cat.labelEn}
@@ -366,9 +364,9 @@ export default function TaskCenter() {
           {filteredTasks.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مهام" : "No tasks found"}</p>
+              <p>{tr("noTasksFound")}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                {locale === "ar" ? "إنشاء أول مهمة" : "Create your first task"}
+                {tr("createYourFirstTask")}
               </Button>
             </div>
           ) : (
@@ -420,7 +418,7 @@ export default function TaskCenter() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className="text-right">
+                      <div className="text-end">
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="w-3 h-3" />
                           {format(parseISO(task.dueDate), "MMM d, yyyy")}
@@ -437,13 +435,9 @@ export default function TaskCenter() {
                             className="text-xs mt-1"
                           >
                             {status === "overdue"
-                              ? locale === "ar"
-                                ? "متأخر"
-                                : "Overdue"
+                              ? tr("overdue")
                               : daysLeft === 0
-                                ? locale === "ar"
-                                  ? "اليوم"
-                                  : "Today"
+                                ? tr("today")
                                 : locale === "ar"
                                   ? `${daysLeft} يوم`
                                   : `${daysLeft}d left`}
@@ -460,20 +454,14 @@ export default function TaskCenter() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             onClick={() => {
-                              if (
-                                confirm(
-                                  locale === "ar"
-                                    ? "هل أنت متأكد من الحذف؟"
-                                    : "Are you sure you want to delete?"
-                                )
-                              ) {
+                              if (confirm(tr("areYouSureYouWantTo"))) {
                                 deleteMutation.mutate(task.id);
                               }
                             }}
                             className="text-destructive"
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {locale === "ar" ? "حذف" : "Delete"}
+                            <Trash2 className="w-4 h-4 me-2" />
+                            {tr("delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -489,26 +477,22 @@ export default function TaskCenter() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "مهمة جديدة" : "New Task"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "إنشاء مهمة امتثال جديدة مع تذكير"
-                : "Create a new compliance task with reminder"}
-            </DialogDescription>
+            <DialogTitle>{tr("newTask")}</DialogTitle>
+            <DialogDescription>{tr("createANewComplianceTaskWith")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "العنوان (إنجليزي)" : "Title (English)"} *</Label>
+                <Label>{tr("titleEnglish")} *</Label>
                 <Input
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="File Q1 VAT Return"
+                  placeholder={tr("fileQ1VatReturn")}
                   data-testid="input-task-title"
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "العنوان (عربي)" : "Title (Arabic)"}</Label>
+                <Label>{tr("titleArabic")}</Label>
                 <Input
                   value={newTask.titleAr}
                   onChange={(e) => setNewTask({ ...newTask, titleAr: e.target.value })}
@@ -520,18 +504,18 @@ export default function TaskCenter() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الوصف" : "Description"}</Label>
+              <Label>{tr("description")}</Label>
               <Textarea
                 value={newTask.description}
                 onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                placeholder={locale === "ar" ? "تفاصيل المهمة..." : "Task details..."}
+                placeholder={tr("taskDetails")}
                 data-testid="input-task-description"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "الفئة" : "Category"}</Label>
+                <Label>{tr("category")}</Label>
                 <Select
                   value={newTask.category}
                   onValueChange={(val) => setNewTask({ ...newTask, category: val })}
@@ -549,7 +533,7 @@ export default function TaskCenter() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "الأولوية" : "Priority"}</Label>
+                <Label>{tr("priority")}</Label>
                 <Select
                   value={newTask.priority}
                   onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
@@ -570,7 +554,7 @@ export default function TaskCenter() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"} *</Label>
+                <Label>{tr("dueDate")} *</Label>
                 <Input
                   type="date"
                   value={newTask.dueDate}
@@ -579,7 +563,7 @@ export default function TaskCenter() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ التذكير" : "Reminder Date"}</Label>
+                <Label>{tr("reminderDate")}</Label>
                 <Input
                   type="date"
                   value={newTask.reminderDate}
@@ -590,11 +574,11 @@ export default function TaskCenter() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "ملاحظات" : "Notes"}</Label>
+              <Label>{tr("notes")}</Label>
               <Textarea
                 value={newTask.notes}
                 onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-                placeholder={locale === "ar" ? "ملاحظات إضافية..." : "Additional notes..."}
+                placeholder={tr("additionalNotes")}
                 data-testid="input-task-notes"
               />
             </div>
@@ -607,15 +591,15 @@ export default function TaskCenter() {
                 resetForm();
               }}
             >
-              {locale === "ar" ? "إلغاء" : "Cancel"}
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleSubmit}
               disabled={isSubmitting}
               data-testid="button-confirm-create"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {locale === "ar" ? "إنشاء" : "Create"}
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {tr("create")}
             </Button>
           </DialogFooter>
         </DialogContent>

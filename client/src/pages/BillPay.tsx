@@ -75,6 +75,7 @@ import {
   BarChart3,
   Receipt,
 } from "lucide-react";
+import { messages as pageMessages } from "./BillPay.i18n";
 
 // ===========================
 // Types
@@ -152,15 +153,15 @@ interface AgingReport {
 // ===========================
 
 const billLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unit_price: z.coerce.number().min(0, "Price must be non-negative"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unit_price: z.coerce.number().min(0, pageMessages.marker("priceMustBeNonNegative")),
   vat_rate: z.coerce.number().default(5),
   account_id: z.string().optional(),
 });
 
 const billFormSchema = z.object({
-  vendor_name: z.string().min(1, "Vendor name is required"),
+  vendor_name: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
   bill_date: z.date(),
@@ -168,12 +169,12 @@ const billFormSchema = z.object({
   currency: z.string().default("AED"),
   category: z.string().optional(),
   notes: z.string().optional(),
-  line_items: z.array(billLineSchema).min(1, "At least one line item is required"),
+  line_items: z.array(billLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 const paymentFormSchema = z.object({
   payment_date: z.date(),
-  amount: z.coerce.number().min(0.01, "Amount must be positive"),
+  amount: z.coerce.number().min(0.01, pageMessages.marker("amountMustBePositive")),
   payment_method: z.string().default("bank_transfer"),
   reference: z.string().optional(),
   notes: z.string().optional(),
@@ -191,31 +192,31 @@ function getStatusBadge(status: string) {
     case "pending":
       return (
         <Badge variant="outline" className="bg-muted text-foreground ">
-          Pending
+          {pageMessages.t("pending")}
         </Badge>
       );
     case "approved":
       return (
         <Badge variant="outline" className="bg-info-subtle text-info ">
-          Approved
+          {pageMessages.t("approved")}
         </Badge>
       );
     case "partial":
       return (
         <Badge variant="outline" className="bg-warning-subtle text-warning ">
-          Partial
+          {pageMessages.t("partial")}
         </Badge>
       );
     case "paid":
       return (
         <Badge variant="outline" className="bg-success-subtle text-success ">
-          Paid
+          {pageMessages.t("paid")}
         </Badge>
       );
     case "overdue":
       return (
         <Badge variant="outline" className="bg-danger-subtle text-destructive ">
-          Overdue
+          {pageMessages.t("overdue")}
         </Badge>
       );
     default:
@@ -236,6 +237,8 @@ function initialBillPayTab(): BillPayTab {
 }
 
 export default function BillPay() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId } = useDefaultCompany();
@@ -399,15 +402,15 @@ export default function BillPay() {
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill created", description: "Vendor bill has been created successfully." });
+      toast({ title: tr("billCreated"), description: tr("vendorBillHasBeenCreatedSuccessfully") });
       setBillDialogOpen(false);
       resetBillForm();
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create bill",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateBill"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -427,7 +430,7 @@ export default function BillPay() {
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill updated", description: "Vendor bill has been updated successfully." });
+      toast({ title: tr("billUpdated"), description: tr("vendorBillHasBeenUpdatedSuccessfully") });
       setBillDialogOpen(false);
       setEditingBill(null);
       resetBillForm();
@@ -435,8 +438,8 @@ export default function BillPay() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update bill",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateBill"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -445,13 +448,13 @@ export default function BillPay() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/bills/${id}`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill deleted", description: "Vendor bill has been deleted." });
+      toast({ title: tr("billDeleted"), description: tr("vendorBillHasBeenDeleted") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete bill",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeleteBill"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -460,13 +463,13 @@ export default function BillPay() {
     mutationFn: (id: string) => apiRequest("POST", `/api/bills/${id}/approve`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill approved", description: "The bill has been approved." });
+      toast({ title: tr("billApproved"), description: tr("theBillHasBeenApproved") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to approve bill",
-        description: error?.message || "Please try again.",
+        title: tr("failedToApproveBill"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -482,8 +485,11 @@ export default function BillPay() {
     onSuccess: (result: any) => {
       invalidateBills();
       toast({
-        title: "Payment recorded",
-        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, "AED")}`,
+        title: tr("paymentRecorded"),
+        description: tr("paymentRecordedBillStatusRemaining", {
+          bill_status: result.bill_status,
+          formatCurrency: formatCurrency(result.remaining, "AED"),
+        }),
       });
       setPaymentDialogOpen(false);
       setPayingBill(null);
@@ -498,8 +504,8 @@ export default function BillPay() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to record payment",
-        description: error?.message || "Please try again.",
+        title: tr("failedToRecordPayment"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -551,8 +557,8 @@ export default function BillPay() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load bill details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadBillDetails"),
       });
     }
   };
@@ -605,10 +611,10 @@ export default function BillPay() {
   if (!companyId) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-semibold">Bill Pay</h1>
+        <h1 className="text-3xl font-semibold">{tr("billPay")}</h1>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Please create a company first to manage bills.</p>
+            <p className="text-muted-foreground">{tr("pleaseCreateACompanyFirstTo")}</p>
           </CardContent>
         </Card>
       </div>
@@ -618,9 +624,9 @@ export default function BillPay() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={tr("purchases")}
         title={t.billPay}
-        description={(t as any).billPaySubtitle ?? "Manage vendor bills, approvals, and payments"}
+        description={(t as any).billPaySubtitle ?? tr("manageVendorBillsApprovalsAndPayments")}
       />
 
       <Tabs
@@ -630,16 +636,16 @@ export default function BillPay() {
       >
         <TabsList>
           <TabsTrigger value="bills">
-            <FileText className="w-4 h-4 mr-2" />
-            Bills
+            <FileText className="w-4 h-4 me-2" />
+            {tr("bills")}
           </TabsTrigger>
           <TabsTrigger value="payments">
-            <CreditCard className="w-4 h-4 mr-2" />
-            Payments
+            <CreditCard className="w-4 h-4 me-2" />
+            {tr("payments")}
           </TabsTrigger>
           <TabsTrigger value="summary">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Summary
+            <BarChart3 className="w-4 h-4 me-2" />
+            {tr("summary")}
           </TabsTrigger>
         </TabsList>
 
@@ -653,22 +659,22 @@ export default function BillPay() {
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-4 flex-wrap">
                   <Input
-                    placeholder="Search vendor or bill #..."
+                    placeholder={tr("searchVendorOrBill")}
                     value={vendorSearch}
                     onChange={(e) => setVendorSearch(e.target.value)}
                     className="w-64"
                   />
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Status" />
+                      <SelectValue placeholder={tr("status")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="overdue">Overdue</SelectItem>
+                      <SelectItem value="all">{tr("allStatuses")}</SelectItem>
+                      <SelectItem value="pending">{tr("pending")}</SelectItem>
+                      <SelectItem value="approved">{tr("approved")}</SelectItem>
+                      <SelectItem value="partial">{tr("partial")}</SelectItem>
+                      <SelectItem value="paid">{tr("paid")}</SelectItem>
+                      <SelectItem value="overdue">{tr("overdue")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -681,17 +687,19 @@ export default function BillPay() {
                 >
                   <DialogTrigger asChild>
                     <Button>
-                      <Plus className="w-4 h-4 mr-2" />
-                      New Bill
+                      <Plus className="w-4 h-4 me-2" />
+                      {tr("newBill")}
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>{editingBill ? "Edit Bill" : "New Vendor Bill"}</DialogTitle>
+                      <DialogTitle>
+                        {editingBill ? tr("editBill") : tr("newVendorBill")}
+                      </DialogTitle>
                       <DialogDescription>
                         {editingBill
-                          ? "Update vendor bill details"
-                          : "Create a new vendor bill with line items and VAT calculation"}
+                          ? tr("updateVendorBillDetails")
+                          : tr("createANewVendorBillWith")}
                       </DialogDescription>
                     </DialogHeader>
                     <Form {...billForm}>
@@ -703,9 +711,9 @@ export default function BillPay() {
                             name="vendor_name"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Vendor Name</FormLabel>
+                                <FormLabel>{tr("vendorName")}</FormLabel>
                                 <FormControl>
-                                  <Input {...field} placeholder="Vendor company name" />
+                                  <Input {...field} placeholder={tr("vendorCompanyName")} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -716,11 +724,11 @@ export default function BillPay() {
                             name="vendor_trn"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Vendor TRN</FormLabel>
+                                <FormLabel>{tr("vendorTrn")}</FormLabel>
                                 <FormControl>
                                   <Input
                                     {...field}
-                                    placeholder="Tax Registration Number (optional)"
+                                    placeholder={tr("taxRegistrationNumberOptional")}
                                     className="font-mono"
                                   />
                                 </FormControl>
@@ -737,7 +745,7 @@ export default function BillPay() {
                             name="bill_number"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Bill Number</FormLabel>
+                                <FormLabel>{tr("billNumber")}</FormLabel>
                                 <FormControl>
                                   <Input
                                     {...field}
@@ -754,19 +762,19 @@ export default function BillPay() {
                             name="bill_date"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Bill Date</FormLabel>
+                                <FormLabel>{tr("billDate")}</FormLabel>
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <FormControl>
                                       <Button
                                         variant="outline"
                                         className={cn(
-                                          "w-full justify-start text-left font-normal",
+                                          "w-full justify-start text-start font-normal",
                                           !field.value && "text-muted-foreground"
                                         )}
                                       >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                        <CalendarIcon className="me-2 h-4 w-4" />
+                                        {field.value ? format(field.value, "PPP") : tr("pickADate")}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -788,19 +796,19 @@ export default function BillPay() {
                             name="due_date"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Due Date</FormLabel>
+                                <FormLabel>{tr("dueDate")}</FormLabel>
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <FormControl>
                                       <Button
                                         variant="outline"
                                         className={cn(
-                                          "w-full justify-start text-left font-normal",
+                                          "w-full justify-start text-start font-normal",
                                           !field.value && "text-muted-foreground"
                                         )}
                                       >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                        <CalendarIcon className="me-2 h-4 w-4" />
+                                        {field.value ? format(field.value, "PPP") : tr("pickADate")}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -826,23 +834,25 @@ export default function BillPay() {
                             name="category"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Category</FormLabel>
+                                <FormLabel>{tr("category")}</FormLabel>
                                 <Select value={field.value || ""} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
-                                      <SelectValue placeholder="Select category" />
+                                      <SelectValue placeholder={tr("selectCategory")} />
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="utilities">Utilities</SelectItem>
-                                    <SelectItem value="rent">Rent</SelectItem>
-                                    <SelectItem value="supplies">Supplies</SelectItem>
-                                    <SelectItem value="services">Professional Services</SelectItem>
-                                    <SelectItem value="equipment">Equipment</SelectItem>
-                                    <SelectItem value="travel">Travel</SelectItem>
-                                    <SelectItem value="insurance">Insurance</SelectItem>
-                                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                                    <SelectItem value="other">Other</SelectItem>
+                                    <SelectItem value="utilities">{tr("utilities")}</SelectItem>
+                                    <SelectItem value="rent">{tr("rent")}</SelectItem>
+                                    <SelectItem value="supplies">{tr("supplies")}</SelectItem>
+                                    <SelectItem value="services">
+                                      {tr("professionalServices")}
+                                    </SelectItem>
+                                    <SelectItem value="equipment">{tr("equipment")}</SelectItem>
+                                    <SelectItem value="travel">{tr("travel")}</SelectItem>
+                                    <SelectItem value="insurance">{tr("insurance")}</SelectItem>
+                                    <SelectItem value="maintenance">{tr("maintenance")}</SelectItem>
+                                    <SelectItem value="other">{tr("other")}</SelectItem>
                                   </SelectContent>
                                 </Select>
                                 <FormMessage />
@@ -854,7 +864,7 @@ export default function BillPay() {
                             name="currency"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Currency</FormLabel>
+                                <FormLabel>{tr("currency")}</FormLabel>
                                 <Select value={field.value} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
@@ -878,7 +888,7 @@ export default function BillPay() {
                         {/* Line Items */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <h3 className="font-medium">Line Items</h3>
+                            <h3 className="font-medium">{tr("lineItems")}</h3>
                             <Button
                               type="button"
                               variant="outline"
@@ -893,8 +903,8 @@ export default function BillPay() {
                                 })
                               }
                             >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Add Line
+                              <Plus className="w-4 h-4 me-2" />
+                              {tr("addLine")}
                             </Button>
                           </div>
 
@@ -910,7 +920,7 @@ export default function BillPay() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <Input {...field} placeholder="Description" />
+                                        <Input {...field} placeholder={tr("description")} />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -927,7 +937,7 @@ export default function BillPay() {
                                           {...field}
                                           type="number"
                                           step="0.01"
-                                          placeholder="Qty"
+                                          placeholder={tr("qty")}
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -945,7 +955,7 @@ export default function BillPay() {
                                           {...field}
                                           type="number"
                                           step="0.01"
-                                          placeholder="Unit Price"
+                                          placeholder={tr("unitPrice")}
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -982,7 +992,7 @@ export default function BillPay() {
                                       >
                                         <FormControl>
                                           <SelectTrigger>
-                                            <SelectValue placeholder="Account" />
+                                            <SelectValue placeholder={tr("account")} />
                                           </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
@@ -1024,15 +1034,15 @@ export default function BillPay() {
                           <div className="flex justify-end">
                             <div className="w-64 space-y-1 text-sm">
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">Subtotal:</span>
+                                <span className="text-muted-foreground">{tr("subtotal")}</span>
                                 <span>{formatCurrency(subtotal, "AED")}</span>
                               </div>
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">VAT:</span>
+                                <span className="text-muted-foreground">{tr("vat")}</span>
                                 <span>{formatCurrency(vatAmount, "AED")}</span>
                               </div>
                               <div className="flex justify-between font-semibold border-t pt-1">
-                                <span>Total:</span>
+                                <span>{tr("total")}</span>
                                 <span>{formatCurrency(totalAmount, "AED")}</span>
                               </div>
                             </div>
@@ -1045,11 +1055,11 @@ export default function BillPay() {
                           name="notes"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Notes</FormLabel>
+                              <FormLabel>{tr("notes")}</FormLabel>
                               <FormControl>
                                 <Textarea
                                   {...field}
-                                  placeholder="Optional notes about this bill"
+                                  placeholder={tr("optionalNotesAboutThisBill")}
                                   rows={2}
                                 />
                               </FormControl>
@@ -1067,17 +1077,17 @@ export default function BillPay() {
                               resetBillForm();
                             }}
                           >
-                            Cancel
+                            {tr("cancel")}
                           </Button>
                           <Button
                             type="submit"
                             disabled={createBillMutation.isPending || updateBillMutation.isPending}
                           >
                             {createBillMutation.isPending || updateBillMutation.isPending
-                              ? "Saving..."
+                              ? tr("saving")
                               : editingBill
-                                ? "Update Bill"
-                                : "Create Bill"}
+                                ? tr("updateBill")
+                                : tr("createBill")}
                           </Button>
                         </div>
                       </form>
@@ -1100,11 +1110,11 @@ export default function BillPay() {
               ) : filteredBills.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">No bills found</h3>
+                  <h3 className="text-lg font-medium mb-1">{tr("noBillsFound")}</h3>
                   <p className="text-muted-foreground">
                     {bills.length === 0
-                      ? "Create your first vendor bill to get started."
-                      : "No bills match your current filters."}
+                      ? tr("createYourFirstVendorBillTo")
+                      : tr("noBillsMatchYourCurrentFilters")}
                   </p>
                 </div>
               ) : (
@@ -1112,14 +1122,14 @@ export default function BillPay() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Vendor</TableHead>
-                        <TableHead>Bill #</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">Paid</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{tr("vendor")}</TableHead>
+                        <TableHead>{tr("bill")}</TableHead>
+                        <TableHead>{tr("date")}</TableHead>
+                        <TableHead>{tr("dueDate")}</TableHead>
+                        <TableHead className="text-end">{tr("amount")}</TableHead>
+                        <TableHead className="text-end">{tr("paid")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
+                        <TableHead className="text-end">{tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1133,14 +1143,14 @@ export default function BillPay() {
                             </TableCell>
                             <TableCell>{formatDate(bill.bill_date)}</TableCell>
                             <TableCell>{bill.due_date ? formatDate(bill.due_date) : "-"}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {formatCurrency(Number(bill.total_amount), bill.currency || "AED")}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
                             </TableCell>
                             <TableCell>{getStatusBadge(bill.status)}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="sm">
@@ -1149,34 +1159,34 @@ export default function BillPay() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuItem onClick={() => handleEditBill(bill)}>
-                                    <Edit className="w-4 h-4 mr-2" />
-                                    Edit
+                                    <Edit className="w-4 h-4 me-2" />
+                                    {tr("edit")}
                                   </DropdownMenuItem>
                                   {bill.status === "pending" && (
                                     <DropdownMenuItem
                                       onClick={() => approveBillMutation.mutate(bill.id)}
                                     >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
-                                      Approve
+                                      <CheckCircle className="w-4 h-4 me-2" />
+                                      {tr("approve")}
                                     </DropdownMenuItem>
                                   )}
                                   {bill.status !== "paid" && (
                                     <DropdownMenuItem onClick={() => handlePayBill(bill)}>
-                                      <DollarSign className="w-4 h-4 mr-2" />
-                                      Record Payment
+                                      <DollarSign className="w-4 h-4 me-2" />
+                                      {tr("recordPayment")}
                                     </DropdownMenuItem>
                                   )}
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     className="text-destructive"
                                     onClick={() => {
-                                      if (confirm("Are you sure you want to delete this bill?")) {
+                                      if (confirm(tr("areYouSureYouWantTo"))) {
                                         deleteBillMutation.mutate(bill.id);
                                       }
                                     }}
                                   >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
+                                    <Trash2 className="w-4 h-4 me-2" />
+                                    {tr("delete")}
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -1198,28 +1208,26 @@ export default function BillPay() {
         <TabsContent value="payments" className="space-y-6 mt-0">
           <Card>
             <CardHeader>
-              <CardTitle>Payment History</CardTitle>
-              <CardDescription>All payments recorded against vendor bills</CardDescription>
+              <CardTitle>{tr("paymentHistory")}</CardTitle>
+              <CardDescription>{tr("allPaymentsRecordedAgainstVendorBills")}</CardDescription>
             </CardHeader>
             <CardContent>
               {paymentsData.length === 0 ? (
                 <div className="text-center py-12">
                   <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-1">No payments yet</h3>
-                  <p className="text-muted-foreground">
-                    Payments will appear here when you record them against bills.
-                  </p>
+                  <h3 className="text-lg font-medium mb-1">{tr("noPaymentsYet")}</h3>
+                  <p className="text-muted-foreground">{tr("paymentsWillAppearHereWhenYou")}</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Bill #</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
+                      <TableHead>{tr("date")}</TableHead>
+                      <TableHead>{tr("vendor")}</TableHead>
+                      <TableHead>{tr("bill")}</TableHead>
+                      <TableHead className="text-end">{tr("amount")}</TableHead>
+                      <TableHead>{tr("method")}</TableHead>
+                      <TableHead>{tr("reference")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1230,7 +1238,7 @@ export default function BillPay() {
                         <TableCell className="font-mono text-sm">
                           {payment.bill_number || "-"}
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-end font-medium">
                           {formatCurrency(Number(payment.amount), "AED")}
                         </TableCell>
                         <TableCell>
@@ -1260,12 +1268,12 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Pending</p>
+                    <p className="text-sm text-muted-foreground">{tr("pending")}</p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.pending.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {summary?.pending.count || 0} bills
+                      {summary?.pending.count || 0} {tr("bills2")}
                     </p>
                   </div>
                   <Clock className="w-8 h-8 text-muted-foreground/70" />
@@ -1276,12 +1284,12 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Approved</p>
+                    <p className="text-sm text-muted-foreground">{tr("approved")}</p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.approved.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {summary?.approved.count || 0} bills
+                      {summary?.approved.count || 0} {tr("bills2")}
                     </p>
                   </div>
                   <CheckCircle className="w-8 h-8 text-info" />
@@ -1292,12 +1300,12 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Partially Paid</p>
+                    <p className="text-sm text-muted-foreground">{tr("partiallyPaid")}</p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.partial.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {summary?.partial.count || 0} bills
+                      {summary?.partial.count || 0} {tr("bills2")}
                     </p>
                   </div>
                   <DollarSign className="w-8 h-8 text-warning" />
@@ -1308,12 +1316,12 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Paid</p>
+                    <p className="text-sm text-muted-foreground">{tr("paid")}</p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(summary?.paid.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {summary?.paid.count || 0} bills
+                      {summary?.paid.count || 0} {tr("bills2")}
                     </p>
                   </div>
                   <CheckCircle className="w-8 h-8 text-success" />
@@ -1324,12 +1332,12 @@ export default function BillPay() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Overdue</p>
+                    <p className="text-sm text-muted-foreground">{tr("overdue")}</p>
                     <p className="text-2xl font-bold text-destructive">
                       {formatCurrency(summary?.overdue.total || 0, "AED")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {summary?.overdue.count || 0} bills
+                      {summary?.overdue.count || 0} {tr("bills2")}
                     </p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-destructive" />
@@ -1341,60 +1349,60 @@ export default function BillPay() {
           {/* Aging Report */}
           <Card>
             <CardHeader>
-              <CardTitle>Aging Report</CardTitle>
-              <CardDescription>Outstanding payables by age of due date</CardDescription>
+              <CardTitle>{tr("agingReport")}</CardTitle>
+              <CardDescription>{tr("outstandingPayablesByAgeOfDue")}</CardDescription>
             </CardHeader>
             <CardContent>
               {aging ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Period</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Bills</TableHead>
+                      <TableHead>{tr("period")}</TableHead>
+                      <TableHead className="text-end">{tr("amount")}</TableHead>
+                      <TableHead className="text-end">{tr("bills")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow>
-                      <TableCell className="font-medium">Current (Not Yet Due)</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="font-medium">{tr("currentNotYetDue")}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(aging.current.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right">{aging.current.count}</TableCell>
+                      <TableCell className="text-end">{aging.current.count}</TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium">1 - 30 Days</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="font-medium">{tr("n130Days")}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(aging.days_1_30.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right">{aging.days_1_30.count}</TableCell>
+                      <TableCell className="text-end">{aging.days_1_30.count}</TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium">31 - 60 Days</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="font-medium">{tr("n3160Days")}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(aging.days_31_60.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right">{aging.days_31_60.count}</TableCell>
+                      <TableCell className="text-end">{aging.days_31_60.count}</TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium">61 - 90 Days</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="font-medium">{tr("n6190Days")}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(aging.days_61_90.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right">{aging.days_61_90.count}</TableCell>
+                      <TableCell className="text-end">{aging.days_61_90.count}</TableCell>
                     </TableRow>
                     <TableRow className="font-semibold">
-                      <TableCell className="text-destructive">90+ Days</TableCell>
-                      <TableCell className="text-right text-destructive">
+                      <TableCell className="text-destructive">{tr("n90Days")}</TableCell>
+                      <TableCell className="text-end text-destructive">
                         {formatCurrency(aging.days_90_plus.amount, "AED")}
                       </TableCell>
-                      <TableCell className="text-right text-destructive">
+                      <TableCell className="text-end text-destructive">
                         {aging.days_90_plus.count}
                       </TableCell>
                     </TableRow>
                     <TableRow className="border-t-2 font-bold">
-                      <TableCell>Total Outstanding</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>{tr("totalOutstanding")}</TableCell>
+                      <TableCell className="text-end">
                         {formatCurrency(
                           aging.current.amount +
                             aging.days_1_30.amount +
@@ -1404,7 +1412,7 @@ export default function BillPay() {
                           "AED"
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {aging.current.count +
                           aging.days_1_30.count +
                           aging.days_31_60.count +
@@ -1441,17 +1449,21 @@ export default function BillPay() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>{tr("recordPayment")}</DialogTitle>
             <DialogDescription>
               {payingBill && (
                 <>
-                  Bill from <strong>{payingBill.vendor_name}</strong>
+                  {tr("billFrom")} <strong>{payingBill.vendor_name}</strong>
                   {payingBill.bill_number && <> ({payingBill.bill_number})</>}
                   <br />
-                  Total:{" "}
-                  {formatCurrency(Number(payingBill.total_amount), payingBill.currency || "AED")}
+                  {tr("total2", {
+                    formatCurrency: formatCurrency(
+                      Number(payingBill.total_amount),
+                      payingBill.currency || "AED"
+                    ),
+                  })}
                   {" | "}
-                  Remaining:{" "}
+                  {tr("remaining")}
                   {formatCurrency(
                     Number(payingBill.total_amount) - Number(payingBill.amount_paid),
                     payingBill.currency || "AED"
@@ -1467,9 +1479,14 @@ export default function BillPay() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount</FormLabel>
+                    <FormLabel>{tr("amount")}</FormLabel>
                     <FormControl>
-                      <Input {...field} type="number" step="0.01" placeholder="Payment amount" />
+                      <Input
+                        {...field}
+                        type="number"
+                        step="0.01"
+                        placeholder={tr("paymentAmount")}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1480,19 +1497,19 @@ export default function BillPay() {
                 name="payment_date"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Date</FormLabel>
+                    <FormLabel>{tr("paymentDate")}</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
                             variant="outline"
                             className={cn(
-                              "w-full justify-start text-left font-normal",
+                              "w-full justify-start text-start font-normal",
                               !field.value && "text-muted-foreground"
                             )}
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : "Pick a date"}
+                            <CalendarIcon className="me-2 h-4 w-4" />
+                            {field.value ? format(field.value, "PPP") : tr("pickADate")}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -1514,7 +1531,7 @@ export default function BillPay() {
                 name="payment_method"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Method</FormLabel>
+                    <FormLabel>{tr("paymentMethod")}</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
@@ -1522,10 +1539,10 @@ export default function BillPay() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="cheque">Cheque</SelectItem>
-                        <SelectItem value="card">Card</SelectItem>
+                        <SelectItem value="bank_transfer">{tr("bankTransfer")}</SelectItem>
+                        <SelectItem value="cash">{tr("cash")}</SelectItem>
+                        <SelectItem value="cheque">{tr("cheque")}</SelectItem>
+                        <SelectItem value="card">{tr("card")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1537,9 +1554,9 @@ export default function BillPay() {
                 name="reference"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reference</FormLabel>
+                    <FormLabel>{tr("reference")}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Payment reference (optional)" />
+                      <Input {...field} placeholder={tr("paymentReferenceOptional")} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1550,9 +1567,9 @@ export default function BillPay() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{tr("notes")}</FormLabel>
                     <FormControl>
-                      <Textarea {...field} placeholder="Optional notes" rows={2} />
+                      <Textarea {...field} placeholder={tr("optionalNotes")} rows={2} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1567,10 +1584,10 @@ export default function BillPay() {
                     setPayingBill(null);
                   }}
                 >
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button type="submit" disabled={recordPaymentMutation.isPending}>
-                  {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+                  {recordPaymentMutation.isPending ? tr("recording") : tr("recordPayment")}
                 </Button>
               </DialogFooter>
             </form>

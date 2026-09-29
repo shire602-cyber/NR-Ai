@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
+import { messages as pageMessages } from "./PortalDashboard.i18n";
 
 function formatAed(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -15,23 +16,31 @@ function formatAed(n: number) {
 }
 
 function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
-  if (!vat) return <Badge variant="outline">No VAT Return</Badge>;
+  const tr = pageMessages.useT();
+
+  if (!vat) return <Badge variant="outline">{tr("noVatReturn")}</Badge>;
   const due = new Date(vat.dueDate);
   const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
   if (vat.status === "filed" || vat.status === "submitted") {
-    return <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">Filed</Badge>;
+    return (
+      <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">
+        {tr("filed")}
+      </Badge>
+    );
   }
-  if (days < 0) return <Badge variant="destructive">Overdue</Badge>;
+  if (days < 0) return <Badge variant="destructive">{tr("overdue")}</Badge>;
   if (days <= 14)
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due {format(due, "MMM d")}
+        {tr("due", { format: format(due, "MMM d") })}
       </Badge>
     );
-  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
+  return <Badge variant="outline">{tr("due", { format: format(due, "MMM d") })}</Badge>;
 }
 
 export default function PortalDashboard() {
+  const tr = pageMessages.useT();
+
   const { data, isLoading } = useQuery({
     queryKey: ["portal-dashboard"],
     queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
@@ -52,8 +61,8 @@ export default function PortalDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Overview</h2>
-        <p className="text-sm text-muted-foreground mt-1">Your account summary at a glance.</p>
+        <h2 className="text-xl font-semibold text-foreground">{tr("overview")}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{tr("yourAccountSummaryAtAGlance")}</p>
       </div>
 
       {/* Stats */}
@@ -63,13 +72,13 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Outstanding
+                  {tr("outstanding")}
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {formatAed(inv.outstandingTotal ?? 0)}
                 </p>
                 <p className="text-xs text-muted-foreground/70 mt-1">
-                  {inv.outstanding ?? 0} invoice{inv.outstanding !== 1 ? "s" : ""}
+                  {tr.plural("invoicesCount", inv.outstanding ?? 0)}
                 </p>
               </div>
               <AlertCircle className="w-5 h-5 text-warning mt-1" />
@@ -82,13 +91,13 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Total Paid
+                  {tr("totalPaid")}
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {formatAed(inv.paidTotal ?? 0)}
                 </p>
                 <p className="text-xs text-muted-foreground/70 mt-1">
-                  {inv.paid ?? 0} invoice{inv.paid !== 1 ? "s" : ""}
+                  {tr.plural("invoicesCount", inv.paid ?? 0)}
                 </p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-success mt-1" />
@@ -101,12 +110,12 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Documents
+                  {tr("documents")}
                 </p>
                 <p className="text-2xl font-bold text-foreground mt-1">
                   {data?.documents?.total ?? 0}
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">uploaded files</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">{tr("uploadedFiles")}</p>
               </div>
               <FolderOpen className="w-5 h-5 text-info mt-1" />
             </div>
@@ -118,15 +127,19 @@ export default function PortalDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  VAT Status
+                  {tr("vatStatus")}
                 </p>
                 <div className="mt-2">
                   <VatBadge vat={vatStatus} />
                 </div>
                 {vatStatus?.dueDate && (
                   <p className="text-xs text-muted-foreground/70 mt-1">
-                    Period end:{" "}
-                    {format(new Date(vatStatus.periodEnd ?? vatStatus.dueDate), "MMM d, yyyy")}
+                    {tr("periodEnd", {
+                      format: format(
+                        new Date(vatStatus.periodEnd ?? vatStatus.dueDate),
+                        "MMM d, yyyy"
+                      ),
+                    })}
                   </p>
                 )}
               </div>
@@ -141,12 +154,14 @@ export default function PortalDashboard() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            Recent Invoices
+            {tr("recentInvoices")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {recentInvoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 py-4 text-center">No invoices yet.</p>
+            <p className="text-sm text-muted-foreground/70 py-4 text-center">
+              {tr("noInvoicesYet")}
+            </p>
           ) : (
             <div className="divide-y divide-border">
               {recentInvoices.map((inv: any) => (
@@ -157,7 +172,7 @@ export default function PortalDashboard() {
                       {inv.createdAt ? format(new Date(inv.createdAt), "MMM d, yyyy") : "—"}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-sm font-semibold text-foreground">
                       {formatAed(Number(inv.total) || 0)}
                     </p>

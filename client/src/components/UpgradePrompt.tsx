@@ -1,6 +1,7 @@
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { useLocation } from "wouter";
+import { messages as pageMessages } from "./UpgradePrompt.i18n";
 
 interface UpgradePromptProps {
   feature: string;
@@ -9,40 +10,44 @@ interface UpgradePromptProps {
   description?: string;
 }
 
-const FEATURE_LABELS: Record<string, string> = {
-  quotes: "Quotes & Estimates",
-  creditNotes: "Credit Notes",
-  purchaseOrders: "Purchase Orders",
-  invoiceTemplates: "Invoice Templates",
-  bankImport: "Bank Statement Import",
-  bulkOps: "Bulk Operations",
-  advancedReports: "Advanced Reports",
-  apiAccess: "API Access",
-  invoicePayment: "Online Invoice Payments",
-  recurringInvoices: "Recurring Invoices",
-  multiCurrency: "Multi-Currency",
-  payroll: "Payroll & WPS",
-  webhooks: "Webhooks & Integrations",
-  fixedAssets: "Fixed Assets & Depreciation",
-  costCenters: "Cost Centers",
-};
+const getFeatureLabels = (): Record<string, string> => ({
+  quotes: pageMessages.t("quotesEstimates"),
+  creditNotes: pageMessages.t("creditNotes"),
+  purchaseOrders: pageMessages.t("purchaseOrders"),
+  invoiceTemplates: pageMessages.t("invoiceTemplates"),
+  bankImport: pageMessages.t("bankStatementImport"),
+  bulkOps: pageMessages.t("bulkOperations"),
+  advancedReports: pageMessages.t("advancedReports"),
+  apiAccess: pageMessages.t("apiAccess"),
+  invoicePayment: pageMessages.t("onlineInvoicePayments"),
+  recurringInvoices: pageMessages.t("recurringInvoices"),
+  multiCurrency: pageMessages.t("multiCurrency"),
+  payroll: pageMessages.t("payrollWps"),
+  webhooks: pageMessages.t("webhooksIntegrations"),
+  fixedAssets: pageMessages.t("fixedAssetsDepreciation"),
+  costCenters: pageMessages.t("costCenters"),
+});
 
 export function UpgradePrompt({ feature, requiredTier, title, description }: UpgradePromptProps) {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
-  const featureLabel = FEATURE_LABELS[feature] || feature;
+  const featureLabel = getFeatureLabels()[feature] || feature;
 
   return (
     <Card className="border-dashed border-2 border-muted-foreground/25">
       <CardHeader className="text-center">
-        <CardTitle className="text-lg">{title || `Unlock ${featureLabel}`}</CardTitle>
+        <CardTitle className="text-lg">{title || tr("unlock", { featureLabel })}</CardTitle>
         <CardDescription>
           {description ||
-            `This feature is available on the ${requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)} plan and above.`}
+            tr("thisFeatureIsAvailableOnThe", {
+              value: requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1),
+            })}
         </CardDescription>
       </CardHeader>
       <CardContent className="text-center">
         <Button onClick={() => setLocation("/subscription")} size="lg">
-          Upgrade to {requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)}
+          {tr("upgradeTo")} {requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)}
         </Button>
       </CardContent>
     </Card>
