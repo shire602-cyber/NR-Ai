@@ -566,6 +566,21 @@ export function registerBillPayRoutes(app: Express) {
       );
 
       log.info({ billId: id, approvedBy: userId }, "Vendor bill approved");
+      await recordAudit({
+        userId,
+        companyId: bill.company_id,
+        action: "bill.approve",
+        entityType: "vendor_bill",
+        entityId: id,
+        before: { status: "pending" },
+        after: {
+          status: "approved",
+          number: bill.bill_number,
+          total: bill.total_amount,
+          currency: bill.currency,
+        },
+        req,
+      });
       res.json(normalizeBill(updateResult.rows[0]));
     })
   );

@@ -311,6 +311,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
+  setUserActive(userId: string, isActive: boolean): Promise<void>;
 
   // Password reset tokens
   createPasswordResetToken(input: {
@@ -771,7 +772,7 @@ export interface IStorage {
   // Team Management
   updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
   deleteCompanyUser(id: string): Promise<void>;
-  getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
+  getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: Omit<User, "passwordHash"> })[]>;
 
   // Admin Stats
   getAllUsers(): Promise<User[]>;
@@ -809,6 +810,7 @@ export interface IStorage {
   // Invitations (Admin)
   getInvitations(): Promise<Invitation[]>;
   getInvitationsByCompany(companyId: string): Promise<Invitation[]>;
+  getInvitationById(id: string): Promise<Invitation | undefined>;
   getInvitationByToken(token: string): Promise<Invitation | undefined>;
   getInvitationByEmail(email: string): Promise<Invitation | undefined>;
   createInvitation(invitation: InsertInvitation): Promise<Invitation>;
@@ -861,6 +863,10 @@ export interface IStorage {
 
   // Customer Subscriptions
   getSubscription(companyId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeCustomerId(customerId: string): Promise<Subscription | undefined>;
+  getSubscriptionByStripeSubscriptionId(
+    stripeSubscriptionId: string
+  ): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
 
@@ -1114,6 +1120,10 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
     await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  }
+
+  async setUserActive(userId: string, isActive: boolean): Promise<void> {
+    await db.update(users).set({ isActive }).where(eq(users.id, userId));
   }
 
   // Password reset tokens
@@ -3186,6 +3196,21 @@ export class DatabaseStorage implements IStorage {
     await db.insert(stripeEvents).values({ id, type }).onConflictDoNothing();
   }
 
+  /** Atomically record an event id; false means it was already claimed (duplicate delivery). */
+  async claimStripeEvent(id: string, type: string): Promise<boolean> {
+    const inserted = await db
+      .insert(stripeEvents)
+      .values({ id, type })
+      .onConflictDoNothing()
+      .returning({ id: stripeEvents.id });
+    return inserted.length > 0;
+  }
+
+  /** Forget an event so Stripe's retry of a failed delivery is processed. */
+  async releaseStripeEvent(id: string): Promise<void> {
+    await db.delete(stripeEvents).where(eq(stripeEvents.id, id));
+  }
+
   // Document versions
   async getDocumentVersions(
     companyId: string,
@@ -4246,17 +4271,18 @@ export class DatabaseStorage implements IStorage {
     await db.delete(companyUsers).where(eq(companyUsers.id, id));
   }
 
-  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
+  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: Omit<User, "passwordHash"> })[]> {
     const results = await db
       .select()
       .from(companyUsers)
       .innerJoin(users, eq(companyUsers.userId, users.id))
       .where(eq(companyUsers.companyId, companyId));
 
-    return results.map((r: any) => ({
-      ...r.company_users,
-      user: r.users,
-    }));
+    // Never hand a password hash to a route: every caller returns these rows.
+    return results.map((r: any) => {
+      const { passwordHash: _passwordHash, ...safeUser } = r.users;
+      return { ...r.company_users, user: safeUser };
+    });
   }
 
   // Document Vault
@@ -4398,6 +4424,11 @@ export class DatabaseStorage implements IStorage {
       .from(invitations)
       .where(eq(invitations.companyId, companyId))
       .orderBy(desc(invitations.createdAt));
+  }
+
+  async getInvitationById(id: string): Promise<Invitation | undefined> {
+    const [invitation] = await db.select().from(invitations).where(eq(invitations.id, id));
+    return invitation || undefined;
   }
 
   async getInvitationByToken(token: string): Promise<Invitation | undefined> {
@@ -4647,6 +4678,26 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(subscriptions)
       .where(eq(subscriptions.companyId, companyId));
+    return subscription || undefined;
+  }
+
+  async getSubscriptionByStripeCustomerId(customerId: string): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.stripeCustomerId, customerId))
+      .limit(1);
+    return subscription || undefined;
+  }
+
+  async getSubscriptionByStripeSubscriptionId(
+    stripeSubscriptionId: string
+  ): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+      .limit(1);
     return subscription || undefined;
   }
 

@@ -5,6 +5,7 @@ import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middle
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertWaitlistSchema } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { hasEmailProvider } from "../services/email.service";
 
 const log = createLogger("integrations");
 
@@ -50,17 +51,10 @@ export function registerIntegrationRoutes(app: Express) {
           name: "Google Sheets",
           description: "Export financial data to spreadsheets",
         },
-        xero: {
-          connected: false,
-          name: "Xero",
-          description: "Sync with Xero accounting",
-          comingSoon: true,
-        },
-        quickbooks: {
-          connected: false,
-          name: "QuickBooks Online",
-          description: "Sync with QuickBooks",
-          comingSoon: true,
+        email: {
+          connected: hasEmailProvider(),
+          name: "Email",
+          description: "Send invoices and payment reminders by email",
         },
       });
     })

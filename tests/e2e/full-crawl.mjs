@@ -1082,21 +1082,22 @@ async function main() {
       }
     }
 
-    // API key lifecycle: create returns the raw key exactly once.
+    // API keys are switched off (no public API verifies them): create must be an
+    // honest 501 NOT_AVAILABLE and must never hand out a key; list still works.
     const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: { name: "E2E key", scopes: "read" },
     });
     const created = await keyRes.json().catch(() => ({}));
-    if (keyRes.status() !== 201 || !created?.key || created?.keyHash) {
-      await fail("api-key create", {
+    if (keyRes.status() !== 501 || created?.code !== "NOT_AVAILABLE" || created?.key) {
+      await fail("api-key create is 501", {
         detail: `status ${keyRes.status()}: ${JSON.stringify(created).slice(0, 120)}`,
       });
     } else {
       const list = await (
         await page.request.get(`${BASE}/api/companies/${companyId}/api-keys`)
       ).json();
-      if (!Array.isArray(list) || list.some((k) => k.keyHash) || list.length < 1) {
+      if (!Array.isArray(list) || list.some((k) => k.keyHash)) {
         await fail("api-key list", { detail: "list missing or leaks keyHash" });
       }
     }

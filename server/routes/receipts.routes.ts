@@ -6,6 +6,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
 import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../services/fileStorage";
+import { recordStoredFile, removeStoredFile } from "../services/document-upload.service";
+import { estimateDecodedBytes } from "../services/document-validation";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
@@ -241,6 +243,15 @@ export function registerReceiptRoutes(app: Express) {
         }
         const { randomUUID } = await import("crypto");
         imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
+        await recordStoredFile({
+          companyId,
+          key: imagePath,
+          category: "receipts",
+          filename: "receipt.jpg",
+          contentType: mimeType,
+          sizeBytes: estimateDecodedBytes(imageData),
+          uploadedBy: userId,
+        });
       }
 
       const receipt = await storage.createReceipt({
@@ -428,6 +439,7 @@ export function registerReceiptRoutes(app: Express) {
 
       if (existing.imagePath) {
         await deleteReceiptImage(existing.imagePath);
+        await removeStoredFile(existing.imagePath); // ledger row (usage accounting)
       }
 
       await storage.deleteReceipt(id, existing.companyId);

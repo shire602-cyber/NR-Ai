@@ -1,6 +1,8 @@
 import type { Request } from "express";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { webhookEventsForAudit } from "./webhook-events";
+import { emitWebhookEvent } from "./webhook.service";
 
 const log = createLogger("audit");
 
@@ -49,5 +51,21 @@ export async function recordAudit(params: AuditParams): Promise<void> {
     } as any);
   } catch (err) {
     log.error({ err: (err as Error).message }, "failed to record audit log");
+  }
+
+  // Audit rows are written after the business transaction has committed, so
+  // this is the single, safe point to notify webhook subscribers. Strictly
+  // fire-and-forget: it can never delay or fail the request.
+  void emitWebhooksForAudit(params);
+}
+
+async function emitWebhooksForAudit(params: AuditParams): Promise<void> {
+  try {
+    const events = await webhookEventsForAudit(params);
+    for (const { event, payload } of events) {
+      emitWebhookEvent(params.companyId as string, event, payload);
+    }
+  } catch (err) {
+    log.error({ err: (err as Error).message }, "failed to emit webhook events");
   }
 }

@@ -8,8 +8,31 @@ import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { localWallDateToUtcMidnight } from "../utils/date";
 import { buildExpenseClaimJournalLines } from "../services/expense-claim-posting";
+import { ValidationError } from "../errors";
+import { sendStoredDocument, storeUploadedFile } from "../services/document-upload.service";
+import { keyBelongsToCompany, parseStorageKey } from "../services/document-validation";
 
 const log = createLogger("expense-claims");
+
+/**
+ * An item's receipt must be a file uploaded through the receipt-upload route
+ * for THIS company (a storage key) - never a client-supplied URL or another
+ * tenant's key. `keepAsIs` lets an existing claim keep a legacy value it
+ * already had when it is edited and re-saved.
+ */
+function receiptKeyOrNull(
+  value: unknown,
+  companyId: string,
+  keepAsIs: ReadonlySet<string> = new Set()
+): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") throw new ValidationError("receipt_url is not valid");
+  if (keepAsIs.has(value) || keepAsIs.has(value.trim())) return value;
+  if (!keyBelongsToCompany(value, companyId)) {
+    throw new ValidationError("Receipts must be uploaded with the receipt upload button; links are not accepted.");
+  }
+  return value;
+}
 
 export function registerExpenseClaimRoutes(app: Express) {
   // =====================================
@@ -112,6 +135,11 @@ export function registerExpenseClaimRoutes(app: Express) {
         }, 0);
       }
 
+      // Validate receipts before anything is written.
+      const receiptKeys: Array<string | null> = Array.isArray(items)
+        ? items.map((item: any) => receiptKeyOrNull(item?.receipt_url, companyId))
+        : [];
+
       // Generate claim number
       const countResult = await pool.query(
         "SELECT COUNT(*) as count FROM expense_claims WHERE company_id = $1",
@@ -131,7 +159,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       // Insert items if provided
       const insertedItems: any[] = [];
       if (items && Array.isArray(items)) {
-        for (const item of items) {
+        for (const [index, item] of items.entries()) {
           const itemResult = await pool.query(
             `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -143,7 +171,7 @@ export function registerExpenseClaimRoutes(app: Express) {
               item.description,
               item.amount,
               item.vat_amount || 0,
-              item.receipt_url || null,
+              receiptKeys[index],
               item.merchant_name || null,
             ]
           );
@@ -153,6 +181,73 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       log.info({ claimId: claim.id, companyId, claimNumber }, "Expense claim created");
       res.json({ ...claim, items: insertedItems });
+    })
+  );
+
+  // Upload a receipt file for a claim item (base64 JSON, like receipts). Returns
+  // the private storage key to put in the item's receipt_url; the file is
+  // downloaded via GET /api/expense-claims/:id/items/:itemId/receipt.
+  app.post(
+    "/api/companies/:companyId/expense-claims/receipt-upload",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const stored = await storeUploadedFile({
+        companyId,
+        category: "expense-receipts",
+        fileName: req.body?.fileName,
+        mimeType: req.body?.mimeType,
+        fileData: req.body?.fileData,
+        uploadedBy: userId,
+      });
+      res.status(201).json({
+        receiptKey: stored.key,
+        fileName: stored.filename,
+        sizeBytes: stored.sizeBytes,
+        contentType: stored.contentType,
+      });
+    })
+  );
+
+  // Download an item's receipt (authenticated, company-scoped).
+  app.get(
+    "/api/expense-claims/:id/items/:itemId/receipt",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id, itemId } = req.params;
+      const userId = (req as any).user.id;
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuid.test(id) || !uuid.test(itemId)) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+
+      const claimResult = await pool.query("SELECT company_id FROM expense_claims WHERE id = $1", [id]);
+      if (claimResult.rows.length === 0) {
+        return res.status(404).json({ message: "Expense claim not found" });
+      }
+      const companyId: string = claimResult.rows[0].company_id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const itemResult = await pool.query(
+        "SELECT receipt_url FROM expense_claim_items WHERE id = $1 AND claim_id = $2",
+        [itemId, id]
+      );
+      const key: string | null = itemResult.rows[0]?.receipt_url ?? null;
+      const parsedKey = parseStorageKey(key);
+      const filename = parsedKey ? parsedKey.name.replace(/^[0-9a-f-]{36}-/i, "") : "receipt";
+
+      const sent = await sendStoredDocument(res, { key, companyId, filename });
+      if (!sent) return res.status(404).json({ message: "No receipt file is stored for this item" });
     })
   );
 
@@ -210,9 +305,18 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       // Replace items if new items provided
       if (items && Array.isArray(items)) {
+        const existing = await pool.query(
+          "SELECT receipt_url FROM expense_claim_items WHERE claim_id = $1 AND receipt_url IS NOT NULL",
+          [id]
+        );
+        const existingValues = new Set<string>(existing.rows.map((r: any) => r.receipt_url));
+        const receiptKeys = items.map((item: any) =>
+          receiptKeyOrNull(item?.receipt_url, claim.company_id, existingValues)
+        );
+
         await pool.query("DELETE FROM expense_claim_items WHERE claim_id = $1", [id]);
 
-        for (const item of items) {
+        for (const [index, item] of items.entries()) {
           await pool.query(
             `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -223,7 +327,7 @@ export function registerExpenseClaimRoutes(app: Express) {
               item.description,
               item.amount,
               item.vat_amount || 0,
-              item.receipt_url || null,
+              receiptKeys[index],
               item.merchant_name || null,
             ]
           );

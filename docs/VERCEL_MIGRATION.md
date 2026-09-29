@@ -57,8 +57,11 @@ re-architecture — same Node server, same Postgres/Redis. **Effort: low.**
 
 ## Prerequisites already done / needed for serverless (Option B)
 - [x] **Receipt-image storage → object storage** (S3/R2 adapter) — shipped.
-- [ ] Move **VAT-evidence uploads** off local disk to the same S3 adapter (same
-  fix; one remaining disk writer).
+- [x] **All uploads (documents, tax-return files, VAT evidence, expense receipts)
+  → the same storage backend** (Vercel Blob / S3 / local disk in dev) via
+  `saveDocument` / `readDocument` in `server/services/fileStorage.ts`. No disk
+  writer remains; in production an upload with no durable storage is refused
+  with 503 `STORAGE_NOT_DURABLE`.
 - [ ] **Redis-backed rate limiting** (replace the in-memory sliding window).
 - [ ] **Scheduler → Vercel Cron** (extract each job into a callable handler).
 - [ ] **DB pooler** — move to Neon or front Railway PG with PgBouncer.

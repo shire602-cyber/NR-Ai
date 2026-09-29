@@ -114,7 +114,6 @@ export default function Services() {
           ? "Cutting-edge artificial intelligence that transforms your bookkeeping experience"
           : "ذكاء اصطناعي متطور يحول تجربة مسك الدفاتر الخاصة بك",
       currentBadge: locale === "en" ? "Available Now" : "متوفر الآن",
-      futureBadge: locale === "en" ? "Coming Soon" : "قريباً",
     },
     cta: {
       headline:
@@ -311,69 +310,6 @@ export default function Services() {
           : "استخراج والتحقق تلقائياً من أرقام التسجيل الضريبي وتفاصيل الفواتير وشروط الدفع.",
       bgColor: "bg-success/10",
       iconColor: "text-success",
-    },
-  ];
-
-  const futureAiCapabilities = [
-    {
-      icon: Bot,
-      title: locale === "en" ? "AI CFO / Financial Advisor" : "المدير المالي بالذكاء الاصطناعي",
-      description:
-        locale === "en"
-          ? "Get personalized financial advice, cash flow predictions, and strategic recommendations from your AI advisor."
-          : "احصل على نصائح مالية مخصصة وتنبؤات التدفق النقدي وتوصيات استراتيجية من مستشارك الذكي.",
-      bgColor: "bg-chart-5/10",
-      iconColor: "text-chart-5",
-    },
-    {
-      icon: LineChart,
-      title: locale === "en" ? "Predictive Analytics" : "التحليلات التنبؤية",
-      description:
-        locale === "en"
-          ? "AI-powered forecasting for revenue, expenses, and cash flow based on historical patterns."
-          : "تنبؤات مدعومة بالذكاء الاصطناعي للإيرادات والمصروفات والتدفق النقدي بناءً على الأنماط التاريخية.",
-      bgColor: "bg-info/10",
-      iconColor: "text-info",
-    },
-    {
-      icon: AlertTriangle,
-      title: locale === "en" ? "Anomaly Detection" : "كشف الشذوذ",
-      description:
-        locale === "en"
-          ? "Automatically flag unusual transactions, duplicate payments, and potential fraud."
-          : "تحديد تلقائي للمعاملات غير العادية والمدفوعات المكررة والاحتيال المحتمل.",
-      bgColor: "bg-destructive/10",
-      iconColor: "text-destructive",
-    },
-    {
-      icon: Mic,
-      title: locale === "en" ? "Voice Commands" : "الأوامر الصوتية",
-      description:
-        locale === "en"
-          ? "Create invoices, log expenses, and query reports using natural voice commands in English or Arabic."
-          : "إنشاء الفواتير وتسجيل المصروفات والاستعلام عن التقارير باستخدام الأوامر الصوتية بالإنجليزية أو العربية.",
-      bgColor: "bg-chart-5/10",
-      iconColor: "text-chart-5",
-    },
-    {
-      icon: Target,
-      title: locale === "en" ? "Smart Tax Optimization" : "تحسين الضرائب الذكي",
-      description:
-        locale === "en"
-          ? "AI-assisted tax review prompts that help accountants spot planning and documentation gaps."
-          : "تنبيهات مراجعة ضريبية مدعومة بالذكاء الاصطناعي تساعد المحاسبين على اكتشاف فجوات التخطيط والتوثيق.",
-      bgColor: "bg-success/10",
-      iconColor: "text-success",
-    },
-    {
-      icon: Workflow,
-      title: locale === "en" ? "Automated Workflows" : "سير العمل الآلي",
-      description:
-        locale === "en"
-          ? "Set up automated rules for recurring transactions, approvals, and reminders."
-          : "إعداد قواعد آلية للمعاملات المتكررة والموافقات والتذكيرات.",
-      bgColor: "bg-info/10",
-      iconColor: "text-info",
     },
   ];
 
@@ -804,55 +740,6 @@ export default function Services() {
                   >
                     {capability.description}
                   </p>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Future AI Capabilities */}
-          <div>
-            <div
-              className={`flex items-center justify-center gap-3 mb-8 ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
-              style={{ animationDelay: "500ms", animationDuration: "600ms" }}
-            >
-              <Badge
-                className="bg-warning/20 text-warning border-warning/30 px-4 py-2 text-sm font-semibold"
-                data-testid="badge-ai-future"
-              >
-                <Rocket className={`w-4 h-4 ${isRTL ? "ml-2" : "mr-2"}`} />
-                {t.ai.futureBadge}
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {futureAiCapabilities.map((capability, index) => (
-                <Card
-                  key={index}
-                  className={`p-6 hover-elevate transition-all duration-300 group border-border/50 border-dashed ${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
-                  style={{ animationDelay: `${550 + index * 75}ms`, animationDuration: "600ms" }}
-                  data-testid={`card-ai-future-${index}`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div
-                      className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
-                    >
-                      <capability.icon className={`w-6 h-6 ${capability.iconColor}`} />
-                    </div>
-                    <div>
-                      <h3
-                        className="text-lg font-semibold mb-2 group-hover:text-primary transition-colors"
-                        data-testid={`text-ai-future-title-${index}`}
-                      >
-                        {capability.title}
-                      </h3>
-                      <p
-                        className="text-sm text-muted-foreground leading-relaxed"
-                        data-testid={`text-ai-future-desc-${index}`}
-                      >
-                        {capability.description}
-                      </p>
-                    </div>
-                  </div>
                 </Card>
               ))}
             </div>

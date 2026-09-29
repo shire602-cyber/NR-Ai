@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { storeUploadedFile, removeStoredFile } from "../services/document-upload.service";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { buildInvoiceBalances, listOpenReceivables, receivableOutstanding } from "../services/invoice-outstanding";
 import { db } from "../db";
@@ -154,7 +155,8 @@ export function registerClientPortalRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const companyId: string = (req as any).portalCompanyId;
       const docs = await storage.getDocuments(companyId);
-      res.json(docs);
+      // Only documents explicitly shared with the portal, never internal files.
+      res.json(docs.filter((d) => d.sharedWithPortal === true && d.isArchived !== true));
     })
   );
 
@@ -165,44 +167,42 @@ export function registerClientPortalRoutes(app: Express): void {
       const companyId: string = (req as any).portalCompanyId;
       const userId = (req.user as any).id;
 
-      const ALLOWED_TYPES = [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "text/plain",
-        "text/csv",
-      ];
-      const mimeType: string = req.body.mimeType || "application/pdf";
-      if (!ALLOWED_TYPES.includes(mimeType.toLowerCase())) {
-        return res.status(400).json({ message: "Invalid file type" });
-      }
-      const fileSize = Number(req.body.fileSize) || 0;
-      if (fileSize > 50 * 1024 * 1024) {
-        return res.status(400).json({ message: "File exceeds 50 MB limit" });
-      }
-
-      const doc = await storage.createDocument({
+      // Real upload: validated (type, magic bytes, 10 MB) and stored durably.
+      // A client-supplied fileUrl/fileSize is never read. Download goes through
+      // GET /api/documents/:documentId/download.
+      const stored = await storeUploadedFile({
         companyId,
-        name: req.body.name || "Uploaded Document",
-        nameAr: req.body.nameAr || null,
-        category: req.body.category || "other",
-        description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: fileSize || null,
-        mimeType,
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        reminderDays: req.body.reminderDays || 30,
-        reminderSent: false,
-        tags: req.body.tags || null,
-        isArchived: false,
+        category: "documents",
+        fileName: req.body.fileName,
+        mimeType: req.body.mimeType,
+        fileData: req.body.fileData,
         uploadedBy: userId,
       });
+
+      let doc;
+      try {
+        doc = await storage.createDocument({
+          companyId,
+          name: req.body.name || "Uploaded Document",
+          nameAr: req.body.nameAr || null,
+          category: req.body.category || "other",
+          description: req.body.description || null,
+          fileUrl: stored.key, // private storage key, not a URL
+          fileName: stored.filename,
+          fileSize: stored.sizeBytes,
+          mimeType: stored.contentType,
+          expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
+          reminderDays: req.body.reminderDays || 30,
+          reminderSent: false,
+          tags: req.body.tags || null,
+          isArchived: false,
+          sharedWithPortal: true, // the portal user's own upload
+          uploadedBy: userId,
+        });
+      } catch (err) {
+        await removeStoredFile(stored.key);
+        throw err;
+      }
       res.status(201).json(doc);
     })
   );

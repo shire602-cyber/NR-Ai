@@ -3,13 +3,43 @@ import { Resend } from "resend";
 import type { Invoice, Company } from "../../shared/schema";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
+import { AppError } from "../errors";
 
 const logger = createLogger("email");
 
+export type EmailProvider = "resend" | "smtp";
+
+/** Typed outcome of every send path. Callers must look at `sent`. */
 export interface SendEmailResult {
   sent: boolean;
-  provider?: "resend" | "smtp";
+  provider?: EmailProvider;
+  /** Set when `sent` is false. */
+  code?: "EMAIL_NOT_CONFIGURED" | "EMAIL_SEND_FAILED";
   error?: string;
+}
+
+export interface EmailStatus {
+  configured: boolean;
+  provider: EmailProvider | null;
+}
+
+export const EMAIL_NOT_CONFIGURED_MESSAGE =
+  "Email is not configured on this server, so nothing was sent. Ask the administrator to set RESEND_API_KEY (or SMTP_HOST, SMTP_USER and SMTP_PASS).";
+
+export class EmailNotConfiguredError extends AppError {
+  constructor() {
+    super({ message: EMAIL_NOT_CONFIGURED_MESSAGE, statusCode: 503, code: "EMAIL_NOT_CONFIGURED" });
+  }
+}
+
+export class EmailSendFailedError extends AppError {
+  constructor(detail?: string) {
+    super({
+      message: `The email could not be sent${detail ? `: ${detail}` : "."}`,
+      statusCode: 502,
+      code: "EMAIL_SEND_FAILED",
+    });
+  }
 }
 
 // ─── HTML escaping for user-supplied values ───────────────────
@@ -46,6 +76,89 @@ export function hasResendConfig(): boolean {
 
 export function hasEmailProvider(): boolean {
   return hasResendConfig() || hasSmtpConfig();
+}
+
+/** Single source of truth for "can this server send email, and through what". */
+export function emailStatus(): EmailStatus {
+  if (hasResendConfig()) return { configured: true, provider: "resend" };
+  if (hasSmtpConfig()) return { configured: true, provider: "smtp" };
+  return { configured: false, provider: null };
+}
+
+/** Features that silently do nothing without an email provider (startup WARN, docs). */
+export function emailDisabledCapabilities(): string[] {
+  return [
+    "password reset emails",
+    "invoice emailing",
+    "payment reminder / chasing emails",
+    "firm client emails and VAT reminders",
+  ];
+}
+
+/**
+ * For user-initiated sends: convert a failed result into a typed AppError so the
+ * error handler answers 503 EMAIL_NOT_CONFIGURED (or 502 EMAIL_SEND_FAILED)
+ * instead of the route reporting success.
+ */
+export function assertEmailSent(result: SendEmailResult): void {
+  if (result.sent) return;
+  if (result.code === "EMAIL_NOT_CONFIGURED") throw new EmailNotConfiguredError();
+  throw new EmailSendFailedError(result.error);
+}
+
+export interface OutgoingEmail {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  fromName?: string;
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
+}
+
+/**
+ * The one place mail leaves the process. Resend is preferred, SMTP is the
+ * fallback, and with neither configured this returns EMAIL_NOT_CONFIGURED
+ * rather than pretending. Never throws.
+ */
+async function deliver(msg: OutgoingEmail): Promise<SendEmailResult> {
+  const { provider } = emailStatus();
+  if (!provider) {
+    logger.warn(`Email not sent (no provider configured): "${msg.subject}"`);
+    return { sent: false, code: "EMAIL_NOT_CONFIGURED", error: EMAIL_NOT_CONFIGURED_MESSAGE };
+  }
+
+  try {
+    if (provider === "resend") {
+      const resend = new Resend(getEnv().RESEND_API_KEY!);
+      const response: any = await resend.emails.send({
+        from: getResendFrom(msg.fromName),
+        to: msg.to,
+        subject: msg.subject,
+        html: msg.html,
+        ...(msg.text ? { text: msg.text } : {}),
+        ...(msg.attachments
+          ? { attachments: msg.attachments.map((a) => ({ filename: a.filename, content: a.content })) }
+          : {}),
+      });
+      if (response?.error) {
+        throw new Error(response.error.message || "Resend rejected the message");
+      }
+    } else {
+      await createTransporter().sendMail({
+        from: getFromAddress(),
+        to: msg.to,
+        subject: msg.subject,
+        html: msg.html,
+        ...(msg.text ? { text: msg.text } : {}),
+        ...(msg.attachments ? { attachments: msg.attachments } : {}),
+      });
+    }
+    logger.info(`Email sent via ${provider}: "${msg.subject}"`);
+    return { sent: true, provider };
+  } catch (err: any) {
+    logger.error({ err: err?.message, provider }, `Email send via ${provider} failed`);
+    return { sent: false, provider, code: "EMAIL_SEND_FAILED", error: err?.message ?? "Send failed" };
+  }
 }
 
 // ─── Transport / from-address helpers ─────────────────────────
@@ -133,8 +246,7 @@ export async function sendInvoiceEmail(
   pdfBuffer: Buffer,
   subject?: string,
   message?: string
-): Promise<void> {
-  const transporter = createTransporter();
+): Promise<SendEmailResult> {
   const safeCompanyName = escapeHtml(company.name);
   const safeCustomerName = escapeHtml(invoice.customerName);
   const safeInvoiceNumber = escapeHtml(invoice.number);
@@ -229,11 +341,11 @@ export async function sendInvoiceEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
+  return deliver({
     to,
     subject: invoiceSubject,
     html,
+    fromName: company.name,
     attachments: [
       {
         filename: `invoice-${invoice.number}.pdf`,
@@ -250,8 +362,7 @@ export async function sendPaymentReminderEmail(
   company: Company,
   pdfBuffer: Buffer,
   reminderNumber: number
-): Promise<void> {
-  const transporter = createTransporter();
+): Promise<SendEmailResult> {
   const isOverdue = invoice.dueDate && new Date(invoice.dueDate) < new Date();
   const subject = isOverdue
     ? `Overdue Invoice Reminder: ${invoice.number} — ${formatCurrency(invoice.total, invoice.currency)}`
@@ -342,11 +453,11 @@ export async function sendPaymentReminderEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
+  return deliver({
     to,
     subject,
     html,
+    fromName: company.name,
     attachments: [
       {
         filename: `invoice-${invoice.number}.pdf`,
@@ -362,8 +473,7 @@ export async function sendGenericEmail(
   subject: string,
   body: string,
   fromName?: string
-): Promise<void> {
-  const transporter = createTransporter();
+): Promise<SendEmailResult> {
   const safeBody = escapeHtml(body).replace(/\n/g, "<br>");
   const safeFromName = escapeHtml(fromName || "NR Accounting");
 
@@ -390,16 +500,10 @@ export async function sendGenericEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject,
-    html,
-  });
+  return deliver({ to, subject, html, text: body, fromName });
 }
 
-export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
-  const transporter = createTransporter();
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<SendEmailResult> {
   // Token is server-generated hex appended to a config URL; escape anyway so
   // a misconfigured base URL can never inject markup.
   const safeUrl = escapeHtml(resetUrl);
@@ -433,20 +537,14 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject: "Reset your Muhasib.ai password",
-    html,
-  });
+  return deliver({ to, subject: "Reset your Muhasib.ai password", html });
 }
 
 export async function sendWelcomeEmail(
   to: string,
   name: string,
   companyName?: string
-): Promise<void> {
-  const transporter = createTransporter();
+): Promise<SendEmailResult> {
   const safeName = escapeHtml(name);
   const safeCompanyName = escapeHtml(companyName || "");
 
@@ -485,23 +583,21 @@ export async function sendWelcomeEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject: "Welcome to Muhasib.ai",
-    html,
-  });
+  return deliver({ to, subject: "Welcome to Muhasib.ai", html });
 }
 
 /**
- * Send an email via Resend (preferred) or SMTP fallback.
- * Gracefully degrades — returns { sent: false } if no provider is configured.
+ * Send a plain-text email via Resend (preferred) or SMTP fallback.
+ * Returns a typed result and never throws: { sent: false, code } when no
+ * provider is configured (EMAIL_NOT_CONFIGURED) or the provider rejects it
+ * (EMAIL_SEND_FAILED). User-initiated callers should pass the result to
+ * assertEmailSent() so the user sees the failure.
  *
  * @param to          Recipient email address
  * @param subject     Email subject line
  * @param body        Plain text body (auto-wrapped + escaped if html not provided)
  * @param options.fromName  Display name for the sender
- * @param options.html      Pre-rendered HTML body — caller MUST escape user input
+ * @param options.html      Pre-rendered HTML body - caller MUST escape user input
  */
 export async function sendEmail(
   to: string,
@@ -510,40 +606,11 @@ export async function sendEmail(
   options?: { fromName?: string; html?: string }
 ): Promise<SendEmailResult> {
   const fromName = options?.fromName;
-  const htmlBody = options?.html ?? wrapPlainTextInHtml(body, fromName);
-
-  if (hasResendConfig()) {
-    try {
-      const env = getEnv();
-      const resend = new Resend(env.RESEND_API_KEY!);
-      await resend.emails.send({
-        from: getResendFrom(fromName),
-        to,
-        subject,
-        html: htmlBody,
-        text: body,
-      });
-      logger.info(`Email sent via Resend to ${to}: "${subject}"`);
-      return { sent: true, provider: "resend" };
-    } catch (err: any) {
-      logger.error(`Resend send failed: ${err?.message}`);
-      return { sent: false, provider: "resend", error: err?.message };
-    }
-  }
-
-  if (hasSmtpConfig()) {
-    try {
-      await sendGenericEmail(to, subject, body, fromName);
-      logger.info(`Email sent via SMTP to ${to}: "${subject}"`);
-      return { sent: true, provider: "smtp" };
-    } catch (err: any) {
-      logger.error(`SMTP send failed: ${err?.message}`);
-      return { sent: false, provider: "smtp", error: err?.message };
-    }
-  }
-
-  logger.warn(
-    "No email provider configured (RESEND_API_KEY or SMTP_HOST) — email saved to DB only"
-  );
-  return { sent: false, error: "No email provider configured — set RESEND_API_KEY or SMTP_HOST" };
+  return deliver({
+    to,
+    subject,
+    html: options?.html ?? wrapPlainTextInHtml(body, fromName),
+    text: body,
+    fromName,
+  });
 }

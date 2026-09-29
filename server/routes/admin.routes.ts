@@ -489,6 +489,14 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const adminUserId = (req as any).user.id;
 
+      // Client-portal users are invited by the firm from the client's page,
+      // which stores hashed tokens and binds the user to one company.
+      if (req.body.userType === "client_portal") {
+        return res.status(400).json({
+          message: "Invite client portal users from the client's page in the firm workspace.",
+        });
+      }
+
       // Check if email already has pending invitation
       const existing = await storage.getInvitationByEmail(req.body.email);
       if (existing && existing.status === "pending") {

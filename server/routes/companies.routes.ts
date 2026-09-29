@@ -9,6 +9,7 @@ import {
 } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { checkCompanyQuota } from "../middleware/featureGate";
+import { ensureSubscription } from "../services/billing-trial.service";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
@@ -183,7 +184,13 @@ export function registerCompanyRoutes(app: Express) {
     checkCompanyQuota(),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
-      const validated = insertCompanySchema.parse(req.body);
+      const parsedCompany = insertCompanySchema.parse(req.body);
+      // companyType decides billing ("client" = firm-managed, never gated) and
+      // firm visibility, so only a platform admin may set it.
+      const validated = {
+        ...parsedCompany,
+        companyType: (req as any).user.isAdmin === true ? parsedCompany.companyType : "customer",
+      };
 
       // Check if company name exists
       const existing = await storage.getCompanyByName(validated.name);
@@ -212,6 +219,17 @@ export function registerCompanyRoutes(app: Express) {
 
       // Seed Chart of Accounts
       await seedChartOfAccounts(company.id);
+
+      // Customer companies start on the 14-day trial. Firm-managed client
+      // companies are covered by the firm's arrangement and get no row.
+      if (company.companyType !== "client") {
+        try {
+          await ensureSubscription(company.id, { company, startsAt: new Date() });
+        } catch (err) {
+          // The gate creates it lazily on first use; never fail onboarding over it.
+          log.warn({ err, companyId: company.id }, "Could not start trial at company creation");
+        }
+      }
 
       res.json(withNrClientVatGroup(company));
     })

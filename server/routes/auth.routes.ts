@@ -22,7 +22,9 @@ import {
   setAuthCookies,
 } from "../services/auth-cookies.service";
 import { blacklistToken, isTokenBlacklisted } from "../services/auth-tokens.service";
-import { hasEmailProvider, sendPasswordResetEmail } from "../services/email.service";
+import { emailStatus, sendPasswordResetEmail } from "../services/email.service";
+import { captureException } from "../services/monitoring";
+import { ensureSubscription } from "../services/billing-trial.service";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { insertUserSchema } from "../../shared/schema";
@@ -30,6 +32,13 @@ import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validato
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { BCRYPT_COST } from "../config/bcrypt";
+import { recordAudit } from "../services/audit.service";
+import {
+  PORTAL_USER_TYPE,
+  hashInvitationToken,
+  isUserDeactivated,
+} from "../services/portal-invitations";
+import { acceptPortalInvitation } from "../services/portal-invitation-accept";
 import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
@@ -81,21 +90,10 @@ async function createOAuthCustomer(profile: OAuthIdentityProfile) {
 
   await seedChartOfAccounts(company.id);
 
-  const now = new Date();
-  const periodEnd = new Date(now);
-  periodEnd.setFullYear(periodEnd.getFullYear() + 100);
-  await storage.createSubscription({
-    companyId: company.id,
-    planId: "free",
-    planName: "Free",
-    status: "active",
-    currentPeriodStart: now,
-    currentPeriodEnd: periodEnd,
-    maxUsers: 1,
-    maxInvoices: 20,
-    maxReceipts: 20,
-    aiCreditsRemaining: 10,
-  } as any);
+  // New companies start on a 14-day trial of the advertised plan.
+  await ensureSubscription(company.id, { company, startsAt: new Date() }).catch((err) =>
+    log.warn({ err, companyId: company.id }, "Could not start trial at OAuth sign-up")
+  );
 
   return user;
 }
@@ -233,6 +231,24 @@ const passwordSchema = z
   .regex(/[a-z]/, "Password must contain at least one lowercase letter")
   .regex(/[0-9]/, "Password must contain at least one digit");
 
+/**
+ * Resolve the token from an invitation link to its invitation row.
+ *
+ * Client-portal invitations store only a SHA-256 digest of the emailed token,
+ * so they are looked up by digest. Admin-created invitations still store the
+ * raw token. A portal invitation must never be reachable by presenting the
+ * stored value itself (that would turn a database read into a working
+ * invitation link), so a raw-token match on a portal row is treated as "not
+ * found".
+ */
+async function findInvitationByPresentedToken(token: string) {
+  const byDigest = await storage.getInvitationByToken(hashInvitationToken(token));
+  if (byDigest) return byDigest;
+  const byRaw = await storage.getInvitationByToken(token);
+  if (byRaw && byRaw.userType === PORTAL_USER_TYPE) return undefined;
+  return byRaw;
+}
+
 // =============================================
 // Route registration
 // =============================================
@@ -295,23 +311,12 @@ export function registerAuthRoutes(app: Express): void {
       // Seed Chart of Accounts for new company
       await seedChartOfAccounts(company.id);
 
-      // Create free tier subscription for new customer
-      const now = new Date();
-      const periodEnd = new Date(now);
-      periodEnd.setFullYear(periodEnd.getFullYear() + 100); // Free tier never expires
-
-      await storage.createSubscription({
-        companyId: company.id,
-        planId: "free",
-        planName: "Free",
-        status: "active",
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        maxUsers: 1,
-        maxInvoices: 20,
-        maxReceipts: 20,
-        aiCreditsRemaining: 10,
-      });
+      // Start the 14-day trial (idempotent; the company's creation time anchors it).
+      // A failure must not strand a half-registered user: the feature gate
+      // creates the row lazily on first use.
+      await ensureSubscription(company.id, { company, startsAt: new Date() }).catch((err) =>
+        log.warn({ err, companyId: company.id }, "Could not start trial at registration")
+      );
 
       const { token, refreshToken } = issueAuthTokens(res, user);
 
@@ -370,7 +375,7 @@ export function registerAuthRoutes(app: Express): void {
         ? await bcrypt.compare(passwordToCheck, user.passwordHash)
         : (await bcrypt.compare(passwordToCheck, DUMMY_HASH), false);
 
-      if (!user || !isValid) {
+      if (!user || !isValid || isUserDeactivated(user)) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
@@ -436,6 +441,9 @@ export function registerAuthRoutes(app: Express): void {
           state
         );
         const { user, mode } = await resolveOAuthUser(profile);
+        if (isUserDeactivated(user)) {
+          throw new Error("Account deactivated");
+        }
 
         issueAuthTokens(res, user);
         await auditOAuthLogin(req, user.id, profile, mode);
@@ -472,7 +480,7 @@ export function registerAuthRoutes(app: Express): void {
 
     // Verify user still exists in DB
     const user = await storage.getUser(payload.userId);
-    if (!user) {
+    if (!user || isUserDeactivated(user)) {
       return res.status(401).json({ message: "User not found" });
     }
 
@@ -511,7 +519,8 @@ export function registerAuthRoutes(app: Express): void {
         message: "If that email is registered, a reset link has been sent.",
       };
 
-      if (!user) {
+      // Same generic reply for unknown and deactivated accounts (no enumeration).
+      if (!user || isUserDeactivated(user)) {
         return res.json(genericResponse);
       }
 
@@ -534,19 +543,30 @@ export function registerAuthRoutes(app: Express): void {
         return res.json({ ...genericResponse, devResetUrl: resetUrl });
       }
 
+      // Failures stay server-side: the response is identical either way so
+      // callers can't probe which emails exist or whether delivery worked. But
+      // the owner must hear about it, so every failure is an ERROR + a
+      // captured exception (no email address in the payload).
+      const reportResetFailure = (reason: string, cause?: unknown) => {
+        log.error({ userId: user.id, reason }, `Password reset email NOT sent: ${reason}`);
+        captureException(cause instanceof Error ? cause : new Error(`Password reset email not sent: ${reason}`), {
+          source: "forgot-password",
+          userId: user.id,
+          requestId: req.id,
+          reason,
+        });
+      };
+
       if (!appUrl) {
-        log.error("FRONTEND_URL/AUTH_PUBLIC_URL not set; cannot build password reset link");
-      } else if (!hasEmailProvider()) {
-        log.error(
-          "No email provider configured (RESEND_API_KEY or SMTP_*); password reset email not sent"
-        );
+        reportResetFailure("FRONTEND_URL/AUTH_PUBLIC_URL not set; cannot build reset link");
+      } else if (!emailStatus().configured) {
+        reportResetFailure("no email provider configured (RESEND_API_KEY or SMTP_*)");
       } else {
-        // Failures stay server-side: the response is identical either way so
-        // callers can't probe which emails exist or whether delivery worked.
         try {
-          await sendPasswordResetEmail(user.email, resetUrl);
+          const result = await sendPasswordResetEmail(user.email, resetUrl);
+          if (!result.sent) reportResetFailure(result.error ?? "provider rejected the message");
         } catch (err) {
-          log.error({ err, userId: user.id }, "Failed to send password reset email");
+          reportResetFailure("unexpected error while sending", err);
         }
       }
 
@@ -565,6 +585,14 @@ export function registerAuthRoutes(app: Express): void {
       const record = await storage.findValidPasswordResetToken(tokenHash);
 
       if (!record) {
+        return res.status(400).json({
+          message: "This reset link is invalid or has expired. Please request a new one.",
+        });
+      }
+
+      const resetUser = await storage.getUser(record.userId);
+      if (!resetUser || isUserDeactivated(resetUser)) {
+        await storage.deletePasswordResetTokensForUser(record.userId);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
         });
@@ -637,7 +665,7 @@ export function registerAuthRoutes(app: Express): void {
     "/invitations/verify/:token",
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
-      const invitation = await storage.getInvitationByToken(token);
+      const invitation = await findInvitationByPresentedToken(token);
 
       if (!invitation) {
         return res.status(404).json({ message: "Invitation not found" });
@@ -679,7 +707,7 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(password);
 
-      const invitation = await storage.getInvitationByToken(token);
+      const invitation = await findInvitationByPresentedToken(token);
 
       if (!invitation) {
         return res.status(404).json({ message: "Invitation not found" });
@@ -691,6 +719,36 @@ export function registerAuthRoutes(app: Express): void {
 
       if (new Date() > invitation.expiresAt) {
         return res.status(400).json({ message: "Invitation has expired" });
+      }
+
+      // Client-portal invitation: single-use claim + read-only portal user
+      // bound to exactly one company. An existing account is never converted.
+      if (invitation.userType === PORTAL_USER_TYPE) {
+        const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
+        const outcome = await acceptPortalInvitation({ invitation, name, passwordHash });
+        if (outcome.kind === "email_taken") {
+          return res.status(409).json({
+            message:
+              "An account with this email already exists, so this invitation cannot be accepted.",
+            code: "EMAIL_ALREADY_REGISTERED",
+          });
+        }
+        if (outcome.kind === "unavailable") {
+          return res.status(400).json({ message: "Invitation is no longer valid" });
+        }
+
+        await recordAudit({
+          userId: outcome.user.id,
+          companyId: invitation.companyId,
+          action: "portal.invite_accept",
+          entityType: "user",
+          entityId: outcome.user.id,
+          after: { email: outcome.user.email, invitationId: invitation.id },
+          req,
+        });
+
+        const { token: portalJwt, refreshToken: portalRefresh } = issueAuthTokens(res, outcome.user);
+        return res.json({ user: publicUser(outcome.user), token: portalJwt, refreshToken: portalRefresh });
       }
 
       // Check if user already exists

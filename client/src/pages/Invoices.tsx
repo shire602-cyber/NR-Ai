@@ -74,6 +74,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
+import { canEditInvoice } from "@/lib/invoice-editability";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from "@/lib/export";
@@ -1225,15 +1226,17 @@ export default function Invoices() {
                             <SelectItem value="void">{t.void}</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditInvoice(invoice)}
-                          data-testid={`mobile-button-edit-invoice-${invoice.id}`}
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          Edit
-                        </Button>
+                        {canEditInvoice(invoice.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditInvoice(invoice)}
+                            data-testid={`mobile-button-edit-invoice-${invoice.id}`}
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                        )}
                         <Button
                           asChild
                           variant="outline"
@@ -1362,15 +1365,17 @@ export default function Invoices() {
                                   Proof
                                 </Link>
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditInvoice(invoice)}
-                                data-testid={`button-edit-invoice-${invoice.id}`}
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                Edit
-                              </Button>
+                              {canEditInvoice(invoice.status) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditInvoice(invoice)}
+                                  data-testid={`button-edit-invoice-${invoice.id}`}
+                                >
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  Edit
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"

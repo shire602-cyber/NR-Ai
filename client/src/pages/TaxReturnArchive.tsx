@@ -34,6 +34,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
+import {
+  checkFileBeforeUpload,
+  downloadAuthenticatedFile,
+  fileProblemMessage,
+  readFileAsBase64,
+} from "@/lib/file-upload";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -45,7 +51,6 @@ import {
   Calendar,
   Loader2,
   Plus,
-  Eye,
   Filter,
   Receipt,
   Building2,
@@ -106,11 +111,11 @@ export default function TaxReturnArchive() {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: typeof newReturn & { fileName?: string }) => {
-      return apiRequest("POST", `/api/companies/${companyId}/tax-returns-archive`, {
-        ...data,
-        fileUrl: data.fileName ? `/uploads/${data.fileName}` : null,
-      });
+    mutationFn: async (
+      data: typeof newReturn & { fileName?: string; mimeType?: string; fileData?: string }
+    ) => {
+      // The optional PDF travels as base64; the server validates and stores it privately.
+      return apiRequest("POST", `/api/companies/${companyId}/tax-returns-archive`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -163,14 +168,54 @@ export default function TaxReturnArchive() {
       return;
     }
 
+    if (selectedFile) {
+      const problem = checkFileBeforeUpload(selectedFile);
+      if (problem) {
+        toast({
+          variant: "destructive",
+          title: locale === "ar" ? "ملف غير صالح" : "Invalid file",
+          description: fileProblemMessage(problem, locale),
+        });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      await addMutation.mutateAsync({
-        ...newReturn,
-        fileName: selectedFile?.name,
-      });
+      const fileFields = selectedFile
+        ? {
+            fileName: selectedFile.name,
+            mimeType: selectedFile.type || "application/pdf",
+            fileData: await readFileAsBase64(selectedFile),
+          }
+        : {};
+      await addMutation.mutateAsync({ ...newReturn, ...fileFields });
+    } catch (error: any) {
+      // Server rejections are toasted by the mutation's onError; this covers read errors.
+      if (!addMutation.isError) {
+        toast({
+          variant: "destructive",
+          title: locale === "ar" ? "فشل الإضافة" : "Failed to Add",
+          description: error?.message,
+        });
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDownload = async (ret: TaxReturn) => {
+    try {
+      await downloadAuthenticatedFile(
+        `/api/tax-returns-archive/${ret.id}/download`,
+        ret.fileName || "tax-return.pdf"
+      );
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "فشل التنزيل" : "Download failed",
+        description: error?.message,
+      });
     }
   };
 
@@ -421,29 +466,15 @@ export default function TaxReturnArchive() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             {ret.fileUrl && (
-                              <>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => window.open(ret.fileUrl!, "_blank")}
-                                  data-testid={`button-view-${ret.id}`}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const link = document.createElement("a");
-                                    link.href = ret.fileUrl!;
-                                    link.download = ret.fileName || "tax-return.pdf";
-                                    link.click();
-                                  }}
-                                  data-testid={`button-download-${ret.id}`}
-                                >
-                                  <Download className="w-4 h-4" />
-                                </Button>
-                              </>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDownload(ret)}
+                                aria-label={locale === "ar" ? "تنزيل" : "Download"}
+                                data-testid={`button-download-${ret.id}`}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
                             )}
                           </div>
                         </TableCell>
@@ -590,10 +621,15 @@ export default function TaxReturnArchive() {
               <Label>{locale === "ar" ? "ملف الإقرار (PDF)" : "Return File (PDF)"}</Label>
               <Input
                 type="file"
-                accept=".pdf"
+                accept=".pdf,application/pdf"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-return-file"
               />
+              {isSubmitting && selectedFile && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {locale === "ar" ? "جارٍ رفع الملف…" : "Uploading file…"}
+                </p>
+              )}
               {selectedFile && (
                 <p className="text-sm text-muted-foreground">
                   {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)

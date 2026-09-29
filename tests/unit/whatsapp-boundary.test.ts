@@ -26,6 +26,7 @@ describe("WhatsApp surface boundary", () => {
     const customerFacingFiles = [
       "client/src/App.tsx",
       "client/src/components/layout/AppSidebar.tsx",
+      "client/src/components/layout/nav-config.ts",
       "client/src/pages/Admin.tsx",
       "client/src/pages/ClientDashboard.tsx",
       "client/src/pages/CustomerContacts.tsx",

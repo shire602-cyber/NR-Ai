@@ -168,6 +168,13 @@ export const limiterProfiles = {
     max: envInt("RL_AI_MAX", 20),
     message: "AI rate limit exceeded. Please try again later.",
   } as RouteLimit,
+  // Fire-and-forget browser crash reports. Small on purpose: a crash loop must
+  // not flood the log or the external monitor.
+  clientErrors: {
+    windowMs: envInt("RL_CLIENT_ERRORS_WINDOW_MS", 60_000),
+    max: envInt("RL_CLIENT_ERRORS_MAX", 10),
+    message: "Too many error reports.",
+  } as RouteLimit,
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
     // must sit well above real navigation and report review.

@@ -75,6 +75,8 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getStoredUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
+import { ReceiptUploadField } from "@/components/expense-claims/ReceiptUploadField";
+import { downloadAuthenticatedFile } from "@/lib/file-upload";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -1066,12 +1068,13 @@ export default function ExpenseClaims() {
                         name={`items.${index}.receipt_url`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Receipt</FormLabel>
+                            <FormLabel>{locale === "ar" ? "الإيصال" : "Receipt"}</FormLabel>
                             <FormControl>
-                              <Input
-                                placeholder="Receipt URL (upload coming soon)"
-                                {...field}
-                                value={field.value || ""}
+                              <ReceiptUploadField
+                                companyId={companyId}
+                                value={field.value}
+                                onChange={field.onChange}
+                                locale={locale}
                               />
                             </FormControl>
                             <FormMessage />
@@ -1215,6 +1218,7 @@ export default function ExpenseClaims() {
                           <TableHead>Merchant</TableHead>
                           <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
                           <TableHead className="text-right">VAT</TableHead>
+                          <TableHead>{locale === "ar" ? "الإيصال" : "Receipt"}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1240,6 +1244,33 @@ export default function ExpenseClaims() {
                                 parseFloat(String(item.vat_amount)) || 0,
                                 "AED",
                                 locale
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {item.receipt_url && item.id ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
+                                    try {
+                                      await downloadAuthenticatedFile(
+                                        `/api/expense-claims/${viewingClaim.id}/items/${item.id}/receipt`,
+                                        "receipt"
+                                      );
+                                    } catch (error: any) {
+                                      toast({
+                                        title: locale === "ar" ? "فشل التنزيل" : "Download failed",
+                                        description: error?.message,
+                                        variant: "destructive",
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {locale === "ar" ? "تنزيل" : "Download"}
+                                </Button>
+                              ) : (
+                                "-"
                               )}
                             </TableCell>
                           </TableRow>

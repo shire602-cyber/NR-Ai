@@ -29,7 +29,7 @@ describe("monitoring.monitoringConfigured", () => {
     expect(monitoringConfigured({ SENTRY_DSN: "https://x@y/1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
   });
 
-  it("is true when MONITORING_DSN is set", () => {
-    expect(monitoringConfigured({ MONITORING_DSN: "x" } as unknown as NodeJS.ProcessEnv)).toBe(true);
+  it("ignores the legacy MONITORING_DSN (nothing consumes it, so it must not report configured)", () => {
+    expect(monitoringConfigured({ MONITORING_DSN: "x" } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 });

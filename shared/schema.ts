@@ -8,6 +8,7 @@ import {
   timestamp,
   uuid,
   unique,
+  uniqueIndex,
   index,
   customType,
   jsonb,
@@ -116,6 +117,8 @@ export const users = pgTable("users", {
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
   emailVerified: boolean("email_verified").notNull().default(false),
+  // false = deactivated: cannot log in, refresh, reset a password or use a token.
+  isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -3607,6 +3610,8 @@ export const documents = pgTable(
     reminderSent: boolean("reminder_sent").default(false),
     tags: text("tags"), // JSON array of tags for search
     isArchived: boolean("is_archived").default(false),
+    // Client-portal users see a document only when this is true.
+    sharedWithPortal: boolean("shared_with_portal").notNull().default(false),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -4124,6 +4129,8 @@ export const subscriptions = pgTable(
     currentPeriodStart: timestamp("current_period_start").notNull(),
     currentPeriodEnd: timestamp("current_period_end").notNull(),
     cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+    // Set while status = 'trialing'; the trial is over once now >= trialEndsAt.
+    trialEndsAt: timestamp("trial_ends_at"),
 
     // Stripe Integration (if using)
     stripeCustomerId: text("stripe_customer_id"),
@@ -4151,6 +4158,38 @@ export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
 
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+
+// ===========================
+// Stored files ledger (one row per object written to file storage)
+// ===========================
+// The file bytes live in object storage / disk under `storageKey`
+// (`<companyId>/<category>/<uuid>-<name>`). This ledger exists so per-company
+// storage usage is a real SUM and so any key can be traced to its tenant.
+export const storedFiles = pgTable(
+  "stored_files",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    storageKey: text("storage_key").notNull(),
+    category: text("category").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdIdx: index("idx_stored_files_company_id").on(table.companyId),
+    storageKeyUnique: uniqueIndex("uq_stored_files_storage_key").on(table.storageKey),
+  })
+);
+
+export type StoredFile = typeof storedFiles.$inferSelect;
+export type InsertStoredFile = typeof storedFiles.$inferInsert;
 
 // ===========================
 // Data Backups (Financial Records Safeguard)

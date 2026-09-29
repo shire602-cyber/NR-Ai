@@ -15,6 +15,7 @@ import cookieParser from "cookie-parser";
 
 import { validateEnv, isDevelopment } from "./config/env";
 import { authCookieBaseOptions } from "./config/cookies";
+import { UPLOAD_JSON_LIMIT, isUploadRoute } from "./config/upload-routes";
 import { createLogger } from "./config/logger";
 import { applySecurityMiddleware } from "./middleware/security";
 import { requestId } from "./middleware/requestId";
@@ -28,8 +29,16 @@ import { setupVite, serveStatic } from "./vite";
 import { initScheduler } from "./services/scheduler.service";
 import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from "./db";
 import { installGracefulShutdown } from "./shutdown";
-import { captureException, monitoringConfigured } from "./services/monitoring";
+import {
+  captureException,
+  flushMonitoring,
+  initMonitoring,
+  monitoringConfigured,
+} from "./services/monitoring";
 import { assessStorageDurability } from "./services/fileStorage";
+import { emailStatus } from "./services/email.service";
+import { describeDisabledCapabilities } from "./services/capabilities";
+import { isStripeConfigured } from "./services/stripe.service";
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -66,13 +75,19 @@ const largeJsonRoutes = [
 
 const largeJson = express.json({ limit: "10mb" });
 const smallJson = express.json({ limit: "1mb" });
+const uploadJson = express.json({ limit: UPLOAD_JSON_LIMIT });
 
 // The inbound email webhook needs the EXACT raw bytes to verify its HMAC
 // signature, so it gets a raw-body parser and is skipped by the JSON parser.
 app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
+// Stripe signs the exact raw bytes too: a JSON-parsed body can never verify.
+app.use("/api/webhooks/stripe", express.raw({ type: "*/*", limit: "1mb" }));
 
 app.use((req, res, next) => {
-  if (req.path === "/api/webhooks/email-intake") return next(); // raw body handled above
+  if (req.path === "/api/webhooks/email-intake" || req.path === "/api/webhooks/stripe") {
+    return next(); // raw body handled above
+  }
+  if (isUploadRoute(req.path)) return uploadJson(req, res, next);
   const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
   return (useLarge ? largeJson : smallJson)(req, res, next);
 });
@@ -130,6 +145,8 @@ app.get("/api/version", (_req, res) => {
     commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null,
     environment: env.NODE_ENV,
     uptime: process.uptime(),
+    monitoring: monitoringConfigured() ? "configured" : "not_configured",
+    email: emailStatus().configured ? "configured" : "not_configured",
   });
 });
 
@@ -170,6 +187,8 @@ app.get("/health", async (_req, res) => {
       databaseError: ping.error,
       pool: getPoolStats(),
       errorTracking: monitoringConfigured() ? "configured" : "logs-only",
+      monitoring: monitoringConfigured() ? "configured" : "not_configured",
+      email: emailStatus().configured ? "configured" : "not_configured",
     },
   });
 });
@@ -274,6 +293,9 @@ let ioServer: any = null;
 async function bootstrap() {
   log.info({ environment: env.NODE_ENV, port: env.PORT }, "Starting server");
 
+  // Error tracking: a no-op (SDK never imported) unless SENTRY_DSN is set.
+  await initMonitoring();
+
   // Migrations are deploy-phase work, not boot-phase work. Default off in
   // prod; opt-in via AUTO_MIGRATE_ON_BOOT=true (dev/test/single-instance).
   // For prod, run `npm run db:migrate` in the Railway release command
@@ -335,6 +357,16 @@ async function bootstrap() {
     log.info(`✓ Database: ${env.DATABASE_URL ? "Connected" : "Not configured"}`);
     log.info(`✓ AI: ${env.OPENAI_API_KEY ? "Configured" : "Not configured"}`);
     logBillingEnforcementStatus();
+
+    const disabled = describeDisabledCapabilities({
+      email: emailStatus().configured,
+      errorTracking: monitoringConfigured(),
+      durableStorage: assessStorageDurability(uploadsDir).durable,
+      billing: isStripeConfigured(),
+    });
+    if (disabled.length > 0) {
+      log.warn({ disabled }, `Capabilities NOT configured (${disabled.length}): ${disabled.join(" | ")}`);
+    }
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {
@@ -380,6 +412,7 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (error) => {
   captureException(error, { source: "uncaughtException", fatal: true });
-  log.fatal({ error }, "Uncaught exception");
-  process.exit(1);
+  log.fatal({ err: error }, "Uncaught exception");
+  // Give the monitor a moment to deliver the event before we die.
+  void flushMonitoring(2000).finally(() => process.exit(1));
 });

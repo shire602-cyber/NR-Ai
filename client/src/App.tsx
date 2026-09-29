@@ -106,6 +106,7 @@ const ReconciliationRules = lazyWithReload(() => import("@/pages/ReconciliationR
 const InvoiceTemplates = lazyWithReload(() => import("@/pages/InvoiceTemplates"));
 const DocumentVersions = lazyWithReload(() => import("@/pages/DocumentVersions"));
 const DeveloperSettings = lazyWithReload(() => import("@/pages/DeveloperSettings"));
+const AcceptInvite = lazyWithReload(() => import("@/pages/AcceptInvite"));
 const NotificationPreferences = lazyWithReload(() => import("@/pages/NotificationPreferences"));
 const Subscription = lazyWithReload(() => import("@/pages/Subscription"));
 const ExchangeRates = lazyWithReload(() => import("@/pages/ExchangeRates"));
@@ -548,6 +549,7 @@ function Router() {
     pathname === "/terms" ||
     pathname === "/cookies" ||
     pathname.startsWith("/view/invoice/") ||
+    pathname.startsWith("/accept-invite/") ||
     pathname.startsWith("/portal/")
   ) {
     return (
@@ -568,6 +570,7 @@ function Router() {
               <Route path="/reset-password" component={ResetPassword} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              <Route path="/accept-invite/:token" component={AcceptInvite} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />

@@ -1,8 +1,9 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,64 @@ import {
   Brain,
   HardDrive,
   Star,
+  Clock,
 } from "lucide-react";
+
+interface BillingStatus {
+  plan: string;
+  status: string;
+  trialEndsAt: string | null;
+  daysLeft: number;
+  enforcement: boolean;
+}
+
+/**
+ * Trial banner: "X days left in your trial" / "Trial ended". Renders nothing
+ * for paying, free, grandfathered and firm-managed companies.
+ */
+function TrialBanner({ companyId }: { companyId: string | null | undefined }) {
+  const { locale } = useTranslation();
+  const isAr = locale === "ar";
+  const { data } = useQuery<BillingStatus>({
+    queryKey: ["/api/billing/status", companyId],
+    queryFn: () => apiRequest("GET", `/api/billing/status?companyId=${companyId}`),
+    enabled: Boolean(companyId),
+  });
+
+  if (!data || (data.status !== "trialing" && data.status !== "trial_expired")) return null;
+
+  const expired = data.status === "trial_expired";
+  const days = data.daysLeft;
+  const message = expired
+    ? isAr
+      ? "انتهت الفترة التجريبية. اختر خطة أدناه للاستمرار في استخدام الميزات المدفوعة."
+      : "Your trial has ended. Choose a plan below to keep using paid features."
+    : isAr
+      ? days === 1
+        ? "يوم واحد متبقٍ في فترتك التجريبية"
+        : `${days} أيام متبقية في فترتك التجريبية`
+      : `${days} ${days === 1 ? "day" : "days"} left in your trial`;
+
+  return (
+    <div
+      role="status"
+      data-testid="trial-banner"
+      className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+        expired
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : "border-primary/30 bg-primary/5 text-foreground"
+      }`}
+    >
+      <Clock className="h-4 w-4 shrink-0" />
+      <span className="font-medium">{message}</span>
+      {data.trialEndsAt && (
+        <span className="ms-auto text-xs text-muted-foreground">
+          {new Date(data.trialEndsAt).toLocaleDateString(isAr ? "ar-AE" : undefined)}
+        </span>
+      )}
+    </div>
+  );
+}
 
 const PLANS = [
   {
@@ -232,6 +290,8 @@ export default function Subscription() {
         title="Subscription & Billing"
         description="Manage your plan, usage, and billing details"
       />
+
+      <TrialBanner companyId={companyId} />
 
       {/* Current Plan & Usage */}
       <div className="grid gap-6 md:grid-cols-2">

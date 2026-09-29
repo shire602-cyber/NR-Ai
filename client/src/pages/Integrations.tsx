@@ -25,13 +25,12 @@ import {
   Calculator,
   Wallet,
   RefreshCw,
-  Zap,
   Link2,
   History,
   Settings,
   Power,
 } from "lucide-react";
-import { SiGoogle, SiQuickbooks } from "react-icons/si";
+import { SiGoogle } from "react-icons/si";
 import {
   Dialog,
   DialogContent,
@@ -54,13 +53,10 @@ interface IntegrationStatus {
   connected: boolean;
   name: string;
   description: string;
-  comingSoon?: boolean;
 }
 
 interface IntegrationsStatusResponse {
   googleSheets: IntegrationStatus;
-  xero: IntegrationStatus;
-  quickbooks: IntegrationStatus;
 }
 
 export default function Integrations() {
@@ -83,7 +79,6 @@ export default function Integrations() {
         : "اربط تطبيقاتك وخدماتك المفضلة لمزامنة بياناتك المالية",
     connected: locale === "en" ? "Connected" : "متصل",
     notConnected: locale === "en" ? "Not Connected" : "غير متصل",
-    comingSoon: locale === "en" ? "Coming Soon" : "قريباً",
     export: locale === "en" ? "Export" : "تصدير",
     import: locale === "en" ? "Import" : "استيراد",
     sync: locale === "en" ? "Sync" : "مزامنة",
@@ -110,19 +105,10 @@ export default function Integrations() {
     noHistory: locale === "en" ? "No sync history yet" : "لا يوجد سجل مزامنة بعد",
     records: locale === "en" ? "records" : "سجلات",
     availableIntegrations: locale === "en" ? "Available Integrations" : "التكاملات المتاحة",
-    upcomingIntegrations: locale === "en" ? "Coming Soon" : "قريباً",
     googleSheetsDesc:
       locale === "en"
         ? "Export invoices, expenses, and reports to Google Sheets for easy sharing and analysis"
         : "صدّر الفواتير والمصروفات والتقارير إلى Google Sheets للمشاركة والتحليل بسهولة",
-    xeroDesc:
-      locale === "en"
-        ? "Two-way sync with Xero for seamless accounting workflow integration"
-        : "مزامنة ثنائية الاتجاه مع Xero للتكامل السلس مع سير العمل المحاسبي",
-    quickbooksDesc:
-      locale === "en"
-        ? "Sync transactions, invoices, and accounts with QuickBooks Online"
-        : "مزامنة المعاملات والفواتير والحسابات مع QuickBooks Online",
   };
 
   const { data: integrationStatus, isLoading: statusLoading } =
@@ -430,53 +416,6 @@ export default function Integrations() {
                 </p>
               )}
             </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Coming Soon Integrations */}
-      <div className="mb-10">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <Zap className="w-5 h-5" />
-          {t.upcomingIntegrations}
-        </h2>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Xero */}
-          <Card className="relative overflow-hidden opacity-75" data-testid="integration-xero">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
-            <CardHeader className="flex flex-row items-start gap-4 pb-2">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-sm">X</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Xero</CardTitle>
-                  <Badge variant="outline">{t.comingSoon}</Badge>
-                </div>
-                <CardDescription className="mt-1 text-sm">{t.xeroDesc}</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-
-          {/* QuickBooks */}
-          <Card
-            className="relative overflow-hidden opacity-75"
-            data-testid="integration-quickbooks"
-          >
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-full" />
-            <CardHeader className="flex flex-row items-start gap-4 pb-2">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
-                <SiQuickbooks className="w-5 h-5 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">QuickBooks</CardTitle>
-                  <Badge variant="outline">{t.comingSoon}</Badge>
-                </div>
-                <CardDescription className="mt-1 text-sm">{t.quickbooksDesc}</CardDescription>
-              </div>
-            </CardHeader>
           </Card>
         </div>
       </div>

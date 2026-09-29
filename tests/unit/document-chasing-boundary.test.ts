@@ -27,7 +27,10 @@ describe("Document chasing surface boundary", () => {
     expect(appSource).not.toMatch(/<Route\s+path=["']\/document-chasing["']/);
     expect(appSource).toMatch(/<Route\s+path=["']\/firm\/document-chasing["']/);
 
-    const sidebarSource = readRepoFile("client/src/components/layout/AppSidebar.tsx");
+    const sidebarSource = [
+      readRepoFile("client/src/components/layout/AppSidebar.tsx"),
+      readRepoFile("client/src/components/layout/nav-config.ts"),
+    ].join("\n");
     expect(sidebarSource).not.toContain('url: "/document-chasing"');
     expect(sidebarSource).toContain('url: "/firm/document-chasing"');
   });

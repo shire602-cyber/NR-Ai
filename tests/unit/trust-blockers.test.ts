@@ -197,30 +197,28 @@ describe("CORS allowlist (resolveAllowedOrigins)", () => {
 });
 
 describe("e-commerce integration secret masking", () => {
-  it("list response carries presence flags, never stored secrets", async () => {
+  it("list response carries only id, platform, status, lastSyncAt and hasCredentials", async () => {
     const app = appWith(registerAnalyticsRoutes);
     const res = await request(app, "GET", "/api/integrations/ecommerce?companyId=company-1");
     expect(res.status).toBe(200);
     const integration = res.body[0];
-    expect(integration.hasApiKey).toBe(true);
-    expect(integration.hasWebhookSecret).toBe(true);
-    expect(integration.hasAccessToken).toBe(false);
-    expect(integration.apiKey).toBeUndefined();
-    expect(integration.accessToken).toBeUndefined();
-    expect(integration.refreshToken).toBeUndefined();
-    expect(integration.webhookSecret).toBeUndefined();
+    expect(Object.keys(integration).sort()).toEqual(
+      ["hasCredentials", "id", "lastSyncAt", "platform", "status"].sort()
+    );
+    expect(integration.hasCredentials).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain("enc:v1");
   });
 
-  it("connect response does not echo submitted credentials", async () => {
+  it("connect is switched off: 501 NOT_AVAILABLE and nothing is echoed or stored", async () => {
     const app = appWith(registerAnalyticsRoutes);
     const res = await request(app, "POST", "/api/integrations/ecommerce/connect", {
       companyId: "company-1",
       platform: "stripe",
       apiKey: "sk_live_supersecret",
     });
-    expect(res.status).toBe(200);
-    expect(res.body.hasApiKey).toBe(true);
+    expect(res.status).toBe(501);
+    expect(res.body.code).toBe("NOT_AVAILABLE");
     expect(JSON.stringify(res.body)).not.toContain("sk_live_supersecret");
+    expect(storage.createEcommerceIntegration).not.toHaveBeenCalled();
   });
 });

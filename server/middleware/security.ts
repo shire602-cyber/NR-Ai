@@ -4,6 +4,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { buildLimiter, limiterProfiles } from "./rateLimit";
+import { UPLOAD_MAX_CONTENT_LENGTH, isUploadRoute } from "../config/upload-routes";
 import {
   cspNonce,
   buildCspDirectives,
@@ -142,7 +143,7 @@ export function applySecurityMiddleware(app: Express): void {
         "X-CSRF-Token",
         "X-XSRF-Token",
       ],
-      exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
+      exposedHeaders: ["Content-Disposition", "X-Billing-Would-Block", "X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
       maxAge: 86400, // Cache preflight for 24 hours
     })
   );
@@ -167,6 +168,7 @@ export function applySecurityMiddleware(app: Express): void {
       skipIf: (req) => !isCredentialAuthPath(req.path),
     })
   );
+  app.use("/api/client-errors", buildLimiter(limiterProfiles.clientErrors));
   app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
   app.use("/api/ocr/", buildLimiter(limiterProfiles.ai));
   app.use("/api/firm/bulk/ocr", buildLimiter(limiterProfiles.ai));
@@ -194,7 +196,10 @@ export function applySecurityMiddleware(app: Express): void {
   // body parser in index.ts enforces tighter per-route limits.
   app.use((req: Request, res: Response, next: NextFunction) => {
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
-    if (contentLength > 10_485_760) {
+    // File uploads travel as base64 JSON (a 10 MB file is ~13.4 MB), so they
+    // get a higher ceiling; the file is still capped at 10 MB after decoding.
+    const ceiling = isUploadRoute(req.path) ? UPLOAD_MAX_CONTENT_LENGTH : 10_485_760;
+    if (contentLength > ceiling) {
       // 10MB
       return res.status(413).json({ message: "Request too large" });
     }

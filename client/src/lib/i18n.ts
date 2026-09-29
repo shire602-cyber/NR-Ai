@@ -463,6 +463,9 @@ export const t = {
 
     // Sidebar group titles & new nav items
     sales: "Sales",
+    banking: "Banking",
+    navMore: "More",
+    webhooks: "Webhooks",
     purchases: "Purchases",
     nraCenter: "NRA Center",
     companyProfile: "Company Profile",
@@ -907,6 +910,9 @@ export const t = {
 
     // Sidebar group titles & new nav items
     sales: "المبيعات",
+    banking: "الخدمات المصرفية",
+    navMore: "المزيد",
+    webhooks: "الويب هوك",
     purchases: "المشتريات",
     nraCenter: "مركز NRA",
     companyProfile: "ملف الشركة",

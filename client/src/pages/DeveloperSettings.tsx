@@ -40,23 +40,12 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
+import { SUPPORTED_WEBHOOK_EVENTS } from "@shared/webhook-events";
+import { Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
 // Types
 // ===========================
-
-interface ApiKeyItem {
-  id: string;
-  companyId: string;
-  name: string;
-  keyPrefix: string;
-  scopes: string;
-  lastUsedAt: string | null;
-  expiresAt: string | null;
-  isActive: boolean;
-  createdAt: string;
-}
 
 interface WebhookEndpointItem {
   id: string;
@@ -86,19 +75,8 @@ interface WebhookDeliveryItem {
 // Constants
 // ===========================
 
-const API_KEY_SCOPES = ["read", "write", "admin"] as const;
-
-const WEBHOOK_EVENTS = [
-  "invoice.created",
-  "invoice.paid",
-  "invoice.overdue",
-  "payment.received",
-  "quote.created",
-  "quote.accepted",
-  "receipt.uploaded",
-  "credit_note.created",
-  "vat_return.filed",
-] as const;
+// Only events the platform actually emits (shared with the server, which refuses others).
+const WEBHOOK_EVENTS = SUPPORTED_WEBHOOK_EVENTS;
 
 // ===========================
 // Main Component
@@ -111,12 +89,12 @@ export default function DeveloperSettings() {
   if (!canAccess("apiAccess")) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <PageHeader eyebrow="Settings" title="Developer Settings" className="mb-6" />
+        <PageHeader eyebrow="Settings" title="Webhooks" className="mb-6" />
         <UpgradePrompt
           feature="apiAccess"
           requiredTier={getRequiredTier("apiAccess")}
-          title="Unlock API & Webhook Access"
-          description="API keys and webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems."
+          title="Unlock Webhook Access"
+          description="Webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems."
         />
       </div>
     );
@@ -126,321 +104,12 @@ export default function DeveloperSettings() {
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       <PageHeader
         eyebrow="Settings"
-        title="Developer Settings"
-        description="Manage API keys and webhook endpoints for integrating with external services."
+        title="Webhooks"
+        description="Send signed notifications to your own systems when invoices, payments, credit notes and bills change."
         className="mb-6"
       />
-      <Tabs defaultValue="api-keys">
-        <TabsList className="mb-6">
-          <TabsTrigger value="api-keys" className="gap-2">
-            <Key className="h-4 w-4" />
-            API Keys
-          </TabsTrigger>
-          <TabsTrigger value="webhooks" className="gap-2">
-            <Webhook className="h-4 w-4" />
-            Webhooks
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="api-keys">
-          {companyId && <ApiKeysTab companyId={companyId} />}
-        </TabsContent>
-
-        <TabsContent value="webhooks">
-          {companyId && <WebhooksTab companyId={companyId} />}
-        </TabsContent>
-      </Tabs>
+      {companyId && <WebhooksTab companyId={companyId} />}
     </div>
-  );
-}
-
-// ===========================
-// API Keys Tab
-// ===========================
-
-function ApiKeysTab({ companyId }: { companyId: string }) {
-  const { toast } = useToast();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createdKey, setCreatedKey] = useState<string | null>(null);
-  const [showKeyDialog, setShowKeyDialog] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  // Form state
-  const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read"]);
-
-  const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
-    queryKey: ["/api/companies", companyId, "api-keys"],
-    enabled: !!companyId,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (data: { name: string; scopes: string }) =>
-      apiRequest("POST", `/api/companies/${companyId}/api-keys`, data),
-    onSuccess: (result: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      setCreatedKey(result.key);
-      setCreateOpen(false);
-      setShowKeyDialog(true);
-      setNewKeyName("");
-      setNewKeyScopes(["read"]);
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to create API key",
-        description: error?.message,
-      });
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      apiRequest("PUT", `/api/api-keys/${id}`, { isActive }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key updated" });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to update API key",
-        description: error?.message,
-      });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/api-keys/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key revoked" });
-      setDeleteId(null);
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Failed to revoke API key",
-        description: error?.message,
-      });
-    },
-  });
-
-  const handleCopy = async () => {
-    if (createdKey) {
-      await navigator.clipboard.writeText(createdKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleScopeToggle = (scope: string) => {
-    setNewKeyScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
-    );
-  };
-
-  return (
-    <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>API Keys</CardTitle>
-            <CardDescription>
-              Create and manage API keys for programmatic access to Muhasib.ai.
-            </CardDescription>
-          </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Create Key
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
-          ) : !apiKeys?.length ? (
-            <p className="text-muted-foreground py-8 text-center">
-              No API keys created yet. Create one to get started.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Scopes</TableHead>
-                  <TableHead>Last Used</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {apiKeys.map((key) => (
-                  <TableRow key={key.id}>
-                    <TableCell className="font-medium">{key.name}</TableCell>
-                    <TableCell>
-                      <code className="text-sm bg-muted px-2 py-1 rounded">{key.keyPrefix}</code>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 flex-wrap">
-                        {key.scopes.split(",").map((scope) => (
-                          <Badge key={scope} variant="secondary" className="text-xs">
-                            {scope.trim()}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : "Never"}
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={key.isActive}
-                        onCheckedChange={(checked) =>
-                          toggleMutation.mutate({ id: key.id, isActive: checked })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Create API Key Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create API Key</DialogTitle>
-            <DialogDescription>Generate a new API key for programmatic access.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
-              <Input
-                id="key-name"
-                placeholder="e.g., Production Server"
-                value={newKeyName}
-                onChange={(e) => setNewKeyName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Scopes</Label>
-              <div className="flex flex-col gap-2">
-                {API_KEY_SCOPES.map((scope) => (
-                  <div key={scope} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`scope-${scope}`}
-                      checked={newKeyScopes.includes(scope)}
-                      onCheckedChange={() => handleScopeToggle(scope)}
-                    />
-                    <Label htmlFor={`scope-${scope}`} className="font-normal capitalize">
-                      {scope}
-                      {scope === "read" && " — Read-only access to your data"}
-                      {scope === "write" && " — Create and update records"}
-                      {scope === "admin" && " — Full access including deletions"}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() =>
-                createMutation.mutate({
-                  name: newKeyName,
-                  scopes: newKeyScopes.join(","),
-                })
-              }
-              disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
-            >
-              {createMutation.isPending ? "Creating..." : "Create Key"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Show Created Key Dialog */}
-      <Dialog
-        open={showKeyDialog}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowKeyDialog(false);
-            setCreatedKey(null);
-            setCopied(false);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>API Key Created</DialogTitle>
-            <DialogDescription>
-              Copy this key now. You will not be able to see it again.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-2">
-              <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopy}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Store this key securely. It provides programmatic access to your Muhasib.ai account.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                setShowKeyDialog(false);
-                setCreatedKey(null);
-                setCopied(false);
-              }}
-            >
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke API Key?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. Any applications using this key will immediately lose
-              access.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Revoke Key
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
   );
 }
 
@@ -566,7 +235,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <div>
             <CardTitle>Webhook Endpoints</CardTitle>
             <CardDescription>
-              Receive real-time notifications when events happen in your account.
+              Receive notifications when events happen in your account. Each request is signed: verify the X-Webhook-Signature header (sha256 HMAC of "timestamp.body" using your endpoint secret, with the timestamp from X-Webhook-Timestamp) and reject timestamps older than 5 minutes. Failed deliveries are retried up to 3 times.
             </CardDescription>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">

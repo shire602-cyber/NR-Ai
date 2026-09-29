@@ -57,6 +57,7 @@ import {
   type ClientServicePlan,
 } from "@shared/client-services";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { PortalAccessCard } from "./PortalAccessCard";
 
 interface AssignedStaff {
   id: string;
@@ -662,6 +663,9 @@ export default function ClientProfile() {
           )}
         </CardContent>
       </Card>
+
+      {/* Client portal invites + portal users */}
+      {companyId && <PortalAccessCard companyId={companyId} />}
 
       {/* Recent Activity */}
       {summary.recentInvoices.length > 0 && (

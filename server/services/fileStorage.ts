@@ -1,11 +1,14 @@
 import fs from "fs/promises";
 import path from "path";
+import { randomUUID } from "crypto";
 import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { AppError } from "../errors";
+import { buildStorageKey, decodeBase64Payload, parseStorageKey } from "./document-validation";
 
 // Receipt-image storage with a pluggable backend.
 //
@@ -19,9 +22,11 @@ import {
 // The DB value (image_path) is identical in both modes ("receipts/<file>"), so
 // switching backends needs no data migration for new uploads.
 
-const projectRoot = process.cwd();
 const receiptsPrefix = "receipts";
-const localReceiptsDir = path.join(projectRoot, "uploads", receiptsPrefix);
+// Resolved per call (not at import) so tests and odd launch directories agree
+// with index.ts, which prepares <cwd>/uploads at boot.
+const uploadsRoot = () => path.join(process.cwd(), "uploads");
+const localReceiptsDir = () => path.join(uploadsRoot(), receiptsPrefix);
 
 // ── S3 / R2 backend (lazy) ──────────────────────────────────────────────────
 let _s3: S3Client | null | undefined;
@@ -60,13 +65,15 @@ const VERCEL_BLOB_URL = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com
 
 /** Whether durable object storage is configured (for /health + integration-status). */
 export function isObjectStorageConfigured(): boolean {
-  return isVercelBlobConfigured() || getS3() !== null;
+  return objectStorageBackend() !== "local-disk";
 }
 
 /** Human label for the active storage backend (integration-status). */
-export function objectStorageBackend(): "vercel-blob" | "s3" | "local-disk" {
-  if (isVercelBlobConfigured()) return "vercel-blob";
-  if (getS3() !== null) return "s3";
+export function objectStorageBackend(
+  env: NodeJS.ProcessEnv = process.env
+): "vercel-blob" | "s3" | "local-disk" {
+  if (env.BLOB_READ_WRITE_TOKEN) return "vercel-blob";
+  if (env.S3_BUCKET && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY) return "s3";
   return "local-disk";
 }
 
@@ -84,14 +91,17 @@ export interface StorageDurability {
  * Object storage is always durable. Local disk is durable only when the uploads
  * dir is under a persistent Railway volume or explicitly marked persistent.
  */
-export function assessStorageDurability(uploadsDir: string): StorageDurability {
-  const backend = objectStorageBackend();
+export function assessStorageDurability(
+  uploadsDir: string,
+  env: NodeJS.ProcessEnv = process.env
+): StorageDurability {
+  const backend = objectStorageBackend(env);
   if (backend !== "local-disk") {
     return { backend, durable: true, detail: `${backend} object storage` };
   }
 
   const resolvedUploads = path.resolve(uploadsDir);
-  const volumeMount = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  const volumeMount = env.RAILWAY_VOLUME_MOUNT_PATH;
   if (volumeMount) {
     const resolvedMount = path.resolve(volumeMount);
     const onVolume =
@@ -106,7 +116,7 @@ export function assessStorageDurability(uploadsDir: string): StorageDurability {
         };
   }
 
-  if (process.env.UPLOADS_PERSISTENT === "true") {
+  if (env.UPLOADS_PERSISTENT === "true") {
     return {
       backend,
       durable: true,
@@ -121,11 +131,38 @@ export function assessStorageDurability(uploadsDir: string): StorageDurability {
   };
 }
 
+export class StorageNotDurableError extends AppError {
+  /** `detail` (a server path) is kept for logs only and is never put in the message. */
+  constructor(public readonly detail: string) {
+    super({
+      message:
+        "File uploads are temporarily unavailable: this server has no durable file storage, so files would be lost on the next deploy. " +
+        "The administrator must configure object storage or a persistent volume.",
+      statusCode: 503,
+      code: "STORAGE_NOT_DURABLE",
+    });
+  }
+}
+
+/**
+ * Production guard for EVERY upload. In production a write to a disk that is
+ * wiped on redeploy is refused (503 STORAGE_NOT_DURABLE) instead of silently
+ * succeeding. Development may use local disk. STORAGE_ALLOW_EPHEMERAL=true is
+ * an explicit, discouraged opt-out (e.g. a throwaway staging box).
+ */
+export function assertStorageWritable(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.NODE_ENV !== "production") return;
+  if (env.STORAGE_ALLOW_EPHEMERAL === "true") return;
+  const durability = assessStorageDurability(uploadsRoot(), env);
+  if (!durability.durable) throw new StorageNotDurableError(durability.detail);
+}
+
 function guessContentType(key: string): string {
   const ext = path.extname(key).toLowerCase();
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   if (ext === ".pdf") return "application/pdf";
+  if (ext === ".gif") return "image/gif";
   return "image/jpeg";
 }
 
@@ -153,6 +190,7 @@ function assertSafeKey(imagePath: string): string {
  * (e.g. "receipts/abc123.jpg"). Uses object storage when configured, else disk.
  */
 export async function saveReceiptImage(base64Data: string, filename: string): Promise<string> {
+  assertStorageWritable();
   const raw = base64Data.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(raw, "base64");
   const safeName = filename.replace(/[^a-z0-9_\-.]/gi, "_");
@@ -182,8 +220,8 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
     return key;
   }
 
-  await fs.mkdir(localReceiptsDir, { recursive: true });
-  await fs.writeFile(path.join(localReceiptsDir, safeName), buffer);
+  await fs.mkdir(localReceiptsDir(), { recursive: true });
+  await fs.writeFile(path.join(localReceiptsDir(), safeName), buffer);
   return key;
 }
 
@@ -224,7 +262,7 @@ export async function readReceiptImage(
     }
   }
   try {
-    const buffer = await fs.readFile(path.join(projectRoot, "uploads", key));
+    const buffer = await fs.readFile(path.join(uploadsRoot(), key));
     return { buffer, contentType: guessContentType(key) };
   } catch {
     return null;
@@ -259,7 +297,176 @@ export async function deleteReceiptImage(imagePath: string): Promise<void> {
     return;
   }
   try {
-    await fs.unlink(path.join(projectRoot, "uploads", key));
+    await fs.unlink(path.join(uploadsRoot(), key));
+  } catch {
+    /* already gone */
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// General company documents (uploads of any kind).
+//
+// Keys are `<companyId>/<category>/<uuid>-<filename>` (see document-validation).
+// A key is NOT a URL and is never handed to a browser: files are private and are
+// served only through authenticated download routes that call readDocument().
+// Validation (type, size, magic bytes) happens before this layer; see
+// document-upload.service.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SaveDocumentInput {
+  companyId: string;
+  category: string;
+  filename: string;
+  contentType: string;
+  base64?: string;
+  buffer?: Buffer;
+}
+
+export interface SavedDocument {
+  key: string;
+  sizeBytes: number;
+  contentType: string;
+}
+
+/** Local-disk path for a validated key, or null if it would leave the uploads root. */
+function localDocumentPath(key: string): string | null {
+  if (!parseStorageKey(key)) return null;
+  const root = path.resolve(uploadsRoot());
+  const abs = path.resolve(root, key);
+  return abs.startsWith(root + path.sep) ? abs : null;
+}
+
+export async function saveDocument(input: SaveDocumentInput): Promise<SavedDocument> {
+  assertStorageWritable();
+
+  const buffer = input.buffer ?? (input.base64 ? decodeBase64Payload(input.base64) : null);
+  if (!buffer || buffer.length === 0) throw new Error("saveDocument: no file data");
+
+  const key = buildStorageKey({
+    companyId: input.companyId,
+    category: input.category,
+    filename: input.filename,
+    id: randomUUID(),
+  });
+  const saved = { key, sizeBytes: buffer.length, contentType: input.contentType };
+
+  if (isVercelBlobConfigured()) {
+    const { put } = await loadVercelBlob();
+    // The pathname is the namespaced key and carries a uuid, so the (public but
+    // unguessable) blob URL is never stored or returned - reads look it up by key.
+    await put(key, buffer, {
+      access: "public",
+      contentType: input.contentType,
+      addRandomSuffix: false,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    return saved;
+  }
+
+  const s3 = getS3();
+  if (s3) {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET!,
+        Key: key,
+        Body: buffer,
+        ContentType: input.contentType,
+      })
+    );
+    return saved;
+  }
+
+  const abs = localDocumentPath(key);
+  if (!abs) throw new Error("saveDocument: invalid storage key");
+  await fs.mkdir(path.dirname(abs), { recursive: true });
+  await fs.writeFile(abs, buffer, { flag: "wx" });
+  return saved;
+}
+
+async function findBlobUrl(key: string): Promise<string | null> {
+  const { list } = await loadVercelBlob();
+  const res = await list({ prefix: key, limit: 5, token: process.env.BLOB_READ_WRITE_TOKEN });
+  const match = res.blobs.find((b: { pathname: string }) => b.pathname === key);
+  // Same SSRF allow-list as receipts: only ever fetch from the Blob domain.
+  return match && VERCEL_BLOB_URL.test(match.url) ? match.url : null;
+}
+
+/** Read a document by key. Returns null when the key is malformed or the file is gone. */
+export async function readDocument(
+  key: string
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+  if (!parseStorageKey(key)) return null;
+
+  if (isVercelBlobConfigured()) {
+    try {
+      const url = await findBlobUrl(key);
+      if (!url) return null;
+      // redirect:"error": a 3xx from the allow-listed host must not bounce us
+      // to an internal address.
+      const res = await fetch(url, { redirect: "error" });
+      if (!res.ok) return null;
+      return {
+        buffer: Buffer.from(await res.arrayBuffer()),
+        contentType: res.headers.get("content-type") || guessContentType(key),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const s3 = getS3();
+  if (s3) {
+    try {
+      const res = await s3.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key }));
+      return {
+        buffer: await streamToBuffer(res.Body),
+        contentType: res.ContentType || guessContentType(key),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const abs = localDocumentPath(key);
+  if (!abs) return null;
+  try {
+    return { buffer: await fs.readFile(abs), contentType: guessContentType(key) };
+  } catch {
+    return null;
+  }
+}
+
+/** Delete a document by key. Malformed keys and missing files are ignored. */
+export async function deleteDocument(key: string): Promise<void> {
+  if (!parseStorageKey(key)) return;
+
+  if (isVercelBlobConfigured()) {
+    try {
+      const url = await findBlobUrl(key);
+      if (url) {
+        const { del } = await loadVercelBlob();
+        await del(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+      }
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+
+  const s3 = getS3();
+  if (s3) {
+    try {
+      await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key }));
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+
+  const abs = localDocumentPath(key);
+  if (!abs) return;
+  try {
+    await fs.unlink(abs);
   } catch {
     /* already gone */
   }
