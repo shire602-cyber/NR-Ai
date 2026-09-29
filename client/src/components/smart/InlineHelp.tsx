@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { HelpCircle, Lightbulb, BookOpen, ChevronRight } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./InlineHelp.i18n";
 
 interface InlineHelpProps {
   title: string;
@@ -34,6 +35,8 @@ export function InlineHelp({
   variant = "icon",
   className,
 }: InlineHelpProps) {
+  const tr = pageMessages.useT();
+
   const { locale } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -53,7 +56,7 @@ export function InlineHelp({
         <div>
           <div className="flex items-center gap-1 text-xs font-medium text-warning mb-1">
             <Lightbulb className="w-3 h-3" />
-            <span>{locale === "ar" ? "نصائح" : "Tips"}</span>
+            <span>{tr("tips")}</span>
           </div>
           <ul className="space-y-1">
             {displayTips.map((tip, i) => (
@@ -70,7 +73,7 @@ export function InlineHelp({
         <div>
           <div className="flex items-center gap-1 text-xs font-medium text-info mb-1">
             <BookOpen className="w-3 h-3" />
-            <span>{locale === "ar" ? "مثال" : "Example"}</span>
+            <span>{tr("example")}</span>
           </div>
           <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
             {displayExample}
@@ -85,7 +88,7 @@ export function InlineHelp({
           rel="noopener noreferrer"
           className="text-xs text-primary hover:underline flex items-center gap-1"
         >
-          {locale === "ar" ? "اعرف المزيد" : "Learn more"}
+          {tr("learnMore")}
           <ChevronRight className="w-3 h-3" />
         </a>
       )}
@@ -117,8 +120,8 @@ export function InlineHelp({
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge variant="secondary" className={cn("cursor-help text-xs", className)}>
-            <HelpCircle className="w-3 h-3 mr-1" />
-            {locale === "ar" ? "مساعدة" : "Help"}
+            <HelpCircle className="w-3 h-3 me-1" />
+            {tr("help")}
           </Badge>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="w-80 p-3">
@@ -139,13 +142,13 @@ export function InlineHelp({
 export const helpContent = {
   invoice: {
     customerName: {
-      title: "Customer Name",
+      title: pageMessages.t("customerName"),
       titleAr: "اسم العميل",
-      content: "Enter the full legal name of the customer or company.",
+      content: pageMessages.t("enterTheFullLegalNameOf"),
       contentAr: "أدخل الاسم القانوني الكامل للعميل أو الشركة.",
       tips: [
-        "Use the registered business name for B2B invoices",
-        "Autocomplete suggests previously used customers",
+        pageMessages.t("useTheRegisteredBusinessNameFor"),
+        pageMessages.t("autocompleteSuggestsPreviouslyUsedCustomers"),
       ],
       tipsAr: [
         "استخدم اسم الشركة المسجل للفواتير التجارية",
@@ -153,20 +156,26 @@ export const helpContent = {
       ],
     },
     customerTRN: {
-      title: "Tax Registration Number (TRN)",
+      title: pageMessages.t("taxRegistrationNumberTrn"),
       titleAr: "رقم التسجيل الضريبي",
-      content: "The 15-digit UAE Tax Registration Number for VAT registered businesses.",
+      content: pageMessages.t("the15DigitUaeTaxRegistration"),
       contentAr: "رقم التسجيل الضريبي المكون من 15 رقماً للشركات المسجلة في ضريبة القيمة المضافة.",
-      tips: ["Required for VAT-registered businesses", "Format: 100XXXXXXXXXXX (15 digits)"],
+      tips: [
+        pageMessages.t("requiredForVatRegisteredBusinesses"),
+        pageMessages.t("format100xxxxxxxxxxx15Digits"),
+      ],
       tipsAr: ["مطلوب للشركات المسجلة في الضريبة", "التنسيق: 100XXXXXXXXXXX (15 رقم)"],
       example: "100123456789012",
     },
     vat: {
-      title: "VAT (Value Added Tax)",
+      title: pageMessages.t("vatValueAddedTax"),
       titleAr: "ضريبة القيمة المضافة",
-      content: "UAE VAT is calculated at 5% of the subtotal amount.",
+      content: pageMessages.t("uaeVatIsCalculatedAt5"),
       contentAr: "يتم احتساب ضريبة القيمة المضافة في الإمارات بنسبة 5% من المجموع الفرعي.",
-      tips: ["VAT is automatically calculated", "Report and pay VAT quarterly to FTA"],
+      tips: [
+        pageMessages.t("vatIsAutomaticallyCalculated"),
+        pageMessages.t("reportAndPayVatQuarterlyTo"),
+      ],
       tipsAr: [
         "يتم احتساب الضريبة تلقائياً",
         "قم بالإبلاغ ودفع الضريبة فصلياً للهيئة الاتحادية للضرائب",
@@ -175,13 +184,13 @@ export const helpContent = {
   },
   expense: {
     merchant: {
-      title: "Merchant / Vendor",
+      title: pageMessages.t("merchantVendor"),
       titleAr: "التاجر / المورد",
-      content: "The business name where the expense was made.",
+      content: pageMessages.t("theBusinessNameWhereTheExpense"),
       contentAr: "اسم الشركة التي تم فيها الإنفاق.",
       tips: [
-        "Autocomplete suggests previously used merchants",
-        "AI will learn your categorization patterns",
+        pageMessages.t("autocompleteSuggestsPreviouslyUsedMerchants"),
+        pageMessages.t("aiWillLearnYourCategorizationPatterns"),
       ],
       tipsAr: [
         "الإكمال التلقائي يقترح التجار المستخدمين سابقاً",
@@ -189,11 +198,14 @@ export const helpContent = {
       ],
     },
     category: {
-      title: "Expense Category",
+      title: pageMessages.t("expenseCategory"),
       titleAr: "فئة المصروفات",
-      content: "Categorize the expense for proper accounting and reporting.",
+      content: pageMessages.t("categorizeTheExpenseForProperAccounting"),
       contentAr: "صنف المصروف للمحاسبة والتقارير الصحيحة.",
-      tips: ["Categories help in expense analysis", "AI can suggest categories based on merchant"],
+      tips: [
+        pageMessages.t("categoriesHelpInExpenseAnalysis"),
+        pageMessages.t("aiCanSuggestCategoriesBasedOn"),
+      ],
       tipsAr: [
         "الفئات تساعد في تحليل المصروفات",
         "الذكاء الاصطناعي يمكنه اقتراح فئات بناءً على التاجر",
@@ -202,15 +214,15 @@ export const helpContent = {
   },
   journal: {
     debitCredit: {
-      title: "Debit & Credit",
+      title: pageMessages.t("debitCredit"),
       titleAr: "مدين ودائن",
-      content: "Double-entry bookkeeping requires debits to equal credits.",
+      content: pageMessages.t("doubleEntryBookkeepingRequiresDebitsTo"),
       contentAr: "القيد المزدوج يتطلب أن تتساوى المدين مع الدائن.",
       tips: [
-        "Assets increase with debits",
-        "Liabilities increase with credits",
-        "Revenue increases with credits",
-        "Expenses increase with debits",
+        pageMessages.t("assetsIncreaseWithDebits"),
+        pageMessages.t("liabilitiesIncreaseWithCredits"),
+        pageMessages.t("revenueIncreasesWithCredits"),
+        pageMessages.t("expensesIncreaseWithDebits"),
       ],
       tipsAr: [
         "الأصول تزيد بالمدين",
@@ -220,34 +232,34 @@ export const helpContent = {
       ],
     },
     memo: {
-      title: "Memo / Description",
+      title: pageMessages.t("memoDescription"),
       titleAr: "الملاحظة / الوصف",
-      content: "A brief description of the transaction for future reference.",
+      content: pageMessages.t("aBriefDescriptionOfTheTransaction"),
       contentAr: "وصف موجز للمعاملة للرجوع إليها مستقبلاً.",
       tips: [
-        "Include invoice numbers for easy reference",
-        "Autocomplete suggests previously used descriptions",
+        pageMessages.t("includeInvoiceNumbersForEasyReference"),
+        pageMessages.t("autocompleteSuggestsPreviouslyUsedDescriptions"),
       ],
       tipsAr: [
         "أضف أرقام الفواتير للرجوع إليها بسهولة",
         "الإكمال التلقائي يقترح الأوصاف المستخدمة سابقاً",
       ],
-      example: "Office supplies purchase - INV-2024-001",
+      example: pageMessages.t("officeSuppliesPurchaseInv2024001"),
       exampleAr: "شراء مستلزمات مكتبية - INV-2024-001",
     },
   },
   account: {
     type: {
-      title: "Account Type",
+      title: pageMessages.t("accountType"),
       titleAr: "نوع الحساب",
-      content: "The category of the account in the chart of accounts.",
+      content: pageMessages.t("theCategoryOfTheAccountIn"),
       contentAr: "فئة الحساب في دليل الحسابات.",
       tips: [
-        "Assets: Things you own (cash, inventory)",
-        "Liabilities: What you owe (loans, payables)",
-        "Equity: Owner investment and retained earnings",
-        "Income: Revenue from sales and services",
-        "Expenses: Costs of running the business",
+        pageMessages.t("assetsThingsYouOwnCashInventory"),
+        pageMessages.t("liabilitiesWhatYouOweLoansPayables"),
+        pageMessages.t("equityOwnerInvestmentAndRetainedEarnings"),
+        pageMessages.t("incomeRevenueFromSalesAndServices"),
+        pageMessages.t("expensesCostsOfRunningTheBusiness"),
       ],
       tipsAr: [
         "الأصول: ما تملكه (النقد، المخزون)",

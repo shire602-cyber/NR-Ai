@@ -652,6 +652,34 @@
    "when": 1781430080000,
    "tag": "0093_user_is_active",
    "breakpoints": false
+  },
+  {
+   "idx": 93,
+   "version": "7",
+   "when": 1781430090000,
+   "tag": "0094_tax_filing_evidence_opening_year_end",
+   "breakpoints": false
+  },
+  {
+   "idx": 94,
+   "version": "7",
+   "when": 1781430100000,
+   "tag": "0095_filing_review_fixes",
+   "breakpoints": false
+  },
+  {
+   "idx": 95,
+   "version": "7",
+   "when": 1781430110000,
+   "tag": "0096_vat_return_adjustments",
+   "breakpoints": false
+  },
+  {
+   "idx": 96,
+   "version": "7",
+   "when": 1781430120000,
+   "tag": "0097_vat_date_rule_cutover",
+   "breakpoints": false
   }
  ]
 }

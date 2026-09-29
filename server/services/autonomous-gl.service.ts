@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { lockAndCheckMonthPg } from "./posting-lock";
 import { recordAudit } from "./audit.service";
 
 const log = createLogger("autonomous-gl");
@@ -665,11 +666,27 @@ export async function processUserFeedback(
     } else {
       // A draft already exists (auto-drafted by autopilot) — accepting it is
       // the human approval, so post it now instead of leaving it as a draft.
-      await pool.query(
-        `UPDATE journal_entries SET status = 'posted', posted_by = $1, posted_at = now()
-         WHERE id = $2 AND status = 'draft'`,
-        [userId, journalEntryId]
-      );
+      // Posting a draft is a posting: month lock + period re-check in one transaction.
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows: draft } = await client.query(
+          `SELECT company_id, date FROM journal_entries WHERE id = $1 AND status = 'draft'`,
+          [journalEntryId]
+        );
+        if (draft[0]) await lockAndCheckMonthPg(client, draft[0].company_id, draft[0].date);
+        await client.query(
+          `UPDATE journal_entries SET status = 'posted', posted_by = $1, posted_at = now()
+           WHERE id = $2 AND status = 'draft'`,
+          [userId, journalEntryId]
+        );
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
     await pool.query(

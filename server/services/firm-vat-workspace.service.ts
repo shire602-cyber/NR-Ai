@@ -8,6 +8,10 @@ import { stripLegacyVatReturnFields } from "./vat-return-payload.service";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { classifyVatLineForReturn } from "./vat-supply-type";
+import { selectPeriodSalesDocuments } from "./vat-document-effect";
+import { fetchPeriodSalesCandidates } from "./vat-period-documents.service";
+import { loadVatJournalAdjustmentRows } from "./vat-adjustments.service";
+import { summariseVatJournalAdjustments, type VatJournalLineRow } from "./vat-adjustments";
 import { buildVatRowJournalLines } from "./vat-workpaper-posting";
 import {
   companies,
@@ -288,7 +292,9 @@ export function calculateVatWorkpaperTotals(
   );
   totals.box11TotalVat = toMoney(INPUT_VAT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box11TotalAdj = toMoney(INPUT_ADJ_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
-  totals.box12TotalDueTax = totals.box8TotalVat;
+  // Due tax = box 8 VAT + box 8 adjustment (the adjustment columns carry, among others, the manual
+  // VAT journals of the period); recoverable tax below likewise adds the box 11 adjustment.
+  totals.box12TotalDueTax = toMoney(totals.box8TotalVat + totals.box8TotalAdj);
   // A-B6: import VAT (boxes 6 and 7) is declared as output/due tax above, but
   // under the import-VAT mechanism a fully-taxable person also recovers it as
   // input tax — otherwise net VAT payable is overstated by the full import VAT.
@@ -298,7 +304,7 @@ export function calculateVatWorkpaperTotals(
   const importVatRecoverable = toMoney(
     (totals.box6ImportsVat ?? 0) + (totals.box7ImportsAdjVat ?? 0)
   );
-  totals.box13RecoverableTax = toMoney(totals.box11TotalVat + importVatRecoverable);
+  totals.box13RecoverableTax = toMoney(totals.box11TotalVat + importVatRecoverable + totals.box11TotalAdj);
   totals.box14PayableTax = toMoney(totals.box12TotalDueTax - totals.box13RecoverableTax);
 
   return totals;
@@ -871,6 +877,9 @@ export interface BookInvoice {
   number?: string | null;
   date: Date | string;
   status: string;
+  /** Calendar day of the void's reversal entry (see vat-document-effect.ts); null when never voided. */
+  voidedOn?: Date | string | null;
+  isOpeningBalance?: boolean | null;
   customerName?: string | null;
   customerTrn?: string | null;
 }
@@ -917,6 +926,8 @@ export function mapBooksToVatWorkpaperRows(input: {
   periodEnd: Date;
   existingSourceIds: Set<string>;
   defaultVatRate?: number;
+  /** Lines of the period's manual journals on the VAT accounts (they become adjustment rows). */
+  vatJournalLines?: VatJournalLineRow[];
 }): VatWorkpaperRowInput[] {
   const {
     invoices,
@@ -930,18 +941,25 @@ export function mapBooksToVatWorkpaperRows(input: {
   const vatRateFallback = input.defaultVatRate ?? 0.05;
   const rows: VatWorkpaperRowInput[] = [];
 
+  // The ONE void rule shared with the VAT 201 and the autopilot: an invoice cancelled in a later
+  // period is still a supply of its own period; the cancellation is a negative line in the period
+  // of the void. `signedLines` already carry the negated quantities of a reversal.
+  const selected = selectPeriodSalesDocuments({
+    invoices: invoices as Array<BookInvoice & { date: Date | string }>,
+    lines: invoiceLines,
+    periodStart,
+    periodEnd,
+  });
   const linesByInvoice = new Map<string, BookInvoiceLine[]>();
-  for (const line of invoiceLines) {
+  for (const line of selected.lines) {
     const list = linesByInvoice.get(line.invoiceId) ?? [];
-    list.push(line);
+    list.push(line as BookInvoiceLine);
     linesByInvoice.set(line.invoiceId, list);
   }
 
-  for (const invoice of invoices) {
+  for (const invoice of selected.invoices) {
     if (existingSourceIds.has(invoice.id)) continue;
-    if (invoice.status === "void" || invoice.status === "draft" || invoice.status === "cancelled")
-      continue;
-    if (!withinPeriod(invoice.date, periodStart, periodEnd)) continue;
+    const reversal = invoice.effect === "reverse_in_period";
 
     let standardAmount = 0;
     let standardVat = 0;
@@ -969,7 +987,8 @@ export function mapBooksToVatWorkpaperRows(input: {
 
     const base = {
       invoiceNumber: invoice.number ?? null,
-      documentDate: invoice.date,
+      // a cancellation is reported on the day it happened, not on the day of the original supply
+      documentDate: reversal && invoice.voidedOn ? invoice.voidedOn : invoice.date,
       counterpartyName: invoice.customerName ?? null,
       counterpartyTrn: invoice.customerTrn ?? null,
       emirate: companyEmirate,
@@ -977,9 +996,10 @@ export function mapBooksToVatWorkpaperRows(input: {
       sourceMethod: "generated" as const,
       sourceDocumentType: "invoice",
       sourceDocumentId: invoice.id,
-      notes: PULL_AUDIT_NOTE,
+      notes: reversal ? `${PULL_AUDIT_NOTE} - cancellation of an invoice from an earlier period` : PULL_AUDIT_NOTE,
     };
-    if (standardAmount > 0 || standardVat > 0) {
+    // credit notes and cancellations are negative rows (a zero total emits nothing)
+    if (standardAmount !== 0 || standardVat !== 0) {
       rows.push({
         ...base,
         rowCategory: "standard_sale",
@@ -987,7 +1007,7 @@ export function mapBooksToVatWorkpaperRows(input: {
         vatAmount: toMoney(standardVat),
       });
     }
-    if (zeroRatedAmount > 0) {
+    if (zeroRatedAmount !== 0) {
       rows.push({
         ...base,
         rowCategory: "zero_rated_sale",
@@ -995,7 +1015,7 @@ export function mapBooksToVatWorkpaperRows(input: {
         vatAmount: 0,
       });
     }
-    if (exemptAmount > 0) {
+    if (exemptAmount !== 0) {
       rows.push({
         ...base,
         rowCategory: "exempt_sale",
@@ -1003,6 +1023,33 @@ export function mapBooksToVatWorkpaperRows(input: {
         vatAmount: 0,
       });
     }
+  }
+
+  // Manual journals to the VAT accounts are VAT adjustments (vat-adjustments.ts, shared with the
+  // VAT 201 and the autopilot): one manual_adjustment row per journal and side, in the adjustment
+  // column, carrying the journal number and its description.
+  const journalAdjustments = summariseVatJournalAdjustments(input.vatJournalLines ?? [], companyEmirate);
+  for (const adj of journalAdjustments.lines) {
+    if (existingSourceIds.has(adj.entryId)) continue;
+    const why = `Manual VAT journal ${adj.entryNumber}: ${adj.description || "(no description)"}`;
+    rows.push({
+      rowCategory: "manual_adjustment",
+      vat201Box: adj.box,
+      invoiceNumber: adj.entryNumber,
+      documentDate: adj.date,
+      counterpartyName: null,
+      counterpartyTrn: null,
+      emirate: companyEmirate,
+      taxableAmount: 0,
+      vatAmount: 0,
+      adjustmentAmount: adj.amount,
+      status: "draft",
+      sourceMethod: "generated",
+      sourceDocumentType: "journal_entry",
+      sourceDocumentId: adj.entryId,
+      notes: `${PULL_AUDIT_NOTE} - ${why}`,
+      auditReason: why,
+    });
   }
 
   for (const receipt of receipts) {
@@ -1063,18 +1110,19 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   );
 
   const { storage } = await import("../storage");
-  const [invoices, receipts] = await Promise.all([
-    storage.getInvoicesByCompanyId(workpaper.companyId),
-    storage.getReceiptsByCompanyId(workpaper.companyId),
-  ]);
-  const invoiceLines = await storage.getInvoiceLinesByInvoiceIds(
-    invoices.map((invoice: BookInvoice) => invoice.id)
-  );
+  const receipts = await storage.getReceiptsByCompanyId(workpaper.companyId);
+  // Invoices dated in the period plus older ones cancelled inside it, each with the date of its
+  // void: mapBooksToVatWorkpaperRows applies the shared void rule.
+  const candidates = await fetchPeriodSalesCandidates(db, workpaper.companyId, periodStart, periodEnd);
+  const invoices = candidates.invoices as unknown as BookInvoice[];
+  const invoiceLines = candidates.lines as unknown as BookInvoiceLine[];
 
+  const vatJournalLines = await loadVatJournalAdjustmentRows(db, workpaper.companyId, periodStart, periodEnd);
   const rows = mapBooksToVatWorkpaperRows({
     invoices,
     invoiceLines,
     receipts,
+    vatJournalLines,
     companyEmirate: normalizeEmirate(company?.emirate),
     periodStart,
     periodEnd,

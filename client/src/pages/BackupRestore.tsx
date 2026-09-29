@@ -62,10 +62,13 @@ import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { Backup } from "@shared/schema";
+import { messages as pageMessages } from "./BackupRestore.i18n";
 
 type BackupWithoutData = Omit<Backup, "dataSnapshot">;
 
 export default function BackupRestore() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -95,8 +98,8 @@ export default function BackupRestore() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: "Backup Created",
-        description: "Your financial data has been backed up successfully.",
+        title: tr("backupCreated"),
+        description: tr("yourFinancialDataHasBeenBacked"),
       });
       setIsCreateDialogOpen(false);
       setNewBackupName("");
@@ -104,8 +107,8 @@ export default function BackupRestore() {
     },
     onError: (error: any) => {
       toast({
-        title: "Backup Failed",
-        description: error?.message || "Failed to create backup",
+        title: tr("backupFailed"),
+        description: error?.message || tr("failedToCreateBackup"),
         variant: "destructive",
       });
     },
@@ -118,14 +121,14 @@ export default function BackupRestore() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: "Backup Deleted",
-        description: "The backup has been removed.",
+        title: tr("backupDeleted"),
+        description: tr("theBackupHasBeenRemoved"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Delete Failed",
-        description: error?.message || "Failed to delete backup",
+        title: tr("deleteFailed"),
+        description: error?.message || tr("failedToDeleteBackup"),
         variant: "destructive",
       });
     },
@@ -140,8 +143,8 @@ export default function BackupRestore() {
     },
     onError: (error: any) => {
       toast({
-        title: "Preview Failed",
-        description: error?.message || "Failed to get restore preview",
+        title: tr("previewFailed"),
+        description: error?.message || tr("failedToGetRestorePreview"),
         variant: "destructive",
       });
     },
@@ -154,16 +157,16 @@ export default function BackupRestore() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: "Restore Initiated",
-        description: data.message || "Backup restore process has started.",
+        title: tr("restoreInitiated"),
+        description: data.message || tr("backupRestoreProcessHasStarted"),
       });
       setRestorePreview(null);
       setSelectedBackupForRestore(null);
     },
     onError: (error: any) => {
       toast({
-        title: "Restore Failed",
-        description: error?.message || "Failed to restore backup",
+        title: tr("restoreFailed"),
+        description: error?.message || tr("failedToRestoreBackup"),
         variant: "destructive",
       });
     },
@@ -187,13 +190,13 @@ export default function BackupRestore() {
       a.remove();
 
       toast({
-        title: "Download Started",
-        description: "Your backup file is downloading.",
+        title: tr("downloadStarted"),
+        description: tr("yourBackupFileIsDownloading"),
       });
     } catch (error: any) {
       toast({
-        title: "Download Failed",
-        description: error?.message || "Failed to download backup",
+        title: tr("downloadFailed"),
+        description: error?.message || tr("failedToDownloadBackup"),
         variant: "destructive",
       });
     }
@@ -204,22 +207,22 @@ export default function BackupRestore() {
       case "completed":
         return (
           <Badge className="bg-success/10 text-success border-success/20">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Completed
+            <CheckCircle className="h-3 w-3 me-1" />
+            {tr("completed")}
           </Badge>
         );
       case "in_progress":
         return (
           <Badge className="bg-info/10 text-info border-info/20">
-            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-            In Progress
+            <RefreshCw className="h-3 w-3 me-1 animate-spin" />
+            {tr("inProgress")}
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" />
-            Failed
+            <XCircle className="h-3 w-3 me-1" />
+            {tr("failed")}
           </Badge>
         );
       default:
@@ -230,11 +233,11 @@ export default function BackupRestore() {
   const getBackupTypeLabel = (type: string) => {
     switch (type) {
       case "manual":
-        return "Manual";
+        return tr("manual");
       case "scheduled":
-        return "Scheduled";
+        return tr("scheduled");
       case "pre_restore":
-        return "Pre-Restore";
+        return tr("preRestore");
       default:
         return type;
     }
@@ -251,7 +254,7 @@ export default function BackupRestore() {
   if (!selectedCompanyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Please select a company to manage backups.</p>
+        <p className="text-muted-foreground">{tr("pleaseSelectACompanyToManage")}</p>
       </div>
     );
   }
@@ -259,42 +262,39 @@ export default function BackupRestore() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Settings"
-        title="Backup & Restore"
+        eyebrow={tr("settings")}
+        title={tr("backupRestore")}
         testId="text-backup-title"
-        description="Safeguard your financial records with automated backups"
+        description={tr("safeguardYourFinancialRecordsWithAutomated")}
         actions={
           <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Backup
+            <Plus className="h-4 w-4 me-2" />
+            {tr("createBackup")}
           </Button>
         }
       />
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Backup</DialogTitle>
-            <DialogDescription>
-              Create a complete backup of your financial data including accounts, invoices, journal
-              entries, and receipts.
-            </DialogDescription>
+            <DialogTitle>{tr("createNewBackup")}</DialogTitle>
+            <DialogDescription>{tr("createACompleteBackupOfYour")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="backup-name">Backup Name</Label>
+              <Label htmlFor="backup-name">{tr("backupName")}</Label>
               <Input
                 id="backup-name"
-                placeholder={`Backup ${new Date().toLocaleDateString()}`}
+                placeholder={tr("backup", { toLocaleDateString: new Date().toLocaleDateString() })}
                 value={newBackupName}
                 onChange={(e) => setNewBackupName(e.target.value)}
                 data-testid="input-backup-name"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="backup-description">Description (Optional)</Label>
+              <Label htmlFor="backup-description">{tr("descriptionOptional")}</Label>
               <Textarea
                 id="backup-description"
-                placeholder="Add notes about this backup..."
+                placeholder={tr("addNotesAboutThisBackup")}
                 value={newBackupDescription}
                 onChange={(e) => setNewBackupDescription(e.target.value)}
                 data-testid="input-backup-description"
@@ -303,7 +303,7 @@ export default function BackupRestore() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() =>
@@ -317,13 +317,13 @@ export default function BackupRestore() {
             >
               {createBackupMutation.isPending ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Creating...
+                  <RefreshCw className="h-4 w-4 me-2 animate-spin" />
+                  {tr("creating")}
                 </>
               ) : (
                 <>
-                  <Database className="h-4 w-4 mr-2" />
-                  Create Backup
+                  <Database className="h-4 w-4 me-2" />
+                  {tr("createBackup")}
                 </>
               )}
             </Button>
@@ -336,47 +336,47 @@ export default function BackupRestore() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Database className="h-4 w-4" />
-              Total Backups
+              {tr("totalBackups")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-total-backups">
               {backups.length}
             </p>
-            <p className="text-xs text-muted-foreground">Backup history</p>
+            <p className="text-xs text-muted-foreground">{tr("backupHistory")}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <HardDrive className="h-4 w-4" />
-              Storage Used
+              {tr("storageUsed")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-storage-used">
               {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
             </p>
-            <p className="text-xs text-muted-foreground">Total backup size</p>
+            <p className="text-xs text-muted-foreground">{tr("totalBackupSize")}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Clock className="h-4 w-4" />
-              Last Backup
+              {tr("lastBackup")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-last-backup">
               {backups.length > 0 && backups[0].createdAt
                 ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
-                : "Never"}
+                : tr("never")}
             </p>
             <p className="text-xs text-muted-foreground">
               {backups.length > 0 && backups[0].createdAt
                 ? format(new Date(backups[0].createdAt), "h:mm a")
-                : "Create your first backup"}
+                : tr("createYourFirstBackup")}
             </p>
           </CardContent>
         </Card>
@@ -384,8 +384,8 @@ export default function BackupRestore() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Backup History</CardTitle>
-          <CardDescription>View and manage your financial data backups</CardDescription>
+          <CardTitle>{tr("backupHistory2")}</CardTitle>
+          <CardDescription>{tr("viewAndManageYourFinancialData")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -395,29 +395,27 @@ export default function BackupRestore() {
           ) : backups.length === 0 ? (
             <div className="text-center py-8">
               <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Backups Yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Create your first backup to protect your financial records
-              </p>
+              <h3 className="text-lg font-medium mb-2">{tr("noBackupsYet")}</h3>
+              <p className="text-muted-foreground mb-4">{tr("createYourFirstBackupToProtect")}</p>
               <Button
                 onClick={() => setIsCreateDialogOpen(true)}
                 data-testid="button-create-first-backup"
               >
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Backup
+                <Plus className="h-4 w-4 me-2" />
+                {tr("createFirstBackup")}
               </Button>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Records</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{tr("name")}</TableHead>
+                  <TableHead>{tr("type")}</TableHead>
+                  <TableHead>{tr("status")}</TableHead>
+                  <TableHead>{tr("records")}</TableHead>
+                  <TableHead>{tr("size")}</TableHead>
+                  <TableHead>{tr("created")}</TableHead>
+                  <TableHead className="text-end">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -437,10 +435,12 @@ export default function BackupRestore() {
                     <TableCell>{getStatusBadge(backup.status)}</TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        <p>{backup.accountsCount || 0} accounts</p>
+                        <p>
+                          {backup.accountsCount || 0} {tr("accounts")}
+                        </p>
                         <p className="text-muted-foreground">
-                          {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0}{" "}
-                          entries
+                          {backup.invoicesCount || 0} {tr("invoices")}{" "}
+                          {backup.journalEntriesCount || 0} {tr("entries")}
                         </p>
                       </div>
                     </TableCell>
@@ -457,7 +457,7 @@ export default function BackupRestore() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="outline"
@@ -493,19 +493,18 @@ export default function BackupRestore() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Backup?</AlertDialogTitle>
+                              <AlertDialogTitle>{tr("deleteBackup")}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will permanently delete "{backup.name}". This action cannot be
-                                undone.
+                                {tr("thisWillPermanentlyDeleteThisAction", { name: backup.name })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => deleteBackupMutation.mutate(backup.id)}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                               >
-                                Delete
+                                {tr("delete")}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -531,45 +530,59 @@ export default function BackupRestore() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              Confirm Restore
+              {tr("confirmRestore")}
             </DialogTitle>
-            <DialogDescription>Review the changes before restoring from backup</DialogDescription>
+            <DialogDescription>{tr("reviewTheChangesBeforeRestoringFrom")}</DialogDescription>
           </DialogHeader>
           {restorePreview && (
             <div className="space-y-4 py-4">
               <div className="bg-warning-subtle border border-warning/30 rounded-lg p-4">
-                <p className="text-sm text-warning-subtle-foreground ">
-                  {restorePreview.warning}
-                </p>
+                <p className="text-sm text-warning-subtle-foreground ">{restorePreview.warning}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Current Data</CardTitle>
+                    <CardTitle className="text-sm">{tr("currentData")}</CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm space-y-1">
-                    <p>{restorePreview.current?.accountsCount || 0} accounts</p>
-                    <p>{restorePreview.current?.journalEntriesCount || 0} journal entries</p>
-                    <p>{restorePreview.current?.invoicesCount || 0} invoices</p>
-                    <p>{restorePreview.current?.receiptsCount || 0} receipts</p>
+                    <p>
+                      {restorePreview.current?.accountsCount || 0} {tr("accounts")}
+                    </p>
+                    <p>
+                      {restorePreview.current?.journalEntriesCount || 0} {tr("journalEntries")}
+                    </p>
+                    <p>
+                      {restorePreview.current?.invoicesCount || 0} {tr("invoices2")}
+                    </p>
+                    <p>
+                      {restorePreview.current?.receiptsCount || 0} {tr("receipts")}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Backup Data</CardTitle>
+                    <CardTitle className="text-sm">{tr("backupData")}</CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm space-y-1">
-                    <p>{restorePreview.backup?.accountsCount || 0} accounts</p>
-                    <p>{restorePreview.backup?.journalEntriesCount || 0} journal entries</p>
-                    <p>{restorePreview.backup?.invoicesCount || 0} invoices</p>
-                    <p>{restorePreview.backup?.receiptsCount || 0} receipts</p>
+                    <p>
+                      {restorePreview.backup?.accountsCount || 0} {tr("accounts")}
+                    </p>
+                    <p>
+                      {restorePreview.backup?.journalEntriesCount || 0} {tr("journalEntries")}
+                    </p>
+                    <p>
+                      {restorePreview.backup?.invoicesCount || 0} {tr("invoices2")}
+                    </p>
+                    <p>
+                      {restorePreview.backup?.receiptsCount || 0} {tr("receipts")}
+                    </p>
                   </CardContent>
                 </Card>
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Backup created:{" "}
+                {tr("backupCreated2")}
                 {restorePreview.backup?.createdAt &&
                   format(new Date(restorePreview.backup.createdAt), "PPpp")}
               </p>
@@ -583,7 +596,7 @@ export default function BackupRestore() {
                 setSelectedBackupForRestore(null);
               }}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               variant="destructive"
@@ -594,13 +607,13 @@ export default function BackupRestore() {
             >
               {restoreMutation.isPending ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Restoring...
+                  <RefreshCw className="h-4 w-4 me-2 animate-spin" />
+                  {tr("restoring")}
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Restore Data
+                  <Upload className="h-4 w-4 me-2" />
+                  {tr("restoreData")}
                 </>
               )}
             </Button>
@@ -612,21 +625,13 @@ export default function BackupRestore() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <FileJson className="h-5 w-5" />
-            About Backups
+            {tr("aboutBackups")}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            Backups capture all your financial data including chart of accounts, journal entries,
-            invoices, receipts, and VAT returns.
-          </p>
-          <p>
-            Backups are stored for 90 days and can be downloaded as JSON files for external storage.
-          </p>
-          <p>
-            Before any restore operation, an automatic backup of your current data is created so you
-            can recover if needed.
-          </p>
+          <p>{tr("backupsCaptureAllYourFinancialData")}</p>
+          <p>{tr("backupsAreStoredFor90Days")}</p>
+          <p>{tr("beforeAnyRestoreOperationAnAutomatic")}</p>
         </CardContent>
       </Card>
     </div>

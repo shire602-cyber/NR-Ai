@@ -67,23 +67,24 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { messages as pageMessages } from "./CreditNotes.i18n";
 
 const creditNoteLineSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const creditNoteSchema = z.object({
   companyId: z.string().uuid(),
-  number: z.string().min(1, "Credit note number is required"),
+  number: z.string().min(1, pageMessages.marker("creditNoteNumberIsRequired")),
   invoiceId: z.string().optional(),
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
   date: z.date(),
-  reason: z.string().min(1, "Reason is required"),
-  lines: z.array(creditNoteLineSchema).min(1, "At least one line item is required"),
+  reason: z.string().min(1, pageMessages.marker("reasonIsRequired")),
+  lines: z.array(creditNoteLineSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 type CreditNoteFormData = z.infer<typeof creditNoteSchema>;
@@ -113,6 +114,8 @@ interface Invoice {
 }
 
 export default function CreditNotes() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -163,8 +166,8 @@ export default function CreditNotes() {
         queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
       });
       toast({
-        title: "Credit note created",
-        description: "Your credit note has been created successfully.",
+        title: tr("creditNoteCreated"),
+        description: tr("yourCreditNoteHasBeenCreated"),
       });
       setDialogOpen(false);
       setEditingCreditNote(null);
@@ -173,8 +176,8 @@ export default function CreditNotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create credit note",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateCreditNote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -187,8 +190,8 @@ export default function CreditNotes() {
         queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
       });
       toast({
-        title: "Credit note updated",
-        description: "Your credit note has been updated successfully.",
+        title: tr("creditNoteUpdated"),
+        description: tr("yourCreditNoteHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingCreditNote(null);
@@ -197,8 +200,8 @@ export default function CreditNotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update credit note",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateCreditNote"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -242,8 +245,8 @@ export default function CreditNotes() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load credit note details.",
+        title: tr("error"),
+        description: error?.message || tr("failedToLoadCreditNoteDetails"),
       });
     }
   };
@@ -302,7 +305,7 @@ export default function CreditNotes() {
         <UpgradePrompt
           feature="creditNotes"
           requiredTier={getRequiredTier("creditNotes")}
-          description="Issue credit notes against invoices, manage refunds, and maintain accurate accounting records."
+          description={tr("issueCreditNotesAgainstInvoicesManage")}
         />
       </div>
     );
@@ -311,9 +314,9 @@ export default function CreditNotes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={tr("sales")}
         title={t.creditNotes}
-        description={(t as any).creditNotesSubtitle ?? "View credit notes created from invoices"}
+        description={(t as any).creditNotesSubtitle ?? tr("viewCreditNotesCreatedFromInvoices")}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -325,20 +328,20 @@ export default function CreditNotes() {
           }}
         >
           <DialogTrigger asChild>
-            <Button disabled title="Create credit notes from the original invoice actions.">
-              <Plus className="w-4 h-4 mr-2" />
-              Create from invoice
+            <Button disabled title={tr("createCreditNotesFromTheOriginal")}>
+              <Plus className="w-4 h-4 me-2" />
+              {tr("createFromInvoice")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingCreditNote ? "Edit Credit Note" : "New Credit Note"}
+                {editingCreditNote ? tr("editCreditNote") : tr("newCreditNote")}
               </DialogTitle>
               <DialogDescription>
                 {editingCreditNote
-                  ? "Update credit note details"
-                  : "Create a new credit note linked to an invoice"}
+                  ? tr("updateCreditNoteDetails")
+                  : tr("createANewCreditNoteLinked")}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -349,7 +352,7 @@ export default function CreditNotes() {
                     name="number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Credit Note Number</FormLabel>
+                        <FormLabel>{tr("creditNoteNumber")}</FormLabel>
                         <FormControl>
                           <Input {...field} className="font-mono" />
                         </FormControl>
@@ -362,11 +365,11 @@ export default function CreditNotes() {
                     name="invoiceId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Related Invoice</FormLabel>
+                        <FormLabel>{tr("relatedInvoice")}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || ""}>
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select invoice (optional)" />
+                              <SelectValue placeholder={tr("selectInvoiceOptional")} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -389,7 +392,7 @@ export default function CreditNotes() {
                     name="customerName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer Name</FormLabel>
+                        <FormLabel>{tr("customerName")}</FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -402,9 +405,9 @@ export default function CreditNotes() {
                     name="customerTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Customer TRN</FormLabel>
+                        <FormLabel>{tr("customerTrn")}</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Optional" className="font-mono" />
+                          <Input {...field} placeholder={tr("optional")} className="font-mono" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -418,22 +421,22 @@ export default function CreditNotes() {
                     name="date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel>{tr("date")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full justify-start text-left font-normal",
+                                  "w-full justify-start text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
                                   format(field.value, "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{tr("pickADate")}</span>
                                 )}
                               </Button>
                             </FormControl>
@@ -456,9 +459,9 @@ export default function CreditNotes() {
                     name="reason"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Reason</FormLabel>
+                        <FormLabel>{tr("reason")}</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Reason for credit note" />
+                          <Input {...field} placeholder={tr("reasonForCreditNote")} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -468,7 +471,7 @@ export default function CreditNotes() {
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Line Items</h3>
+                    <h3 className="font-medium">{tr("lineItems")}</h3>
                     <Button
                       type="button"
                       variant="outline"
@@ -477,8 +480,8 @@ export default function CreditNotes() {
                         append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                       }
                     >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Line
+                      <Plus className="w-4 h-4 me-2" />
+                      {tr("addLine")}
                     </Button>
                   </div>
 
@@ -494,7 +497,7 @@ export default function CreditNotes() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input {...field} placeholder="Description" />
+                                <Input {...field} placeholder={tr("description")} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -510,7 +513,7 @@ export default function CreditNotes() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Qty"
+                                  placeholder={tr("qty")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -532,7 +535,7 @@ export default function CreditNotes() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  placeholder="Price"
+                                  placeholder={tr("price")}
                                   className="font-mono"
                                   value={field.value ?? ""}
                                   onChange={(e) =>
@@ -597,20 +600,22 @@ export default function CreditNotes() {
 
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("subtotal")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(subtotal, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT</span>
-                    <span className="font-mono font-medium">
+                    <span className="text-muted-foreground">{tr("vat")}</span>
+                    <span dir="ltr" className="font-mono font-medium">
                       {formatCurrency(vatAmount, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
-                    <span>Total</span>
-                    <span className="font-mono">{formatCurrency(total, "AED", locale)}</span>
+                    <span>{tr("total")}</span>
+                    <span dir="ltr" className="font-mono">
+                      {formatCurrency(total, "AED", locale)}
+                    </span>
                   </div>
                 </div>
 
@@ -621,14 +626,14 @@ export default function CreditNotes() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending || editMutation.isPending}
                     className="flex-1"
                   >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
+                    {createMutation.isPending || editMutation.isPending ? tr("saving") : tr("save")}
                   </Button>
                 </div>
               </form>
@@ -645,13 +650,13 @@ export default function CreditNotes() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">Number</TableHead>
-                  <TableHead className="font-semibold">Customer</TableHead>
-                  <TableHead className="font-semibold">Invoice #</TableHead>
-                  <TableHead className="font-semibold">Date</TableHead>
-                  <TableHead className="font-semibold text-right">Total</TableHead>
-                  <TableHead className="font-semibold text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                  <TableHead className="font-semibold">{tr("number")}</TableHead>
+                  <TableHead className="font-semibold">{tr("customer")}</TableHead>
+                  <TableHead className="font-semibold">{tr("invoice")}</TableHead>
+                  <TableHead className="font-semibold">{tr("date")}</TableHead>
+                  <TableHead className="font-semibold text-end">{tr("total")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("status")}</TableHead>
+                  <TableHead className="font-semibold text-center">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -666,7 +671,7 @@ export default function CreditNotes() {
                       <TableCell className="text-muted-foreground">
                         {formatDate(creditNote.date, locale)}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
+                      <TableCell className="text-end font-mono font-medium">
                         {formatCurrency(creditNote.total, creditNote.currency || "AED", locale)}
                       </TableCell>
                       <TableCell className="text-center">
@@ -694,8 +699,8 @@ export default function CreditNotes() {
                                 window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")
                               }
                             >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download PDF
+                              <Download className="w-4 h-4 me-2" />
+                              {tr("downloadPdf")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -707,13 +712,12 @@ export default function CreditNotes() {
                     <TableCell colSpan={7} className="py-4">
                       <EmptyState
                         icon={FileText}
-                        title={(t as any).noCreditNotesYet ?? "No credit notes yet"}
+                        title={(t as any).noCreditNotesYet ?? tr("noCreditNotesYet")}
                         description={
-                          (t as any).creditNotesEmptyDesc ??
-                          "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically."
+                          (t as any).creditNotesEmptyDesc ?? tr("issueACreditNoteToCorrect")
                         }
                         action={{
-                          label: (t as any).newCreditNote ?? "New Credit Note",
+                          label: (t as any).newCreditNote ?? tr("newCreditNote"),
                           onClick: () => setDialogOpen(true),
                         }}
                         testId="empty-credit-notes"

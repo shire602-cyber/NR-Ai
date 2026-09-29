@@ -69,6 +69,7 @@ import {
   BarChart3,
   Building2,
 } from "lucide-react";
+import { messages as pageMessages } from "./TeamManagement.i18n";
 
 interface TeamMember {
   id: string;
@@ -91,97 +92,99 @@ interface RolePermission {
   roles: string[];
 }
 
-const ROLE_PERMISSIONS: RolePermission[] = [
+const getRolePermissions = (): RolePermission[] => [
   {
     key: "view_dashboard",
-    label: "View Dashboard",
+    label: pageMessages.t("viewDashboard"),
     labelAr: "عرض لوحة التحكم",
     icon: <BarChart3 className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant", "employee"],
   },
   {
     key: "manage_invoices",
-    label: "Manage Invoices",
+    label: pageMessages.t("manageInvoices"),
     labelAr: "إدارة الفواتير",
     icon: <FileText className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant"],
   },
   {
     key: "manage_expenses",
-    label: "Manage Expenses",
+    label: pageMessages.t("manageExpenses"),
     labelAr: "إدارة المصروفات",
     icon: <Receipt className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant", "employee"],
   },
   {
     key: "post_journal",
-    label: "Post Journal Entries",
+    label: pageMessages.t("postJournalEntries"),
     labelAr: "ترحيل القيود",
     icon: <Calculator className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant"],
   },
   {
     key: "view_reports",
-    label: "View Financial Reports",
+    label: pageMessages.t("viewFinancialReports"),
     labelAr: "عرض التقارير المالية",
     icon: <BarChart3 className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant"],
   },
   {
     key: "manage_vat",
-    label: "Manage VAT Returns",
+    label: pageMessages.t("manageVatReturns"),
     labelAr: "إدارة إقرارات الضريبة",
     icon: <FileText className="w-4 h-4" />,
     roles: ["owner", "cfo", "accountant"],
   },
   {
     key: "manage_team",
-    label: "Manage Team Members",
+    label: pageMessages.t("manageTeamMembers"),
     labelAr: "إدارة فريق العمل",
     icon: <Users className="w-4 h-4" />,
     roles: ["owner"],
   },
   {
     key: "company_settings",
-    label: "Company Settings",
+    label: pageMessages.t("companySettings"),
     labelAr: "إعدادات الشركة",
     icon: <Settings className="w-4 h-4" />,
     roles: ["owner"],
   },
 ];
 
-const ROLES = [
+const getRoles = () => [
   {
     value: "owner",
-    label: "Owner",
+    label: pageMessages.t("owner"),
     labelAr: "مالك",
-    description: "Full access to all features",
+    description: pageMessages.t("fullAccessToAllFeatures"),
     icon: <Crown className="w-4 h-4" />,
   },
   {
     value: "cfo",
-    label: "CFO",
+    label: pageMessages.t("cfo"),
     labelAr: "المدير المالي",
-    description: "Financial oversight and reporting",
+    description: pageMessages.t("financialOversightAndReporting"),
     icon: <Briefcase className="w-4 h-4" />,
   },
   {
     value: "accountant",
-    label: "Accountant",
+    label: pageMessages.t("accountant"),
     labelAr: "محاسب",
-    description: "Day-to-day bookkeeping",
+    description: pageMessages.t("dayToDayBookkeeping"),
     icon: <Calculator className="w-4 h-4" />,
   },
   {
     value: "employee",
-    label: "Employee",
+    label: pageMessages.t("employee"),
     labelAr: "موظف",
-    description: "Submit expenses only",
+    description: pageMessages.t("submitExpensesOnly"),
     icon: <User className="w-4 h-4" />,
   },
 ];
 
 export default function TeamManagement() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -204,8 +207,8 @@ export default function TeamManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "team"] });
       toast({
-        title: "Invitation Sent",
-        description: `An invitation has been sent to ${inviteEmail}`,
+        title: tr("invitationSent"),
+        description: tr("anInvitationHasBeenSentTo", { inviteEmail }),
       });
       setInviteDialogOpen(false);
       setInviteEmail("");
@@ -214,8 +217,8 @@ export default function TeamManagement() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Invitation Failed",
-        description: error?.message || "Failed to send invitation",
+        title: tr("invitationFailed"),
+        description: error?.message || tr("failedToSendInvitation"),
       });
     },
   });
@@ -226,8 +229,8 @@ export default function TeamManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "team"] });
       toast({
-        title: "Role Updated",
-        description: "Team member role has been updated.",
+        title: tr("roleUpdated"),
+        description: tr("teamMemberRoleHasBeenUpdated"),
       });
       setEditDialogOpen(false);
       setSelectedMember(null);
@@ -235,8 +238,8 @@ export default function TeamManagement() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Update Failed",
-        description: error?.message || "Failed to update role",
+        title: tr("updateFailed"),
+        description: error?.message || tr("failedToUpdateRole"),
       });
     },
   });
@@ -247,15 +250,15 @@ export default function TeamManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "team"] });
       toast({
-        title: "Member Removed",
-        description: "Team member has been removed from the company.",
+        title: tr("memberRemoved"),
+        description: tr("teamMemberHasBeenRemovedFrom"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Removal Failed",
-        description: error?.message || "Failed to remove member",
+        title: tr("removalFailed"),
+        description: error?.message || tr("failedToRemoveMember"),
       });
     },
   });
@@ -272,7 +275,7 @@ export default function TeamManagement() {
   }, [teamMembers]);
 
   const getRoleBadge = (role: string) => {
-    const roleInfo = ROLES.find((r) => r.value === role);
+    const roleInfo = getRoles().find((r) => r.value === role);
     const colors: Record<string, string> = {
       owner: "bg-chart-5/10 text-chart-5",
       cfo: "bg-info-subtle text-info-subtle-foreground",
@@ -283,7 +286,7 @@ export default function TeamManagement() {
     return (
       <Badge variant="secondary" className={colors[role] || ""}>
         {roleInfo?.icon}
-        <span className="ml-1">{locale === "ar" ? roleInfo?.labelAr : roleInfo?.label}</span>
+        <span className="ms-1">{locale === "ar" ? roleInfo?.labelAr : roleInfo?.label}</span>
       </Badge>
     );
   };
@@ -317,8 +320,8 @@ export default function TeamManagement() {
     if (member.role === "owner") {
       toast({
         variant: "destructive",
-        title: "Cannot Remove Owner",
-        description: "The company owner cannot be removed.",
+        title: tr("cannotRemoveOwner"),
+        description: tr("theCompanyOwnerCannotBeRemoved"),
       });
       return;
     }
@@ -342,13 +345,9 @@ export default function TeamManagement() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Settings"
-        title={locale === "ar" ? "إدارة الفريق" : "Team Management"}
-        description={
-          locale === "ar"
-            ? "إدارة أعضاء الفريق والصلاحيات"
-            : "Manage team members and their access permissions"
-        }
+        eyebrow={tr("settings")}
+        title={tr("teamManagement")}
+        description={tr("manageTeamMembersAndTheirAccess")}
         actions={
           <>
             <Button
@@ -356,12 +355,12 @@ export default function TeamManagement() {
               onClick={() => setPermissionsDialogOpen(true)}
               data-testid="button-view-permissions"
             >
-              <Shield className="w-4 h-4 mr-2" />
-              {locale === "ar" ? "الصلاحيات" : "Permissions"}
+              <Shield className="w-4 h-4 me-2" />
+              {tr("permissions")}
             </Button>
             <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-invite-member">
-              <UserPlus className="w-4 h-4 mr-2" />
-              {locale === "ar" ? "دعوة عضو" : "Invite Member"}
+              <UserPlus className="w-4 h-4 me-2" />
+              {tr("inviteMember")}
             </Button>
           </>
         }
@@ -371,7 +370,7 @@ export default function TeamManagement() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "إجمالي الأعضاء" : "Total Members"}
+              {tr("totalMembers")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -381,7 +380,7 @@ export default function TeamManagement() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "المالكين" : "Owners"}
+              {tr("owners")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -391,7 +390,7 @@ export default function TeamManagement() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "المحاسبين" : "Accountants/CFOs"}
+              {tr("accountantsCfos")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -401,7 +400,7 @@ export default function TeamManagement() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "الموظفين" : "Employees"}
+              {tr("employees")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -412,12 +411,8 @@ export default function TeamManagement() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{locale === "ar" ? "أعضاء الفريق" : "Team Members"}</CardTitle>
-          <CardDescription>
-            {locale === "ar"
-              ? "جميع الأعضاء الذين لديهم حق الوصول إلى هذه الشركة"
-              : "All members who have access to this company"}
-          </CardDescription>
+          <CardTitle>{tr("teamMembers")}</CardTitle>
+          <CardDescription>{tr("allMembersWhoHaveAccessTo")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingTeam ? (
@@ -435,11 +430,7 @@ export default function TeamManagement() {
           ) : !teamMembers || teamMembers.length === 0 ? (
             <div className="text-center py-12">
               <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">
-                {locale === "ar"
-                  ? "لا يوجد أعضاء آخرين. قم بدعوة فريقك."
-                  : "No other team members. Invite your team to collaborate."}
-              </p>
+              <p className="text-muted-foreground">{tr("noOtherTeamMembersInviteYour")}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -492,16 +483,12 @@ export default function TeamManagement() {
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "دعوة عضو جديد" : "Invite Team Member"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "أرسل دعوة للانضمام إلى فريقك"
-                : "Send an invitation to join your team"}
-            </DialogDescription>
+            <DialogTitle>{tr("inviteTeamMember")}</DialogTitle>
+            <DialogDescription>{tr("sendAnInvitationToJoinYour")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "البريد الإلكتروني" : "Email Address"}</Label>
+              <Label>{tr("emailAddress")}</Label>
               <Input
                 type="email"
                 value={inviteEmail}
@@ -511,39 +498,41 @@ export default function TeamManagement() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الدور" : "Role"}</Label>
+              <Label>{tr("role")}</Label>
               <Select value={inviteRole} onValueChange={setInviteRole}>
                 <SelectTrigger data-testid="select-invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.filter((r) => r.value !== "owner").map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      <div className="flex items-center gap-2">
-                        {role.icon}
-                        <div>
-                          <p>{locale === "ar" ? role.labelAr : role.label}</p>
-                          <p className="text-xs text-muted-foreground">{role.description}</p>
+                  {getRoles()
+                    .filter((r) => r.value !== "owner")
+                    .map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        <div className="flex items-center gap-2">
+                          {role.icon}
+                          <div>
+                            <p>{locale === "ar" ? role.labelAr : role.label}</p>
+                            <p className="text-xs text-muted-foreground">{role.description}</p>
+                          </div>
                         </div>
-                      </div>
-                    </SelectItem>
-                  ))}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
-              {locale === "ar" ? "إلغاء" : "Cancel"}
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => inviteMutation.mutate({ email: inviteEmail, role: inviteRole })}
               disabled={inviteMutation.isPending || !inviteEmail}
               data-testid="button-confirm-invite"
             >
-              {inviteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              <Mail className="w-4 h-4 mr-2" />
-              {locale === "ar" ? "إرسال الدعوة" : "Send Invite"}
+              {inviteMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              <Mail className="w-4 h-4 me-2" />
+              {tr("sendInvite")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -552,46 +541,48 @@ export default function TeamManagement() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "تعديل الدور" : "Edit Role"}</DialogTitle>
+            <DialogTitle>{tr("editRole")}</DialogTitle>
             <DialogDescription>
               {selectedMember && (
                 <span>
-                  {locale === "ar" ? "تغيير دور" : "Change role for"} {selectedMember.user.name}
+                  {tr("changeRoleFor")} {selectedMember.user.name}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الدور الجديد" : "New Role"}</Label>
+              <Label>{tr("newRole")}</Label>
               <Select value={newRole} onValueChange={setNewRole}>
                 <SelectTrigger data-testid="select-new-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.filter((r) => r.value !== "owner").map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      <div className="flex items-center gap-2">
-                        {role.icon}
-                        <span>{locale === "ar" ? role.labelAr : role.label}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {getRoles()
+                    .filter((r) => r.value !== "owner")
+                    .map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        <div className="flex items-center gap-2">
+                          {role.icon}
+                          <span>{locale === "ar" ? role.labelAr : role.label}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              {locale === "ar" ? "إلغاء" : "Cancel"}
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleUpdateRole}
               disabled={updateRoleMutation.isPending}
               data-testid="button-confirm-update"
             >
-              {updateRoleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {locale === "ar" ? "تحديث" : "Update Role"}
+              {updateRoleMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {tr("updateRole")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -600,19 +591,15 @@ export default function TeamManagement() {
       <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "مصفوفة الصلاحيات" : "Permissions Matrix"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "الصلاحيات المتاحة لكل دور"
-                : "Available permissions for each role"}
-            </DialogDescription>
+            <DialogTitle>{tr("permissionsMatrix")}</DialogTitle>
+            <DialogDescription>{tr("availablePermissionsForEachRole")}</DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{locale === "ar" ? "الصلاحية" : "Permission"}</TableHead>
-                  {ROLES.map((role) => (
+                  <TableHead>{tr("permission")}</TableHead>
+                  {getRoles().map((role) => (
                     <TableHead key={role.value} className="text-center">
                       {locale === "ar" ? role.labelAr : role.label}
                     </TableHead>
@@ -620,7 +607,7 @@ export default function TeamManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ROLE_PERMISSIONS.map((permission) => (
+                {getRolePermissions().map((permission) => (
                   <TableRow key={permission.key}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -628,7 +615,7 @@ export default function TeamManagement() {
                         {locale === "ar" ? permission.labelAr : permission.label}
                       </div>
                     </TableCell>
-                    {ROLES.map((role) => (
+                    {getRoles().map((role) => (
                       <TableCell key={role.value} className="text-center">
                         {permission.roles.includes(role.value) ? (
                           <Check className="w-4 h-4 mx-auto text-success" />
@@ -644,7 +631,7 @@ export default function TeamManagement() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPermissionsDialogOpen(false)}>
-              {locale === "ar" ? "إغلاق" : "Close"}
+              {tr("close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -658,14 +645,15 @@ export default function TeamManagement() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove {memberToRemove?.user?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {tr("remove", { name: memberToRemove?.user?.name })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove {memberToRemove?.user?.name} from the team. They will lose access to
-              this company.
+              {tr("thisWillRemoveFromTheTeam", { name: memberToRemove?.user?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (memberToRemove) {
@@ -675,7 +663,7 @@ export default function TeamManagement() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Remove
+              {tr("remove2")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

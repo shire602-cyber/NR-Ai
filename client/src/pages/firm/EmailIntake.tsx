@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { messages as pageMessages } from "./EmailIntake.i18n";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
 interface EmailSource {
@@ -72,6 +73,8 @@ const fmtAed = (n: number) =>
   `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function EmailIntake() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
 
   const { data: sourcesData } = useQuery<SourcesResponse>({
@@ -94,29 +97,29 @@ export default function EmailIntake() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="NRA Center"
+        eyebrow={tr("nraCenter")}
         icon={Inbox}
-        title="Email Document Intake"
-        description="Clients email their documents; the AI extracts and drafts the bookkeeping for your review. Pilot — NRA clients only."
+        title={tr("emailDocumentIntake")}
+        description={tr("clientsEmailTheirDocumentsTheAi")}
       />
 
       {featureOff && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Pilot disabled</AlertTitle>
+          <AlertTitle>{tr("pilotDisabled")}</AlertTitle>
           <AlertDescription>
-            Set <code>EMAIL_INTAKE_ENABLED=true</code> on the server to turn the intake pilot on. You
-            can still configure sender mappings below; nothing is ingested until it's enabled.
+            {tr("set")} <code>EMAIL_INTAKE_ENABLED=true</code> {tr("onTheServerToTurnThe")}
           </AlertDescription>
         </Alert>
       )}
       {mailboxOff && (
         <Alert>
           <Mail className="h-4 w-4" />
-          <AlertTitle>No mailbox connected</AlertTitle>
+          <AlertTitle>{tr("noMailboxConnected")}</AlertTitle>
           <AlertDescription>
-            The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>). Sender
-            mappings are saved and ready; ingestion starts once a mailbox is connected.
+            {tr("thePilotIsEnabledButNo")}
+            <code>EMAIL_INTAKE_PROVIDER</code>
+            {tr("senderMappingsAreSavedAndReady")}
           </AlertDescription>
         </Alert>
       )}
@@ -124,15 +127,20 @@ export default function EmailIntake() {
       <Tabs defaultValue="senders">
         <TabsList>
           <TabsTrigger value="senders" data-testid="tab-senders">
-            Sender mappings
+            {tr("senderMappings")}
           </TabsTrigger>
           <TabsTrigger value="completeness" data-testid="tab-completeness">
-            Completeness check
+            {tr("completenessCheck")}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="senders" className="mt-4">
-          <SendersTab sources={sourcesData?.sources ?? []} clients={clients} clientName={clientName} toast={toast} />
+          <SendersTab
+            sources={sourcesData?.sources ?? []}
+            clients={clients}
+            clientName={clientName}
+            toast={toast}
+          />
         </TabsContent>
 
         <TabsContent value="completeness" className="mt-4">
@@ -155,6 +163,8 @@ function SendersTab({
   clientName: (id: string) => string;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const tr = pageMessages.useT();
+
   const [companyId, setCompanyId] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [label, setLabel] = useState("");
@@ -172,12 +182,16 @@ function SendersTab({
         requireDkimPass: requireDkim,
       }),
     onSuccess: () => {
-      toast({ title: "Sender linked", description: `${senderEmail} → ${clientName(companyId)}` });
+      toast({
+        title: tr("senderLinked"),
+        description: `${senderEmail} → ${clientName(companyId)}`,
+      });
       setSenderEmail("");
       setLabel("");
       invalidate();
     },
-    onError: (e: any) => toast({ title: "Could not link sender", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: tr("couldNotLinkSender"), description: e.message, variant: "destructive" }),
   });
 
   const toggleMutation = useMutation({
@@ -191,7 +205,7 @@ function SendersTab({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/firm/email-intake/sources/${id}`),
     onSuccess: () => {
-      toast({ title: "Mapping removed" });
+      toast({ title: tr("mappingRemoved") });
       invalidate();
     },
   });
@@ -202,15 +216,15 @@ function SendersTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Link a sender to a client</CardTitle>
+          <CardTitle className="text-base">{tr("linkASenderToAClient")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label>Client</Label>
+              <Label>{tr("client")}</Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-client">
-                  <SelectValue placeholder="Select client" />
+                  <SelectValue placeholder={tr("selectClient")} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -222,7 +236,7 @@ function SendersTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Sender email</Label>
+              <Label>{tr("senderEmail")}</Label>
               <Input
                 type="email"
                 placeholder="billing@client.ae"
@@ -232,14 +246,18 @@ function SendersTab({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Label (optional)</Label>
-              <Input placeholder="e.g. Accounts payable" value={label} onChange={(e) => setLabel(e.target.value)} />
+              <Label>{tr("labelOptional")}</Label>
+              <Input
+                placeholder={tr("eGAccountsPayable")}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
             </div>
             <div className="flex items-end gap-3">
               <div className="flex items-center gap-2">
                 <Switch checked={requireDkim} onCheckedChange={setRequireDkim} id="dkim" />
                 <Label htmlFor="dkim" className="cursor-pointer">
-                  Require DKIM
+                  {tr("requireDkim")}
                 </Label>
               </div>
             </div>
@@ -250,7 +268,7 @@ function SendersTab({
               disabled={!canAdd || createMutation.isPending}
               data-testid="button-add-sender"
             >
-              <Plus className="h-4 w-4 mr-1" /> Link sender
+              <Plus className="h-4 w-4 me-1" /> {tr("linkSender")}
             </Button>
           </div>
         </CardContent>
@@ -258,21 +276,23 @@ function SendersTab({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Linked senders ({sources.length})</CardTitle>
+          <CardTitle className="text-base">
+            {tr("linkedSenders", { sourcesCount: sources.length })}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {sources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No senders linked yet.</p>
+            <p className="text-sm text-muted-foreground">{tr("noSendersLinkedYet")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Sender</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Label</TableHead>
+                  <TableHead>{tr("sender")}</TableHead>
+                  <TableHead>{tr("client")}</TableHead>
+                  <TableHead>{tr("label")}</TableHead>
                   <TableHead>DKIM</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{tr("status")}</TableHead>
+                  <TableHead className="text-end">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -281,13 +301,15 @@ function SendersTab({
                     <TableCell className="font-medium">{s.senderEmail}</TableCell>
                     <TableCell>{clientName(s.companyId)}</TableCell>
                     <TableCell className="text-muted-foreground">{s.label ?? "—"}</TableCell>
-                    <TableCell>{s.requireDkimPass ? "Required" : "Off"}</TableCell>
+                    <TableCell>{s.requireDkimPass ? tr("required") : tr("off")}</TableCell>
                     <TableCell>
-                      <Badge variant={s.status === "active" ? "default" : "secondary"}>{s.status}</Badge>
+                      <Badge variant={s.status === "active" ? "default" : "secondary"}>
+                        {s.status}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
+                    <TableCell className="text-end space-x-2">
                       <Button variant="outline" size="sm" onClick={() => toggleMutation.mutate(s)}>
-                        {s.status === "active" ? "Pause" : "Resume"}
+                        {s.status === "active" ? tr("pause") : tr("resume")}
                       </Button>
                       <Button
                         variant="ghost"
@@ -317,6 +339,8 @@ function CompletenessTab({
   clients: ClientCompany[];
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const tr = pageMessages.useT();
+
   const [companyId, setCompanyId] = useState("");
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
@@ -331,7 +355,8 @@ function CompletenessTab({
         `/api/firm/email-intake/completeness/${companyId}?periodStart=${periodStart}&periodEnd=${periodEnd}`
       ),
     onSuccess: (data: CompletenessResult) => setResult(data),
-    onError: (e: any) => toast({ title: "Could not load", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: tr("couldNotLoad"), description: e.message, variant: "destructive" }),
   });
 
   const chaseMutation = useMutation({
@@ -342,10 +367,11 @@ function CompletenessTab({
       }),
     onSuccess: (r: { created: number; skipped: number }) =>
       toast({
-        title: "Chase requests raised",
-        description: `${r.created} created, ${r.skipped} already chased`,
+        title: tr("chaseRequestsRaised"),
+        description: tr("createdAlreadyChased", { created: r.created, skipped: r.skipped }),
       }),
-    onError: (e: any) => toast({ title: "Could not raise chases", description: e.message, variant: "destructive" }),
+    onError: (e: any) =>
+      toast({ title: tr("couldNotRaiseChases"), description: e.message, variant: "destructive" }),
   });
 
   const coveragePct = result ? Math.round(result.summary.coverageRatio * 100) : null;
@@ -354,15 +380,15 @@ function CompletenessTab({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Check a period for missing documents</CardTitle>
+          <CardTitle className="text-base">{tr("checkAPeriodForMissingDocuments")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label>Client</Label>
+              <Label>{tr("client")}</Label>
               <Select value={companyId} onValueChange={setCompanyId}>
                 <SelectTrigger data-testid="select-completeness-client">
-                  <SelectValue placeholder="Select client" />
+                  <SelectValue placeholder={tr("selectClient")} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -374,16 +400,23 @@ function CompletenessTab({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Period start</Label>
-              <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              <Label>{tr("periodStart")}</Label>
+              <Input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>Period end</Label>
+              <Label>{tr("periodEnd")}</Label>
               <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
             </div>
             <div className="flex items-end">
-              <Button onClick={() => runMutation.mutate()} disabled={!canRun || runMutation.isPending}>
-                Run check
+              <Button
+                onClick={() => runMutation.mutate()}
+                disabled={!canRun || runMutation.isPending}
+              >
+                {tr("runCheck")}
               </Button>
             </div>
           </div>
@@ -399,48 +432,57 @@ function CompletenessTab({
               ) : (
                 <AlertTriangle className="h-5 w-5 text-warning" />
               )}
-              Coverage {coveragePct}% · {result.summary.gapCount} gap
-              {result.summary.gapCount === 1 ? "" : "s"}
+              {tr.plural("coverageWithGaps", result.summary.gapCount, { coveragePct })}
             </CardTitle>
             {result.summary.gapCount > 0 && (
-              <Button onClick={() => chaseMutation.mutate()} disabled={chaseMutation.isPending} data-testid="button-chase">
-                Create chase requests
+              <Button
+                onClick={() => chaseMutation.mutate()}
+                disabled={chaseMutation.isPending}
+                data-testid="button-chase"
+              >
+                {tr("createChaseRequests")}
               </Button>
             )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <Stat label="Bank lines" value={String(result.summary.totalLines)} />
-              <Stat label="Matched" value={String(result.summary.matchedLines)} />
-              <Stat label="Missing purchases" value={fmtAed(result.summary.unmatchedOutflowValue)} />
-              <Stat label="Missing sales" value={fmtAed(result.summary.unmatchedInflowValue)} />
+              <Stat label={tr("bankLines")} value={String(result.summary.totalLines)} />
+              <Stat label={tr("matched")} value={String(result.summary.matchedLines)} />
+              <Stat
+                label={tr("missingPurchases")}
+                value={fmtAed(result.summary.unmatchedOutflowValue)}
+              />
+              <Stat
+                label={tr("missingSales")}
+                value={fmtAed(result.summary.unmatchedInflowValue)}
+              />
             </div>
 
             {result.gaps.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Every bank line in this period has a matching document. Nothing to chase.
-              </p>
+              <p className="text-sm text-muted-foreground">{tr("everyBankLineInThisPeriod")}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>{tr("date")}</TableHead>
+                    <TableHead>{tr("description")}</TableHead>
+                    <TableHead>{tr("type")}</TableHead>
+                    <TableHead className="text-end">{tr("amount")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {result.gaps.map((g) => (
                     <TableRow key={g.bankTransactionId}>
                       <TableCell>{g.date.slice(0, 10)}</TableCell>
-                      <TableCell className="max-w-[320px] truncate">{g.description || "—"}</TableCell>
+                      <TableCell className="max-w-[320px] truncate">
+                        {g.description || "—"}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={g.direction === "outflow" ? "secondary" : "outline"}>
-                          {g.kind === "missing_purchase_evidence" ? "Purchase" : "Sales"}
+                          {g.kind === "missing_purchase_evidence" ? tr("purchase") : tr("sales")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{fmtAed(g.amount)}</TableCell>
+                      <TableCell className="text-end font-medium">{fmtAed(g.amount)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

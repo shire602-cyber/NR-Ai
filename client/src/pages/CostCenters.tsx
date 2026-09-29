@@ -60,6 +60,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
 import { formatCurrency } from "@/lib/format";
+import { messages as pageMessages } from "./CostCenters.i18n";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -107,8 +108,8 @@ interface CostCenterProfitabilityReport {
 // ─── Schemas ─────────────────────────────────────────────
 
 const costCenterFormSchema = z.object({
-  code: z.string().min(1, "Code is required"),
-  name: z.string().min(1, "Name is required"),
+  code: z.string().min(1, pageMessages.marker("codeIsRequired")),
+  name: z.string().min(1, pageMessages.marker("nameIsRequired")),
   description: z.string().optional(),
   parentId: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -119,6 +120,8 @@ type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
 // ─── Component ───────────────────────────────────────────
 
 export default function CostCenters() {
+  const tr = pageMessages.useT();
+
   const { locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -171,14 +174,14 @@ export default function CostCenters() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
       toast({
-        title: "Cost Center Created",
-        description: "Cost center has been added successfully.",
+        title: tr("costCenterCreated"),
+        description: tr("costCenterHasBeenAddedSuccessfully"),
       });
       setDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -191,15 +194,15 @@ export default function CostCenters() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
       toast({
-        title: "Cost Center Updated",
-        description: "Cost center details have been updated.",
+        title: tr("costCenterUpdated"),
+        description: tr("costCenterDetailsHaveBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingCostCenter(null);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -210,10 +213,10 @@ export default function CostCenters() {
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
-      toast({ title: "Cost Center Deleted", description: "Cost center has been removed." });
+      toast({ title: tr("costCenterDeleted"), description: tr("costCenterHasBeenRemoved") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -254,8 +257,8 @@ export default function CostCenters() {
   const handleExportCostCenterProfitability = async () => {
     if (!profitabilityReport) {
       toast({
-        title: "No report data",
-        description: "Cost Center P&L is still loading or has no rows to export.",
+        title: tr("noReportData"),
+        description: tr("costCenterPLIsStill"),
         variant: "destructive",
       });
       return;
@@ -267,14 +270,13 @@ export default function CostCenters() {
         `cost_center_pnl_${new Date().toISOString().slice(0, 10)}`
       );
       toast({
-        title: "Report exported",
-        description: "Cost Center P&L has been downloaded.",
+        title: tr("reportExported"),
+        description: tr("costCenterPLHasBeen"),
       });
     } catch (error) {
       toast({
-        title: "Export failed",
-        description:
-          error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
+        title: tr("exportFailed"),
+        description: error instanceof Error ? error.message : tr("unableToExportCostCenterP"),
         variant: "destructive",
       });
     }
@@ -320,7 +322,7 @@ export default function CostCenters() {
       ? `${profitabilityReport.periodStart ?? "Beginning"} to ${
           profitabilityReport.periodEnd ?? "today"
         }`
-      : "All posted periods";
+      : tr("allPostedPeriods");
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
@@ -339,11 +341,11 @@ export default function CostCenters() {
   return (
     <div className="space-y-6 p-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Cost Centers"
-        description="Manage cost centers for departmental accounting and P&L tracking"
+        eyebrow={tr("accounting")}
+        title={tr("costCenters")}
+        description={tr("manageCostCentersForDepartmentalAccounting")}
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={tr("backToReports")}
         actions={
           <>
             <Button
@@ -351,12 +353,12 @@ export default function CostCenters() {
               onClick={handleExportCostCenterProfitability}
               disabled={isLoadingProfitability || !profitabilityReport}
             >
-              <Download className="mr-2 h-4 w-4" />
-              Export
+              <Download className="me-2 h-4 w-4" />
+              {tr("export")}
             </Button>
             <Button onClick={handleOpenCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Cost Center
+              <Plus className="me-2 h-4 w-4" />
+              {tr("addCostCenter")}
             </Button>
           </>
         }
@@ -365,14 +367,13 @@ export default function CostCenters() {
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>Cost Center P&L</CardTitle>
+            <CardTitle>{tr("costCenterPL")}</CardTitle>
             <CardDescription>
-              Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
-              cost centers, grouped by income and expense accounts.
+              {tr("periodSourceBasisPostedJournalLines", { profitabilityPeriodLabel })}
             </CardDescription>
           </div>
           <Badge variant="secondary" className="w-fit">
-            Accrual basis
+            {tr("accrualBasis")}
           </Badge>
         </CardHeader>
         <CardContent>
@@ -386,15 +387,16 @@ export default function CostCenters() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Active centers
+                    {tr("activeCenters")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
-                    {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
+                    {profitabilityTotals.activeCostCenterCount}/
+                    {profitabilityTotals.costCenterCount}
                   </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Income
+                    {tr("income")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-success">
                     {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
@@ -402,7 +404,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Expenses
+                    {tr("expenses")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-destructive">
                     {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
@@ -410,7 +412,7 @@ export default function CostCenters() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Net income
+                    {tr("netIncome")}
                   </p>
                   <p
                     className={`mt-1 text-2xl font-semibold ${
@@ -426,20 +428,20 @@ export default function CostCenters() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Cost Center</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Income</TableHead>
-                      <TableHead className="text-right">Expenses</TableHead>
-                      <TableHead className="text-right">Net Income</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead>{tr("code")}</TableHead>
+                      <TableHead>{tr("costCenter")}</TableHead>
+                      <TableHead>{tr("status")}</TableHead>
+                      <TableHead className="text-end">{tr("income")}</TableHead>
+                      <TableHead className="text-end">{tr("expenses")}</TableHead>
+                      <TableHead className="text-end">{tr("netIncome2")}</TableHead>
+                      <TableHead className="text-end">{tr("lines")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {profitabilityRows.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                          No cost center allocations have been posted yet.
+                          {tr("noCostCenterAllocationsHaveBeen")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -449,23 +451,23 @@ export default function CostCenters() {
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell>
                             <Badge variant={row.isActive ? "default" : "secondary"}>
-                              {row.isActive ? "Active" : "Inactive"}
+                              {row.isActive ? tr("active") : tr("inactive")}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-end font-mono">
                             {formatCurrency(row.totalIncome, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-end font-mono">
                             {formatCurrency(row.totalExpenses, "AED", locale)}
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono ${
+                            className={`text-end font-mono ${
                               row.netIncome >= 0 ? "text-success" : "text-destructive"
                             }`}
                           >
                             {formatCurrency(row.netIncome, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
+                          <TableCell className="text-end font-mono">{row.lineCount}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -481,7 +483,7 @@ export default function CostCenters() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cost Centers</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalCostCenters")}</CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -490,7 +492,7 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("active")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success">{activeCount}</div>
@@ -498,7 +500,7 @@ export default function CostCenters() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inactive</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("inactive")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
@@ -509,12 +511,12 @@ export default function CostCenters() {
       {/* Search */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search cost centers..."
+            placeholder={tr("searchCostCenters")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="ps-10"
           />
         </div>
       </div>
@@ -525,12 +527,12 @@ export default function CostCenters() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{tr("code")}</TableHead>
+                <TableHead>{tr("name")}</TableHead>
+                <TableHead>{tr("description")}</TableHead>
+                <TableHead>{tr("parent")}</TableHead>
+                <TableHead>{tr("status")}</TableHead>
+                <TableHead className="text-end">{tr("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -538,8 +540,8 @@ export default function CostCenters() {
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     {searchQuery
-                      ? "No cost centers match your search"
-                      : "No cost centers yet. Add your first cost center to get started."}
+                      ? tr("noCostCentersMatchYourSearch")
+                      : tr("noCostCentersYetAddYour")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -564,15 +566,15 @@ export default function CostCenters() {
                     <TableCell>
                       {cc.isActive ? (
                         <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
-                          Active
+                          {tr("active")}
                         </Badge>
                       ) : (
                         <Badge className="bg-muted text-foreground hover:bg-muted">
-                          Inactive
+                          {tr("inactive")}
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
@@ -589,9 +591,7 @@ export default function CostCenters() {
                           size="icon"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (
-                              window.confirm("Are you sure you want to delete this cost center?")
-                            ) {
+                            if (window.confirm(tr("areYouSureYouWantTo"))) {
                               deleteMutation.mutate(cc.id);
                             }
                           }}
@@ -613,7 +613,7 @@ export default function CostCenters() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
-              P&L Summary — {selectedCostCenter.name} ({selectedCostCenter.code})
+              {tr("pLSummary", { name: selectedCostCenter.name, code: selectedCostCenter.code })}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -621,22 +621,26 @@ export default function CostCenters() {
               <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-success-subtle border-success/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success">Income</CardTitle>
+                    <CardTitle className="text-sm font-medium text-success">
+                      {tr("income")}
+                    </CardTitle>
                     <TrendingUp className="h-4 w-4 text-success" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-success font-mono">
+                    <div dir="ltr" className="text-2xl font-bold text-success font-mono">
                       {formatCurrency(report.totalIncome ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-danger-subtle border-destructive/30">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive">Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium text-destructive">
+                      {tr("expenses")}
+                    </CardTitle>
                     <TrendingDown className="h-4 w-4 text-destructive" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-destructive font-mono">
+                    <div dir="ltr" className="text-2xl font-bold text-destructive font-mono">
                       {formatCurrency(report.totalExpenses ?? 0, "AED", locale)}
                     </div>
                   </CardContent>
@@ -652,7 +656,7 @@ export default function CostCenters() {
                     <CardTitle
                       className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
                     >
-                      Net
+                      {tr("net")}
                     </CardTitle>
                     <DollarSign
                       className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
@@ -660,6 +664,7 @@ export default function CostCenters() {
                   </CardHeader>
                   <CardContent>
                     <div
+                      dir="ltr"
                       className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
                     >
                       {formatCurrency(report.netIncome ?? 0, "AED", locale)}
@@ -668,9 +673,7 @@ export default function CostCenters() {
                 </Card>
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">
-                No report data available for this cost center.
-              </p>
+              <p className="text-muted-foreground text-sm">{tr("noReportDataAvailableForThis")}</p>
             )}
           </CardContent>
         </Card>
@@ -680,11 +683,13 @@ export default function CostCenters() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingCostCenter ? "Edit Cost Center" : "Add Cost Center"}</DialogTitle>
+            <DialogTitle>
+              {editingCostCenter ? tr("editCostCenter") : tr("addCostCenter")}
+            </DialogTitle>
             <DialogDescription>
               {editingCostCenter
-                ? "Update cost center details below."
-                : "Fill in the details to create a new cost center."}
+                ? tr("updateCostCenterDetailsBelow")
+                : tr("fillInTheDetailsToCreate")}
             </DialogDescription>
           </DialogHeader>
 
@@ -696,7 +701,7 @@ export default function CostCenters() {
                   name="code"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Code *</FormLabel>
+                      <FormLabel>{tr("code2")}</FormLabel>
                       <FormControl>
                         <Input placeholder="CC-001" {...field} />
                       </FormControl>
@@ -709,9 +714,9 @@ export default function CostCenters() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name *</FormLabel>
+                      <FormLabel>{tr("name2")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Marketing" {...field} />
+                        <Input placeholder={tr("marketing")} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -724,10 +729,10 @@ export default function CostCenters() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>{tr("description")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Optional description for this cost center"
+                        placeholder={tr("optionalDescriptionForThisCostCenter")}
                         rows={3}
                         {...field}
                         value={field.value || ""}
@@ -743,18 +748,18 @@ export default function CostCenters() {
                 name="parentId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Parent Cost Center</FormLabel>
+                    <FormLabel>{tr("parentCostCenter")}</FormLabel>
                     <Select
                       onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
                       value={field.value || "_none"}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="None (top-level)" />
+                          <SelectValue placeholder={tr("noneTopLevel")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="_none">None (top-level)</SelectItem>
+                        <SelectItem value="_none">{tr("noneTopLevel")}</SelectItem>
                         {getAvailableParents().map((parent) => (
                           <SelectItem key={parent.id} value={parent.id}>
                             {parent.code} — {parent.name}
@@ -773,9 +778,9 @@ export default function CostCenters() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel>Active</FormLabel>
+                      <FormLabel>{tr("active")}</FormLabel>
                       <p className="text-sm text-muted-foreground">
-                        Inactive cost centers cannot receive new transactions
+                        {tr("inactiveCostCentersCannotReceiveNew")}
                       </p>
                     </div>
                     <FormControl>
@@ -787,16 +792,16 @@ export default function CostCenters() {
 
               <div className="flex justify-end gap-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <div className="me-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   )}
-                  {editingCostCenter ? "Update Cost Center" : "Add Cost Center"}
+                  {editingCostCenter ? tr("updateCostCenter") : tr("addCostCenter")}
                 </Button>
               </div>
             </form>

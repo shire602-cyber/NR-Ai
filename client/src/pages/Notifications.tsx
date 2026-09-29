@@ -24,8 +24,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { Notification, RegulatoryNews } from "@shared/schema";
+import { messages as pageMessages } from "./Notifications.i18n";
 
 export default function Notifications() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("notifications");
 
@@ -51,7 +54,7 @@ export default function Notifications() {
     mutationFn: () => apiRequest("POST", "/api/notifications/read-all"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "All notifications marked as read" });
+      toast({ title: tr("allNotificationsMarkedAsRead") });
     },
   });
 
@@ -59,7 +62,7 @@ export default function Notifications() {
     mutationFn: (id: string) => apiRequest("PATCH", `/api/notifications/${id}/dismiss`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      toast({ title: "Notification dismissed" });
+      toast({ title: tr("notificationDismissed") });
     },
   });
 
@@ -84,13 +87,13 @@ export default function Notifications() {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case "urgent":
-        return <Badge variant="destructive">Urgent</Badge>;
+        return <Badge variant="destructive">{tr("urgent")}</Badge>;
       case "high":
-        return <Badge className="bg-warning">High</Badge>;
+        return <Badge className="bg-warning">{tr("high")}</Badge>;
       case "normal":
-        return <Badge variant="secondary">Normal</Badge>;
+        return <Badge variant="secondary">{tr("normal")}</Badge>;
       default:
-        return <Badge variant="outline">Low</Badge>;
+        return <Badge variant="outline">{tr("low")}</Badge>;
     }
   };
 
@@ -112,9 +115,9 @@ export default function Notifications() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
-        title="Notifications & News"
-        description="Stay updated with deadlines, reminders, and regulatory changes"
+        eyebrow={tr("workspace")}
+        title={tr("notificationsNews")}
+        description={tr("stayUpdatedWithDeadlinesRemindersAnd")}
         actions={
           activeTab === "notifications" && notificationsData?.unreadCount ? (
             <Button
@@ -122,8 +125,8 @@ export default function Notifications() {
               disabled={markAllAsReadMutation.isPending}
               data-testid="button-mark-all-read"
             >
-              <Check className="w-4 h-4 mr-2" />
-              Mark All as Read
+              <Check className="w-4 h-4 me-2" />
+              {tr("markAllAsRead")}
             </Button>
           ) : null
         }
@@ -132,17 +135,17 @@ export default function Notifications() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="notifications" data-testid="tab-notifications">
-            <Bell className="w-4 h-4 mr-2" />
-            Notifications
+            <Bell className="w-4 h-4 me-2" />
+            {tr("notifications")}
             {notificationsData?.unreadCount ? (
-              <Badge variant="destructive" className="ml-2">
+              <Badge variant="destructive" className="ms-2">
                 {notificationsData.unreadCount}
               </Badge>
             ) : null}
           </TabsTrigger>
           <TabsTrigger value="regulatory" data-testid="tab-regulatory">
-            <Newspaper className="w-4 h-4 mr-2" />
-            Regulatory News
+            <Newspaper className="w-4 h-4 me-2" />
+            {tr("regulatoryNews")}
           </TabsTrigger>
         </TabsList>
 
@@ -157,10 +160,8 @@ export default function Notifications() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Bell className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No notifications</h3>
-                <p className="text-muted-foreground text-center">
-                  You're all caught up! New notifications will appear here.
-                </p>
+                <h3 className="text-lg font-medium">{tr("noNotifications")}</h3>
+                <p className="text-muted-foreground text-center">{tr("youReAllCaughtUpNew")}</p>
               </CardContent>
             </Card>
           ) : (
@@ -180,7 +181,7 @@ export default function Notifications() {
                           {getPriorityBadge(notification.priority)}
                           {!notification.isRead && (
                             <Badge variant="outline" className="bg-info-subtle">
-                              New
+                              {tr("new")}
                             </Badge>
                           )}
                         </div>
@@ -237,9 +238,9 @@ export default function Notifications() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Newspaper className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No regulatory updates</h3>
+                <h3 className="text-lg font-medium">{tr("noRegulatoryUpdates")}</h3>
                 <p className="text-muted-foreground text-center">
-                  Latest regulatory news and updates will appear here.
+                  {tr("latestRegulatoryNewsAndUpdatesWill")}
                 </p>
               </CardContent>
             </Card>
@@ -253,14 +254,16 @@ export default function Notifications() {
                         <div className="flex items-center gap-2">
                           {getNewsBadge(news.category)}
                           {news.importance === "critical" && (
-                            <Badge variant="destructive">Critical</Badge>
+                            <Badge variant="destructive">{tr("critical")}</Badge>
                           )}
                           {news.importance === "high" && (
-                            <Badge className="bg-warning">Important</Badge>
+                            <Badge className="bg-warning">{tr("important")}</Badge>
                           )}
                         </div>
                         <CardTitle>{news.title}</CardTitle>
-                        {news.source && <CardDescription>Source: {news.source}</CardDescription>}
+                        {news.source && (
+                          <CardDescription>{tr("source", { source: news.source })}</CardDescription>
+                        )}
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(news.publishedAt), { addSuffix: true })}
@@ -271,14 +274,14 @@ export default function Notifications() {
                     <p className="text-muted-foreground">{news.summary}</p>
                     {news.effectiveDate && (
                       <p className="text-sm mt-2">
-                        <strong>Effective:</strong>{" "}
+                        <strong>{tr("effective")}</strong>{" "}
                         {new Date(news.effectiveDate).toLocaleDateString()}
                       </p>
                     )}
                     {news.sourceUrl && (
                       <Button variant="ghost" className="p-0 mt-2" asChild>
                         <a href={news.sourceUrl} target="_blank" rel="noopener noreferrer">
-                          Read more <ChevronRight className="w-4 h-4 ml-1" />
+                          {tr("readMore")} <ChevronRight className="w-4 h-4 ms-1" />
                         </a>
                       </Button>
                     )}

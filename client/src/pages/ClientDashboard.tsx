@@ -18,10 +18,13 @@ import {
   FileArchive,
   ListChecks,
 } from "lucide-react";
+import { messages as pageMessages } from "./ClientDashboard.i18n";
 
 export default function ClientDashboard() {
+  const tr = pageMessages.useT();
+
   const user = getStoredUser();
-  const userName = user?.name || user?.email || "Client";
+  const userName = user?.name || user?.email || tr("client");
   const { companyId } = useDefaultCompany();
 
   // Fetch documents count
@@ -77,12 +80,15 @@ export default function ClientDashboard() {
   // Compliance status badge color
   const getComplianceBadge = () => {
     if (!nextDeadline)
-      return { color: "bg-success-subtle text-success border-success/30", label: "All Clear" };
+      return { color: "bg-success-subtle text-success border-success/30", label: tr("allClear") };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
-      return { color: "bg-danger-subtle text-destructive border-destructive/30", label: "Urgent" };
+      return {
+        color: "bg-danger-subtle text-destructive border-destructive/30",
+        label: tr("urgent"),
+      };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
-      return { color: "bg-warning-subtle text-warning border-warning/30", label: "Upcoming" };
-    return { color: "bg-success-subtle text-success border-success/30", label: "On Track" };
+      return { color: "bg-warning-subtle text-warning border-warning/30", label: tr("upcoming") };
+    return { color: "bg-success-subtle text-success border-success/30", label: tr("onTrack") };
   };
 
   const complianceBadge = getComplianceBadge();
@@ -90,7 +96,7 @@ export default function ClientDashboard() {
   // Recent updates feed data
   const recentUpdates = activityLogs.slice(0, 5).map((item: any) => ({
     id: item.id,
-    description: item.description || item.memo || "Activity logged",
+    description: item.description || item.memo || tr("activityLogged"),
     date: item.createdAt || item.date,
   }));
 
@@ -100,10 +106,10 @@ export default function ClientDashboard() {
       <div className="relative overflow-hidden rounded-2xl p-8 border border-primary/10">
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            Welcome back, <span className="text-primary">{userName}</span>
+            {tr("welcomeBack")} <span className="text-primary">{userName}</span>
           </h1>
           <p className="text-muted-foreground text-lg">
-            Your Muhasib.ai client portal — everything in one place.
+            {tr("yourMuhasibAiClientPortalEverything")}
           </p>
         </div>
       </div>
@@ -114,7 +120,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              My Documents
+              {tr("myDocuments")}
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-info-subtle flex items-center justify-center">
               <Upload className="w-4 h-4 text-info " />
@@ -126,10 +132,10 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{documents.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">documents in vault</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("documentsInVault")}</p>
             <Link href="/document-vault">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
-                View All <ArrowRight className="w-3 h-3" />
+                {tr("viewAll")} <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
           </CardContent>
@@ -139,7 +145,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Compliance Status
+              {tr("complianceStatus")}
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-success-subtle flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-success " />
@@ -151,14 +157,14 @@ export default function ClientDashboard() {
             ) : nextDeadline ? (
               <>
                 <div className="text-sm font-semibold">
-                  {nextDeadline.title || "Upcoming deadline"}
+                  {nextDeadline.title || tr("upcomingDeadline")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  due in {daysUntilDeadline} day{daysUntilDeadline !== 1 ? "s" : ""}
+                  {tr.plural("dueInDays", daysUntilDeadline ?? 0)}
                 </p>
               </>
             ) : (
-              <div className="text-sm font-semibold">No upcoming deadlines</div>
+              <div className="text-sm font-semibold">{tr("noUpcomingDeadlines")}</div>
             )}
             <Badge variant="outline" className={`mt-2 text-xs ${complianceBadge.color}`}>
               {complianceBadge.label}
@@ -170,7 +176,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pending Tasks
+              {tr("pendingTasks")}
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-warning-subtle flex items-center justify-center">
               <ListTodo className="w-4 h-4 text-warning " />
@@ -182,10 +188,10 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{pendingTasks.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">tasks incomplete</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("tasksIncomplete")}</p>
             <Link href="/compliance-calendar">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
-                View Tasks <ArrowRight className="w-3 h-3" />
+                {tr("viewTasks")} <ArrowRight className="w-3 h-3" />
               </Button>
             </Link>
           </CardContent>
@@ -195,7 +201,7 @@ export default function ClientDashboard() {
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Recent Activity
+              {tr("recentActivity")}
             </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-chart-5/10 flex items-center justify-center">
               <Activity className="w-4 h-4 text-chart-5 " />
@@ -207,14 +213,14 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{recentActivityItems.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">items this week</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("itemsThisWeek")}</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Quick Actions */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
+        <h2 className="text-xl font-semibold mb-4">{tr("quickActions")}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href="/document-vault">
             <Button
@@ -222,7 +228,7 @@ export default function ClientDashboard() {
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
               <Upload className="w-7 h-7 text-info" />
-              <span className="font-medium">Upload Document</span>
+              <span className="font-medium">{tr("uploadDocument")}</span>
             </Button>
           </Link>
           <Link href="/reports">
@@ -231,7 +237,7 @@ export default function ClientDashboard() {
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
               <BarChart3 className="w-7 h-7 text-success" />
-              <span className="font-medium">View Reports</span>
+              <span className="font-medium">{tr("viewReports")}</span>
             </Button>
           </Link>
           <Link href="/tax-return-archive">
@@ -240,7 +246,7 @@ export default function ClientDashboard() {
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
               <FileArchive className="w-7 h-7 text-chart-5" />
-              <span className="font-medium">View Tax Returns</span>
+              <span className="font-medium">{tr("viewTaxReturns")}</span>
             </Button>
           </Link>
           <Link href="/task-center">
@@ -249,7 +255,7 @@ export default function ClientDashboard() {
               className="w-full h-auto py-6 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors"
             >
               <ListChecks className="w-7 h-7 text-success" />
-              <span className="font-medium">Open Task Center</span>
+              <span className="font-medium">{tr("openTaskCenter")}</span>
             </Button>
           </Link>
         </div>
@@ -260,7 +266,7 @@ export default function ClientDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Activity className="w-5 h-5" />
-            Recent Updates
+            {tr("recentUpdates")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -294,7 +300,7 @@ export default function ClientDashboard() {
           ) : (
             <div className="text-center py-8 text-muted-foreground">
               <Activity className="w-10 h-10 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No recent updates yet</p>
+              <p className="text-sm">{tr("noRecentUpdatesYet")}</p>
             </div>
           )}
         </CardContent>

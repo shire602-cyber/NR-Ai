@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useI18n } from "@/lib/i18n";
+import { messages as pageMessages } from "./IntegrationsHub.i18n";
 
 /**
  * What can genuinely be connected today. E-commerce / CRM platform sync
@@ -30,6 +31,8 @@ interface HubCard {
 }
 
 export default function IntegrationsHub() {
+  const tr = pageMessages.useT();
+
   const { locale } = useI18n();
   const en = locale === "en";
   const { data: status } = useQuery<IntegrationsStatus>({ queryKey: ["/api/integrations/status"] });
@@ -38,48 +41,38 @@ export default function IntegrationsHub() {
     {
       id: "google-sheets",
       icon: FileSpreadsheet,
-      title: "Google Sheets",
-      description: en
-        ? "Export invoices, expenses and journal entries to a spreadsheet, or import from one."
-        : "صدّر الفواتير والمصروفات والقيود إلى جدول بيانات أو استوردها منه.",
+      title: tr("googleSheets"),
+      description: tr("exportInvoicesExpensesAndJournalEntries"),
       connected: status?.googleSheets?.connected,
       href: "/integrations",
-      action: en ? "Open" : "فتح",
+      action: tr("open"),
     },
     {
       id: "email",
       icon: Mail,
-      title: en ? "Email" : "البريد الإلكتروني",
-      description: en
-        ? "Send invoices and payment reminders to customers by email."
-        : "أرسل الفواتير وتذكيرات الدفع إلى العملاء بالبريد الإلكتروني.",
+      title: tr("email"),
+      description: tr("sendInvoicesAndPaymentRemindersTo"),
       connected: status?.email?.connected,
       href: "/invoices",
-      action: en ? "Go to invoices" : "إلى الفواتير",
+      action: tr("goToInvoices"),
     },
     {
       id: "bank-import",
       icon: Landmark,
-      title: en ? "Bank statement import" : "استيراد كشف الحساب البنكي",
-      description: en
-        ? "Import CSV or OFX bank statements and reconcile them against your books."
-        : "استورد كشوف الحساب بصيغة CSV أو OFX وطابقها مع دفاترك.",
+      title: tr("bankStatementImport"),
+      description: tr("importCsvOrOfxBankStatements"),
       href: "/bank-reconciliation",
-      action: en ? "Import statements" : "استيراد الكشوف",
+      action: tr("importStatements"),
     },
   ];
 
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4" dir={en ? "ltr" : "rtl"}>
       <PageHeader
-        eyebrow="Settings"
-        title={en ? "Connected services" : "الخدمات المتصلة"}
+        eyebrow={tr("settings")}
+        title={tr("connectedServices")}
         testId="text-integrations-title"
-        description={
-          en
-            ? "The connections that work today."
-            : "الاتصالات المتاحة حالياً."
-        }
+        description={tr("theConnectionsThatWorkToday")}
         className="mb-8"
       />
       <div className="grid md:grid-cols-2 gap-6">
@@ -96,11 +89,11 @@ export default function IntegrationsHub() {
                     <Badge variant={card.connected ? "default" : "secondary"}>
                       {card.connected ? (
                         <>
-                          <Check className="w-3 h-3 mr-1" /> {en ? "Connected" : "متصل"}
+                          <Check className="w-3 h-3 me-1" /> {tr("connected")}
                         </>
                       ) : (
                         <>
-                          <X className="w-3 h-3 mr-1" /> {en ? "Not configured" : "غير مهيأ"}
+                          <X className="w-3 h-3 me-1" /> {tr("notConfigured")}
                         </>
                       )}
                     </Badge>

@@ -26,6 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
+import { messages as pageMessages } from "./FirmAnalytics.i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,10 @@ const HEALTH_COLORS = {
   critical: "#ef4444",
 };
 
-const ISSUE_LABELS: Record<string, string> = {
-  overdue_invoices: "Overdue Invoices",
-  overdue_vat: "Overdue VAT Returns",
-};
+const getIssueLabels = (): Record<string, string> => ({
+  overdue_invoices: pageMessages.t("overdueInvoices"),
+  overdue_vat: pageMessages.t("overdueVatReturns"),
+});
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -85,6 +86,8 @@ function MetricCard({
   icon: React.ComponentType<{ className?: string }>;
   trend?: number;
 }) {
+  const tr = pageMessages.useT();
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -98,7 +101,7 @@ function MetricCard({
             className={`flex items-center gap-1 text-xs mt-1 ${trend >= 0 ? "text-success" : "text-destructive"}`}
           >
             {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-            <span>{Math.abs(trend)}% vs last month</span>
+            <span>{tr("vsLastMonth", { abs: Math.abs(trend) })}</span>
           </div>
         )}
         {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
@@ -110,6 +113,8 @@ function MetricCard({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function FirmAnalytics() {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
 
   const { data: revenue, isLoading: revLoading } = useQuery<RevenueData>({
@@ -159,34 +164,34 @@ export default function FirmAnalytics() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title={(t as any).firmAnalytics || "Firm Analytics"}
+        eyebrow={tr("firm")}
+        title={(t as any).firmAnalytics || tr("firmAnalytics")}
         description={
-          (t as any).firmAnalyticsDesc || "Revenue, utilization, and client health overview"
+          (t as any).firmAnalyticsDesc || tr("revenueUtilizationAndClientHealthOverview")
         }
       />
 
       {/* Revenue cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title={(t as any).totalMRR || "Total MRR"}
+          title={(t as any).totalMRR || tr("totalMrr")}
           value={formatAed(revenue?.totalMRR ?? 0)}
           icon={DollarSign}
           trend={revenue?.revenueGrowthPercent}
         />
         <MetricCard
-          title={(t as any).revenueGrowth || "Revenue Growth"}
+          title={(t as any).revenueGrowth || tr("revenueGrowth")}
           value={`${revenue?.revenueGrowthPercent ?? 0}%`}
-          subtitle={(t as any).vsLastMonth || "vs. last 30 days"}
+          subtitle={(t as any).vsLastMonth || tr("vsLast30Days")}
           icon={TrendingUp}
         />
         <MetricCard
-          title={(t as any).avgRevenuePerClient || "Avg Revenue / Client"}
+          title={(t as any).avgRevenuePerClient || tr("avgRevenueClient")}
           value={formatAed(revenue?.avgRevenuePerClient ?? 0)}
           icon={BarChart2}
         />
         <MetricCard
-          title={(t as any).totalClients || "Total Clients"}
+          title={(t as any).totalClients || tr("totalClients")}
           value={String(utilization?.totalClients ?? 0)}
           subtitle={`${utilization?.staffCount ?? 0} ${(t as any).staffMembers || "staff members"}`}
           icon={Users}
@@ -199,7 +204,7 @@ export default function FirmAnalytics() {
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">
-              {(t as any).revenueByClient || "Revenue by Client (Top 10)"}
+              {(t as any).revenueByClient || tr("revenueByClientTop10")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -241,7 +246,7 @@ export default function FirmAnalytics() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              {(t as any).clientHealthSummary || "Client Health"}
+              {(t as any).clientHealthSummary || tr("clientHealth")}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
@@ -290,15 +295,20 @@ export default function FirmAnalytics() {
             {(health?.topIssues?.length ?? 0) > 0 && (
               <div className="w-full border-t pt-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {(t as any).topIssues || "Top Issues"}
+                  {(t as any).topIssues || tr("topIssues")}
                 </p>
                 {health!.topIssues.map((issue) => (
                   <div key={issue.type} className="flex items-start gap-2 text-xs">
                     <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
                     <span>
-                      <span className="font-medium">{ISSUE_LABELS[issue.type] ?? issue.type}</span>
-                      <span className="text-muted-foreground ml-1">
-                        — {issue.count} total, {issue.affectedClients} clients
+                      <span className="font-medium">
+                        {getIssueLabels()[issue.type] ?? issue.type}
+                      </span>
+                      <span className="text-muted-foreground ms-1">
+                        {tr("totalClients2", {
+                          count: issue.count,
+                          affectedClients: issue.affectedClients,
+                        })}
                       </span>
                     </span>
                   </div>
@@ -313,17 +323,15 @@ export default function FirmAnalytics() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {(t as any).staffUtilization || "Staff Utilization"}
+            {(t as any).staffUtilization || tr("staffUtilization")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="text-3xl font-bold text-warning">
-                {utilization?.staffCount ?? 0}
-              </div>
+              <div className="text-3xl font-bold text-warning">{utilization?.staffCount ?? 0}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).totalStaff || "Total Staff"}
+                {(t as any).totalStaff || tr("totalStaff")}
               </div>
             </div>
             <div className="text-center">
@@ -331,7 +339,7 @@ export default function FirmAnalytics() {
                 {utilization?.clientsPerStaff ?? 0}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).clientsPerStaff || "Clients / Staff"}
+                {(t as any).clientsPerStaff || tr("clientsStaff")}
               </div>
             </div>
             <div className="text-center">
@@ -339,7 +347,7 @@ export default function FirmAnalytics() {
                 {utilization?.avgClientsPerAdmin ?? 0}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).avgClientsPerAdmin || "Avg Clients / Admin"}
+                {(t as any).avgClientsPerAdmin || tr("avgClientsAdmin")}
               </div>
             </div>
           </div>

@@ -34,34 +34,47 @@ import {
   AlertCircle,
 } from "lucide-react";
 import type { UserFeedback } from "@shared/schema";
+import { messages as pageMessages } from "./Feedback.i18n";
 
-const FEEDBACK_TYPES = [
-  { value: "bug", label: "Bug Report", icon: Bug, description: "Report a problem or error" },
+const getFeedbackTypes = () => [
+  {
+    value: "bug",
+    label: pageMessages.t("bugReport"),
+    icon: Bug,
+    description: pageMessages.t("reportAProblemOrError"),
+  },
   {
     value: "feature_request",
-    label: "Feature Request",
+    label: pageMessages.t("featureRequest"),
     icon: Lightbulb,
-    description: "Suggest a new feature",
+    description: pageMessages.t("suggestANewFeature"),
   },
   {
     value: "improvement",
-    label: "Improvement",
+    label: pageMessages.t("improvement"),
     icon: ThumbsUp,
-    description: "Suggest an improvement",
+    description: pageMessages.t("suggestAnImprovement"),
   },
-  { value: "praise", label: "Praise", icon: Star, description: "Share what you love" },
+  {
+    value: "praise",
+    label: pageMessages.t("praise"),
+    icon: Star,
+    description: pageMessages.t("shareWhatYouLove"),
+  },
 ];
 
-const CATEGORIES = [
-  { value: "ui", label: "User Interface" },
-  { value: "performance", label: "Performance" },
-  { value: "feature", label: "Feature" },
-  { value: "billing", label: "Billing" },
-  { value: "support", label: "Support" },
-  { value: "other", label: "Other" },
+const getCategories = () => [
+  { value: "ui", label: pageMessages.t("userInterface") },
+  { value: "performance", label: pageMessages.t("performance") },
+  { value: "feature", label: pageMessages.t("feature") },
+  { value: "billing", label: pageMessages.t("billing") },
+  { value: "support", label: pageMessages.t("support") },
+  { value: "other", label: pageMessages.t("other") },
 ];
 
 export default function Feedback() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [location] = useLocation();
   const [activeTab, setActiveTab] = useState("submit");
@@ -87,7 +100,7 @@ export default function Feedback() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
-      toast({ title: "Thank you for your feedback!" });
+      toast({ title: tr("thankYouForYourFeedback") });
       setFormData({
         feedbackType: "",
         category: "",
@@ -100,7 +113,7 @@ export default function Feedback() {
       setActiveTab("history");
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -109,29 +122,29 @@ export default function Feedback() {
       case "resolved":
         return (
           <Badge className="bg-success">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Resolved
+            <CheckCircle className="w-3 h-3 me-1" />
+            {tr("resolved")}
           </Badge>
         );
       case "in_progress":
         return (
           <Badge className="bg-info">
-            <Clock className="w-3 h-3 mr-1" />
-            In Progress
+            <Clock className="w-3 h-3 me-1" />
+            {tr("inProgress")}
           </Badge>
         );
       case "reviewed":
         return (
           <Badge className="bg-warning">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Reviewed
+            <AlertCircle className="w-3 h-3 me-1" />
+            {tr("reviewed")}
           </Badge>
         );
       case "new":
         return (
           <Badge variant="secondary">
-            <Clock className="w-3 h-3 mr-1" />
-            New
+            <Clock className="w-3 h-3 me-1" />
+            {tr("new")}
           </Badge>
         );
       default:
@@ -140,7 +153,7 @@ export default function Feedback() {
   };
 
   const getTypeIcon = (type: string) => {
-    const typeInfo = FEEDBACK_TYPES.find((t) => t.value === type);
+    const typeInfo = getFeedbackTypes().find((t) => t.value === type);
     if (typeInfo) {
       const Icon = typeInfo.icon;
       return <Icon className="w-4 h-4" />;
@@ -151,41 +164,41 @@ export default function Feedback() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Workspace"
-        title="Feedback"
-        description="Help us improve by sharing your thoughts and suggestions"
+        eyebrow={tr("workspace")}
+        title={tr("feedback")}
+        description={tr("helpUsImproveBySharingYour")}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="submit" data-testid="tab-submit">
-            <Send className="w-4 h-4 mr-2" />
-            Submit Feedback
+            <Send className="w-4 h-4 me-2" />
+            {tr("submitFeedback")}
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
-            <History className="w-4 h-4 mr-2" />
-            My Feedback
+            <History className="w-4 h-4 me-2" />
+            {tr("myFeedback")}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="submit" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Share Your Feedback</CardTitle>
-              <CardDescription>Your feedback helps us build a better product</CardDescription>
+              <CardTitle>{tr("shareYourFeedback")}</CardTitle>
+              <CardDescription>{tr("yourFeedbackHelpsUsBuildA")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label>Feedback Type</Label>
+                <Label>{tr("feedbackType")}</Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {FEEDBACK_TYPES.map((type) => {
+                  {getFeedbackTypes().map((type) => {
                     const Icon = type.icon;
                     const isSelected = formData.feedbackType === type.value;
                     return (
                       <button
                         key={type.value}
                         onClick={() => setFormData({ ...formData, feedbackType: type.value })}
-                        className={`p-4 rounded-lg border-2 transition-colors text-left ${
+                        className={`p-4 rounded-lg border-2 transition-colors text-start ${
                           isSelected
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-primary/50"
@@ -205,16 +218,16 @@ export default function Feedback() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Category</Label>
+                  <Label>{tr("category")}</Label>
                   <Select
                     value={formData.category}
                     onValueChange={(value) => setFormData({ ...formData, category: value })}
                   >
                     <SelectTrigger data-testid="select-category">
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue placeholder={tr("selectCategory")} />
                     </SelectTrigger>
                     <SelectContent>
-                      {CATEGORIES.map((cat) => (
+                      {getCategories().map((cat) => (
                         <SelectItem key={cat.value} value={cat.value}>
                           {cat.label}
                         </SelectItem>
@@ -224,7 +237,7 @@ export default function Feedback() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Rating (optional)</Label>
+                  <Label>{tr("ratingOptional")}</Label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
@@ -247,9 +260,9 @@ export default function Feedback() {
               </div>
 
               <div className="space-y-2">
-                <Label>Title</Label>
+                <Label>{tr("title")}</Label>
                 <Input
-                  placeholder="Brief summary of your feedback"
+                  placeholder={tr("briefSummaryOfYourFeedback")}
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   data-testid="input-title"
@@ -257,9 +270,9 @@ export default function Feedback() {
               </div>
 
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>{tr("description")}</Label>
                 <Textarea
-                  placeholder="Please provide as much detail as possible..."
+                  placeholder={tr("pleaseProvideAsMuchDetailAs")}
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   rows={5}
@@ -269,10 +282,8 @@ export default function Feedback() {
 
               <div className="flex items-center justify-between p-4 rounded-lg border">
                 <div>
-                  <Label>Allow us to contact you</Label>
-                  <p className="text-sm text-muted-foreground">
-                    We may reach out for more details or to notify you of resolution
-                  </p>
+                  <Label>{tr("allowUsToContactYou")}</Label>
+                  <p className="text-sm text-muted-foreground">{tr("weMayReachOutForMore")}</p>
                 </div>
                 <Switch
                   checked={formData.allowContact}
@@ -283,7 +294,7 @@ export default function Feedback() {
 
               {formData.allowContact && (
                 <div className="space-y-2">
-                  <Label>Contact Email (optional)</Label>
+                  <Label>{tr("contactEmailOptional")}</Label>
                   <Input
                     type="email"
                     placeholder="your@email.com"
@@ -300,8 +311,8 @@ export default function Feedback() {
                 className="w-full"
                 data-testid="button-submit"
               >
-                <Send className="w-4 h-4 mr-2" />
-                Submit Feedback
+                <Send className="w-4 h-4 me-2" />
+                {tr("submitFeedback")}
               </Button>
             </CardContent>
           </Card>
@@ -318,11 +329,13 @@ export default function Feedback() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <MessageSquare className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No feedback submitted</h3>
+                <h3 className="text-lg font-medium">{tr("noFeedbackSubmitted")}</h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Your submitted feedback will appear here
+                  {tr("yourSubmittedFeedbackWillAppearHere")}
                 </p>
-                <Button onClick={() => setActiveTab("submit")}>Submit Your First Feedback</Button>
+                <Button onClick={() => setActiveTab("submit")}>
+                  {tr("submitYourFirstFeedback")}
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -365,7 +378,7 @@ export default function Feedback() {
                     <p className="text-muted-foreground">{feedback.message}</p>
                     {feedback.responseMessage && (
                       <div className="mt-4 p-4 rounded-lg bg-accent/50">
-                        <div className="text-sm font-medium mb-1">Response from our team:</div>
+                        <div className="text-sm font-medium mb-1">{tr("responseFromOurTeam")}</div>
                         <p className="text-sm text-muted-foreground">{feedback.responseMessage}</p>
                       </div>
                     )}

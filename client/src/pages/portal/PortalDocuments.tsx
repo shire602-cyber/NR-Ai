@@ -15,17 +15,18 @@ import {
   fileProblemMessage,
   readFileAsBase64,
 } from "@/lib/file-upload";
+import { messages as pageMessages } from "./PortalDocuments.i18n";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  trade_license: "Trade License",
-  contract: "Contract",
-  tax_certificate: "Tax Certificate",
-  audit_report: "Audit Report",
-  bank_statement: "Bank Statement",
-  insurance: "Insurance",
-  visa: "Visa",
-  other: "Other",
-};
+const getCategoryLabels = (): Record<string, string> => ({
+  trade_license: pageMessages.t("tradeLicense"),
+  contract: pageMessages.t("contract"),
+  tax_certificate: pageMessages.t("taxCertificate"),
+  audit_report: pageMessages.t("auditReport"),
+  bank_statement: pageMessages.t("bankStatement"),
+  insurance: pageMessages.t("insurance"),
+  visa: pageMessages.t("visa"),
+  other: pageMessages.t("other"),
+});
 
 function fileIcon(mime: string) {
   if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-info" />;
@@ -41,6 +42,8 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
+  const tr = pageMessages.useT();
+
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -59,10 +62,8 @@ export default function PortalDocuments() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
       toast({
-        title: isAr ? "تم رفع المستند" : "Document uploaded",
-        description: isAr
-          ? "يمكن لمحاسبك الآن الاطلاع على ملفك."
-          : "NR Accounting can now see your file.",
+        title: tr("documentUploaded"),
+        description: tr("nrAccountingCanNowSeeYour"),
       });
     },
   });
@@ -91,7 +92,7 @@ export default function PortalDocuments() {
         fileData,
       });
     } catch (error: any) {
-      setUploadError(error?.message || (isAr ? "فشل الرفع" : "Upload failed"));
+      setUploadError(error?.message || tr("uploadFailed"));
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -100,10 +101,13 @@ export default function PortalDocuments() {
 
   async function handleDownload(doc: any) {
     try {
-      await downloadAuthenticatedFile(`/api/client-portal/documents/${doc.id}/download`, doc.fileName || doc.name);
+      await downloadAuthenticatedFile(
+        `/api/client-portal/documents/${doc.id}/download`,
+        doc.fileName || doc.name
+      );
     } catch (error: any) {
       toast({
-        title: isAr ? "فشل التنزيل" : "Download failed",
+        title: tr("downloadFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -114,9 +118,9 @@ export default function PortalDocuments() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Documents</h2>
+          <h2 className="text-xl font-semibold text-foreground">{tr("documents")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload receipts and documents for NR Accounting to process.
+            {tr("uploadReceiptsAndDocumentsForNr")}
           </p>
         </div>
         <div>
@@ -133,17 +137,11 @@ export default function PortalDocuments() {
             className="bg-info hover:bg-info text-white"
           >
             {uploading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
             ) : (
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 me-2" />
             )}
-            {uploading
-              ? isAr
-                ? "جارٍ الرفع…"
-                : "Uploading…"
-              : isAr
-                ? "رفع مستند"
-                : "Upload Document"}
+            {uploading ? tr("uploading") : tr("uploadDocument")}
           </Button>
         </div>
       </div>
@@ -166,9 +164,9 @@ export default function PortalDocuments() {
           ) : documents.length === 0 ? (
             <div className="text-center py-14">
               <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No documents yet</p>
+              <p className="text-sm font-medium text-muted-foreground">{tr("noDocumentsYet")}</p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Upload receipts or files for your accountant.
+                {tr("uploadReceiptsOrFilesForYour")}
               </p>
             </div>
           ) : (
@@ -188,20 +186,20 @@ export default function PortalDocuments() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge variant="outline" className="text-xs">
-                      {CATEGORY_LABELS[doc.category] ?? doc.category}
+                      {getCategoryLabels()[doc.category] ?? doc.category}
                     </Badge>
                     <Button
                       size="icon"
                       variant="ghost"
                       onClick={() => handleDownload(doc)}
-                      aria-label={isAr ? "تنزيل" : "Download"}
+                      aria-label={tr("download")}
                     >
                       <Download className="w-4 h-4" />
                     </Button>
                     {doc.uploadedBy && (
                       <CheckCircle2
                         className="w-4 h-4 text-success"
-                        aria-label="Received by NRA"
+                        aria-label={tr("receivedByNra")}
                       />
                     )}
                   </div>

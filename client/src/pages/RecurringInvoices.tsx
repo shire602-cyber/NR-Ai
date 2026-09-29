@@ -75,32 +75,33 @@ import {
 } from "lucide-react";
 import type { RecurringInvoice } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { messages as pageMessages } from "./RecurringInvoices.i18n";
 
 const lineItemSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
+  description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
+  quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
+  unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
 });
 
 const recurringInvoiceSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, pageMessages.marker("customerNameIsRequired")),
   customerTrn: z.string().optional(),
   currency: z.string().default("AED"),
   frequency: z.enum(["weekly", "monthly", "quarterly", "yearly"]),
   startDate: z.date(),
   endDate: z.date().optional().nullable(),
-  lines: z.array(lineItemSchema).min(1, "At least one line item is required"),
+  lines: z.array(lineItemSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
 type RecurringInvoiceFormData = z.infer<typeof recurringInvoiceSchema>;
 
-const frequencyLabels: Record<string, string> = {
-  weekly: "Weekly",
-  monthly: "Monthly",
-  quarterly: "Quarterly",
-  yearly: "Yearly",
-};
+const getFrequencyLabels = (): Record<string, string> => ({
+  weekly: pageMessages.t("weekly"),
+  monthly: pageMessages.t("monthly"),
+  quarterly: pageMessages.t("quarterly"),
+  yearly: pageMessages.t("yearly"),
+});
 
 const frequencyLabelsAr: Record<string, string> = {
   weekly: "اسبوعي",
@@ -110,6 +111,8 @@ const frequencyLabelsAr: Record<string, string> = {
 };
 
 export default function RecurringInvoices() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
@@ -159,12 +162,12 @@ export default function RecurringInvoices() {
       setDialogOpen(false);
       form.reset();
       toast({
-        title: "Recurring invoice created",
-        description: "The recurring invoice template has been created.",
+        title: tr("recurringInvoiceCreated"),
+        description: tr("theRecurringInvoiceTemplateHasBeen"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -189,12 +192,12 @@ export default function RecurringInvoices() {
       setEditingItem(null);
       form.reset();
       toast({
-        title: "Recurring invoice updated",
-        description: "The recurring invoice template has been updated.",
+        title: tr("recurringInvoiceUpdated"),
+        description: tr("theRecurringInvoiceTemplateHasBeen2"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -208,7 +211,7 @@ export default function RecurringInvoices() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -220,10 +223,10 @@ export default function RecurringInvoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
       });
-      toast({ title: "Deleted", description: "Recurring invoice has been deleted." });
+      toast({ title: tr("deleted"), description: tr("recurringInvoiceHasBeenDeleted") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -271,13 +274,13 @@ export default function RecurringInvoices() {
 
   const getFreqLabel = (freq: string) => {
     if (locale === "ar") return frequencyLabelsAr[freq] || freq;
-    return frequencyLabels[freq] || freq;
+    return getFrequencyLabels()[freq] || freq;
   };
 
   if (!selectedCompanyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">{t.noData || "No data available"}</p>
+        <p className="text-muted-foreground">{t.noData || tr("noDataAvailable")}</p>
       </div>
     );
   }
@@ -288,36 +291,24 @@ export default function RecurringInvoices() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <CalendarDays className="w-8 h-8" />
-            {(t as any).recurringInvoices || "Recurring Invoices"}
+            {(t as any).recurringInvoices || tr("recurringInvoices")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            {locale === "ar"
-              ? "ادارة قوالب الفواتير المتكررة"
-              : "Manage recurring invoice templates"}
-          </p>
+          <p className="text-muted-foreground mt-1">{tr("manageRecurringInvoiceTemplates")}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={handleCreate}>
-              <Plus className="w-4 h-4 mr-2" />
-              {locale === "ar" ? "فاتورة متكررة جديدة" : "New Recurring Invoice"}
+              <Plus className="w-4 h-4 me-2" />
+              {tr("newRecurringInvoice")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingItem
-                  ? locale === "ar"
-                    ? "تعديل الفاتورة المتكررة"
-                    : "Edit Recurring Invoice"
-                  : locale === "ar"
-                    ? "فاتورة متكررة جديدة"
-                    : "New Recurring Invoice"}
+                {editingItem ? tr("editRecurringInvoice") : tr("newRecurringInvoice")}
               </DialogTitle>
               <DialogDescription>
-                {locale === "ar"
-                  ? "حدد تفاصيل قالب الفاتورة المتكررة"
-                  : "Define the recurring invoice template details"}
+                {tr("defineTheRecurringInvoiceTemplateDetails")}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -328,7 +319,7 @@ export default function RecurringInvoices() {
                     name="customerName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t.customerName || "Customer Name"}</FormLabel>
+                        <FormLabel>{t.customerName || tr("customerName")}</FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -341,7 +332,7 @@ export default function RecurringInvoices() {
                     name="customerTrn"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t.customerTRN || "Customer TRN"}</FormLabel>
+                        <FormLabel>{t.customerTRN || tr("customerTrn")}</FormLabel>
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
@@ -357,7 +348,7 @@ export default function RecurringInvoices() {
                     name="currency"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{locale === "ar" ? "العملة" : "Currency"}</FormLabel>
+                        <FormLabel>{tr("currency")}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger>
@@ -381,7 +372,7 @@ export default function RecurringInvoices() {
                     name="frequency"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{locale === "ar" ? "التكرار" : "Frequency"}</FormLabel>
+                        <FormLabel>{tr("frequency")}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger>
@@ -389,18 +380,10 @@ export default function RecurringInvoices() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="weekly">
-                              {locale === "ar" ? "اسبوعي" : "Weekly"}
-                            </SelectItem>
-                            <SelectItem value="monthly">
-                              {locale === "ar" ? "شهري" : "Monthly"}
-                            </SelectItem>
-                            <SelectItem value="quarterly">
-                              {locale === "ar" ? "ربع سنوي" : "Quarterly"}
-                            </SelectItem>
-                            <SelectItem value="yearly">
-                              {locale === "ar" ? "سنوي" : "Yearly"}
-                            </SelectItem>
+                            <SelectItem value="weekly">{tr("weekly")}</SelectItem>
+                            <SelectItem value="monthly">{tr("monthly")}</SelectItem>
+                            <SelectItem value="quarterly">{tr("quarterly")}</SelectItem>
+                            <SelectItem value="yearly">{tr("yearly")}</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -415,23 +398,19 @@ export default function RecurringInvoices() {
                     name="startDate"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>{locale === "ar" ? "تاريخ البدء" : "Start Date"}</FormLabel>
+                        <FormLabel>{tr("startDate")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full pl-3 text-left font-normal",
+                                  "w-full ps-3 text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value
-                                  ? format(field.value, "PPP")
-                                  : locale === "ar"
-                                    ? "اختر التاريخ"
-                                    : "Pick a date"}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                {field.value ? format(field.value, "PPP") : tr("pickADate")}
+                                <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -453,25 +432,19 @@ export default function RecurringInvoices() {
                     name="endDate"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>
-                          {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "End Date (optional)"}
-                        </FormLabel>
+                        <FormLabel>{tr("endDateOptional")}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full pl-3 text-left font-normal",
+                                  "w-full ps-3 text-start font-normal",
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value
-                                  ? format(field.value, "PPP")
-                                  : locale === "ar"
-                                    ? "غير محدد"
-                                    : "Indefinite"}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                {field.value ? format(field.value, "PPP") : tr("indefinite")}
+                                <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -493,9 +466,7 @@ export default function RecurringInvoices() {
                 {/* Line Items */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <FormLabel className="text-base font-semibold">
-                      {locale === "ar" ? "بنود الفاتورة" : "Line Items"}
-                    </FormLabel>
+                    <FormLabel className="text-base font-semibold">{tr("lineItems")}</FormLabel>
                     <Button
                       type="button"
                       variant="outline"
@@ -504,8 +475,8 @@ export default function RecurringInvoices() {
                         append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
                       }
                     >
-                      <Plus className="w-4 h-4 mr-1" />
-                      {t.addLine || "Add Line"}
+                      <Plus className="w-4 h-4 me-1" />
+                      {t.addLine || tr("addLine")}
                     </Button>
                   </div>
                   {fields.map((field, index) => (
@@ -517,10 +488,13 @@ export default function RecurringInvoices() {
                           render={({ field }) => (
                             <FormItem>
                               {index === 0 && (
-                                <FormLabel>{t.description || "Description"}</FormLabel>
+                                <FormLabel>{t.description || tr("description")}</FormLabel>
                               )}
                               <FormControl>
-                                <Input {...field} placeholder={t.description || "Description"} />
+                                <Input
+                                  {...field}
+                                  placeholder={t.description || tr("description")}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -533,7 +507,7 @@ export default function RecurringInvoices() {
                           name={`lines.${index}.quantity`}
                           render={({ field }) => (
                             <FormItem>
-                              {index === 0 && <FormLabel>{t.quantity || "Qty"}</FormLabel>}
+                              {index === 0 && <FormLabel>{t.quantity || tr("qty")}</FormLabel>}
                               <FormControl>
                                 <Input {...field} type="number" step="0.01" />
                               </FormControl>
@@ -548,7 +522,7 @@ export default function RecurringInvoices() {
                           name={`lines.${index}.unitPrice`}
                           render={({ field }) => (
                             <FormItem>
-                              {index === 0 && <FormLabel>{t.unitPrice || "Price"}</FormLabel>}
+                              {index === 0 && <FormLabel>{t.unitPrice || tr("price")}</FormLabel>}
                               <FormControl>
                                 <Input {...field} type="number" step="0.01" />
                               </FormControl>
@@ -563,7 +537,7 @@ export default function RecurringInvoices() {
                           name={`lines.${index}.vatRate`}
                           render={({ field }) => (
                             <FormItem>
-                              {index === 0 && <FormLabel>{t.vat || "VAT"}</FormLabel>}
+                              {index === 0 && <FormLabel>{t.vat || tr("vat")}</FormLabel>}
                               <Select
                                 onValueChange={(val) => field.onChange(parseFloat(val))}
                                 defaultValue={String(field.value)}
@@ -602,15 +576,15 @@ export default function RecurringInvoices() {
 
                 <div className="flex justify-end gap-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                    {t.cancel || "Cancel"}
+                    {t.cancel || tr("cancel")}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending || updateMutation.isPending}
                   >
                     {createMutation.isPending || updateMutation.isPending
-                      ? t.loading || "Loading..."
-                      : t.save || "Save"}
+                      ? t.loading || tr("loading")
+                      : t.save || tr("save")}
                   </Button>
                 </div>
               </form>
@@ -621,12 +595,8 @@ export default function RecurringInvoices() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{(t as any).recurringInvoices || "Recurring Invoices"}</CardTitle>
-          <CardDescription>
-            {locale === "ar"
-              ? "قوالب الفواتير التي يتم إنشاؤها تلقائيا"
-              : "Invoice templates that are automatically generated"}
-          </CardDescription>
+          <CardTitle>{(t as any).recurringInvoices || tr("recurringInvoices")}</CardTitle>
+          <CardDescription>{tr("invoiceTemplatesThatAreAutomaticallyGenerated")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -638,25 +608,19 @@ export default function RecurringInvoices() {
           ) : !recurringInvoices || recurringInvoices.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <CalendarDays className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="font-medium">
-                {locale === "ar" ? "لا توجد فواتير متكررة بعد" : "No recurring invoices yet"}
-              </p>
-              <p className="text-sm mt-1">
-                {locale === "ar"
-                  ? "انشئ قالب فاتورة متكررة للبدء"
-                  : "Create a recurring invoice template to get started"}
-              </p>
+              <p className="font-medium">{tr("noRecurringInvoicesYet")}</p>
+              <p className="text-sm mt-1">{tr("createARecurringInvoiceTemplateTo")}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t.customerName || "Customer"}</TableHead>
-                  <TableHead>{locale === "ar" ? "التكرار" : "Frequency"}</TableHead>
-                  <TableHead>{locale === "ar" ? "التشغيل التالي" : "Next Run Date"}</TableHead>
-                  <TableHead>{t.status || "Status"}</TableHead>
-                  <TableHead>{locale === "ar" ? "تم التوليد" : "Generated"}</TableHead>
-                  <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+                  <TableHead>{t.customerName || tr("customer")}</TableHead>
+                  <TableHead>{tr("frequency")}</TableHead>
+                  <TableHead>{tr("nextRunDate")}</TableHead>
+                  <TableHead>{t.status || tr("status")}</TableHead>
+                  <TableHead>{tr("generated")}</TableHead>
+                  <TableHead className="text-end">{t.actions || tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -676,17 +640,11 @@ export default function RecurringInvoices() {
                             : "bg-warning-subtle text-warning-subtle-foreground "
                         )}
                       >
-                        {item.isActive
-                          ? locale === "ar"
-                            ? "نشط"
-                            : "Active"
-                          : locale === "ar"
-                            ? "متوقف"
-                            : "Paused"}
+                        {item.isActive ? tr("active") : tr("paused")}
                       </Badge>
                     </TableCell>
                     <TableCell>{item.totalGenerated}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -695,19 +653,19 @@ export default function RecurringInvoices() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(item)}>
-                            <Edit className="w-4 h-4 mr-2" />
-                            {t.edit || "Edit"}
+                            <Edit className="w-4 h-4 me-2" />
+                            {t.edit || tr("edit")}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => toggleMutation.mutate(item.id)}>
                             {item.isActive ? (
                               <>
-                                <Pause className="w-4 h-4 mr-2" />
-                                {locale === "ar" ? "ايقاف مؤقت" : "Pause"}
+                                <Pause className="w-4 h-4 me-2" />
+                                {tr("pause")}
                               </>
                             ) : (
                               <>
-                                <Play className="w-4 h-4 mr-2" />
-                                {locale === "ar" ? "استئناف" : "Resume"}
+                                <Play className="w-4 h-4 me-2" />
+                                {tr("resume")}
                               </>
                             )}
                           </DropdownMenuItem>
@@ -715,8 +673,8 @@ export default function RecurringInvoices() {
                             onClick={() => setItemToDelete(item.id)}
                             className="text-destructive focus:text-destructive"
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {t.delete || "Delete"}
+                            <Trash2 className="w-4 h-4 me-2" />
+                            {t.delete || tr("delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -737,14 +695,13 @@ export default function RecurringInvoices() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Recurring Invoice?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteRecurringInvoice")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this recurring invoice schedule. This action cannot be
-              undone.
+              {tr("thisWillPermanentlyDeleteThisRecurring")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (itemToDelete) {
@@ -754,7 +711,7 @@ export default function RecurringInvoices() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

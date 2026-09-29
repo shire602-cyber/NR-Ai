@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   format,
@@ -47,7 +47,13 @@ import VAT201Form from "@/components/VAT201Form";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import { PageHeader } from "@/components/ui/page-header";
+import FilingEvidencePanel from "@/components/compliance/FilingEvidencePanel";
+import FtaAuditFileCard from "@/components/compliance/FtaAuditFileCard";
+import RecordFilingDialog from "@/components/compliance/RecordFilingDialog";
+import AmendButton from "@/components/compliance/AmendButton";
+import { useComplianceText } from "@/lib/i18n-compliance";
 import {
+  Lock,
   FileText,
   Download,
   CheckCircle2,
@@ -133,6 +139,30 @@ interface VATReturn {
   declarantPosition: string | null;
   declarationDate: string | null;
   createdAt: string;
+  /** Filing with evidence (Phase 4): amendments link to the original; `filing` is set once filed. */
+  isAmendment?: boolean;
+  amendsReturnId?: string | null;
+  amendedBy?: string[];
+  filing?: {
+    id: string;
+    referenceNumber: string;
+    filedAt: string;
+    evidenceCount: number;
+    settlement: { status: string; remaining: number };
+  } | null;
+}
+
+/** "Aug 2026, Sep 2026, Oct 2026": the calendar months a period covers (filing locks each). */
+function monthsCovered(periodStart: string, periodEnd: string): string {
+  const start = parseCalendarDay(periodStart);
+  const end = parseCalendarDay(periodEnd);
+  const out: string[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12);
+  while (cursor <= end && out.length < 24) {
+    out.push(format(cursor, "MMM yyyy"));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return out.join(", ");
 }
 
 interface Company {
@@ -189,8 +219,11 @@ type VatWorksheetData = typeof DEFAULT_VAT_DATA;
 
 export default function VATFiling() {
   const { locale } = useTranslation();
+  const { c: cc } = useComplianceText();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const [filingReturn, setFilingReturn] = useState<VATReturn | null>(null);
+  const [openAfterRefresh, setOpenAfterRefresh] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -198,6 +231,8 @@ export default function VATFiling() {
   const [newPeriodStart, setNewPeriodStart] = useState("");
   const [newPeriodEnd, setNewPeriodEnd] = useState("");
   const [notes, setNotes] = useState("");
+  // Written reason for changing a figure by hand (the server requires 10+ characters with any figure edit).
+  const [editReason, setEditReason] = useState("");
   const [vatFormData, setVatFormData] = useState<VatWorksheetData>(DEFAULT_VAT_DATA);
 
   const { data: company } = useQuery<Company>({
@@ -209,6 +244,20 @@ export default function VATFiling() {
     queryKey: ["/api/companies", companyId, "vat-returns"],
     enabled: !!companyId,
   });
+
+  // After creating an amendment, open it as soon as the refreshed list contains it.
+  useEffect(() => {
+    if (!openAfterRefresh) return;
+    const found = vatReturns?.find((r) => r.id === openAfterRefresh);
+    if (found) {
+      setOpenAfterRefresh(null);
+      handleViewReturn(found);
+    }
+    // handleViewReturn is a plain function re-created each render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAfterRefresh, vatReturns]);
+
+  const returnsListKey = ["/api/companies", companyId, "vat-returns"];
 
   const generateMutation = useMutation({
     mutationFn: ({ periodStart, periodEnd }: { periodStart: string; periodEnd: string }) =>
@@ -293,7 +342,10 @@ export default function VATFiling() {
         .length,
       submitted: vatReturns.filter((r) => r.status === "submitted").length,
       filed: vatReturns.filter((r) => r.status === "filed").length,
-      totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
+      // Amendments repeat the whole period's figures; count each period once.
+      totalPayable: vatReturns
+        .filter((r) => !r.isAmendment)
+        .reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
     };
   }, [vatReturns]);
 
@@ -310,7 +362,7 @@ export default function VATFiling() {
   // The filing users care about right now: the return for the current quarter
   // if one exists, otherwise the most recently created one. Drives the hero.
   const currentFiling = useMemo(() => {
-    const returns = vatReturns ?? [];
+    const returns = (vatReturns ?? []).filter((r) => !r.isAmendment);
     const match = returns.find((r) => {
       try {
         return (
@@ -500,6 +552,7 @@ export default function VATFiling() {
       box10ReverseChargeVat: vatReturn.box10ReverseChargeVat || 0,
     });
     setNotes(vatReturn.notes || "");
+    setEditReason("");
     setEditDialogOpen(true);
   };
 
@@ -507,7 +560,7 @@ export default function VATFiling() {
     if (!selectedReturn) return;
     updateMutation.mutate({
       id: selectedReturn.id,
-      data: { ...vatFormData, notes },
+      data: { ...vatFormData, notes, ...(editReason.trim() ? { adjustmentReason: editReason.trim() } : {}) },
     });
   };
 
@@ -906,8 +959,10 @@ export default function VATFiling() {
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
-                {format(currentFiling.periodStart, "d MMM")} –{" "}
-                {format(currentFiling.periodEnd, "d MMM yyyy")}
+                <bdi dir="ltr">
+                  {format(currentFiling.periodStart, "d MMM")} –{" "}
+                  {format(currentFiling.periodEnd, "d MMM yyyy")}
+                </bdi>
               </h2>
               {currentFiling.hasReturn && getStatusBadge(currentFiling.status)}
             </div>
@@ -1005,7 +1060,7 @@ export default function VATFiling() {
               {locale === "ar" ? "آخر موعد للتقديم" : "Filing deadline"}
             </p>
             <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
-              {format(currentFiling.dueDate, "d MMMM yyyy")}
+              <bdi dir="ltr">{format(currentFiling.dueDate, "d MMMM yyyy")}</bdi>
             </p>
             {(() => {
               const d = currentFiling.daysUntilDue;
@@ -1042,11 +1097,18 @@ export default function VATFiling() {
         </div>
       </Card>
 
-      <Tabs defaultValue="returns" className="space-y-6">
+      <Tabs
+        defaultValue={new URLSearchParams(window.location.search).get("tab") === "faf" ? "faf" : "returns"}
+        className="space-y-6"
+      >
         <TabsList>
           <TabsTrigger value="returns" data-testid="tab-vat-returns">
             <ListChecks className="mr-2 h-4 w-4" />
             {locale === "ar" ? "الإقرارات" : "Returns"}
+          </TabsTrigger>
+          <TabsTrigger value="faf" data-testid="tab-vat-faf">
+            <Download className="mr-2 h-4 w-4" />
+            {cc.fafTab}
           </TabsTrigger>
           <TabsTrigger value="workpaper" data-testid="tab-vat-workpaper">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
@@ -1138,14 +1200,25 @@ export default function VATFiling() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">
-                                {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                                {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                                <bdi dir="ltr">
+                                  {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                  {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                                </bdi>
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Due {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
+                                Due <bdi dir="ltr">{format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}</bdi>
                               </p>
                             </div>
-                            {getStatusBadge(vatReturn.status)}
+                            <div className="flex flex-col items-end gap-1">
+                              {getStatusBadge(vatReturn.status)}
+                              {vatReturn.isAmendment && <Badge variant="outline">{cc.amendmentBadge}</Badge>}
+                              {vatReturn.status === "filed" && (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Lock className="h-3 w-3" />
+                                  {cc.periodLocked}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="grid grid-cols-3 gap-3 text-sm">
                             <div>
@@ -1201,6 +1274,26 @@ export default function VATFiling() {
                                 Edit
                               </Button>
                             )}
+                            {!vatReturn.isDraftPreview &&
+                              (vatReturn.status === "submitted" ||
+                                (vatReturn.isAmendment && vatReturn.status === "draft")) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setFilingReturn(vatReturn)}
+                                  data-testid={`mobile-button-record-filing-${vatReturn.id}`}
+                                >
+                                  {cc.recordFiling}
+                                </Button>
+                              )}
+                            {vatReturn.status === "filed" && (
+                              <AmendButton
+                                kind="vat"
+                                returnId={vatReturn.id}
+                                invalidateKeys={[returnsListKey]}
+                                onCreated={setOpenAfterRefresh}
+                              />
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -1245,11 +1338,13 @@ export default function VATFiling() {
                         {vatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
-                              {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                              {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                              <bdi dir="ltr">
+                                {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                              </bdi>
                             </TableCell>
                             <TableCell>
-                              {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
+                              <bdi dir="ltr">{format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}</bdi>
                             </TableCell>
                             <TableCell className="text-right font-mono">
                               {formatCurrency(
@@ -1268,7 +1363,23 @@ export default function VATFiling() {
                               {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
                               {(vatReturn.box14PayableTax || 0) >= 0 ? "" : ")"}
                             </TableCell>
-                            <TableCell>{getStatusBadge(vatReturn.status)}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {getStatusBadge(vatReturn.status)}
+                                {vatReturn.isAmendment && (
+                                  <Badge variant="outline">{cc.amendmentBadge}</Badge>
+                                )}
+                                {vatReturn.status === "filed" && (
+                                  <span
+                                    title={cc.periodLocked}
+                                    aria-label={cc.periodLocked}
+                                    data-testid={`icon-locked-${vatReturn.id}`}
+                                  >
+                                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <Button
@@ -1290,6 +1401,26 @@ export default function VATFiling() {
                                     <Edit3 className="w-4 h-4 mr-1" />
                                     {locale === "ar" ? "تحرير" : "Edit"}
                                   </Button>
+                                )}
+                                {!vatReturn.isDraftPreview &&
+                                  (vatReturn.status === "submitted" ||
+                                    (vatReturn.isAmendment && vatReturn.status === "draft")) && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setFilingReturn(vatReturn)}
+                                      data-testid={`button-record-filing-${vatReturn.id}`}
+                                    >
+                                      {cc.recordFiling}
+                                    </Button>
+                                  )}
+                                {vatReturn.status === "filed" && (
+                                  <AmendButton
+                                    kind="vat"
+                                    returnId={vatReturn.id}
+                                    invalidateKeys={[returnsListKey]}
+                                    onCreated={setOpenAfterRefresh}
+                                  />
                                 )}
                                 <Button
                                   size="sm"
@@ -1320,6 +1451,10 @@ export default function VATFiling() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="faf" className="mt-0">
+          {companyId && <FtaAuditFileCard companyId={companyId} />}
         </TabsContent>
 
         {/* ── Workpaper — the accountant's Excel-like workbook, first-class ── */}
@@ -1421,8 +1556,10 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  <bdi dir="ltr">
+                    {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                    {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  </bdi>
                 </span>
               )}
             </DialogDescription>
@@ -1453,6 +1590,17 @@ export default function VATFiling() {
               readOnly={true}
             />
           )}
+          {selectedReturn && !selectedReturn.isDraftPreview && selectedReturn.id && companyId && (
+            <FilingEvidencePanel
+              kind="vat"
+              returnId={selectedReturn.id}
+              companyId={companyId}
+              returnStatus={selectedReturn.status}
+              periodEnd={selectedReturn.periodEnd}
+              listKeys={[returnsListKey]}
+              onOpenReturn={setOpenAfterRefresh}
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
               {locale === "ar" ? "إغلاق" : "Close"}
@@ -1480,8 +1628,10 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  <bdi dir="ltr">
+                    {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                    {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  </bdi>
                 </span>
               )}
             </DialogDescription>
@@ -1521,6 +1671,20 @@ export default function VATFiling() {
                   className="min-h-20"
                 />
               </div>
+              <div className="space-y-2">
+                <Label>{locale === "ar" ? "سبب تعديل الأرقام يدوياً" : "Reason for changing figures by hand"}</Label>
+                <Textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder={
+                    locale === "ar"
+                      ? "مطلوب عند تغيير أي رقم (10 أحرف على الأقل). لا يمكن تقليل الضريبة عن دفاتر الحسابات."
+                      : "Required when you change any figure (at least 10 characters). The return can never declare less tax than the books support."
+                  }
+                  className="min-h-16"
+                  data-testid="input-edit-reason"
+                />
+              </div>
             </>
           )}
           <DialogFooter className="gap-2">
@@ -1553,6 +1717,18 @@ export default function VATFiling() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {filingReturn && (
+        <RecordFilingDialog
+          open
+          onOpenChange={(open) => !open && setFilingReturn(null)}
+          kind="vat"
+          returnId={filingReturn.id}
+          periodEnd={filingReturn.periodEnd.slice(0, 10)}
+          lockedMonthsText={monthsCovered(filingReturn.periodStart, filingReturn.periodEnd)}
+          invalidateKeys={[returnsListKey]}
+        />
+      )}
     </div>
   );
 }

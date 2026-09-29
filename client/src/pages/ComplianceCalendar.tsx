@@ -34,6 +34,7 @@ import {
   Building2,
   CreditCard,
 } from "lucide-react";
+import { messages as pageMessages } from "./ComplianceCalendar.i18n";
 
 interface ComplianceTask {
   id: string;
@@ -71,6 +72,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ComplianceCalendar() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -169,13 +172,9 @@ export default function ComplianceCalendar() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
-        title={locale === "ar" ? "تقويم الامتثال" : "Compliance Calendar"}
-        description={
-          locale === "ar"
-            ? "عرض جميع المواعيد النهائية للضرائب والامتثال"
-            : "View all tax and compliance deadlines"
-        }
+        eyebrow={tr("compliance")}
+        title={tr("complianceCalendar")}
+        description={tr("viewAllTaxAndComplianceDeadlines")}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -199,19 +198,21 @@ export default function ComplianceCalendar() {
               </Button>
             </div>
             <Button variant="outline" onClick={() => setCurrentDate(new Date())}>
-              {locale === "ar" ? "اليوم" : "Today"}
+              {tr("today")}
             </Button>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-7 gap-1 mb-2">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                <div
-                  key={day}
-                  className="text-center text-sm font-medium text-muted-foreground py-2"
-                >
-                  {day}
-                </div>
-              ))}
+              {[tr("sun"), tr("mon"), tr("tue"), tr("wed"), tr("thu"), tr("fri"), tr("sat")].map(
+                (day) => (
+                  <div
+                    key={day}
+                    className="text-center text-sm font-medium text-muted-foreground py-2"
+                  >
+                    {day}
+                  </div>
+                )
+              )}
             </div>
             <div className="grid grid-cols-7 gap-1">
               {paddedDays.map((day, index) => {
@@ -247,19 +248,19 @@ export default function ComplianceCalendar() {
                             key={event.id}
                             className={`text-xs px-1 py-0.5 rounded truncate ${CATEGORY_COLORS[event.category]}`}
                           >
-                            <Icon className="w-3 h-3 inline-block mr-1" />
+                            <Icon className="w-3 h-3 inline-block me-1" />
                             {event.title.substring(0, 15)}
                           </div>
                         );
                       })}
                       {events.length > 2 && (
                         <div className="text-xs text-muted-foreground px-1">
-                          +{events.length - 2} more
+                          {tr("more", { value: events.length - 2 })}
                         </div>
                       )}
                     </div>
                     {hasOverdue && (
-                      <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 right-1" />
+                      <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 end-1" />
                     )}
                   </div>
                 );
@@ -306,18 +307,16 @@ export default function ComplianceCalendar() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                {locale === "ar" ? "المواعيد القادمة" : "Upcoming Deadlines"}
+                {tr("upcomingDeadlines")}
               </CardTitle>
-              <CardDescription>{locale === "ar" ? "خلال 30 يوم" : "Next 30 days"}</CardDescription>
+              <CardDescription>{tr("next30Days")}</CardDescription>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-64">
                 {upcomingEvents.length === 0 ? (
                   <div className="text-center py-4 text-muted-foreground">
                     <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">
-                      {locale === "ar" ? "لا توجد مواعيد قادمة" : "No upcoming deadlines"}
-                    </p>
+                    <p className="text-sm">{tr("noUpcomingDeadlines")}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -343,9 +342,7 @@ export default function ComplianceCalendar() {
                             className="text-xs"
                           >
                             {daysLeft === 0
-                              ? locale === "ar"
-                                ? "اليوم"
-                                : "Today"
+                              ? tr("today")
                               : locale === "ar"
                                 ? `${daysLeft} يوم`
                                 : `${daysLeft}d`}
@@ -364,7 +361,7 @@ export default function ComplianceCalendar() {
               <CardHeader>
                 <CardTitle className="text-sm flex items-center gap-2 text-destructive">
                   <AlertTriangle className="w-4 h-4" />
-                  {locale === "ar" ? "متأخرة" : "Overdue"}
+                  {tr("overdue")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -377,7 +374,7 @@ export default function ComplianceCalendar() {
                       >
                         <span className="text-sm font-medium truncate">{event.title}</span>
                         <Badge variant="destructive" className="text-xs">
-                          {Math.abs(differenceInDays(event.date, new Date()))}d ago
+                          {tr("dAgo", { abs: Math.abs(differenceInDays(event.date, new Date())) })}
                         </Badge>
                       </div>
                     ))}
@@ -391,19 +388,19 @@ export default function ComplianceCalendar() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{locale === "ar" ? "مفتاح الألوان" : "Legend"}</CardTitle>
+          <CardTitle>{tr("legend")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-4">
             {Object.entries(CATEGORY_COLORS).map(([key, color]) => {
               const Icon = CATEGORY_ICONS[key];
               const labels: Record<string, { en: string; ar: string }> = {
-                vat_filing: { en: "VAT Filing", ar: "إقرار ضريبة القيمة المضافة" },
-                corporate_tax: { en: "Corporate Tax", ar: "ضريبة الشركات" },
-                payment: { en: "Payment", ar: "دفع" },
-                document_upload: { en: "Document Upload", ar: "رفع مستند" },
-                review: { en: "Review", ar: "مراجعة" },
-                other: { en: "Other", ar: "أخرى" },
+                vat_filing: { en: tr("vatFiling"), ar: "إقرار ضريبة القيمة المضافة" },
+                corporate_tax: { en: tr("corporateTax"), ar: "ضريبة الشركات" },
+                payment: { en: tr("payment"), ar: "دفع" },
+                document_upload: { en: tr("documentUpload"), ar: "رفع مستند" },
+                review: { en: tr("review"), ar: "مراجعة" },
+                other: { en: tr("other"), ar: "أخرى" },
               };
               return (
                 <div key={key} className={`flex items-center gap-2 px-3 py-1 rounded-md ${color}`}>

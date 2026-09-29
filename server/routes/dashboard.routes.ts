@@ -53,7 +53,7 @@ export function registerDashboardRoutes(app: Express) {
     const [invoices, accounts, allEntries, allLines, receipts, invoicePayments] = await Promise.all([
       storage.getInvoicesByCompanyId(companyId),
       storage.getAccountsByCompanyId(companyId),
-      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
       storage.getJournalLinesByCompanyId(companyId),
       storage.getReceiptsByCompanyId(companyId),
       storage.getInvoicePaymentsByCompanyId(companyId),
@@ -264,7 +264,7 @@ export function registerDashboardRoutes(app: Express) {
       // posted-entry membership in memory. The previous loop issued one query
       // per journal entry, which scaled linearly with ledger size.
       const [allEntries, accounts, allLines] = await Promise.all([
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getAccountsByCompanyId(companyId),
         storage.getJournalLinesByCompanyId(companyId),
       ]);
@@ -306,7 +306,7 @@ export function registerDashboardRoutes(app: Express) {
       // Single batched fetch — issues 4 queries total instead of (months × entries).
       const [invoices, allEntries, accounts, allLines] = await Promise.all([
         storage.getInvoicesByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getAccountsByCompanyId(companyId),
         storage.getJournalLinesByCompanyId(companyId),
       ]);
@@ -371,7 +371,7 @@ export function registerDashboardRoutes(app: Express) {
       // would otherwise inflate revenue and expense totals.
       const [accounts, allEntries, allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getJournalLinesByCompanyId(companyId),
       ]);
 
@@ -446,7 +446,7 @@ export function registerDashboardRoutes(app: Express) {
       // Balance sheet must reflect only posted journal activity.
       const [accounts, allEntriesRaw, allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId),
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getJournalLinesByCompanyId(companyId),
       ]);
       const allEntries = allEntriesRaw.filter((e) => e.status === "posted");
@@ -724,7 +724,7 @@ export function registerDashboardRoutes(app: Express) {
 
       const [accounts, allEntries, allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId as string),
-        storage.getJournalEntriesByCompanyId(companyId as string),
+        storage.getJournalEntriesByCompanyId(companyId as string, { excludeClosing: true }),
         storage.getJournalLinesByCompanyId(companyId as string),
       ]);
       const postedEntryIds = new Set(

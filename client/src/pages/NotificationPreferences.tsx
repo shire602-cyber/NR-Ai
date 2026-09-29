@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from "@/lib/push";
 import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from "lucide-react";
+import { messages as pageMessages } from "./NotificationPreferences.i18n";
 
 const preferencesSchema = z.object({
   pushEnabled: z.boolean().default(false),
@@ -42,6 +43,8 @@ interface NotificationPrefs {
 }
 
 export default function NotificationPreferences() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [pushActive, setPushActive] = useState(false);
 
@@ -85,15 +88,15 @@ export default function NotificationPreferences() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
       toast({
-        title: "Preferences saved",
-        description: "Your notification preferences have been updated.",
+        title: tr("preferencesSaved"),
+        description: tr("yourNotificationPreferencesHaveBeenUpdated"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save preferences",
-        description: error?.message || "Please try again.",
+        title: tr("failedToSavePreferences"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -115,8 +118,8 @@ export default function NotificationPreferences() {
       } else {
         toast({
           variant: "destructive",
-          title: "Push notifications blocked",
-          description: "Please allow notifications in your browser settings.",
+          title: tr("pushNotificationsBlocked"),
+          description: tr("pleaseAllowNotificationsInYourBrowser"),
         });
       }
     }
@@ -126,9 +129,9 @@ export default function NotificationPreferences() {
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
-          title="Notification Preferences"
-          description="Manage how and when you receive notifications"
+          eyebrow={tr("settings")}
+          title={tr("notificationPreferences")}
+          description={tr("manageHowAndWhenYouReceive")}
         />
         <Skeleton className="h-96" />
       </div>
@@ -138,9 +141,9 @@ export default function NotificationPreferences() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Settings"
-        title="Notification Preferences"
-        description="Manage how and when you receive notifications"
+        eyebrow={tr("settings")}
+        title={tr("notificationPreferences")}
+        description={tr("manageHowAndWhenYouReceive")}
       />
 
       <Form {...form}>
@@ -149,9 +152,9 @@ export default function NotificationPreferences() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Bell className="w-5 h-5" />
-                Notification Channels
+                {tr("notificationChannels")}
               </CardTitle>
-              <CardDescription>Choose how you want to receive notifications</CardDescription>
+              <CardDescription>{tr("chooseHowYouWantToReceive")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -160,8 +163,10 @@ export default function NotificationPreferences() {
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Push Notifications</FormLabel>
-                      <FormDescription>Receive instant browser push notifications</FormDescription>
+                      <FormLabel className="text-base">{tr("pushNotifications")}</FormLabel>
+                      <FormDescription>
+                        {tr("receiveInstantBrowserPushNotifications")}
+                      </FormDescription>
                     </div>
                     <div className="flex items-center gap-2">
                       {!pushActive && (
@@ -171,7 +176,7 @@ export default function NotificationPreferences() {
                           size="sm"
                           onClick={handleEnablePush}
                         >
-                          Enable Push
+                          {tr("enablePush")}
                         </Button>
                       )}
                       <FormControl>
@@ -201,9 +206,9 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <Mail className="w-4 h-4" />
-                        Email Notifications
+                        {tr("emailNotifications")}
                       </FormLabel>
-                      <FormDescription>Receive notifications via email</FormDescription>
+                      <FormDescription>{tr("receiveNotificationsViaEmail")}</FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -218,9 +223,9 @@ export default function NotificationPreferences() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                Notification Types
+                {tr("notificationTypes")}
               </CardTitle>
-              <CardDescription>Select which types of events trigger notifications</CardDescription>
+              <CardDescription>{tr("selectWhichTypesOfEventsTrigger")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -231,11 +236,9 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Invoice Reminders
+                        {tr("invoiceReminders")}
                       </FormLabel>
-                      <FormDescription>
-                        Get notified about overdue invoices and payment due dates
-                      </FormDescription>
+                      <FormDescription>{tr("getNotifiedAboutOverdueInvoicesAnd")}</FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -252,11 +255,9 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        VAT Deadlines
+                        {tr("vatDeadlines")}
                       </FormLabel>
-                      <FormDescription>
-                        Get reminded about upcoming VAT filing and payment deadlines
-                      </FormDescription>
+                      <FormDescription>{tr("getRemindedAboutUpcomingVatFiling")}</FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -273,11 +274,9 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <CreditCard className="w-4 h-4" />
-                        Payment Received
+                        {tr("paymentReceived")}
                       </FormLabel>
-                      <FormDescription>
-                        Get notified when a payment is received for an invoice
-                      </FormDescription>
+                      <FormDescription>{tr("getNotifiedWhenAPaymentIs")}</FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -294,11 +293,9 @@ export default function NotificationPreferences() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base flex items-center gap-2">
                         <BarChart3 className="w-4 h-4" />
-                        Weekly Digest
+                        {tr("weeklyDigest")}
                       </FormLabel>
-                      <FormDescription>
-                        Receive a weekly summary of your financial activity
-                      </FormDescription>
+                      <FormDescription>{tr("receiveAWeeklySummaryOfYour")}</FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -311,7 +308,7 @@ export default function NotificationPreferences() {
 
           <div className="flex justify-end">
             <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save Preferences"}
+              {updateMutation.isPending ? tr("saving") : tr("savePreferences")}
             </Button>
           </div>
         </form>

@@ -15,7 +15,7 @@ const pad = (n: number): string => String(n).padStart(2, "0");
 /** Calendar date (YYYY-MM-DD) of a stored period boundary. Strings keep their
  * date part; Dates use UTC components, matching how period bounds are stored
  * (server/utils/date.ts convention). */
-function periodYmd(value: string | Date): string {
+export function periodYmd(value: string | Date): string {
   if (typeof value === "string") return value.slice(0, 10);
   return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
 }

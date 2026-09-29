@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { computeVatReturnForPeriod } from "../services/vat-return-compute.service";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -89,7 +90,7 @@ export function registerReportRoutes(app: Express) {
       // Cashflow must reflect only posted activity; drafts/voided entries
       // would otherwise distort inflow/outflow totals.
       const [journalEntriesRaw, accountsData] = await Promise.all([
-        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true }),
         storage.getAccountsByCompanyId(companyId),
       ]);
       const journalEntriesData = journalEntriesRaw.filter((e) => e.status === "posted");
@@ -775,118 +776,40 @@ export function registerReportRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const fromDate = uaeDayStart(from);
-      const toDate = uaeDayEnd(to);
-
-      // Get all invoices in range — exclude drafts (not issued), voids, and
-      // cancelled invoices so the VAT return only reports real supplies.
-      const periodInvoices: Invoice[] = (
-        await db
-          .select()
-          .from(invoices)
-          .where(
-            and(
-              eq(invoices.companyId, companyId),
-              gte(invoices.date, fromDate),
-              lte(invoices.date, toDate)
-            )
-          )
-      ).filter(
-        (inv: Invoice) =>
-          inv.status !== "draft" && inv.status !== "void" && inv.status !== "cancelled"
-      );
-
-      const invoiceIds = periodInvoices.map((i: Invoice) => i.id);
-
-      const allLines: InvoiceLine[] =
-        invoiceIds.length > 0
-          ? await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds))
-          : [];
-
-      let standardRatedSupplies = 0;
-      let zeroRatedSupplies = 0;
-      let exemptSupplies = 0;
-
-      // Build invoice lookup for exchange rates
-      const invoiceRateMap = new Map<string, number>();
-      for (const inv of periodInvoices) {
-        invoiceRateMap.set(inv.id, inv.exchangeRate ?? 1);
-      }
-
-      for (const line of allLines) {
-        // Convert line amounts to AED using the parent invoice's exchange rate
-        const rate = invoiceRateMap.get(line.invoiceId) ?? 1;
-        const lineTotal = line.quantity * line.unitPrice * rate;
-        const supplyType = line.vatSupplyType ?? "standard_rated";
-        if (supplyType === "zero_rated") {
-          zeroRatedSupplies += lineTotal;
-        } else if (supplyType === "exempt") {
-          exemptSupplies += lineTotal;
-        } else {
-          // standard_rated and out_of_scope treated as standard for Box 1
-          standardRatedSupplies += lineTotal;
-        }
-      }
-
-      const outputVat = standardRatedSupplies * UAE_VAT_RATE;
-
-      // Get expenses (receipts) in range with VAT.
-      // Only posted receipts can be claimed for input VAT recovery.
-      const periodReceipts: Receipt[] = (
-        await db
-          .select()
-          .from(receipts)
-          .where(
-            and(
-              eq(receipts.companyId, companyId),
-              gte(receipts.date, fromDate),
-              lte(receipts.date, toDate)
-            )
-          )
-      ).filter((r: Receipt) => r.posted === true);
-
-      const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
-        const rate = r.exchangeRate ?? 1;
-        // receipts.amount is the net subtotal (excludes VAT); see convention
-        // documented in receipts.routes.ts. Use it directly as the VAT base.
-        return s + (r.amount ?? 0) * rate;
-      }, 0);
-
-      const inputVat = periodReceipts.reduce((s: number, r: Receipt) => {
-        const rate = r.exchangeRate ?? 1;
-        return s + (r.vatAmount ?? 0) * rate;
-      }, 0);
-
-      const billVatRes = await pool.query(
-        `SELECT
-           COALESCE(SUM(subtotal * COALESCE(exchange_rate, 1)), 0) AS subtotal,
-           COALESCE(SUM(vat_amount * COALESCE(exchange_rate, 1)), 0) AS vat
-         FROM vendor_bills
-         WHERE company_id = $1
-           AND bill_date >= $2::date
-           AND bill_date <= $3::date
-           AND status NOT IN ('void', 'cancelled', 'draft', 'pending')
-           AND COALESCE(reverse_charge, false) = false`,
-        [companyId, from, to]
-      );
-      const approvedBillExpenses = Number(billVatRes.rows[0]?.subtotal || 0);
-      const approvedBillInputVat = Number(billVatRes.rows[0]?.vat || 0);
-
-      const totalSupplies = standardRatedSupplies + zeroRatedSupplies + exemptSupplies;
-      const totalStandardRatedExpenses = standardRatedExpenses + approvedBillExpenses;
-      const totalInputVat = inputVat + approvedBillInputVat;
-      const netVatDue = outputVat - totalInputVat;
+      // One VAT calculation for the whole product: this report used to have
+      // its own, with different void and classification rules, so it could
+      // disagree with the VAT 201. It now reads the shared computation.
+      const computed = await computeVatReturnForPeriod({
+        companyId,
+        userId,
+        periodStart: from,
+        periodEnd: to,
+      });
+      // The per-emirate boxes are set by key, so read the values as a plain record.
+      const v = computed.returnValues as Record<string, unknown>;
+      const n = (x: unknown) => Number(x ?? 0);
+      const standardRatedSupplies = [
+        v.box1aAbuDhabiAmount,
+        v.box1bDubaiAmount,
+        v.box1cSharjahAmount,
+        v.box1dAjmanAmount,
+        v.box1eUmmAlQuwainAmount,
+        v.box1fRasAlKhaimahAmount,
+        v.box1gFujairahAmount,
+      ].reduce((sum: number, x) => sum + n(x), 0);
+      const zeroRatedSupplies = n(v.box4ZeroRatedAmount);
+      const exemptSupplies = n(v.box5ExemptAmount);
 
       res.json({
         period: { from, to },
         box1_standardRatedSupplies: round2(standardRatedSupplies),
         box2_zeroRatedSupplies: round2(zeroRatedSupplies),
         box3_exemptSupplies: round2(exemptSupplies),
-        box4_totalSupplies: round2(totalSupplies),
-        box5_outputVat: round2(outputVat),
-        box6_standardRatedExpenses: round2(totalStandardRatedExpenses),
-        box7_inputVatRecoverable: round2(totalInputVat),
-        box8_netVatDue: round2(netVatDue),
+        box4_totalSupplies: round2(standardRatedSupplies + zeroRatedSupplies + exemptSupplies),
+        box5_outputVat: round2(n(v.box12TotalDueTax)),
+        box6_standardRatedExpenses: round2(n(v.box9ExpensesAmount)),
+        box7_inputVatRecoverable: round2(n(v.box13RecoverableTax)),
+        box8_netVatDue: round2(n(v.box14PayableTax)),
       });
     })
   );

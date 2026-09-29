@@ -221,10 +221,19 @@ async function main() {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       await page.waitForTimeout(1700);
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
+      const readMain = () =>
+        page
+          .locator("main")
+          .innerText()
+          .catch(() => "");
+      let mainText = await readMain();
+      // A route whose code chunk or first queries are slow can still be empty
+      // after the fixed wait. Give it up to 8 s more before calling it blank:
+      // a page that is really blank stays blank.
+      for (let waited = 0; mainText.trim().length < 40 && waited < 8000; waited += 500) {
+        await page.waitForTimeout(500);
+        mainText = await readMain();
+      }
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -979,7 +988,13 @@ async function main() {
 
       await page.request.patch(`${BASE}/api/companies/${companyId}`, {
         headers: { "x-csrf-token": csrfToken ?? "" },
-        data: { trnVatNumber: "100123456700003" },
+        // An e-invoice needs the seller's TRN and full address.
+        data: {
+          trnVatNumber: "100123456700003",
+          addressStreet: "Office 1804, Boulevard Plaza",
+          addressCity: "Dubai",
+          emirate: "dubai",
+        },
       });
 
       const check = await (

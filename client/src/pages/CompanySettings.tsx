@@ -28,39 +28,40 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
 import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
+import { messages as pageMessages } from "./CompanySettings.i18n";
 
-const CURRENCY_OPTIONS = [
-  { value: "AED", label: "AED — UAE Dirham" },
-  { value: "USD", label: "USD — US Dollar" },
-  { value: "EUR", label: "EUR — Euro" },
-  { value: "GBP", label: "GBP — British Pound" },
-  { value: "SAR", label: "SAR — Saudi Riyal" },
-  { value: "QAR", label: "QAR — Qatari Riyal" },
-  { value: "KWD", label: "KWD — Kuwaiti Dinar" },
-  { value: "BHD", label: "BHD — Bahraini Dinar" },
-  { value: "OMR", label: "OMR — Omani Rial" },
-  { value: "INR", label: "INR — Indian Rupee" },
+const getCurrencyOptions = () => [
+  { value: "AED", label: pageMessages.t("aedUaeDirham") },
+  { value: "USD", label: pageMessages.t("usdUsDollar") },
+  { value: "EUR", label: pageMessages.t("eurEuro") },
+  { value: "GBP", label: pageMessages.t("gbpBritishPound") },
+  { value: "SAR", label: pageMessages.t("sarSaudiRiyal") },
+  { value: "QAR", label: pageMessages.t("qarQatariRiyal") },
+  { value: "KWD", label: pageMessages.t("kwdKuwaitiDinar") },
+  { value: "BHD", label: pageMessages.t("bhdBahrainiDinar") },
+  { value: "OMR", label: pageMessages.t("omrOmaniRial") },
+  { value: "INR", label: pageMessages.t("inrIndianRupee") },
 ];
 
-const MONTH_OPTIONS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+const getMonthOptions = () => [
+  pageMessages.t("january"),
+  pageMessages.t("february"),
+  pageMessages.t("march"),
+  pageMessages.t("april"),
+  pageMessages.t("may"),
+  pageMessages.t("june"),
+  pageMessages.t("july"),
+  pageMessages.t("august"),
+  pageMessages.t("september"),
+  pageMessages.t("october"),
+  pageMessages.t("november"),
+  pageMessages.t("december"),
 ];
 
-const VAT_RATE_OPTIONS = [
-  { value: "0", label: "0% — Zero-rated / Out of scope" },
-  { value: "0.05", label: "5% — UAE Standard rate" },
-  { value: "0.15", label: "15% — KSA Standard rate" },
+const getVatRateOptions = () => [
+  { value: "0", label: pageMessages.t("n0ZeroRatedOutOfScope") },
+  { value: "0.05", label: pageMessages.t("n5UaeStandardRate") },
+  { value: "0.15", label: pageMessages.t("n15KsaStandardRate") },
 ];
 
 const EMIRATE_OPTIONS = [
@@ -73,27 +74,29 @@ const EMIRATE_OPTIONS = [
   { value: "fujairah", label: "Fujairah" },
 ];
 
-const COUNTRY_OPTIONS = [
-  { value: "AE", label: "United Arab Emirates" },
-  { value: "SA", label: "Saudi Arabia" },
-  { value: "QA", label: "Qatar" },
-  { value: "KW", label: "Kuwait" },
-  { value: "BH", label: "Bahrain" },
-  { value: "OM", label: "Oman" },
-  { value: "GB", label: "United Kingdom" },
-  { value: "US", label: "United States" },
-  { value: "IN", label: "India" },
+const getCountryOptions = () => [
+  { value: "AE", label: pageMessages.t("unitedArabEmirates") },
+  { value: "SA", label: pageMessages.t("saudiArabia") },
+  { value: "QA", label: pageMessages.t("qatar") },
+  { value: "KW", label: pageMessages.t("kuwait") },
+  { value: "BH", label: pageMessages.t("bahrain") },
+  { value: "OM", label: pageMessages.t("oman") },
+  { value: "GB", label: pageMessages.t("unitedKingdom") },
+  { value: "US", label: pageMessages.t("unitedStates") },
+  { value: "IN", label: pageMessages.t("india") },
 ];
 
-const DATE_FORMAT_OPTIONS = [
-  { value: "DD/MM/YYYY", label: "DD/MM/YYYY (e.g. 27/04/2026)" },
-  { value: "MM/DD/YYYY", label: "MM/DD/YYYY (e.g. 04/27/2026)" },
+const getDateFormatOptions = () => [
+  { value: "DD/MM/YYYY", label: pageMessages.t("ddMmYyyyEG27") },
+  { value: "MM/DD/YYYY", label: pageMessages.t("mmDdYyyyEG04") },
   { value: "YYYY-MM-DD", label: "YYYY-MM-DD (e.g. 2026-04-27)" },
 ];
 
 type FormValues = CompanyPreferences;
 
 export default function CompanySettings() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -155,15 +158,15 @@ export default function CompanySettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Preferences saved",
-        description: "Your company preferences have been updated.",
+        title: tr("preferencesSaved"),
+        description: tr("yourCompanyPreferencesHaveBeenUpdated"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save preferences",
-        description: error?.message || "Please try again.",
+        title: tr("failedToSavePreferences"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -176,8 +179,8 @@ export default function CompanySettings() {
     if (file.size > 1024 * 1024) {
       toast({
         variant: "destructive",
-        title: "Image too large",
-        description: "Please choose an image under 1 MB.",
+        title: tr("imageTooLarge"),
+        description: tr("pleaseChooseAnImageUnder1"),
       });
       return;
     }
@@ -206,7 +209,7 @@ export default function CompanySettings() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
-              <p>No company selected.</p>
+              <p>{tr("noCompanySelected")}</p>
             </div>
           </CardContent>
         </Card>
@@ -217,9 +220,9 @@ export default function CompanySettings() {
   return (
     <div className="space-y-8 max-w-4xl">
       <PageHeader
-        eyebrow="Settings"
-        title="Company Settings"
-        description="Manage company-wide preferences: identity, currency, fiscal year, VAT, address, and locale."
+        eyebrow={tr("settings")}
+        title={tr("companySettings")}
+        description={tr("manageCompanyWidePreferencesIdentityCurrency")}
       />
 
       <Form {...form}>
@@ -230,10 +233,8 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Company Identity</CardTitle>
-                  <CardDescription>
-                    Names, registration, and logo shown on invoices.
-                  </CardDescription>
+                  <CardTitle>{tr("companyIdentity")}</CardTitle>
+                  <CardDescription>{tr("namesRegistrationAndLogoShownOn")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -244,12 +245,12 @@ export default function CompanySettings() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
+                      <FormLabel>{tr("companyName")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Acme Trading"
+                          placeholder={tr("acmeTrading")}
                           data-testid="input-company-name"
                         />
                       </FormControl>
@@ -263,16 +264,16 @@ export default function CompanySettings() {
                   name="legalName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Legal Name</FormLabel>
+                      <FormLabel>{tr("legalName")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Acme Trading L.L.C"
+                          placeholder={tr("acmeTradingLLC")}
                           data-testid="input-legal-name"
                         />
                       </FormControl>
-                      <FormDescription>Registered name. Used on tax invoices.</FormDescription>
+                      <FormDescription>{tr("registeredNameUsedOnTaxInvoices")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -283,7 +284,7 @@ export default function CompanySettings() {
                   name="trnVatNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TRN (Tax Registration Number)</FormLabel>
+                      <FormLabel>{tr("trnTaxRegistrationNumber")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -295,7 +296,7 @@ export default function CompanySettings() {
                           data-testid="input-trn"
                         />
                       </FormControl>
-                      <FormDescription>UAE: 15 digits.</FormDescription>
+                      <FormDescription>{tr("uae15Digits")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -306,12 +307,12 @@ export default function CompanySettings() {
                   name="industry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Industry</FormLabel>
+                      <FormLabel>{tr("industry")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="Retail, Construction, Software…"
+                          placeholder={tr("retailConstructionSoftware")}
                           data-testid="input-industry"
                         />
                       </FormControl>
@@ -322,13 +323,13 @@ export default function CompanySettings() {
               </div>
 
               <FormItem>
-                <FormLabel>Company Logo</FormLabel>
+                <FormLabel>{tr("companyLogo")}</FormLabel>
                 <div className="flex items-center gap-4">
                   {logoPreview && (
                     <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0 bg-muted">
                       <img
                         src={logoPreview}
-                        alt="Logo preview"
+                        alt={tr("logoPreview")}
                         className="w-full h-full object-contain"
                       />
                     </div>
@@ -339,7 +340,7 @@ export default function CompanySettings() {
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-accent cursor-pointer text-sm"
                     >
                       <Upload className="w-4 h-4" />
-                      Choose image
+                      {tr("chooseImage")}
                     </label>
                     <input
                       id="logo-upload"
@@ -349,7 +350,7 @@ export default function CompanySettings() {
                       className="hidden"
                       data-testid="input-logo-upload"
                     />
-                    <FormDescription className="mt-2">PNG/JPG/SVG, under 1 MB.</FormDescription>
+                    <FormDescription className="mt-2">{tr("pngJpgSvgUnder1Mb")}</FormDescription>
                   </div>
                 </div>
               </FormItem>
@@ -362,10 +363,8 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <Globe className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Localization & Finance</CardTitle>
-                  <CardDescription>
-                    Currency, fiscal year, VAT, language, and date format.
-                  </CardDescription>
+                  <CardTitle>{tr("localizationFinance")}</CardTitle>
+                  <CardDescription>{tr("currencyFiscalYearVatLanguageAnd")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -376,7 +375,7 @@ export default function CompanySettings() {
                   name="baseCurrency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Preferred Currency *</FormLabel>
+                      <FormLabel>{tr("preferredCurrency")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-base-currency">
@@ -384,7 +383,7 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {CURRENCY_OPTIONS.map((c) => (
+                          {getCurrencyOptions().map((c) => (
                             <SelectItem key={c.value} value={c.value}>
                               {c.label}
                             </SelectItem>
@@ -401,7 +400,7 @@ export default function CompanySettings() {
                   name="fiscalYearStartMonth"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Financial Year Starts</FormLabel>
+                      <FormLabel>{tr("financialYearStarts")}</FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseInt(v, 10))}
                         value={String(field.value ?? 1)}
@@ -412,7 +411,7 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {MONTH_OPTIONS.map((label, idx) => (
+                          {getMonthOptions().map((label, idx) => (
                             <SelectItem key={idx + 1} value={String(idx + 1)}>
                               {label}
                             </SelectItem>
@@ -429,7 +428,7 @@ export default function CompanySettings() {
                   name="defaultVatRate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Default VAT Rate</FormLabel>
+                      <FormLabel>{tr("defaultVatRate")}</FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseFloat(v))}
                         value={String(field.value ?? 0.05)}
@@ -440,14 +439,14 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {VAT_RATE_OPTIONS.map((r) => (
+                          {getVatRateOptions().map((r) => (
                             <SelectItem key={r.value} value={r.value}>
                               {r.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Applied to new invoice lines by default.</FormDescription>
+                      <FormDescription>{tr("appliedToNewInvoiceLinesBy")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -458,7 +457,7 @@ export default function CompanySettings() {
                   name="dateFormat"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date Format</FormLabel>
+                      <FormLabel>{tr("dateFormat")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "DD/MM/YYYY"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-date-format">
@@ -466,7 +465,7 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {DATE_FORMAT_OPTIONS.map((d) => (
+                          {getDateFormatOptions().map((d) => (
                             <SelectItem key={d.value} value={d.value}>
                               {d.label}
                             </SelectItem>
@@ -483,7 +482,7 @@ export default function CompanySettings() {
                   name="locale"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Language</FormLabel>
+                      <FormLabel>{tr("language")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "en"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-locale">
@@ -491,11 +490,12 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="en">{tr("english")}</SelectItem>
+                          {/* i18n-ignore: language endonym is always shown in its own script */}
                           <SelectItem value="ar">العربية (Arabic)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>Used for invoice templates and the UI.</FormDescription>
+                      <FormDescription>{tr("usedForInvoiceTemplatesAndThe")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -510,8 +510,8 @@ export default function CompanySettings() {
               <div className="flex items-center gap-3">
                 <MapPin className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Address & Contact</CardTitle>
-                  <CardDescription>Used on invoices, statements, and tax filings.</CardDescription>
+                  <CardTitle>{tr("addressContact")}</CardTitle>
+                  <CardDescription>{tr("usedOnInvoicesStatementsAndTax")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -521,12 +521,12 @@ export default function CompanySettings() {
                 name="addressStreet"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Street Address</FormLabel>
+                    <FormLabel>{tr("streetAddress")}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
                         value={field.value ?? ""}
-                        placeholder="Office 101, Building 7, Sheikh Zayed Rd"
+                        placeholder={tr("office101Building7SheikhZayed")}
                         data-testid="input-address-street"
                       />
                     </FormControl>
@@ -541,7 +541,7 @@ export default function CompanySettings() {
                   name="addressCity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>City</FormLabel>
+                      <FormLabel>{tr("city")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -560,7 +560,7 @@ export default function CompanySettings() {
                   name="emirate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Emirate / Region</FormLabel>
+                      <FormLabel>{tr("emirateRegion")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "dubai"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-emirate">
@@ -585,7 +585,7 @@ export default function CompanySettings() {
                   name="addressCountry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Country</FormLabel>
+                      <FormLabel>{tr("country")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-address-country">
@@ -593,7 +593,7 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {COUNTRY_OPTIONS.map((c) => (
+                          {getCountryOptions().map((c) => (
                             <SelectItem key={c.value} value={c.value}>
                               {c.label}
                             </SelectItem>
@@ -612,7 +612,7 @@ export default function CompanySettings() {
                   name="contactPhone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone</FormLabel>
+                      <FormLabel>{tr("phone")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -632,7 +632,7 @@ export default function CompanySettings() {
                   name="contactEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>{tr("email")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -658,7 +658,7 @@ export default function CompanySettings() {
               disabled={!form.formState.isDirty || updateMutation.isPending}
               data-testid="button-reset"
             >
-              Reset
+              {tr("reset")}
             </Button>
             <Button
               type="submit"
@@ -667,11 +667,11 @@ export default function CompanySettings() {
               data-testid="button-save-company-settings"
             >
               {updateMutation.isPending ? (
-                "Saving…"
+                tr("saving")
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
+                  <Save className="w-4 h-4 me-2" />
+                  {tr("saveChanges")}
                 </>
               )}
             </Button>
@@ -681,12 +681,11 @@ export default function CompanySettings() {
             <CardContent className="py-4 flex items-start gap-3 text-sm text-muted-foreground">
               <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <div>
-                Need to update tax registration type, filing frequency, or other compliance fields?
-                Visit the{" "}
+                {tr("needToUpdateTaxRegistrationType")}
                 <a href="/company-profile" className="text-primary underline">
-                  Company Profile
+                  {tr("companyProfile")}
                 </a>{" "}
-                page.
+                {tr("page")}
               </div>
             </CardContent>
           </Card>

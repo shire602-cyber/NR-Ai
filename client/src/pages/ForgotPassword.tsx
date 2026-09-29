@@ -24,14 +24,18 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { ArrowLeft, Briefcase, CheckCircle2, Mail } from "lucide-react";
+import { messages as pageMessages } from "./ForgotPassword.i18n";
+import { LanguageToggle } from "@/components/LanguageToggle";
 
 const forgotSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
+  email: z.string().email(pageMessages.marker("pleaseEnterAValidEmail")),
 });
 
 type ForgotFormData = z.infer<typeof forgotSchema>;
 
 export default function ForgotPassword() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -62,8 +66,8 @@ export default function ForgotPassword() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not send reset link",
-        description: error?.message || "Please try again in a moment.",
+        title: tr("couldNotSendResetLink"),
+        description: error?.message || tr("pleaseTryAgainInAMoment"),
       });
     } finally {
       setIsLoading(false);
@@ -72,24 +76,25 @@ export default function ForgotPassword() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
+      <LanguageToggle floating />
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
+        <div className="absolute top-0 start-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
         <div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
+          className="absolute bottom-0 end-1/4 w-[500px] h-[500px] bg-chart-5/10 rounded-full blur-[128px] animate-pulse"
           style={{ animationDelay: "1s" }}
         />
       </div>
 
-      <div className="absolute top-8 left-8">
+      <div className="absolute top-8 start-8">
         <Link href="/login">
           <Button variant="ghost" className="gap-2" data-testid="button-back-login">
             <ArrowLeft className="w-4 h-4" />
-            Back to sign in
+            {tr("backToSignIn")}
           </Button>
         </Link>
       </div>
 
-      <div className="absolute top-8 right-8">
+      <div className="absolute top-8 end-8">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
@@ -100,10 +105,8 @@ export default function ForgotPassword() {
 
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">Forgot password?</CardTitle>
-          <CardDescription>
-            Enter the email associated with your account and we'll send a reset link.
-          </CardDescription>
+          <CardTitle className="text-2xl font-semibold">{tr("forgotPassword")}</CardTitle>
+          <CardDescription>{tr("enterTheEmailAssociatedWithYour")}</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -112,18 +115,15 @@ export default function ForgotPassword() {
               <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
                 <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
                 <div className="text-sm">
-                  <p className="font-medium text-success-subtle-foreground ">Check your inbox</p>
-                  <p className="text-success mt-0.5">
-                    If that email is registered, a reset link is on its way. The link is valid for
-                    one hour.
+                  <p className="font-medium text-success-subtle-foreground ">
+                    {tr("checkYourInbox")}
                   </p>
+                  <p className="text-success mt-0.5">{tr("ifThatEmailIsRegisteredA")}</p>
                 </div>
               </div>
               {devResetUrl && (
                 <div className="text-xs text-muted-foreground p-3 border rounded-md break-all">
-                  <p className="font-medium mb-1 text-foreground">
-                    Dev mode: open this link to reset
-                  </p>
+                  <p className="font-medium mb-1 text-foreground">{tr("devModeOpenThisLinkTo")}</p>
                   <a
                     href={devResetUrl}
                     className="text-primary underline"
@@ -142,7 +142,7 @@ export default function ForgotPassword() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>{tr("email")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -163,8 +163,8 @@ export default function ForgotPassword() {
                   disabled={isLoading}
                   data-testid="button-send-reset"
                 >
-                  <Mail className="w-4 h-4 mr-2" />
-                  {isLoading ? "Sending…" : "Send reset link"}
+                  <Mail className="w-4 h-4 me-2" />
+                  {isLoading ? tr("sending") : tr("sendResetLink")}
                 </Button>
               </form>
             </Form>
@@ -172,9 +172,9 @@ export default function ForgotPassword() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <div className="text-sm text-muted-foreground text-center">
-            Remembered your password?{" "}
+            {tr("rememberedYourPassword")}
             <Link href="/login" className="text-primary hover:underline font-medium">
-              Sign in
+              {tr("signIn")}
             </Link>
           </div>
         </CardFooter>

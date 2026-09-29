@@ -464,7 +464,7 @@ export function registerBudgetRoutes(app: Express) {
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
       // Get journal entries in the period
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
         const entryDate = new Date(entry.date);
         return entryDate >= startDate && entryDate <= endDate && entry.status === "posted";

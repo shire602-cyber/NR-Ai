@@ -24,17 +24,20 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatPercent } from "@/lib/format";
 import { apiRequest } from "@/lib/queryClient";
 import { Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
+import { messages as pageMessages } from "./AICategorize.i18n";
 
 const categorizeSchema = z.object({
   companyId: z.string().uuid(),
-  description: z.string().min(3, "Description must be at least 3 characters"),
-  amount: z.coerce.number().min(0.01, "Amount must be positive"),
+  description: z.string().min(3, pageMessages.marker("descriptionMustBeAtLeast3")),
+  amount: z.coerce.number().min(0.01, pageMessages.marker("amountMustBePositive")),
   currency: z.string().default("AED"),
 });
 
 type CategorizeFormData = z.infer<typeof categorizeSchema>;
 
 export default function AICategorize() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -62,15 +65,15 @@ export default function AICategorize() {
     onSuccess: (data) => {
       setResult(data);
       toast({
-        title: "Categorization complete",
-        description: "AI has suggested an account for your transaction.",
+        title: tr("categorizationComplete"),
+        description: tr("aiHasSuggestedAnAccountFor"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Categorization failed",
-        description: error?.message || "Please try again.",
+        title: tr("categorizationFailed"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -86,11 +89,11 @@ export default function AICategorize() {
   };
 
   const examples = [
-    { description: "Uber ride to client meeting", expected: "Marketing Expense" },
-    { description: "Facebook Ads campaign", expected: "Marketing Expense" },
-    { description: "Monthly office rent payment", expected: "Rent Expense" },
-    { description: "DEWA electricity bill", expected: "Utilities Expense" },
-    { description: "Office stationery supplies", expected: "Office Supplies" },
+    { description: tr("uberRideToClientMeeting"), expected: tr("marketingExpense") },
+    { description: tr("facebookAdsCampaign"), expected: tr("marketingExpense") },
+    { description: tr("monthlyOfficeRentPayment"), expected: tr("rentExpense") },
+    { description: tr("dewaElectricityBill"), expected: tr("utilitiesExpense") },
+    { description: tr("officeStationerySupplies"), expected: tr("officeSupplies") },
   ];
 
   return (
@@ -100,16 +103,16 @@ export default function AICategorize() {
           <Sparkles className="w-8 h-8 text-primary" />
           {t.aiCategorize}
         </h1>
-        <p className="text-muted-foreground">
-          Use AI to automatically categorize expenses based on your Chart of Accounts
-        </p>
+        <p className="text-muted-foreground">{tr("useAiToAutomaticallyCategorizeExpenses")}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card>
           <CardHeader>
-            <CardTitle>Transaction Details</CardTitle>
-            <CardDescription>Enter transaction information for AI categorization</CardDescription>
+            <CardTitle>{tr("transactionDetails")}</CardTitle>
+            <CardDescription>
+              {tr("enterTransactionInformationForAiCategorization")}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -123,7 +126,7 @@ export default function AICategorize() {
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="e.g., Uber ride to client meeting, Facebook Ads campaign, monthly rent..."
+                          placeholder={tr("eGUberRideToClient")}
                           rows={3}
                           data-testid="input-description"
                         />
@@ -161,7 +164,7 @@ export default function AICategorize() {
                   disabled={categorizeMutation.isPending}
                   data-testid="button-categorize"
                 >
-                  <Sparkles className="w-4 h-4 mr-2" />
+                  <Sparkles className="w-4 h-4 me-2" />
                   {categorizeMutation.isPending ? t.loading : t.categorize}
                 </Button>
               </form>
@@ -171,8 +174,8 @@ export default function AICategorize() {
 
         <Card>
           <CardHeader>
-            <CardTitle>AI Suggestion</CardTitle>
-            <CardDescription>Account recommendation with confidence score</CardDescription>
+            <CardTitle>{tr("aiSuggestion")}</CardTitle>
+            <CardDescription>{tr("accountRecommendationWithConfidenceScore")}</CardDescription>
           </CardHeader>
           <CardContent>
             {categorizeMutation.isPending ? (
@@ -192,7 +195,7 @@ export default function AICategorize() {
                     >
                       {result.suggestedAccountName}
                     </div>
-                    <div className="font-mono text-sm text-muted-foreground">
+                    <div dir="ltr" className="font-mono text-sm text-muted-foreground">
                       {result.suggestedAccountCode}
                     </div>
                   </div>
@@ -203,6 +206,7 @@ export default function AICategorize() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{t.confidence}</span>
                     <span
+                      dir="ltr"
                       className={`text-lg font-bold font-mono ${getConfidenceColor(result.confidence)}`}
                       data-testid="text-confidence"
                     >
@@ -211,33 +215,24 @@ export default function AICategorize() {
                   </div>
                   <Progress value={result.confidence * 100} className="h-2" />
                   {result.confidence >= 0.8 && (
-                    <Badge
-                      variant="outline"
-                      className="bg-success-subtle text-success "
-                    >
-                      High Confidence
+                    <Badge variant="outline" className="bg-success-subtle text-success ">
+                      {tr("highConfidence")}
                     </Badge>
                   )}
                   {result.confidence >= 0.5 && result.confidence < 0.8 && (
-                    <Badge
-                      variant="outline"
-                      className="bg-warning-subtle text-warning "
-                    >
-                      Medium Confidence
+                    <Badge variant="outline" className="bg-warning-subtle text-warning ">
+                      {tr("mediumConfidence")}
                     </Badge>
                   )}
                   {result.confidence < 0.5 && (
-                    <Badge
-                      variant="outline"
-                      className="bg-danger-subtle text-destructive "
-                    >
-                      Low Confidence
+                    <Badge variant="outline" className="bg-danger-subtle text-destructive ">
+                      {tr("lowConfidence")}
                     </Badge>
                   )}
                 </div>
 
                 <div className="pt-4 border-t">
-                  <div className="text-sm text-muted-foreground mb-2">Reasoning</div>
+                  <div className="text-sm text-muted-foreground mb-2">{tr("reasoning")}</div>
                   <p className="text-sm" data-testid="text-reason">
                     {result.reason}
                   </p>
@@ -246,7 +241,7 @@ export default function AICategorize() {
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Sparkles className="w-16 h-16 mb-4 opacity-50" />
-                <p className="text-sm">Enter a transaction to get AI categorization</p>
+                <p className="text-sm">{tr("enterATransactionToGetAi")}</p>
               </div>
             )}
           </CardContent>
@@ -255,10 +250,8 @@ export default function AICategorize() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Try These Examples</CardTitle>
-          <CardDescription>
-            Click an example to see how AI categorizes common UAE transactions
-          </CardDescription>
+          <CardTitle>{tr("tryTheseExamples")}</CardTitle>
+          <CardDescription>{tr("clickAnExampleToSeeHow")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -269,13 +262,13 @@ export default function AICategorize() {
                   form.setValue("description", example.description);
                   form.setValue("amount", 100);
                 }}
-                className="flex items-start justify-between gap-3 p-4 border rounded-lg hover-elevate text-left"
+                className="flex items-start justify-between gap-3 p-4 border rounded-lg hover-elevate text-start"
                 data-testid={`example-${index}`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-medium mb-1">{example.description}</div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1">
-                    Expected: {example.expected}
+                    {tr("expected", { expected: example.expected })}
                     <ArrowRight className="w-3 h-3" />
                   </div>
                 </div>

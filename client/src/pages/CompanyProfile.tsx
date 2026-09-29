@@ -31,15 +31,16 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Building2, FileText, Upload, Save } from "lucide-react";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./CompanyProfile.i18n";
 
 const companyProfileSchema = z.object({
   // Basic Info
-  name: z.string().min(2, "Company name is required"),
+  name: z.string().min(2, pageMessages.marker("companyNameIsRequired")),
   baseCurrency: z.string().default("AED"),
   locale: z.enum(["en", "ar"]).default("en"),
 
   // Company Information
-  legalStructure: z.string().min(1, "Legal structure is required"),
+  legalStructure: z.string().min(1, pageMessages.marker("legalStructureIsRequired")),
   industry: z
     .string()
     .transform((val) => val || undefined)
@@ -48,20 +49,20 @@ const companyProfileSchema = z.object({
     .string()
     .transform((val) => val || undefined)
     .optional(),
-  businessAddress: z.string().min(1, "Business address is required"),
+  businessAddress: z.string().min(1, pageMessages.marker("businessAddressIsRequired")),
   contactPhone: z
     .string()
     .transform((val) => val || undefined)
     .optional(),
   contactEmail: z
     .string()
-    .email("Invalid email")
+    .email(pageMessages.marker("invalidEmail"))
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
   websiteUrl: z
     .string()
-    .url("Invalid URL")
+    .url(pageMessages.marker("invalidUrl"))
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
@@ -71,9 +72,9 @@ const companyProfileSchema = z.object({
     .optional(),
 
   // Tax & Compliance
-  trnVatNumber: z.string().min(1, "TRN/VAT Number is required"),
-  taxRegistrationType: z.string().min(1, "Tax registration type is required"),
-  vatFilingFrequency: z.string().min(1, "VAT filing frequency is required"),
+  trnVatNumber: z.string().min(1, pageMessages.marker("trnVatNumberIsRequired")),
+  taxRegistrationType: z.string().min(1, pageMessages.marker("taxRegistrationTypeIsRequired")),
+  vatFilingFrequency: z.string().min(1, pageMessages.marker("vatFilingFrequencyIsRequired")),
   taxRegistrationDate: z
     .string()
     .transform((val) => val || undefined)
@@ -87,6 +88,8 @@ const companyProfileSchema = z.object({
 type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
 
 export default function CompanyProfile() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { companyId, isLoading: companiesLoading } = useDefaultCompany();
@@ -165,15 +168,15 @@ export default function CompanyProfile() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Company profile updated",
-        description: "Your company profile has been saved successfully.",
+        title: tr("companyProfileUpdated"),
+        description: tr("yourCompanyProfileHasBeenSaved"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update profile",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateProfile"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -211,9 +214,9 @@ export default function CompanyProfile() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
-              <p className="mb-4">Set up your company to manage its profile.</p>
+              <p className="mb-4">{tr("setUpYourCompanyToManage")}</p>
               <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-                Create your company
+                {tr("createYourCompany")}
               </Button>
             </div>
           </CardContent>
@@ -225,9 +228,9 @@ export default function CompanyProfile() {
   return (
     <div className="space-y-8 max-w-4xl">
       <PageHeader
-        eyebrow="Settings"
-        title="Company Profile"
-        description="Manage your company information, tax settings, and compliance details"
+        eyebrow={tr("settings")}
+        title={tr("companyProfile")}
+        description={tr("manageYourCompanyInformationTaxSettings")}
       />
 
       <Form {...form}>
@@ -238,8 +241,8 @@ export default function CompanyProfile() {
               <div className="flex items-center gap-3">
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Company Information</CardTitle>
-                  <CardDescription>Basic details about your business</CardDescription>
+                  <CardTitle>{tr("companyInformation")}</CardTitle>
+                  <CardDescription>{tr("basicDetailsAboutYourBusiness")}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -250,11 +253,11 @@ export default function CompanyProfile() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
+                      <FormLabel>{tr("companyName")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Acme Corporation"
+                          placeholder={tr("acmeCorporation")}
                           data-testid="input-company-name"
                         />
                       </FormControl>
@@ -268,19 +271,21 @@ export default function CompanyProfile() {
                   name="legalStructure"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Legal Structure *</FormLabel>
+                      <FormLabel>{tr("legalStructure")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-legal-structure">
-                            <SelectValue placeholder="Select legal structure" />
+                            <SelectValue placeholder={tr("selectLegalStructure")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Sole Proprietorship">Sole Proprietorship</SelectItem>
+                          <SelectItem value="Sole Proprietorship">
+                            {tr("soleProprietorship")}
+                          </SelectItem>
                           <SelectItem value="LLC">LLC</SelectItem>
-                          <SelectItem value="Corporation">Corporation</SelectItem>
-                          <SelectItem value="Partnership">Partnership</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Corporation">{tr("corporation")}</SelectItem>
+                          <SelectItem value="Partnership">{tr("partnership")}</SelectItem>
+                          <SelectItem value="Other">{tr("other")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -293,11 +298,11 @@ export default function CompanyProfile() {
                   name="industry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Industry</FormLabel>
+                      <FormLabel>{tr("industry")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Technology, Retail, etc."
+                          placeholder={tr("technologyRetailEtc")}
                           data-testid="input-industry"
                         />
                       </FormControl>
@@ -311,7 +316,7 @@ export default function CompanyProfile() {
                   name="registrationNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Business Registration Number</FormLabel>
+                      <FormLabel>{tr("businessRegistrationNumber")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -331,11 +336,11 @@ export default function CompanyProfile() {
                 name="businessAddress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Business Address *</FormLabel>
+                    <FormLabel>{tr("businessAddress")}</FormLabel>
                     <FormControl>
                       <Textarea
                         {...field}
-                        placeholder="123 Business St, Dubai, UAE"
+                        placeholder={tr("n123BusinessStDubaiUae")}
                         rows={3}
                         data-testid="textarea-business-address"
                       />
@@ -351,7 +356,7 @@ export default function CompanyProfile() {
                   name="contactPhone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Phone</FormLabel>
+                      <FormLabel>{tr("contactPhone")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -370,7 +375,7 @@ export default function CompanyProfile() {
                   name="contactEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
+                      <FormLabel>{tr("contactEmail")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -391,7 +396,7 @@ export default function CompanyProfile() {
                   name="websiteUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Website URL</FormLabel>
+                      <FormLabel>{tr("websiteUrl")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -406,13 +411,13 @@ export default function CompanyProfile() {
                 />
 
                 <FormItem>
-                  <FormLabel>Company Logo</FormLabel>
+                  <FormLabel>{tr("companyLogo")}</FormLabel>
                   <div className="flex items-center gap-4">
                     {logoPreview && (
                       <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0">
                         <img
                           src={logoPreview}
-                          alt="Logo preview"
+                          alt={tr("logoPreview")}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -426,7 +431,7 @@ export default function CompanyProfile() {
                         data-testid="input-logo-upload"
                       />
                       <FormDescription className="mt-2">
-                        Upload your company logo (optional)
+                        {tr("uploadYourCompanyLogoOptional")}
                       </FormDescription>
                     </div>
                   </div>
@@ -441,8 +446,10 @@ export default function CompanyProfile() {
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Tax & Compliance Settings</CardTitle>
-                  <CardDescription>VAT registration and tax compliance information</CardDescription>
+                  <CardTitle>{tr("taxComplianceSettings")}</CardTitle>
+                  <CardDescription>
+                    {tr("vatRegistrationAndTaxComplianceInformation")}
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -453,7 +460,7 @@ export default function CompanyProfile() {
                   name="trnVatNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TRN / VAT Number *</FormLabel>
+                      <FormLabel>{tr("trnVatNumber")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -462,7 +469,7 @@ export default function CompanyProfile() {
                           data-testid="input-trn-vat-number"
                         />
                       </FormControl>
-                      <FormDescription>15-digit Tax Registration Number (UAE)</FormDescription>
+                      <FormDescription>{tr("n15DigitTaxRegistrationNumberUae")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -473,18 +480,18 @@ export default function CompanyProfile() {
                   name="taxRegistrationType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tax Registration Type</FormLabel>
+                      <FormLabel>{tr("taxRegistrationType")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-tax-registration-type">
-                            <SelectValue placeholder="Select registration type" />
+                            <SelectValue placeholder={tr("selectRegistrationType")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Standard">Standard</SelectItem>
-                          <SelectItem value="Flat Rate">Flat Rate</SelectItem>
-                          <SelectItem value="Non-registered">Non-registered</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Standard">{tr("standard")}</SelectItem>
+                          <SelectItem value="Flat Rate">{tr("flatRate")}</SelectItem>
+                          <SelectItem value="Non-registered">{tr("nonRegistered")}</SelectItem>
+                          <SelectItem value="Other">{tr("other")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -497,20 +504,20 @@ export default function CompanyProfile() {
                   name="vatFilingFrequency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>VAT Filing Frequency *</FormLabel>
+                      <FormLabel>{tr("vatFilingFrequency")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-vat-filing-frequency">
-                            <SelectValue placeholder="Select filing frequency" />
+                            <SelectValue placeholder={tr("selectFilingFrequency")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Monthly">Monthly</SelectItem>
-                          <SelectItem value="Quarterly">Quarterly</SelectItem>
-                          <SelectItem value="Annually">Annually</SelectItem>
+                          <SelectItem value="Monthly">{tr("monthly")}</SelectItem>
+                          <SelectItem value="Quarterly">{tr("quarterly")}</SelectItem>
+                          <SelectItem value="Annually">{tr("annually")}</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>Required for VAT registered businesses</FormDescription>
+                      <FormDescription>{tr("requiredForVatRegisteredBusinesses")}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -521,7 +528,7 @@ export default function CompanyProfile() {
                   name="taxRegistrationDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tax Registration Effective Date</FormLabel>
+                      <FormLabel>{tr("taxRegistrationEffectiveDate")}</FormLabel>
                       <FormControl>
                         <Input {...field} type="date" data-testid="input-tax-registration-date" />
                       </FormControl>
@@ -535,7 +542,7 @@ export default function CompanyProfile() {
                   name="corporateTaxId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Corporate Tax ID</FormLabel>
+                      <FormLabel>{tr("corporateTaxId")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -561,11 +568,11 @@ export default function CompanyProfile() {
               data-testid="button-save-company-profile"
             >
               {updateMutation.isPending ? (
-                "Saving..."
+                tr("saving")
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
+                  <Save className="w-4 h-4 me-2" />
+                  {tr("saveChanges")}
                 </>
               )}
             </Button>

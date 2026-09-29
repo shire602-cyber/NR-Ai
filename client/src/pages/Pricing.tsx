@@ -55,6 +55,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollReveal, StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
+import { messages as pageMessages } from "./Pricing.i18n";
 
 // ── Pricing Data ───────────────────────────────────────────────────────
 
@@ -276,6 +277,8 @@ const featureMatrix: FeatureCategory[] = [
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function Pricing() {
+  const tr = pageMessages.useT();
+
   const { locale, setLocale } = useI18n();
   const [isYearly, setIsYearly] = useState(false);
   const isRTL = locale === "ar";
@@ -288,65 +291,60 @@ export default function Pricing() {
 
   const t = {
     header: {
-      title: locale === "en" ? "Simple, Transparent Pricing" : "أسعار بسيطة وشفافة",
-      subtitle:
-        locale === "en"
-          ? "Start free. Scale as you grow. No hidden fees."
-          : "ابدأ مجاناً. توسّع مع نموك. بدون رسوم خفية.",
-      monthly: locale === "en" ? "Monthly" : "شهري",
-      yearly: locale === "en" ? "Yearly" : "سنوي",
-      save20: locale === "en" ? "Save 20%" : "وفّر 20%",
-      perMonth: locale === "en" ? "/mo" : "/شهر",
-      free: locale === "en" ? "Free" : "مجاني",
+      title: tr("simpleTransparentPricing"),
+      subtitle: tr("startFreeScaleAsYouGrow"),
+      monthly: tr("monthly"),
+      yearly: tr("yearly"),
+      save20: tr("save20"),
+      perMonth: tr("mo"),
+      free: tr("free"),
     },
     tiers: {
       free: {
-        name: locale === "en" ? "Free" : "مجاني",
-        description: locale === "en" ? "For freelancers getting started" : "للمستقلين المبتدئين",
-        cta: locale === "en" ? "Get Started Free" : "ابدأ مجاناً",
+        name: tr("free"),
+        description: tr("forFreelancersGettingStarted"),
+        cta: tr("getStartedFree"),
       },
       starter: {
-        name: locale === "en" ? "Starter" : "المبتدئ",
-        description:
-          locale === "en" ? "For small businesses scaling up" : "للشركات الصغيرة في مرحلة النمو",
-        cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+        name: tr("starter"),
+        description: tr("forSmallBusinessesScalingUp"),
+        cta: tr("start14DayTrial"),
       },
       professional: {
-        name: locale === "en" ? "Professional" : "الاحترافي",
-        description:
-          locale === "en" ? "For growing companies with teams" : "للشركات المتنامية مع فرق عمل",
-        cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+        name: tr("professional"),
+        description: tr("forGrowingCompaniesWithTeams"),
+        cta: tr("start14DayTrial"),
       },
       enterprise: {
-        name: locale === "en" ? "Enterprise" : "المؤسسات",
-        description: locale === "en" ? "For large organizations" : "للمؤسسات الكبرى",
-        cta: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+        name: tr("enterprise"),
+        description: tr("forLargeOrganizations"),
+        cta: tr("contactSales"),
       },
     },
     badges: {
-      recommended: locale === "en" ? "Recommended" : "موصى به",
-      mostPopular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
+      recommended: tr("recommended"),
+      mostPopular: tr("mostPopular"),
     },
     limits: {
-      companies: locale === "en" ? "company" : "شركة",
-      companiesPlural: locale === "en" ? "companies" : "شركات",
-      users: locale === "en" ? "user" : "مستخدم",
-      usersPlural: locale === "en" ? "users" : "مستخدمين",
-      unlimited: locale === "en" ? "Unlimited" : "غير محدود",
-      invoicesMonth: locale === "en" ? "invoices/mo" : "فاتورة/شهر",
-      receiptsMonth: locale === "en" ? "receipts/mo" : "إيصال/شهر",
+      companies: tr("company"),
+      companiesPlural: tr("companies"),
+      users: tr("user"),
+      usersPlural: tr("users"),
+      unlimited: tr("unlimited"),
+      invoicesMonth: tr("invoicesMo"),
+      receiptsMonth: tr("receiptsMo"),
     },
     tierFeatures: {
       free: {
         features:
           locale === "en"
             ? [
-                "1 company, 1 user",
-                "50 invoices/month",
-                "20 receipts/month",
-                "Basic AI categorization",
-                "VAT filing",
-                "Bank reconciliation (manual)",
+                tr("n1Company1User"),
+                tr("n50InvoicesMonth"),
+                tr("n20ReceiptsMonth"),
+                tr("basicAiCategorization"),
+                tr("vatFiling"),
+                tr("bankReconciliationManual"),
               ]
             : [
                 "شركة واحدة، مستخدم واحد",
@@ -361,14 +359,14 @@ export default function Pricing() {
         features:
           locale === "en"
             ? [
-                "1 company, 3 users",
-                "200 invoices/month",
-                "100 receipts/month",
-                "AI OCR scanning",
-                "AI categorization",
-                "Recurring invoices",
-                "Bill pay",
-                "Inventory management",
+                tr("n1Company3Users"),
+                tr("n200InvoicesMonth"),
+                tr("n100ReceiptsMonth"),
+                tr("aiOcrScanning"),
+                tr("aiCategorization"),
+                tr("recurringInvoices"),
+                tr("billPay"),
+                tr("inventoryManagement"),
               ]
             : [
                 "شركة واحدة، 3 مستخدمين",
@@ -382,27 +380,26 @@ export default function Pricing() {
               ],
       },
       professional: {
-        header:
-          locale === "en" ? "Everything in Starter, plus:" : "كل ميزات المبتدئ، بالإضافة إلى:",
+        header: tr("everythingInStarterPlus"),
         features:
           locale === "en"
             ? [
-                "3 companies, 10 users",
-                "Unlimited invoices",
-                "Unlimited receipts",
-                "Autonomous GL (AI auto-posting)",
-                "AI CFO & Financial Advisor",
-                "AI Anomaly Detection",
-                "AI Cash Flow Forecast",
-                "Smart Reconciliation",
-                "Month-End Close automation",
-                "Payroll & WPS",
-                "Fixed Assets & Depreciation",
-                "Budgeting & Variance",
-                "Expense Claims",
-                "Corporate Tax (9%)",
-                "E-Invoicing (PINT AE)",
-                "Client Portal",
+                tr("n3Companies10Users"),
+                tr("unlimitedInvoices"),
+                tr("unlimitedReceipts"),
+                tr("autonomousGlAiAutoPosting"),
+                tr("aiCfoFinancialAdvisor"),
+                tr("aiAnomalyDetection"),
+                tr("aiCashFlowForecast"),
+                tr("smartReconciliation"),
+                tr("monthEndCloseAutomation"),
+                tr("payrollWps"),
+                tr("fixedAssetsDepreciation"),
+                tr("budgetingVariance"),
+                tr("expenseClaims"),
+                tr("corporateTax9"),
+                tr("eInvoicingPintAe"),
+                tr("clientPortal"),
               ]
             : [
                 "3 شركات، 10 مستخدمين",
@@ -424,21 +421,18 @@ export default function Pricing() {
               ],
       },
       enterprise: {
-        header:
-          locale === "en"
-            ? "Everything in Professional, plus:"
-            : "كل ميزات الاحترافي، بالإضافة إلى:",
+        header: tr("everythingInProfessionalPlus"),
         features:
           locale === "en"
             ? [
-                "Unlimited companies, unlimited users",
-                "Priority AI processing",
-                "Dedicated account manager",
-                "Custom integrations",
-                "Enterprise support terms",
-                "Advanced analytics",
-                "Multi-branch support",
-                "API access",
+                tr("unlimitedCompaniesUnlimitedUsers"),
+                tr("priorityAiProcessing"),
+                tr("dedicatedAccountManager"),
+                tr("customIntegrations"),
+                tr("enterpriseSupportTerms"),
+                tr("advancedAnalytics"),
+                tr("multiBranchSupport"),
+                tr("apiAccess"),
               ]
             : [
                 "شركات ومستخدمين غير محدودين",
@@ -453,112 +447,89 @@ export default function Pricing() {
       },
     },
     comparison: {
-      title: locale === "en" ? "Complete Feature Comparison" : "مقارنة الميزات الكاملة",
-      subtitle: locale === "en" ? "Every feature across every plan" : "كل ميزة في كل خطة",
+      title: tr("completeFeatureComparison"),
+      subtitle: tr("everyFeatureAcrossEveryPlan"),
     },
     featureCategories: {
-      coreAccounting: locale === "en" ? "Core Accounting" : "المحاسبة الأساسية",
-      aiIntelligence: locale === "en" ? "AI & Intelligence" : "الذكاء الاصطناعي",
-      hrPayroll: locale === "en" ? "HR & Payroll" : "الموارد البشرية والرواتب",
-      uaeCompliance: locale === "en" ? "UAE Compliance" : "الامتثال الإماراتي",
-      communication: locale === "en" ? "Communication" : "التواصل",
-      platform: locale === "en" ? "Platform" : "المنصة",
+      coreAccounting: tr("coreAccounting"),
+      aiIntelligence: tr("aiIntelligence"),
+      hrPayroll: tr("hrPayroll"),
+      uaeCompliance: tr("uaeCompliance"),
+      communication: tr("communication"),
+      platform: tr("platform"),
     },
     featureNames: {
-      invoicing: locale === "en" ? "Invoicing" : "الفواتير",
-      receiptScanning: locale === "en" ? "Receipt Scanning" : "مسح الإيصالات",
-      bankReconciliation: locale === "en" ? "Bank Reconciliation" : "التسوية البنكية",
-      vatFiling: locale === "en" ? "VAT Filing" : "تقديم ضريبة القيمة المضافة",
-      recurringInvoices: locale === "en" ? "Recurring Invoices" : "الفواتير المتكررة",
-      billPay: locale === "en" ? "Bill Pay" : "دفع الفواتير",
-      inventoryManagement: locale === "en" ? "Inventory Management" : "إدارة المخزون",
-      monthEndClose: locale === "en" ? "Month-End Close" : "إقفال نهاية الشهر",
-      fixedAssets: locale === "en" ? "Fixed Assets & Depreciation" : "الأصول الثابتة والإهلاك",
-      budgeting: locale === "en" ? "Budgeting & Variance" : "الميزانيات والتحليل",
-      expenseClaims: locale === "en" ? "Expense Claims" : "مطالبات المصروفات",
-      basicAICategorization: locale === "en" ? "Basic AI Categorization" : "تصنيف ذكي أساسي",
-      aiOCR: locale === "en" ? "AI OCR Scanning" : "مسح OCR بالذكاء الاصطناعي",
-      autonomousGL: locale === "en" ? "Autonomous GL (Auto-posting)" : "قيود تلقائية",
-      aiCFO: locale === "en" ? "AI CFO & Financial Advisor" : "مستشار مالي ذكي",
-      aiAnomalyDetection: locale === "en" ? "AI Anomaly Detection" : "كشف الحالات الشاذة",
-      aiCashFlowForecast: locale === "en" ? "AI Cash Flow Forecast" : "توقعات التدفق النقدي",
-      smartReconciliation: locale === "en" ? "Smart Reconciliation" : "التسوية الذكية",
-      priorityAI: locale === "en" ? "Priority AI Processing" : "أولوية معالجة الذكاء الاصطناعي",
-      payrollWPS: locale === "en" ? "Payroll & WPS" : "الرواتب وحماية الأجور",
-      vatFilingCompliance: locale === "en" ? "VAT Filing (5%)" : "ضريبة القيمة المضافة (5%)",
-      corporateTax: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
-      eInvoicing: locale === "en" ? "E-Invoicing (PINT AE)" : "الفوترة الإلكترونية (PINT AE)",
-      clientPortal: locale === "en" ? "Client Portal" : "بوابة العميل",
-      multiCompany: locale === "en" ? "Multi-Company" : "شركات متعددة",
-      dedicatedManager: locale === "en" ? "Dedicated Account Manager" : "مدير حساب مخصص",
-      customIntegrations: locale === "en" ? "Custom Integrations" : "تكاملات مخصصة",
-      slaGuarantee: locale === "en" ? "Enterprise Support Terms" : "شروط دعم المؤسسات",
-      advancedAnalytics: locale === "en" ? "Advanced Analytics" : "تحليلات متقدمة",
-      multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
-      apiAccess: locale === "en" ? "API Access" : "وصول API",
+      invoicing: tr("invoicing"),
+      receiptScanning: tr("receiptScanning"),
+      bankReconciliation: tr("bankReconciliation"),
+      vatFiling: tr("vatFiling2"),
+      recurringInvoices: tr("recurringInvoices2"),
+      billPay: tr("billPay2"),
+      inventoryManagement: tr("inventoryManagement2"),
+      monthEndClose: tr("monthEndClose"),
+      fixedAssets: tr("fixedAssetsDepreciation"),
+      budgeting: tr("budgetingVariance"),
+      expenseClaims: tr("expenseClaims"),
+      basicAICategorization: tr("basicAiCategorization2"),
+      aiOCR: tr("aiOcrScanning2"),
+      autonomousGL: tr("autonomousGlAutoPosting"),
+      aiCFO: tr("aiCfoFinancialAdvisor"),
+      aiAnomalyDetection: tr("aiAnomalyDetection"),
+      aiCashFlowForecast: tr("aiCashFlowForecast"),
+      smartReconciliation: tr("smartReconciliation"),
+      priorityAI: tr("priorityAiProcessing2"),
+      payrollWPS: tr("payrollWps"),
+      vatFilingCompliance: tr("vatFiling5"),
+      corporateTax: tr("corporateTax9"),
+      eInvoicing: tr("eInvoicingPintAe"),
+      clientPortal: tr("clientPortal"),
+      multiCompany: tr("multiCompany"),
+      dedicatedManager: tr("dedicatedAccountManager2"),
+      customIntegrations: tr("customIntegrations2"),
+      slaGuarantee: tr("enterpriseSupportTerms2"),
+      advancedAnalytics: tr("advancedAnalytics2"),
+      multiBranch: tr("multiBranchSupport2"),
+      apiAccess: tr("apiAccess2"),
     },
     faq: {
-      title: locale === "en" ? "Frequently Asked Questions" : "الأسئلة الشائعة",
-      subtitle:
-        locale === "en"
-          ? "Everything you need to know about our pricing"
-          : "كل ما تحتاج معرفته عن أسعارنا",
+      title: tr("frequentlyAskedQuestions"),
+      subtitle: tr("everythingYouNeedToKnowAbout"),
       questions: [
         {
-          q: locale === "en" ? "Can I switch plans anytime?" : "هل يمكنني تغيير الخطة في أي وقت؟",
-          a:
-            locale === "en"
-              ? "Yes! You can upgrade or downgrade your plan at any time. When upgrading, you'll get immediate access to new features. When downgrading, the change takes effect at your next billing cycle."
-              : "نعم! يمكنك ترقية أو تخفيض خطتك في أي وقت. عند الترقية، ستحصل على وصول فوري للميزات الجديدة. عند التخفيض، يسري التغيير في دورة الفوترة التالية.",
+          q: tr("canISwitchPlansAnytime"),
+          a: tr("yesYouCanUpgradeOrDowngrade"),
         },
         {
-          q: locale === "en" ? "Is there a free trial?" : "هل توجد فترة تجريبية مجانية؟",
-          a:
-            locale === "en"
-              ? "Yes! We offer a 14-day free trial on both the Starter and Professional plans. No credit card required to start. You can also use the Free plan indefinitely."
-              : "نعم! نقدم فترة تجريبية مجانية لمدة 14 يوماً على خطتي المبتدئ والاحترافي. لا حاجة لبطاقة ائتمان للبدء. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
+          q: tr("isThereAFreeTrial"),
+          a: tr("yesWeOfferA14Day"),
         },
         {
-          q: locale === "en" ? "What payment methods do you accept?" : "ما طرق الدفع المقبولة؟",
-          a:
-            locale === "en"
-              ? "We accept all major credit and debit cards via Stripe, including Visa, Mastercard, and American Express. All payments are securely processed."
-              : "نقبل جميع بطاقات الائتمان والخصم الرئيسية عبر Stripe، بما في ذلك فيزا، ماستركارد، وأمريكان إكسبريس. تتم معالجة جميع المدفوعات بشكل آمن.",
+          q: tr("whatPaymentMethodsDoYouAccept"),
+          a: tr("weAcceptAllMajorCreditAnd"),
         },
         {
-          q: locale === "en" ? "Do you offer refunds?" : "هل تقدمون استرداد أموال؟",
-          a:
-            locale === "en"
-              ? "Absolutely. We offer a 30-day money-back guarantee on all paid plans. If you're not satisfied, contact us within 30 days for a full refund, no questions asked."
-              : "بالتأكيد. نقدم ضمان استرداد الأموال لمدة 30 يوماً على جميع الخطط المدفوعة. إذا لم تكن راضياً، تواصل معنا خلال 30 يوماً لاسترداد كامل المبلغ.",
+          q: tr("doYouOfferRefunds"),
+          a: tr("absolutelyWeOfferA30Day"),
         },
         {
-          q: locale === "en" ? "Is my data secure?" : "هل بياناتي آمنة؟",
-          a:
-            locale === "en"
-              ? "We use TLS for data in transit, role-based access, audit logs, encrypted connected-service secrets, and managed infrastructure controls. SOC 2 and ISO 27001 are roadmap items, not current certifications."
-              : "نستخدم TLS للبيانات أثناء النقل، وصلاحيات قائمة على الأدوار، وسجلات تدقيق، وتشفير أسرار الخدمات المتصلة، وضوابط بنية تحتية مدارة. شهادتا SOC 2 و ISO 27001 ضمن خارطة الطريق وليستا شهادات حالية.",
+          q: tr("isMyDataSecure"),
+          a: tr("weUseTlsForDataIn"),
         },
       ],
     },
     footerCta: {
-      title: locale === "en" ? "Ready to automate your accounting?" : "مستعد لأتمتة محاسبتك؟",
-      subtitle:
-        locale === "en"
-          ? "Start with guided onboarding, VAT-ready workflows, and support options matched to your plan."
-          : "ابدأ بإعداد موجه وسير عمل جاهز لضريبة القيمة المضافة وخيارات دعم مناسبة لخطتك.",
-      startFree: locale === "en" ? "Start Free" : "ابدأ مجاناً",
-      bookDemo: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
-      guarantee:
-        locale === "en"
-          ? "14-day free trial  |  No credit card required  |  30-day money-back guarantee"
-          : "تجربة مجانية 14 يوم  |  لا حاجة لبطاقة ائتمان  |  ضمان استرداد 30 يوم",
+      title: tr("readyToAutomateYourAccounting"),
+      subtitle: tr("startWithGuidedOnboardingVatReady"),
+      startFree: tr("startFree"),
+      bookDemo: tr("bookADemo"),
+      guarantee: tr("n14DayFreeTrialNoCredit"),
     },
     nav: {
-      home: locale === "en" ? "Home" : "الرئيسية",
-      pricing: locale === "en" ? "Pricing" : "الأسعار",
-      login: locale === "en" ? "Login" : "تسجيل الدخول",
-      languageToggle: locale === "en" ? "العربية" : "EN",
+      home: tr("home"),
+      pricing: tr("pricing"),
+      login: tr("login"),
+      // The switch label names the OTHER language in its own script.
+      languageToggle: tr.locale === "en" ? "العربية" : "EN",
     },
   };
 
@@ -636,9 +607,7 @@ export default function Pricing() {
           <ScrollReveal>
             <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
               <Sparkles className="h-3.5 w-3.5 me-1.5" />
-              {locale === "en"
-                ? "Launch pricing for UAE SMEs"
-                : "أسعار الإطلاق للشركات الصغيرة والمتوسطة في الإمارات"}
+              {tr("launchPricingForUaeSmes")}
             </Badge>
           </ScrollReveal>
           <ScrollReveal delay={0.1}>
@@ -792,9 +761,7 @@ export default function Pricing() {
                             <li key={idx} className="flex items-start gap-2 text-sm">
                               <Check
                                 className={`h-4 w-4 mt-0.5 shrink-0 ${
-                                  tier.highlight
-                                    ? "text-success "
-                                    : "text-muted-foreground"
+                                  tier.highlight ? "text-success " : "text-muted-foreground"
                                 }`}
                               />
                               <span>{feature}</span>
@@ -850,7 +817,7 @@ export default function Pricing() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[280px] font-semibold text-foreground">
-                        {locale === "en" ? "Feature" : "الميزة"}
+                        {tr("feature")}
                       </TableHead>
                       {tiers.map((tier) => (
                         <TableHead key={tier.id} className="text-center min-w-[120px]">
@@ -929,7 +896,7 @@ export default function Pricing() {
               <Accordion type="single" collapsible className="w-full">
                 {t.faq.questions.map((item, idx) => (
                   <AccordionItem key={idx} value={`faq-${idx}`}>
-                    <AccordionTrigger className="text-left text-base hover:no-underline">
+                    <AccordionTrigger className="text-start text-base hover:no-underline">
                       {item.q}
                     </AccordionTrigger>
                     <AccordionContent className="text-muted-foreground leading-relaxed">
@@ -950,8 +917,8 @@ export default function Pricing() {
             <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-0">
               {/* Decorative background elements */}
               <div className="absolute inset-0 opacity-10">
-                <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-card" />
-                <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-card" />
+                <div className="absolute -top-24 -end-24 h-64 w-64 rounded-full bg-card" />
+                <div className="absolute -bottom-16 -start-16 h-48 w-48 rounded-full bg-card" />
               </div>
 
               <CardContent className="relative py-12 md:py-16 text-center">
@@ -997,13 +964,13 @@ export default function Pricing() {
             <div className="h-6 w-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
               <Calculator className="h-3 w-3 text-white" />
             </div>
-            <span>Muhasib.ai by NR Accounting Services</span>
+            <span>{tr("muhasibAiByNrAccountingServices")}</span>
           </div>
           <div className="flex items-center gap-4">
             <Lock className="h-3.5 w-3.5" />
-            <span>{locale === "en" ? "TLS-secured access" : "وصول مؤمن عبر TLS"}</span>
+            <span>{tr("tlsSecuredAccess")}</span>
             <span className="text-muted-foreground/40">|</span>
-            <span>{locale === "en" ? "UAE-hosted" : "مستضاف في الإمارات"}</span>
+            <span>{tr("uaeHosted")}</span>
           </div>
         </div>
       </footer>

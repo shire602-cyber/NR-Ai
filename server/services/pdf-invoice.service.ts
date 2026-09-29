@@ -1,8 +1,8 @@
-// @ts-ignore - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
+import { createPdfDocument } from "./pdf-fonts";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
+import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency, formatUnitPrice } from "../../shared/format-unit-price";
 
 const PAGE_WIDTH = 595.28;
@@ -57,7 +57,7 @@ async function generateStandardInvoicePDF(
 
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
+      const doc = createPdfDocument({
         size: "A4",
         margin: 50,
         info: {
@@ -84,7 +84,7 @@ async function generateStandardInvoicePDF(
       doc.rect(0, 0, pageWidth, 110).fill("#1E40AF");
 
       doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 24, { width: contentWidth * 0.65 });
+      doc.text(company.name, margin, 24, { width: contentWidth * 0.65, align: "left" });
 
       doc.fontSize(18).fillColor("#BFDBFE").font("Helvetica-Bold");
       doc.text(invoiceLabelEn, margin, 24, { width: contentWidth, align: "right" });
@@ -93,8 +93,9 @@ async function generateStandardInvoicePDF(
 
       if (isVATRegistered && company.trnVatNumber) {
         doc.fontSize(9).fillColor("#BFDBFE").font("Helvetica");
-        doc.text(`TRN / الرقم الضريبي: ${company.trnVatNumber}`, margin, 56, {
+        doc.text(`TRN / الرقم الضريبي - ${company.trnVatNumber}`, margin, 56, {
           width: contentWidth * 0.65,
+          align: "left",
         });
       }
 
@@ -105,7 +106,7 @@ async function generateStandardInvoicePDF(
           width: contentWidth,
           align: "right",
         });
-        headerRightY += 11;
+        headerRightY += 11 * countLines(company.businessAddress);
       }
       if (company.contactPhone) {
         doc.text(`Tel: ${company.contactPhone}`, margin, headerRightY, {
@@ -169,11 +170,11 @@ async function generateStandardInvoicePDF(
       const partiesTop = y;
 
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
-      doc.text("FROM / من:", margin, partiesTop);
+      doc.text("FROM / من", margin, partiesTop);
       let fromY = partiesTop + 13;
       doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
       doc.text(company.name, margin, fromY, { width: halfW });
-      fromY += 15;
+      fromY += Math.max(15, doc.heightOfString(company.name, { width: halfW }) + 2);
       if (isVATRegistered && company.trnVatNumber) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
         doc.text(`TRN: ${company.trnVatNumber}`, margin, fromY, { width: halfW });
@@ -182,16 +183,19 @@ async function generateStandardInvoicePDF(
       if (company.businessAddress) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
         doc.text(company.businessAddress, margin, fromY, { width: halfW });
-        fromY += 12 * countLines(company.businessAddress);
+        fromY += Math.max(
+          12 * countLines(company.businessAddress),
+          doc.heightOfString(company.businessAddress, { width: halfW })
+        );
       }
 
       const toX = margin + halfW + 16;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
-      doc.text("BILL TO / إلى:", toX, partiesTop);
+      doc.text("BILL TO / إلى", toX, partiesTop);
       let toY = partiesTop + 13;
       doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
       doc.text(invoice.customerName, toX, toY, { width: halfW });
-      toY += 15;
+      toY += Math.max(15, doc.heightOfString(invoice.customerName, { width: halfW }) + 2);
       if (invoice.customerTrn) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
         doc.text(`TRN: ${invoice.customerTrn}`, toX, toY, { width: halfW });
@@ -200,7 +204,10 @@ async function generateStandardInvoicePDF(
       if (invoice.customerAddress) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
         doc.text(invoice.customerAddress, toX, toY, { width: halfW });
-        toY += 12 * countLines(invoice.customerAddress);
+        toY += Math.max(
+          12 * countLines(invoice.customerAddress),
+          doc.heightOfString(invoice.customerAddress, { width: halfW })
+        );
       }
 
       y = Math.max(fromY, toY) + 10;
@@ -228,7 +235,7 @@ async function generateStandardInvoicePDF(
       doc.text("Qty", colX.qty, tableTop + 7, { width: colWidths.qty, align: "center" });
       doc.text("Unit Price", colX.price, tableTop + 7, { width: colWidths.price, align: "right" });
       doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
-      doc.text("Amount", colX.amount - colWidths.amount + 5, tableTop + 7, {
+      doc.text("Amount", colX.amount - colWidths.amount - 1, tableTop + 7, {
         width: colWidths.amount,
         align: "right",
       });
@@ -250,14 +257,18 @@ async function generateStandardInvoicePDF(
           width: colWidths.qty,
           align: "center",
         });
-        doc.text(formatUnitPriceCurrency(line.unitPrice, invoice.currency), colX.price, y + 7, {
+        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, invoice.currency);
+        doc.fontSize(fitFontSize(doc, unitPriceText, colWidths.price, 9));
+        doc.text(unitPriceText, colX.price, y + 7, {
           width: colWidths.price,
           align: "right",
+          lineBreak: false,
         });
+        doc.fontSize(9);
         doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
         doc.text(
           formatAmount(lineTotal, invoice.currency),
-          colX.amount - colWidths.amount + 5,
+          colX.amount - colWidths.amount - 1,
           y + 7,
           { width: colWidths.amount, align: "right" }
         );
@@ -350,6 +361,7 @@ async function generateStandardInvoicePDF(
       doc.text(formatAmount(invoice.total, invoice.currency), totalsX + labelW, y + 2, {
         width: valueW,
         align: "right",
+        lineBreak: false,
       });
 
       y += 40;
@@ -368,7 +380,7 @@ async function generateStandardInvoicePDF(
       if (qrPng) {
         doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
         doc.fontSize(6).fillColor("#6B7280").font("Helvetica");
-        doc.text("FTA e-Invoice", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
+        doc.text("Invoice summary", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
       } else {
         doc.rect(qrX, qrY, qrSize, qrSize).stroke("#D1D5DB");
         doc.fontSize(6).fillColor("#9CA3AF").font("Helvetica");
@@ -408,7 +420,7 @@ async function generateStandardInvoicePDF(
 async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
+      const doc = createPdfDocument({
         size: "A4",
         margin: 0,
         info: {

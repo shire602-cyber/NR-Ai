@@ -19,6 +19,7 @@ import { apiUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
+import { messages as pageMessages } from "./SmartInput.i18n";
 
 interface SmartInputProps {
   value: string;
@@ -72,6 +73,8 @@ export function SmartInput({
   onSelect,
   "data-testid": testId,
 }: SmartInputProps) {
+  const tr = pageMessages.useT();
+
   const { companyId } = useDefaultCompany();
   const { locale } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -153,13 +156,13 @@ export function SmartInput({
     }
 
     if (suggestions.length === 0) {
-      return <CommandEmpty>No suggestions found</CommandEmpty>;
+      return <CommandEmpty>{tr("noSuggestionsFound")}</CommandEmpty>;
     }
 
     switch (type) {
       case "account":
         return (
-          <CommandGroup heading="Accounts">
+          <CommandGroup heading={tr("accounts")}>
             {(suggestions as AccountSuggestion[]).map((account) => (
               <CommandItem
                 key={account.id}
@@ -185,7 +188,7 @@ export function SmartInput({
 
       case "customer":
         return (
-          <CommandGroup heading="Customers">
+          <CommandGroup heading={tr("customers")}>
             {(suggestions as CustomerSuggestion[]).map((customer, i) => (
               <CommandItem
                 key={`${customer.name}-${i}`}
@@ -196,11 +199,13 @@ export function SmartInput({
                 <div>
                   <span>{customer.name}</span>
                   {customer.trn && (
-                    <span className="text-xs text-muted-foreground ml-2">TRN: {customer.trn}</span>
+                    <span className="text-xs text-muted-foreground ms-2">
+                      {tr("trn", { trn: customer.trn })}
+                    </span>
                   )}
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {customer.invoiceCount} invoices
+                  {tr("invoices", { invoiceCount: customer.invoiceCount })}
                 </Badge>
               </CommandItem>
             ))}
@@ -209,7 +214,7 @@ export function SmartInput({
 
       case "merchant":
         return (
-          <CommandGroup heading="Merchants">
+          <CommandGroup heading={tr("merchants")}>
             {(suggestions as MerchantSuggestion[]).map((merchant, i) => (
               <CommandItem
                 key={`${merchant.name}-${i}`}
@@ -220,7 +225,7 @@ export function SmartInput({
                 <div>
                   <span>{merchant.name}</span>
                   {merchant.category && (
-                    <Badge variant="outline" className="text-xs ml-2">
+                    <Badge variant="outline" className="text-xs ms-2">
                       {merchant.category}
                     </Badge>
                   )}
@@ -233,7 +238,7 @@ export function SmartInput({
 
       case "description":
         return (
-          <CommandGroup heading="Recent Descriptions">
+          <CommandGroup heading={tr("recentDescriptions")}>
             {(suggestions as DescriptionSuggestion[]).map((desc, i) => (
               <CommandItem
                 key={`${desc.text}-${i}`}
@@ -265,16 +270,16 @@ export function SmartInput({
               onFocus={() => inputValue.length >= 2 && setOpen(true)}
               placeholder={placeholder}
               disabled={disabled}
-              className={cn("pr-8", suggestions.length > 0 && "border-primary/50")}
+              className={cn("pe-8", suggestions.length > 0 && "border-primary/50")}
               data-testid={testId}
             />
             {isLoading && (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <div className="absolute end-2 top-1/2 -translate-y-1/2">
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               </div>
             )}
             {!isLoading && suggestions.length > 0 && inputValue.length >= 2 && (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <div className="absolute end-2 top-1/2 -translate-y-1/2">
                 <Sparkles className="w-4 h-4 text-primary" />
               </div>
             )}
@@ -297,7 +302,7 @@ export function SmartInput({
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-0 top-0 h-full w-8 opacity-50 hover:opacity-100"
+              className="absolute end-0 top-0 h-full w-8 opacity-50 hover:opacity-100"
               type="button"
             >
               <HelpCircle className="w-3 h-3" />
@@ -327,6 +332,8 @@ export function SmartAccountSelect({
   disabled?: boolean;
   "data-testid"?: string;
 }) {
+  const tr = pageMessages.useT();
+
   const { companyId } = useDefaultCompany();
   const { locale } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -377,15 +384,19 @@ export function SmartAccountSelect({
             ? locale === "ar"
               ? selectedAccount.nameAr
               : selectedAccount.nameEn
-            : placeholder || "Select account..."}
-          {isLoading && <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" />}
+            : placeholder || tr("selectAccount")}
+          {isLoading && <Loader2 className="ms-2 h-4 w-4 shrink-0 animate-spin" />}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search accounts..." value={search} onValueChange={setSearch} />
+          <CommandInput
+            placeholder={tr("searchAccounts")}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
-            <CommandEmpty>No account found.</CommandEmpty>
+            <CommandEmpty>{tr("noAccountFound")}</CommandEmpty>
             <CommandGroup>
               {filteredAccounts.map((account) => (
                 <CommandItem
@@ -399,7 +410,7 @@ export function SmartAccountSelect({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "me-2 h-4 w-4",
                       value === account.id ? "opacity-100" : "opacity-0"
                     )}
                   />
@@ -411,7 +422,7 @@ export function SmartAccountSelect({
                       </Badge>
                     )}
                   </div>
-                  <Badge variant="secondary" className="text-xs ml-auto">
+                  <Badge variant="secondary" className="text-xs ms-auto">
                     {account.type}
                   </Badge>
                 </CommandItem>

@@ -12,6 +12,10 @@ import {
   getCloseHistory,
 } from "../services/month-end.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { findFiledVatReturnsCoveringMonth } from "../services/vat-filing.service";
+
+/** A reason of at least this many characters is mandatory to unlock a month covered by a filed VAT return. */
+const UNLOCK_REASON_MIN_LENGTH = 10;
 
 /**
  * Derive periodStart and periodEnd from a YYYY-MM query parameter.
@@ -192,14 +196,16 @@ export function registerMonthEndRoutes(app: Express) {
    * POST /api/period-lock/unlock
    * Unlock a previously-closed period. firm_owner only — unlocking re-opens
    * a closed month for editing and is a sensitive accounting action.
-   * Body: { companyId: string, period: string (YYYY-MM) }
+   * Body: { companyId: string, period: string (YYYY-MM), reason?: string }
+   * A `reason` is mandatory when the month is covered by a VAT return that was
+   * recorded as filed; it is written to the audit log with the filed returns.
    */
   app.post(
     "/api/period-lock/unlock",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user!.id;
-      const { companyId, period } = req.body ?? {};
+      const { companyId, period, reason } = req.body ?? {};
 
       if (!companyId || typeof companyId !== "string") {
         return res.status(400).json({ message: "companyId is required" });
@@ -221,6 +227,18 @@ export function registerMonthEndRoutes(app: Express) {
       }
 
       const { periodEnd } = parsePeriod(period);
+
+      // Unlocking a month a filed VAT return covers changes the books behind a
+      // return that is already with the FTA: it needs a stated reason.
+      const filedReturns = await findFiledVatReturnsCoveringMonth(companyId, periodEnd);
+      const unlockReason = typeof reason === "string" ? reason.trim() : "";
+      if (filedReturns.length > 0 && unlockReason.length < UNLOCK_REASON_MIN_LENGTH) {
+        return res.status(400).json({
+          message: `This month is covered by a VAT return recorded as filed (FTA reference ${filedReturns[0].referenceNumber}). A reason of at least ${UNLOCK_REASON_MIN_LENGTH} characters is required to unlock it.`,
+          code: "UNLOCK_REASON_REQUIRED",
+        });
+      }
+
       const record = await unlockPeriod(companyId, periodEnd);
       if (!record) {
         return res.status(404).json({ message: "No locked period found for that month" });
@@ -235,6 +253,7 @@ export function registerMonthEndRoutes(app: Express) {
         entityId: periodEnd,
         before: { periodEnd, status: "locked" },
         after: { periodEnd, status: "open", unlockedBy: userId },
+        extra: { reason: unlockReason || null, filedVatReturns: filedReturns },
         req,
       });
 

@@ -75,7 +75,9 @@ describe("firm VAT workspace totals", () => {
     expect(totals.box8TotalAdj).toBe(5);
     expect(totals.box9ExpensesVat).toBe(10);
     expect(totals.box11TotalVat).toBe(10);
-    expect(totals.box14PayableTax).toBe(65);
+    // due tax = box 8 VAT (75) + box 8 adjustment (5): the adjustment column is part of box 12
+    expect(totals.box12TotalDueTax).toBe(80);
+    expect(totals.box14PayableTax).toBe(70);
   });
 
   it("lets manual adjustments affect source boxes while derived boxes are recalculated", () => {

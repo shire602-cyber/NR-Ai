@@ -145,6 +145,7 @@ const CashFlowForecast = lazyWithReload(() => import("@/pages/CashFlowForecast")
 const AnomalyDetection = lazyWithReload(() => import("@/pages/AnomalyDetection"));
 const AutoReconcile = lazyWithReload(() => import("@/pages/AutoReconcile"));
 const MonthEndClose = lazyWithReload(() => import("@/pages/MonthEndClose"));
+const OpeningBalances = lazyWithReload(() => import("@/pages/OpeningBalances"));
 
 function PageLoader({
   variant,
@@ -631,6 +632,7 @@ function Router() {
             <Route path="/auto-reconcile" component={AutoReconcile} />
             <Route path="/ai-inbox" component={AIInbox} />
             <Route path="/month-end" component={MonthEndClose} />
+            <Route path="/opening-balances" component={OpeningBalances} />
             <Route path="/ai-cfo" component={AICFO} />
             <Route path="/ai-features" component={AIFeatures} />
             <Route path="/smart-assistant" component={SmartAssistant} />

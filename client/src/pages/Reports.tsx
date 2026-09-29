@@ -177,6 +177,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./Reports.i18n";
 
 interface AccountLineItem {
   accountCode?: string;
@@ -1169,62 +1170,70 @@ interface ReportCoverageCategory {
   personas: ReportPersona[];
 }
 
-const reportStatusMeta: Record<ReportStatus, { label: string; variant: BadgeProps["variant"] }> = {
-  live: { label: "Live", variant: "success" },
-  api: { label: "API ready", variant: "info" },
-  planned: { label: "Planned", variant: "neutral" },
-};
-
-const roadmapImpactMeta = {
-  high: { label: "High impact", variant: "warning" },
-  medium: { label: "Medium impact", variant: "info" },
-  low: { label: "Low impact", variant: "neutral" },
-} as const satisfies Record<string, { label: string; variant: BadgeProps["variant"] }>;
-
-const triggerSeverityMeta = {
-  critical: { label: "Critical", variant: "danger" },
-  review: { label: "Review", variant: "warning" },
-  info: { label: "Monitor", variant: "info" },
-} as const satisfies Record<
-  ReportAutomationTriggerSeverity,
+const getReportStatusMeta = (): Record<
+  ReportStatus,
   { label: string; variant: BadgeProps["variant"] }
->;
+> => ({
+  live: { label: pageMessages.t("live"), variant: "success" },
+  api: { label: pageMessages.t("apiReady"), variant: "info" },
+  planned: { label: pageMessages.t("planned"), variant: "neutral" },
+});
 
-const productDepthStatusMeta = {
-  working: { label: "Working", variant: "success" },
-  hardening: { label: "Hardening", variant: "warning" },
-  "data-needed": { label: "Data needed", variant: "info" },
-} as const satisfies Record<
-  ReportProductDepthStatus,
-  { label: string; variant: BadgeProps["variant"] }
->;
+const getRoadmapImpactMeta = () =>
+  ({
+    high: { label: pageMessages.t("highImpact"), variant: "warning" },
+    medium: { label: pageMessages.t("mediumImpact"), variant: "info" },
+    low: { label: pageMessages.t("lowImpact"), variant: "neutral" },
+  }) as const satisfies Record<string, { label: string; variant: BadgeProps["variant"] }>;
 
-const productDepthEvidenceCheckpointStatusMeta = {
-  "current-proxy": { label: "Current proxy", variant: "neutral" },
-  "missing-source": { label: "Missing source", variant: "warning" },
-  guardrail: { label: "Guardrail", variant: "info" },
-} as const satisfies Record<
-  ReportEvidenceCheckpointStatus,
-  { label: string; variant: BadgeProps["variant"] }
->;
+const getTriggerSeverityMeta = () =>
+  ({
+    critical: { label: pageMessages.t("critical"), variant: "danger" },
+    review: { label: pageMessages.t("review"), variant: "warning" },
+    info: { label: pageMessages.t("monitor"), variant: "info" },
+  }) as const satisfies Record<
+    ReportAutomationTriggerSeverity,
+    { label: string; variant: BadgeProps["variant"] }
+  >;
 
-const personaFilters: Array<{ id: PersonaFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "owner", label: "Owner" },
-  { id: "freelancer", label: "Freelancer" },
-  { id: "accountant", label: "Accountant" },
+const getProductDepthStatusMeta = () =>
+  ({
+    working: { label: pageMessages.t("working"), variant: "success" },
+    hardening: { label: pageMessages.t("hardening"), variant: "warning" },
+    "data-needed": { label: pageMessages.t("dataNeeded"), variant: "info" },
+  }) as const satisfies Record<
+    ReportProductDepthStatus,
+    { label: string; variant: BadgeProps["variant"] }
+  >;
+
+const getProductDepthEvidenceCheckpointStatusMeta = () =>
+  ({
+    "current-proxy": { label: pageMessages.t("currentProxy"), variant: "neutral" },
+    "missing-source": { label: pageMessages.t("missingSource"), variant: "warning" },
+    guardrail: { label: pageMessages.t("guardrail"), variant: "info" },
+  }) as const satisfies Record<
+    ReportEvidenceCheckpointStatus,
+    { label: string; variant: BadgeProps["variant"] }
+  >;
+
+const getPersonaFilters = (): Array<{ id: PersonaFilter; label: string }> => [
+  { id: "all", label: pageMessages.t("all") },
+  { id: "owner", label: pageMessages.t("owner") },
+  { id: "freelancer", label: pageMessages.t("freelancer") },
+  { id: "accountant", label: pageMessages.t("accountant") },
 ];
 
-const reportViewerCategoryLabels: Record<string, string> = {
-  "Financial Statements": "Financial Statements",
-  "Sales & Receivables": "Sales & Receivables",
-  "Purchases & Payables": "Purchases & Payables",
-  Payroll: "Payroll",
-  "Accountant & Taxes": "Accountant & Taxes",
-  "Inventory & Assets": "Inventory & Assets",
-  "Management & Planning": "Management & Planning",
-};
+const getReportViewerCategoryLabels = (): Record<string, string> => ({
+  "Financial Statements": pageMessages.t("financialStatements"),
+  "Sales & Receivables": pageMessages.t("salesReceivables"),
+  "Purchases & Payables": pageMessages.t("purchasesPayables"),
+  Payroll: pageMessages.t("payroll"),
+  "Accountant & Taxes": pageMessages.t("accountantTaxes"),
+  "Inventory & Assets": pageMessages.t("inventoryAssets"),
+  "Management & Planning": pageMessages.t("managementPlanning"),
+});
 
+// i18n-ignore-start: category identifiers matched against the report catalog; display labels are translated in reportViewerCategoryLabels
 const reportViewerCategoryOrder = [
   "Financial Statements",
   "Sales & Receivables",
@@ -1264,6 +1273,7 @@ const reportViewerCategoryByReportId: Record<string, string> = {
   "period-comparison": "Management & Planning",
   "consolidated-statements": "Management & Planning",
 };
+// i18n-ignore-end
 
 const reportViewerPersonaPriority: ReportPersona[] = ["owner", "freelancer", "accountant"];
 const ledgerDetailPageSize = 50;
@@ -1290,7 +1300,7 @@ interface ReportViewerGroup {
 }
 
 function reportViewerCategoryLabel(category: string): string {
-  return reportViewerCategoryLabels[category] ?? category;
+  return getReportViewerCategoryLabels()[category] ?? category;
 }
 
 function reportViewerCategoryForReport(report: ReportCatalogItem): string {
@@ -1321,45 +1331,45 @@ type ReportWorkspaceTab =
   | "delivery"
   | "setup";
 
-const reportWorkspaceTabs: Array<{
+const getReportWorkspaceTabs = (): Array<{
   id: ReportWorkspaceTab;
   label: string;
   description: string;
-}> = [
+}> => [
   {
     id: "home",
-    label: "Home",
-    description: "Top reports and next action",
+    label: pageMessages.t("home"),
+    description: pageMessages.t("topReportsAndNextAction"),
   },
   {
     id: "reports",
-    label: "Reports",
-    description: "Library, saved views, statements",
+    label: pageMessages.t("reports"),
+    description: pageMessages.t("librarySavedViewsStatements"),
   },
   {
     id: "suites",
-    label: "Suites",
-    description: "Management packs and bundles",
+    label: pageMessages.t("suites"),
+    description: pageMessages.t("managementPacksAndBundles"),
   },
   {
     id: "comparisons",
-    label: "Compare",
-    description: "Period movement and snapshots",
+    label: pageMessages.t("compare"),
+    description: pageMessages.t("periodMovementAndSnapshots"),
   },
   {
     id: "automation",
-    label: "Automate",
-    description: "Rules, queues, command center",
+    label: pageMessages.t("automate"),
+    description: pageMessages.t("rulesQueuesCommandCenter"),
   },
   {
     id: "delivery",
-    label: "Delivery",
-    description: "Schedules, packs, handoff",
+    label: pageMessages.t("delivery"),
+    description: pageMessages.t("schedulesPacksHandoff"),
   },
   {
     id: "setup",
-    label: "Setup",
-    description: "Role workflows and roadmap",
+    label: pageMessages.t("setup"),
+    description: pageMessages.t("roleWorkflowsAndRoadmap"),
   },
 ];
 
@@ -1368,7 +1378,7 @@ function reportWorkspaceTabFromLocation(search: string, hash: string): ReportWor
   const params = new URLSearchParams(search);
   const workspace = params.get("workspace");
 
-  if (reportWorkspaceTabs.some((tab) => tab.id === workspace)) {
+  if (getReportWorkspaceTabs().some((tab) => tab.id === workspace)) {
     return workspace as ReportWorkspaceTab;
   }
 
@@ -1464,22 +1474,25 @@ function reportsWorkspaceHref({
   return query ? `/reports?${query}` : "/reports";
 }
 
-const reportDeliveryRunStatusFilters: Array<{
+const getReportDeliveryRunStatusFilters = (): Array<{
   id: ReportDeliveryRunStatusFilter;
   label: string;
-}> = [
-  { id: "all", label: "All runs" },
-  { id: "queued", label: "Queued" },
-  { id: "sent", label: "Sent" },
-  { id: "failed", label: "Failed" },
+}> => [
+  { id: "all", label: pageMessages.t("allRuns") },
+  { id: "queued", label: pageMessages.t("queued") },
+  { id: "sent", label: pageMessages.t("sent") },
+  { id: "failed", label: pageMessages.t("failed") },
 ];
 
-const reportDeliveryAutomationCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
-  retry: "Retry recovery",
-  review: "Review guardrails",
-  queue: "Queue next pack",
-  comparison: "Open comparison",
-};
+const getReportDeliveryAutomationCommandLabels = (): Record<
+  ReportDeliveryAutomationCommand,
+  string
+> => ({
+  retry: pageMessages.t("retryRecovery"),
+  review: pageMessages.t("reviewGuardrails"),
+  queue: pageMessages.t("queueNextPack"),
+  comparison: pageMessages.t("openComparison"),
+});
 
 const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
   briefcase: Briefcase,
@@ -1487,15 +1500,15 @@ const reportWorkspaceIcons: Record<ReportWorkspaceIcon, LucideIcon> = {
   users: Users,
 };
 
-const invoiceStatusLabels: Record<string, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  posted: "Posted",
-  partial: "Partial",
-  paid: "Paid",
-  void: "Void",
-  cancelled: "Cancelled",
-};
+const getInvoiceStatusLabels = (): Record<string, string> => ({
+  draft: pageMessages.t("draft"),
+  sent: pageMessages.t("sent"),
+  posted: pageMessages.t("posted"),
+  partial: pageMessages.t("partial"),
+  paid: pageMessages.t("paid"),
+  void: pageMessages.t("void"),
+  cancelled: pageMessages.t("cancelled"),
+});
 
 const inactiveInvoiceStatuses = new Set(["void", "cancelled"]);
 const nonRevenueInvoiceStatuses = new Set(["draft", "void", "cancelled"]);
@@ -1644,10 +1657,10 @@ function daysInReportMonth(date: Date): number {
 }
 
 function depreciationStatusLabel(status: DepreciationScheduleStatus): string {
-  if (status === "ready") return "Ready to post";
-  if (status === "fully_depreciated") return "Fully depreciated";
-  if (status === "non_depreciable") return "Non-depreciable";
-  if (status === "not_acquired") return "Not acquired";
+  if (status === "ready") return pageMessages.t("readyToPost");
+  if (status === "fully_depreciated") return pageMessages.t("fullyDepreciated");
+  if (status === "non_depreciable") return pageMessages.t("nonDepreciable");
+  if (status === "not_acquired") return pageMessages.t("notAcquired");
   return "Review";
 }
 
@@ -1701,7 +1714,7 @@ function calculateDepreciationScheduleRow(
       ...baseRow,
       status: "non_depreciable",
       statusLabel: depreciationStatusLabel("non_depreciable"),
-      reviewReason: "Land and other non-depreciable assets are excluded.",
+      reviewReason: pageMessages.t("landAndOtherNonDepreciableAssets"),
     };
   }
 
@@ -1711,10 +1724,10 @@ function calculateDepreciationScheduleRow(
       status: "review",
       statusLabel: depreciationStatusLabel("review"),
       reviewReason: !purchaseMonth
-        ? "Purchase date is missing or invalid."
+        ? pageMessages.t("purchaseDateIsMissingOrInvalid")
         : !asset.purchaseCost
-          ? "Purchase cost is missing."
-          : "Useful life is missing.",
+          ? pageMessages.t("purchaseCostIsMissing")
+          : pageMessages.t("usefulLifeIsMissing"),
     };
   }
 
@@ -1724,7 +1737,7 @@ function calculateDepreciationScheduleRow(
       ...baseRow,
       status: "not_acquired",
       statusLabel: depreciationStatusLabel("not_acquired"),
-      reviewReason: "Asset was not acquired by this report period.",
+      reviewReason: pageMessages.t("assetWasNotAcquiredByThis"),
     };
   }
 
@@ -1734,7 +1747,7 @@ function calculateDepreciationScheduleRow(
       monthsRemaining: 0,
       status: "fully_depreciated",
       statusLabel: depreciationStatusLabel("fully_depreciated"),
-      reviewReason: "Net book value is at or below salvage value.",
+      reviewReason: pageMessages.t("netBookValueIsAtOr"),
     };
   }
 
@@ -1775,8 +1788,8 @@ function calculateDepreciationScheduleRow(
     statusLabel: depreciationStatusLabel(monthlyDepreciation > 0 ? "ready" : "review"),
     reviewReason:
       monthlyDepreciation > 0
-        ? "Estimated depreciation for the report period."
-        : "No depreciation amount calculated for this period.",
+        ? pageMessages.t("estimatedDepreciationForTheReportPeriod")
+        : pageMessages.t("noDepreciationAmountCalculatedForThis"),
   };
 }
 
@@ -1892,12 +1905,12 @@ function buildConsolidatedStatementsReport(
         status,
         statusLabel:
           status === "failed"
-            ? "Missing data"
+            ? pageMessages.t("missingData")
             : status === "unbalanced"
-              ? "Balance review"
+              ? pageMessages.t("balanceReview")
               : status === "multi_currency"
-                ? "FX review"
-                : "Included",
+                ? pageMessages.t("fxReview")
+                : pageMessages.t("included"),
         reviewReason: reviewReasons.join(" "),
         workflow: "/financial-statements",
       };
@@ -1946,7 +1959,7 @@ function buildConsolidatedStatementsReport(
   return {
     periodLabel,
     currency,
-    consolidationBasis: "Management roll-up of accessible companies; no eliminations applied.",
+    consolidationBasis: pageMessages.t("managementRollUpOfAccessibleCompanies"),
     rows,
     entityCount: rows.length,
     loadedEntityCount: loadedRows.length,
@@ -1972,9 +1985,9 @@ function buildConsolidatedStatementsReport(
     statusLabel:
       reviewCount > 0
         ? singleEntityOnly
-          ? "Single entity roll-up"
-          : "Review before delivery"
-        : "Ready for pack",
+          ? pageMessages.t("singleEntityRollUp")
+          : pageMessages.t("reviewBeforeDelivery")
+        : pageMessages.t("readyForPack"),
   };
 }
 
@@ -1992,7 +2005,7 @@ function journalEntryInDateRange(entry: JournalEntryReportRow, dateRange: DateRa
 }
 
 function journalAccountName(account?: JournalAccount | null): string {
-  return account?.nameEn || account?.nameAr || "Unknown Account";
+  return account?.nameEn || account?.nameAr || pageMessages.t("unknownAccount");
 }
 
 function journalSourceLabel(source?: string | null): string {
@@ -2014,7 +2027,7 @@ function consolidatedStatusVariant(status: ConsolidatedStatementStatus): BadgePr
 }
 
 function invoiceStatusLabel(status: string): string {
-  return invoiceStatusLabels[status] ?? status;
+  return getInvoiceStatusLabels()[status] ?? status;
 }
 
 function invoiceStatusVariant(status: string): BadgeProps["variant"] {
@@ -2078,31 +2091,31 @@ function corporateTaxEstimateStatus(report?: CorporateTaxEstimateReport | null):
 } {
   if (!report) {
     return {
-      label: "Pending estimate",
-      detail: "Waiting for posted journal data.",
+      label: pageMessages.t("pendingEstimate"),
+      detail: pageMessages.t("waitingForPostedJournalData"),
       variant: "neutral",
     };
   }
 
   if (report.taxPayable > 0.005) {
     return {
-      label: "Tax due",
-      detail: "Review the tax workpaper before drafting the return.",
+      label: pageMessages.t("taxDue"),
+      detail: pageMessages.t("reviewTheTaxWorkpaperBeforeDrafting"),
       variant: "warning",
     };
   }
 
   if (report.taxableIncome <= 0) {
     return {
-      label: "No taxable income",
-      detail: "The selected period is at or below break-even before adjustments.",
+      label: pageMessages.t("noTaxableIncome"),
+      detail: pageMessages.t("theSelectedPeriodIsAtOr"),
       variant: "success",
     };
   }
 
   return {
-    label: "Below threshold",
-    detail: "Taxable income is below the zero-rate band used by the workspace.",
+    label: pageMessages.t("belowThreshold"),
+    detail: pageMessages.t("taxableIncomeIsBelowTheZero"),
     variant: "success",
   };
 }
@@ -2348,7 +2361,7 @@ function averageAvailablePercent(values: Array<number | null | undefined>): numb
 }
 
 function formatComparisonPercent(value: number | null): string {
-  if (value === null) return "New";
+  if (value === null) return pageMessages.t("new");
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
@@ -2392,7 +2405,7 @@ function normalizeDeliverySetting(value: string): string | null {
 }
 
 function formatDeliveryRunTimestamp(value: string | null | undefined): string {
-  if (!value) return "No runs yet";
+  if (!value) return pageMessages.t("noRunsYet");
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return format(date, "MMM d, HH:mm");
@@ -2431,6 +2444,8 @@ function deliveryPreviewCheckVariant(
 }
 
 export default function Reports() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId, companies: accessibleCompanies = [] } = useDefaultCompany();
@@ -2571,10 +2586,10 @@ export default function Reports() {
 
     const statementCenterOption: ReportViewerOption = {
       id: "financial-statements-center",
-      label: isAr ? (t as any).financialStatementsCenter : "Financial Statements Center",
+      label: isAr ? (t as any).financialStatementsCenter : tr("financialStatementsCenter"),
       description: isAr
         ? (t as any).financialStatementsCenterDesc
-        : "Open the clean statement workspace for P&L, Balance Sheet, and Cash Flow.",
+        : tr("openTheCleanStatementWorkspaceFor"),
       category: "Financial Statements",
       categoryLabel: catLabel("Financial Statements"),
       status: "live",
@@ -2653,20 +2668,19 @@ export default function Reports() {
   const selectedReportId = activeReportViewerOption?.reportId ?? null;
   const hasFocusedReportSelection = Boolean(activeReportId && selectedReportId);
   const reportViewerTitle = hasFocusedReportSelection
-    ? (activeReportViewerOption?.label ?? "Reports")
-    : ((t as any).reportCenter ?? "Report Center");
+    ? (activeReportViewerOption?.label ?? tr("reports"))
+    : ((t as any).reportCenter ?? tr("reportCenter"));
   const reportViewerDescription = hasFocusedReportSelection
-    ? (activeReportViewerOption?.description ?? "Review this report for the selected period.")
-    : ((t as any).chooseOneReport ??
-      "Choose one report from a category. Reports open one at a time with the right period, export, and review context.");
+    ? (activeReportViewerOption?.description ?? tr("reviewThisReportForTheSelected"))
+    : ((t as any).chooseOneReport ?? tr("chooseOneReportFromACategory"));
   const reportViewerMenuLabel = hasFocusedReportSelection
-    ? (activeReportViewerOption?.label ?? (t as any).chooseAReport ?? "Choose a report")
-    : ((t as any).chooseAReport ?? "Choose a report");
+    ? (activeReportViewerOption?.label ?? (t as any).chooseAReport ?? tr("chooseAReport"))
+    : ((t as any).chooseAReport ?? tr("chooseAReport"));
   const reportViewerMenuDescription = hasFocusedReportSelection
     ? (activeReportViewerOption?.categoryLabel ??
       (t as any).groupedByCategory ??
-      "Grouped by category")
-    : ((t as any).groupedByCategory ?? "Grouped by category");
+      tr("groupedByCategory"))
+    : ((t as any).groupedByCategory ?? tr("groupedByCategory"));
 
   const openReportViewerOption = useCallback(
     (optionId: string) => {
@@ -2791,10 +2805,10 @@ export default function Reports() {
   }, [locationSearch, personaFilter]);
 
   const personaFilterLabel =
-    personaFilters.find((filter) => filter.id === personaFilter)?.label ?? "All";
+    getPersonaFilters().find((filter) => filter.id === personaFilter)?.label ?? tr("all");
   const personaScopeDescription =
     personaFilter === "all"
-      ? "Showing all role signals."
+      ? tr("showingAllRoleSignals")
       : `Focused for ${personaFilterLabel.toLowerCase()} workflows.`;
   const normalizedReportWorkflowSearch = reportWorkflowSearch.trim().toLowerCase();
   const matchesReportWorkflowSearch = useCallback(
@@ -2885,8 +2899,8 @@ export default function Reports() {
     },
     onError: (error: any) => {
       toast({
-        title: "Could not save automation command",
-        description: error?.message || "Failed to save the pinned automation command",
+        title: tr("couldNotSaveAutomationCommand"),
+        description: error?.message || tr("failedToSaveThePinnedAutomation"),
         variant: "destructive",
       });
     },
@@ -2908,8 +2922,11 @@ export default function Reports() {
         });
       }
       toast({
-        title: "Automation command pinned",
-        description: `${reportDeliveryAutomationCommandLabels[parsedCommand]} is pinned for ${personaFilterLabel.toLowerCase()} workflows.`,
+        title: tr("automationCommandPinned"),
+        description: tr("isPinnedForWorkflows", {
+          value: getReportDeliveryAutomationCommandLabels()[parsedCommand],
+          personaFilterLabel: personaFilterLabel.toLowerCase(),
+        }),
       });
     },
     [
@@ -2936,7 +2953,7 @@ export default function Reports() {
       const isPinned = nextFavoriteIds.includes(report.id);
 
       toast({
-        title: isPinned ? "Report pinned" : "Report unpinned",
+        title: isPinned ? tr("reportPinned") : tr("reportUnpinned"),
         description: `${report.name} ${
           isPinned
             ? "will appear first in this report library."
@@ -3106,7 +3123,7 @@ export default function Reports() {
           savedViewHref: savedView
             ? reportSavedViewHref(savedView)
             : reportSectionHref(workspace, "saved-views"),
-          defaultViewLabel: savedView?.title ?? "Role saved view",
+          defaultViewLabel: savedView?.title ?? tr("roleSavedView"),
           defaultViewHref: savedView
             ? reportSavedViewHref(savedView)
             : reportSectionHref(workspace, "saved-views"),
@@ -3816,42 +3833,42 @@ export default function Reports() {
   const corporateTaxBridgeRows = useMemo(
     () => [
       {
-        metric: "Revenue",
+        metric: tr("revenue"),
         amount: corporateTaxEstimate?.totalRevenue ?? 0,
-        note: "Posted income accounts in the selected period.",
+        note: tr("postedIncomeAccountsInTheSelected"),
       },
       {
-        metric: "Less: expenses",
+        metric: tr("lessExpenses"),
         amount: -(corporateTaxEstimate?.totalExpenses ?? 0),
-        note: "Posted expense accounts in the selected period.",
+        note: tr("postedExpenseAccountsInTheSelected"),
       },
       {
-        metric: "Gross profit",
+        metric: tr("grossProfit"),
         amount: corporateTaxEstimate?.grossProfit ?? 0,
-        note: "Revenue less expenses before tax-specific deductions.",
+        note: tr("revenueLessExpensesBeforeTaxSpecific"),
       },
       {
-        metric: "Less: deductions",
+        metric: tr("lessDeductions"),
         amount: -(corporateTaxEstimate?.totalDeductions ?? 0),
-        note: "Adjustable in the Corporate Tax workspace.",
+        note: tr("adjustableInTheCorporateTaxWorkspace"),
       },
       {
-        metric: "Taxable income",
+        metric: tr("taxableIncome"),
         amount: corporateTaxEstimate?.taxableIncome ?? 0,
-        note: "Income before applying the zero-rate band.",
+        note: tr("incomeBeforeApplyingTheZeroRate"),
       },
       {
-        metric: "Less: zero-rate band",
+        metric: tr("lessZeroRateBand"),
         amount: -(corporateTaxEstimate?.exemptionThreshold ?? 0),
-        note: "Threshold returned by the Corporate Tax calculation endpoint.",
+        note: tr("thresholdReturnedByTheCorporateTax"),
       },
       {
-        metric: "Income above zero-rate band",
+        metric: tr("incomeAboveZeroRateBand"),
         amount: corporateTaxEstimate?.taxableAmount ?? 0,
-        note: "Positive income above the zero-rate band before applying the returned rate.",
+        note: tr("positiveIncomeAboveTheZeroRate"),
       },
       {
-        metric: "Corporate tax payable",
+        metric: tr("corporateTaxPayable"),
         amount: corporateTaxEstimate?.taxPayable ?? 0,
         note: corporateTaxStatus.detail,
       },
@@ -4073,7 +4090,7 @@ export default function Reports() {
           accessibleReportCompanies.map(async (company) => {
             const base = {
               companyId: company.id,
-              companyName: company.name || company.legalName || "Unnamed company",
+              companyName: company.name || company.legalName || tr("unnamedCompany"),
               companyType: company.companyType || "company",
               baseCurrency: company.baseCurrency || "AED",
             };
@@ -4115,7 +4132,7 @@ export default function Reports() {
                 balanceSheet: null,
                 comparisonCurrentProfitLoss: null,
                 comparisonPreviousProfitLoss: null,
-                error: error?.message || "Financial reports could not be loaded.",
+                error: error?.message || tr("financialReportsCouldNotBeLoaded"),
               };
             }
           })
@@ -4358,7 +4375,7 @@ export default function Reports() {
     const summaries = new Map<string, CustomerRevenueRow>();
     for (const invoice of reportInvoices) {
       if (nonRevenueInvoiceStatuses.has(invoice.status)) continue;
-      const customerName = invoice.customerName || "Unknown Customer";
+      const customerName = invoice.customerName || tr("unknownCustomer");
       const summary = summaries.get(customerName) ?? {
         customerName,
         invoiceCount: 0,
@@ -4382,7 +4399,7 @@ export default function Reports() {
   const overdueCustomerRows = useMemo<OverdueCustomerRow[]>(() => {
     const summaries = new Map<string, OverdueCustomerRow>();
     for (const row of overdueRows) {
-      const customerName = row.invoice.customerName || "Unknown Customer";
+      const customerName = row.invoice.customerName || tr("unknownCustomer");
       const currency = row.invoice.currency || "AED";
       const key = `${customerName}::${currency}`;
       const summary = summaries.get(key) ?? {
@@ -4536,7 +4553,7 @@ export default function Reports() {
           quantity,
           unitCost,
           valueAed,
-          productName: product?.name ?? "Unknown product",
+          productName: product?.name ?? tr("unknownProduct"),
           sku: product?.sku ?? "",
           unit: product?.unit ?? "",
         };
@@ -4709,7 +4726,7 @@ export default function Reports() {
   const payableAgingBuckets = useMemo(
     () => [
       {
-        label: "Current",
+        label: tr("current"),
         count: billAgingReport?.current?.count ?? 0,
         amount: billAgingReport?.current?.amount ?? 0,
       },
@@ -4779,12 +4796,14 @@ export default function Reports() {
 
   const receiptVendorById = useMemo(() => {
     return new Map(
-      receipts.map((receipt) => [receipt.id, receipt.merchant || "Unknown receipt vendor"])
+      receipts.map((receipt) => [receipt.id, receipt.merchant || tr("unknownReceiptVendor")])
     );
   }, [receipts]);
 
   const vendorBillVendorById = useMemo(() => {
-    return new Map(vendorBills.map((bill) => [bill.id, bill.vendor_name || "Unknown bill vendor"]));
+    return new Map(
+      vendorBills.map((bill) => [bill.id, bill.vendor_name || tr("unknownBillVendor")])
+    );
   }, [vendorBills]);
 
   const reportExpenseJournalEntries = useMemo(() => {
@@ -4797,12 +4816,12 @@ export default function Reports() {
     (entry: JournalEntryReportRow) => {
       const source = (entry.source || "").toLowerCase();
       if (source === "bill" && entry.sourceId) {
-        return vendorBillVendorById.get(entry.sourceId) ?? "Unknown bill vendor";
+        return vendorBillVendorById.get(entry.sourceId) ?? tr("unknownBillVendor");
       }
       if (source === "receipt" && entry.sourceId) {
-        return receiptVendorById.get(entry.sourceId) ?? "Unknown receipt vendor";
+        return receiptVendorById.get(entry.sourceId) ?? tr("unknownReceiptVendor");
       }
-      return "Manual / no vendor";
+      return tr("manualNoVendor");
     },
     [receiptVendorById, vendorBillVendorById]
   );
@@ -5507,7 +5526,7 @@ export default function Reports() {
 
       const byVendor = new Map<string, number>();
       for (const bill of rows) {
-        const vendorName = bill.vendor_name || "Unknown Vendor";
+        const vendorName = bill.vendor_name || tr("unknownVendor");
         byVendor.set(vendorName, (byVendor.get(vendorName) ?? 0) + vendorBillTotalAed(bill));
       }
 
@@ -5559,7 +5578,7 @@ export default function Reports() {
 
       const byCustomer = new Map<string, number>();
       for (const invoice of revenueRows) {
-        const customerName = invoice.customerName || "Unknown Customer";
+        const customerName = invoice.customerName || tr("unknownCustomer");
         byCustomer.set(customerName, (byCustomer.get(customerName) ?? 0) + amountInAed(invoice));
       }
 
@@ -6135,1721 +6154,1721 @@ export default function Reports() {
     return [
       makeComparisonMetric({
         id: "revenue",
-        label: "Revenue",
+        label: tr("revenue"),
         current: comparisonCurrentProfitLoss?.totalRevenue ?? 0,
         previous: comparisonPreviousProfitLoss?.totalRevenue ?? 0,
         currency: "AED",
-        signal: "Growth",
+        signal: tr("growth"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "net-profit",
-        label: "Net profit",
+        label: tr("netProfit"),
         current: comparisonCurrentProfitLoss?.netProfit ?? 0,
         previous: comparisonPreviousProfitLoss?.netProfit ?? 0,
         currency: "AED",
-        signal: "Profitability",
+        signal: tr("profitability"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "net-margin",
-        label: "Net margin",
+        label: tr("netMargin"),
         current: currentNetMargin,
         previous: previousNetMargin,
         currency: "%",
-        signal: "Profit efficiency",
+        signal: tr("profitEfficiency"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "expense-ratio",
-        label: "Expense ratio",
+        label: tr("expenseRatio"),
         current: currentExpenseRatio,
         previous: previousExpenseRatio,
         currency: "%",
-        signal: "Cost efficiency",
+        signal: tr("costEfficiency"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "revenue-expense-coverage",
-        label: "Revenue expense coverage",
+        label: tr("revenueExpenseCoverage"),
         current: currentRevenueExpenseCoverage,
         previous: previousRevenueExpenseCoverage,
         currency: "%",
-        signal: "Revenue covers expenses",
+        signal: tr("revenueCoversExpenses"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "break-even-gap",
-        label: "Break-even gap",
+        label: tr("breakEvenGap"),
         current: currentBreakEvenGap,
         previous: previousBreakEvenGap,
         currency: "AED",
-        signal: "Break-even shortfall",
+        signal: tr("breakEvenShortfall"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "pl",
       }),
       makeComparisonMetric({
         id: "invoice-value",
-        label: "Invoice value",
+        label: tr("invoiceValue"),
         current: currentInvoiceValue,
         previous: previousInvoiceValue,
         currency: "AED",
-        signal: "Sales activity",
+        signal: tr("salesActivity"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "invoice-count",
-        label: "Invoice count",
+        label: tr("invoiceCount"),
         current: currentInvoices.length,
         previous: previousInvoices.length,
         currency: "count",
-        signal: "Invoice volume",
+        signal: tr("invoiceVolume"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "paid-invoice-share",
-        label: "Paid invoice share",
+        label: tr("paidInvoiceShare"),
         current: currentPaidInvoiceShare,
         previous: previousPaidInvoiceShare,
         currency: "%",
-        signal: "Collections effectiveness",
+        signal: tr("collectionsEffectiveness"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "average-invoice-value",
-        label: "Average invoice value",
+        label: tr("averageInvoiceValue"),
         current: currentAverageInvoiceValue,
         previous: previousAverageInvoiceValue,
         currency: "AED",
-        signal: "Deal size",
+        signal: tr("dealSize"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "liability-asset-ratio",
-        label: "Liabilities to assets",
+        label: tr("liabilitiesToAssets"),
         current: currentLiabilityAssetRatio,
         previous: previousLiabilityAssetRatio,
         currency: "%",
-        signal: "Balance leverage",
+        signal: tr("balanceLeverage"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "bs",
       }),
       makeComparisonMetric({
         id: "debt-to-equity-ratio",
-        label: "Debt to equity",
+        label: tr("debtToEquity"),
         current: currentDebtEquityRatio,
         previous: previousDebtEquityRatio,
         currency: "%",
-        signal: "Capital structure",
+        signal: tr("capitalStructure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "bs",
       }),
       makeComparisonMetric({
         id: "burn-rate",
-        label: "Monthly burn rate",
+        label: tr("monthlyBurnRate"),
         current: currentBurnRate,
         previous: previousBurnRate,
         currency: "AED",
-        signal: "Cash pressure",
+        signal: tr("cashPressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "cash-runway-days",
-        label: "Cash runway coverage",
+        label: tr("cashRunwayCoverage"),
         current: currentRunwayDays,
         previous: previousRunwayDays,
         currency: "days",
-        signal: "90-day runway",
+        signal: tr("n90DayRunway"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "projected-cash-shortfall",
-        label: "Projected cash shortfall",
+        label: tr("projectedCashShortfall"),
         current: currentProjectedCashShortfall,
         previous: 0,
-        currentLabel: "Forecast",
-        previousLabel: "Zero shortfall",
+        currentLabel: tr("forecast"),
+        previousLabel: tr("zeroShortfall"),
         currency: "AED",
-        signal: "Negative cash risk",
+        signal: tr("negativeCashRisk"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "cash-risk-week-count",
-        label: "Cash risk week count",
+        label: tr("cashRiskWeekCount"),
         current: currentCashRiskWeekCount,
         previous: 0,
-        currentLabel: "Forecast",
-        previousLabel: "Clear weeks",
+        currentLabel: tr("forecast"),
+        previousLabel: tr("clearWeeks"),
         currency: "count",
-        signal: "Forecast risk weeks",
+        signal: tr("forecastRiskWeeks"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "operating-cash-flow",
-        label: "Operating cash flow",
+        label: tr("operatingCashFlow"),
         current: currentOperatingCashFlow,
         previous: previousOperatingCashFlow,
         currency: "AED",
-        signal: "Cash movement",
+        signal: tr("cashMovement"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "budget-actual-variance",
-        label: "Budget actual variance",
+        label: tr("budgetActualVariance"),
         current: currentBudgetActualValue,
         previous: currentBudgetBaselineValue,
-        currentLabel: "Actual",
-        previousLabel: "Budget",
+        currentLabel: tr("actual"),
+        previousLabel: tr("budget"),
         currency: "AED",
-        signal: "Budget vs actual",
+        signal: tr("budgetVsActual"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "open-receivables",
-        label: "Open receivables",
+        label: tr("openReceivables"),
         current: currentOpenReceivableValue,
         previous: previousOpenReceivableValue,
         currency: "AED",
-        signal: "Collections pressure",
+        signal: tr("collectionsPressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-invoice-count",
-        label: "Open invoice count",
+        label: tr("openInvoiceCount"),
         current: currentOpenReceivableInvoices.length,
         previous: previousOpenReceivableInvoices.length,
         currency: "count",
-        signal: "Collections workload",
+        signal: tr("collectionsWorkload"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-open-invoice-value",
-        label: "Average open invoice value",
+        label: tr("averageOpenInvoiceValue"),
         current: currentAverageOpenInvoiceValue,
         previous: previousAverageOpenInvoiceValue,
         currency: "AED",
-        signal: "Open invoice size",
+        signal: tr("openInvoiceSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-invoice-value-share",
-        label: "Open invoice value share",
+        label: tr("openInvoiceValueShare"),
         current: currentOpenInvoiceValueShare,
         previous: previousOpenInvoiceValueShare,
         currency: "%",
-        signal: "Collections value mix",
+        signal: tr("collectionsValueMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-invoice-count",
-        label: "Invoices due soon",
+        label: tr("invoicesDueSoon"),
         current: currentDueSoonReceivableInvoices.length,
         previous: previousDueSoonReceivableInvoices.length,
         currency: "count",
-        signal: "7-day collections queue",
+        signal: tr("n7DayCollectionsQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-invoice-value",
-        label: "Value due soon",
+        label: tr("valueDueSoon"),
         current: currentDueSoonReceivableValue,
         previous: previousDueSoonReceivableValue,
         currency: "AED",
-        signal: "7-day cash collection",
+        signal: tr("n7DayCashCollection"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-due-soon-invoice-value",
-        label: "Average due-soon invoice value",
+        label: tr("averageDueSoonInvoiceValue"),
         current: currentAverageDueSoonInvoiceValue,
         previous: previousAverageDueSoonInvoiceValue,
         currency: "AED",
-        signal: "7-day invoice size",
+        signal: tr("n7DayInvoiceSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-invoice-share",
-        label: "Due-soon invoice share",
+        label: tr("dueSoonInvoiceShare"),
         current: currentDueSoonInvoiceShare,
         previous: previousDueSoonInvoiceShare,
         currency: "%",
-        signal: "7-day collections mix",
+        signal: tr("n7DayCollectionsMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-invoice-share",
-        label: "Open invoice share",
+        label: tr("openInvoiceShare"),
         current: currentOpenInvoiceShare,
         previous: previousOpenInvoiceShare,
         currency: "%",
-        signal: "Collections workload mix",
+        signal: tr("collectionsWorkloadMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-receivables",
-        label: "Overdue receivables",
+        label: tr("overdueReceivables"),
         current: currentOverdueReceivableValue,
         previous: previousOverdueReceivableValue,
         currency: "AED",
-        signal: "A/R at risk",
+        signal: tr("aRAtRisk"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-receivable-share",
-        label: "Overdue receivable share",
+        label: tr("overdueReceivableShare"),
         current: currentOverdueReceivableShare,
         previous: previousOverdueReceivableShare,
         currency: "%",
-        signal: "A/R overdue mix",
+        signal: tr("aROverdueMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-invoice-count",
-        label: "Overdue invoice count",
+        label: tr("overdueInvoiceCount"),
         current: currentOverdueInvoiceCount,
         previous: previousOverdueInvoiceCount,
         currency: "count",
-        signal: "Customer follow-ups",
+        signal: tr("customerFollowUps"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-overdue-invoice-value",
-        label: "Average overdue invoice value",
+        label: tr("averageOverdueInvoiceValue"),
         current: currentAverageOverdueInvoiceValue,
         previous: previousAverageOverdueInvoiceValue,
         currency: "AED",
-        signal: "Overdue invoice size",
+        signal: tr("overdueInvoiceSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-overdue-invoice-days",
-        label: "Average overdue invoice age",
+        label: tr("averageOverdueInvoiceAge"),
         current: currentAverageOverdueInvoiceDays,
         previous: previousAverageOverdueInvoiceDays,
         currency: "days",
-        signal: "Overdue aging",
+        signal: tr("overdueAging"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-invoice-share",
-        label: "Overdue invoice share",
+        label: tr("overdueInvoiceShare"),
         current: currentOverdueInvoiceShare,
         previous: previousOverdueInvoiceShare,
         currency: "%",
-        signal: "Overdue workload mix",
+        signal: tr("overdueWorkloadMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "vendor-bill-value",
-        label: "Vendor bill value",
+        label: tr("vendorBillValue"),
         current: currentVendorBillValue,
         previous: previousVendorBillValue,
         currency: "AED",
-        signal: "Supplier spend",
+        signal: tr("supplierSpend"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "vendor-bill-count",
-        label: "Vendor bill count",
+        label: tr("vendorBillCount"),
         current: currentVendorBillDocuments.length,
         previous: previousVendorBillDocuments.length,
         currency: "count",
-        signal: "Supplier bill volume",
+        signal: tr("supplierBillVolume"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-bill-value",
-        label: "Average bill value",
+        label: tr("averageBillValue"),
         current: currentAverageVendorBillValue,
         previous: previousAverageVendorBillValue,
         currency: "AED",
-        signal: "Supplier bill size",
+        signal: tr("supplierBillSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "top-vendor-share",
-        label: "Top vendor share",
+        label: tr("topVendorShare"),
         current: currentTopVendorShare,
         previous: previousTopVendorShare,
         currency: "%",
-        signal: "Supplier concentration",
+        signal: tr("supplierConcentration"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "paid-bill-share",
-        label: "Paid bill share",
+        label: tr("paidBillShare"),
         current: currentPaidVendorBillShare,
         previous: previousPaidVendorBillShare,
         currency: "%",
-        signal: "Supplier payment coverage",
+        signal: tr("supplierPaymentCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-payables",
-        label: "Open payables",
+        label: tr("openPayables"),
         current: currentOpenPayableValue,
         previous: previousOpenPayableValue,
         currency: "AED",
-        signal: "Bill-pay pressure",
+        signal: tr("billPayPressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-bill-value-share",
-        label: "Open bill value share",
+        label: tr("openBillValueShare"),
         current: currentOpenBillValueShare,
         previous: previousOpenBillValueShare,
         currency: "%",
-        signal: "Bill-pay value mix",
+        signal: tr("billPayValueMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "open-cash-gap",
-        label: "Open cash gap",
+        label: tr("openCashGap"),
         current: currentOpenCashGap,
         previous: previousOpenCashGap,
         currency: "AED",
-        signal: "Net unpaid pressure",
+        signal: tr("netUnpaidPressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "open-cash-coverage",
-        label: "Open cash coverage",
+        label: tr("openCashCoverage"),
         current: currentOpenCashCoverage,
         previous: previousOpenCashCoverage,
         currency: "%",
-        signal: "Open bill coverage",
+        signal: tr("openBillCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "open-workload-gap",
-        label: "Open workload gap",
+        label: tr("openWorkloadGap"),
         current: currentOpenWorkloadGap,
         previous: previousOpenWorkloadGap,
         currency: "count",
-        signal: "Net unpaid workload",
+        signal: tr("netUnpaidWorkload"),
         favorable: "neutral",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "open-bill-count",
-        label: "Open bill count",
+        label: tr("openBillCount"),
         current: currentVendorBills.length,
         previous: previousVendorBills.length,
         currency: "count",
-        signal: "Bill-pay workload",
+        signal: tr("billPayWorkload"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-open-bill-value",
-        label: "Average open bill value",
+        label: tr("averageOpenBillValue"),
         current: currentAverageOpenBillValue,
         previous: previousAverageOpenBillValue,
         currency: "AED",
-        signal: "Open bill size",
+        signal: tr("openBillSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-bill-count",
-        label: "Bills due soon",
+        label: tr("billsDueSoon"),
         current: currentDueSoonBills.length,
         previous: previousDueSoonBills.length,
         currency: "count",
-        signal: "7-day bill-pay queue",
+        signal: tr("n7DayBillPayQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-bill-value",
-        label: "Value due soon",
+        label: tr("valueDueSoon"),
         current: currentDueSoonBillValue,
         previous: previousDueSoonBillValue,
         currency: "AED",
-        signal: "7-day cash need",
+        signal: tr("n7DayCashNeed"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-due-soon-bill-value",
-        label: "Average due-soon bill value",
+        label: tr("averageDueSoonBillValue"),
         current: currentAverageDueSoonBillValue,
         previous: previousAverageDueSoonBillValue,
         currency: "AED",
-        signal: "7-day bill size",
+        signal: tr("n7DayBillSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-bill-share",
-        label: "Due-soon bill share",
+        label: tr("dueSoonBillShare"),
         current: currentDueSoonBillShare,
         previous: previousDueSoonBillShare,
         currency: "%",
-        signal: "7-day bill-pay mix",
+        signal: tr("n7DayBillPayMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "due-soon-cash-gap",
-        label: "Due-soon cash gap",
+        label: tr("dueSoonCashGap"),
         current: currentDueSoonCashGap,
         previous: previousDueSoonCashGap,
         currency: "AED",
-        signal: "7-day net cash need",
+        signal: tr("n7DayNetCashNeed"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "due-soon-cash-coverage",
-        label: "Due-soon cash coverage",
+        label: tr("dueSoonCashCoverage"),
         current: currentDueSoonCashCoverage,
         previous: previousDueSoonCashCoverage,
         currency: "%",
-        signal: "7-day bill coverage",
+        signal: tr("n7DayBillCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "due-soon-workload-gap",
-        label: "Due-soon workload gap",
+        label: tr("dueSoonWorkloadGap"),
         current: currentDueSoonWorkloadGap,
         previous: previousDueSoonWorkloadGap,
         currency: "count",
-        signal: "7-day net workload",
+        signal: tr("n7DayNetWorkload"),
         favorable: "neutral",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "open-bill-share",
-        label: "Open bill share",
+        label: tr("openBillShare"),
         current: currentOpenBillShare,
         previous: previousOpenBillShare,
         currency: "%",
-        signal: "Bill-pay workload mix",
+        signal: tr("billPayWorkloadMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-payables",
-        label: "Overdue payables",
+        label: tr("overduePayables"),
         current: currentOverduePayableValue,
         previous: previousOverduePayableValue,
         currency: "AED",
-        signal: "A/P at risk",
+        signal: tr("aPAtRisk"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-cash-gap",
-        label: "Overdue cash gap",
+        label: tr("overdueCashGap"),
         current: currentOverdueCashGap,
         previous: previousOverdueCashGap,
         currency: "AED",
-        signal: "Net overdue pressure",
+        signal: tr("netOverduePressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "overdue-cash-coverage",
-        label: "Overdue cash coverage",
+        label: tr("overdueCashCoverage"),
         current: currentOverdueCashCoverage,
         previous: previousOverdueCashCoverage,
         currency: "%",
-        signal: "Overdue bill coverage",
+        signal: tr("overdueBillCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "overdue-workload-gap",
-        label: "Overdue workload gap",
+        label: tr("overdueWorkloadGap"),
         current: currentOverdueWorkloadGap,
         previous: previousOverdueWorkloadGap,
         currency: "count",
-        signal: "Net overdue workload",
+        signal: tr("netOverdueWorkload"),
         favorable: "neutral",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "overdue-payable-share",
-        label: "Overdue payable share",
+        label: tr("overduePayableShare"),
         current: currentOverduePayableShare,
         previous: previousOverduePayableShare,
         currency: "%",
-        signal: "A/P overdue mix",
+        signal: tr("aPOverdueMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-bill-count",
-        label: "Overdue bill count",
+        label: tr("overdueBillCount"),
         current: currentOverdueBillCount,
         previous: previousOverdueBillCount,
         currency: "count",
-        signal: "Vendor follow-ups",
+        signal: tr("vendorFollowUps"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-overdue-bill-value",
-        label: "Average overdue bill value",
+        label: tr("averageOverdueBillValue"),
         current: currentAverageOverdueBillValue,
         previous: previousAverageOverdueBillValue,
         currency: "AED",
-        signal: "Overdue bill size",
+        signal: tr("overdueBillSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "average-overdue-bill-days",
-        label: "Average overdue bill age",
+        label: tr("averageOverdueBillAge"),
         current: currentAverageOverdueBillDays,
         previous: previousAverageOverdueBillDays,
         currency: "days",
-        signal: "Overdue aging",
+        signal: tr("overdueAging"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "overdue-bill-share",
-        label: "Overdue bill share",
+        label: tr("overdueBillShare"),
         current: currentOverdueBillShare,
         previous: previousOverdueBillShare,
         currency: "%",
-        signal: "Overdue bill mix",
+        signal: tr("overdueBillMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "working-capital-proxy",
-        label: "Working capital proxy",
+        label: tr("workingCapitalProxy"),
         current: currentWorkingCapitalProxy,
         previous: previousWorkingCapitalProxy,
         currency: "AED",
-        signal: "A/R less A/P",
+        signal: tr("aRLessAP"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "collection-days",
-        label: "Collection days",
+        label: tr("collectionDays"),
         current: currentCollectionDays,
         previous: previousCollectionDays,
         currency: "days",
-        signal: "DSO proxy",
+        signal: tr("dsoProxy"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "payable-days",
-        label: "Payable days",
+        label: tr("payableDays"),
         current: currentPayableDays,
         previous: previousPayableDays,
         currency: "days",
-        signal: "DPO proxy",
+        signal: tr("dpoProxy"),
         favorable: "neutral",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "cash-conversion-gap",
-        label: "Cash conversion gap",
+        label: tr("cashConversionGap"),
         current: currentCashConversionGap,
         previous: previousCashConversionGap,
         currency: "days",
-        signal: "DSO less DPO",
+        signal: tr("dsoLessDpo"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "top-customer-share",
-        label: "Top customer share",
+        label: tr("topCustomerShare"),
         current: currentTopCustomerShare,
         previous: previousTopCustomerShare,
         currency: "%",
-        signal: "Client concentration",
+        signal: tr("clientConcentration"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "top-product-service-share",
-        label: "Top product/service share",
+        label: tr("topProductServiceShare"),
         current: comparisonCurrentSalesProductService?.totals?.topProductServiceShare ?? 0,
         previous: comparisonPreviousSalesProductService?.totals?.topProductServiceShare ?? 0,
         currency: "%",
-        signal: "Sales mix concentration",
+        signal: tr("salesMixConcentration"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "sales",
       }),
       makeComparisonMetric({
         id: "expense-spend",
-        label: "Expense spend",
+        label: tr("expenseSpend"),
         current: currentExpenseValue,
         previous: previousExpenseValue,
         currency: "AED",
-        signal: "Cost pressure",
+        signal: tr("costPressure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "receipt-count",
-        label: "Receipt count",
+        label: tr("receiptCount"),
         current: currentReceipts.length,
         previous: previousReceipts.length,
         currency: "count",
-        signal: "Receipt workload",
+        signal: tr("receiptWorkload"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "average-receipt-value",
-        label: "Average receipt value",
+        label: tr("averageReceiptValue"),
         current: currentAverageReceiptValue,
         previous: previousAverageReceiptValue,
         currency: "AED",
-        signal: "Receipt size",
+        signal: tr("receiptSize"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "expense-claim-review-value",
-        label: "Expense claim review value",
+        label: tr("expenseClaimReviewValue"),
         current: currentExpenseClaimReviewValue,
         previous: previousExpenseClaimReviewValue,
         currency: "AED",
-        signal: "Claims queue",
+        signal: tr("claimsQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "expense-claim-review-count",
-        label: "Expense claim review count",
+        label: tr("expenseClaimReviewCount"),
         current: currentExpenseClaimReviewCount,
         previous: previousExpenseClaimReviewCount,
         currency: "count",
-        signal: "Claims awaiting review",
+        signal: tr("claimsAwaitingReview"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "submitted-expense-claim-count",
-        label: "Submitted expense claim count",
+        label: tr("submittedExpenseClaimCount"),
         current: currentSubmittedExpenseClaimCount,
         previous: previousSubmittedExpenseClaimCount,
         currency: "count",
-        signal: "Claim approvals",
+        signal: tr("claimApprovals"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "submitted-expense-claim-value",
-        label: "Submitted expense claim value",
+        label: tr("submittedExpenseClaimValue"),
         current: currentSubmittedExpenseClaimValue,
         previous: previousSubmittedExpenseClaimValue,
         currency: "AED",
-        signal: "Claim approval value",
+        signal: tr("claimApprovalValue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "approved-expense-claim-count",
-        label: "Approved expense claim count",
+        label: tr("approvedExpenseClaimCount"),
         current: currentApprovedExpenseClaimCount,
         previous: previousApprovedExpenseClaimCount,
         currency: "count",
-        signal: "Reimbursement follow-up",
+        signal: tr("reimbursementFollowUp"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "approved-expense-claim-value",
-        label: "Approved expense claim value",
+        label: tr("approvedExpenseClaimValue"),
         current: currentApprovedExpenseClaimValue,
         previous: previousApprovedExpenseClaimValue,
         currency: "AED",
-        signal: "Reimbursement value",
+        signal: tr("reimbursementValue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "unposted-expense-share",
-        label: "Unposted expense share",
+        label: tr("unpostedExpenseShare"),
         current: currentUnpostedExpenseShare,
         previous: previousUnpostedExpenseShare,
         currency: "%",
-        signal: "Bookkeeping backlog",
+        signal: tr("bookkeepingBacklog"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "unposted-receipt-count",
-        label: "Unposted receipt count",
+        label: tr("unpostedReceiptCount"),
         current: currentUnpostedReceiptCount,
         previous: previousUnpostedReceiptCount,
         currency: "count",
-        signal: "Posting queue",
+        signal: tr("postingQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "unposted-receipt-value",
-        label: "Unposted receipt value",
+        label: tr("unpostedReceiptValue"),
         current: currentUnpostedReceiptValue,
         previous: previousUnpostedReceiptValue,
         currency: "AED",
-        signal: "Posting value",
+        signal: tr("postingValue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "auto-posted-receipt-count",
-        label: "Auto-posted receipt count",
+        label: tr("autoPostedReceiptCount"),
         current: currentAutoPostedReceiptCount,
         previous: previousAutoPostedReceiptCount,
         currency: "count",
-        signal: "Receipts automated",
+        signal: tr("receiptsAutomated"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "auto-posted-receipt-value",
-        label: "Auto-posted receipt value",
+        label: tr("autoPostedReceiptValue"),
         current: currentAutoPostedReceiptValue,
         previous: previousAutoPostedReceiptValue,
         currency: "AED",
-        signal: "Automated expense value",
+        signal: tr("automatedExpenseValue"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "receipt-automation-coverage",
-        label: "Receipt automation coverage",
+        label: tr("receiptAutomationCoverage"),
         current: currentReceiptAutomationCoverage,
         previous: previousReceiptAutomationCoverage,
         currency: "%",
-        signal: "Auto-post coverage",
+        signal: tr("autoPostCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "receipt-automation-value-coverage",
-        label: "Receipt automation value coverage",
+        label: tr("receiptAutomationValueCoverage"),
         current: currentReceiptAutomationValueCoverage,
         previous: previousReceiptAutomationValueCoverage,
         currency: "%",
-        signal: "Auto-posted value",
+        signal: tr("autoPostedValue"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "bank-reconciliation-coverage",
-        label: "Bank reconciliation coverage",
+        label: tr("bankReconciliationCoverage"),
         current: currentBankReconciliationCoverage,
         previous: previousBankReconciliationCoverage,
         currency: "%",
-        signal: "Bank automation coverage",
+        signal: tr("bankAutomationCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "reconciled-bank-count",
-        label: "Reconciled bank count",
+        label: tr("reconciledBankCount"),
         current: currentReconciledBankCount,
         previous: previousReconciledBankCount,
         currency: "count",
-        signal: "Bank transactions cleared",
+        signal: tr("bankTransactionsCleared"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "reconciled-bank-value",
-        label: "Reconciled bank value",
+        label: tr("reconciledBankValue"),
         current: currentReconciledBankValue,
         previous: previousReconciledBankValue,
         currency: "AED",
-        signal: "Bank value cleared",
+        signal: tr("bankValueCleared"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "unreconciled-bank-count",
-        label: "Unreconciled bank count",
+        label: tr("unreconciledBankCount"),
         current: currentUnreconciledBankCount,
         previous: previousUnreconciledBankCount,
         currency: "count",
-        signal: "Bank review queue",
+        signal: tr("bankReviewQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "unreconciled-bank-value",
-        label: "Unreconciled bank value",
+        label: tr("unreconciledBankValue"),
         current: currentUnreconciledBankValue,
         previous: previousUnreconciledBankValue,
         currency: "AED",
-        signal: "Bank value at review",
+        signal: tr("bankValueAtReview"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-match-suggestion-coverage",
-        label: "Bank match suggestion coverage",
+        label: tr("bankMatchSuggestionCoverage"),
         current: currentBankMatchSuggestionCoverage,
         previous: previousBankMatchSuggestionCoverage,
         currency: "%",
-        signal: "Suggested match coverage",
+        signal: tr("suggestedMatchCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-match-suggestion-value-coverage",
-        label: "Bank match suggestion value coverage",
+        label: tr("bankMatchSuggestionValueCoverage"),
         current: currentBankMatchSuggestionValueCoverage,
         previous: previousBankMatchSuggestionValueCoverage,
         currency: "%",
-        signal: "Suggested match value",
+        signal: tr("suggestedMatchValue"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "suggested-bank-match-count",
-        label: "Suggested bank match count",
+        label: tr("suggestedBankMatchCount"),
         current: currentSuggestedBankMatchCount,
         previous: previousSuggestedBankMatchCount,
         currency: "count",
-        signal: "Review-ready matches",
+        signal: tr("reviewReadyMatches"),
         favorable: "neutral",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-assisted-transaction-count",
-        label: "Bank-assisted transaction count",
+        label: tr("bankAssistedTransactionCount"),
         current: currentBankAssistedTransactionCount,
         previous: previousBankAssistedTransactionCount,
         currency: "count",
-        signal: "Bank work assisted",
+        signal: tr("bankWorkAssisted"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-assisted-transaction-value",
-        label: "Bank-assisted transaction value",
+        label: tr("bankAssistedTransactionValue"),
         current: currentBankAssistedTransactionValue,
         previous: previousBankAssistedTransactionValue,
         currency: "AED",
-        signal: "Assisted bank value",
+        signal: tr("assistedBankValue"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-assisted-transaction-coverage",
-        label: "Bank-assisted transaction coverage",
+        label: tr("bankAssistedTransactionCoverage"),
         current: currentBankAssistedTransactionCoverage ?? 0,
         previous: previousBankAssistedTransactionCoverage ?? 0,
         currency: "%",
-        signal: "Bank work coverage",
+        signal: tr("bankWorkCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "bank-assisted-transaction-value-coverage",
-        label: "Bank-assisted transaction value coverage",
+        label: tr("bankAssistedTransactionValueCoverage"),
         current: currentBankAssistedTransactionValueCoverage ?? 0,
         previous: previousBankAssistedTransactionValueCoverage ?? 0,
         currency: "%",
-        signal: "Assisted bank value coverage",
+        signal: tr("assistedBankValueCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "automation-work-queue-count",
-        label: "Automation work queue count",
+        label: tr("automationWorkQueueCount"),
         current: currentAutomationWorkQueueCount,
         previous: previousAutomationWorkQueueCount,
         currency: "count",
-        signal: "Action queue",
+        signal: tr("actionQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "automation-work-queue-value",
-        label: "Automation work queue value",
+        label: tr("automationWorkQueueValue"),
         current: currentAutomationWorkQueueValue,
         previous: previousAutomationWorkQueueValue,
         currency: "AED",
-        signal: "Queue value",
+        signal: tr("queueValue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "ledger-automation-share",
-        label: "Ledger automation share",
+        label: tr("ledgerAutomationShare"),
         current: currentLedgerAutomationShare,
         previous: previousLedgerAutomationShare,
         currency: "%",
-        signal: "Ledger automation coverage",
+        signal: tr("ledgerAutomationCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "manual-ledger-activity",
-        label: "Manual ledger activity",
+        label: tr("manualLedgerActivity"),
         current: currentManualLedgerActivity,
         previous: previousManualLedgerActivity,
         currency: "AED",
-        signal: "Manual ledger value",
+        signal: tr("manualLedgerValue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "automated-ledger-activity",
-        label: "Automated ledger activity",
+        label: tr("automatedLedgerActivity"),
         current: currentAutomatedLedgerActivity,
         previous: previousAutomatedLedgerActivity,
         currency: "AED",
-        signal: "Automated ledger value",
+        signal: tr("automatedLedgerValue"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "automation-adoption-index",
-        label: "Automation adoption index",
+        label: tr("automationAdoptionIndex"),
         current: currentAutomationAdoptionIndex,
         previous: previousAutomationAdoptionIndex,
         currency: "%",
-        signal: "Automation adoption",
+        signal: tr("automationAdoption"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "automation-value-adoption-index",
-        label: "Automation value adoption index",
+        label: tr("automationValueAdoptionIndex"),
         current: currentAutomationValueAdoptionIndex,
         previous: previousAutomationValueAdoptionIndex,
         currency: "%",
-        signal: "Automation value adoption",
+        signal: tr("automationValueAdoption"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "planning",
       }),
       makeComparisonMetric({
         id: "cost-center-net-income",
-        label: "Cost center net income",
+        label: tr("costCenterNetIncome"),
         current: comparisonCurrentCostCenterProfitability?.totals?.netIncome ?? 0,
         previous: comparisonPreviousCostCenterProfitability?.totals?.netIncome ?? 0,
         currency: "AED",
-        signal: "Department profitability",
+        signal: tr("departmentProfitability"),
         favorable: "increase",
         personas: ["owner", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "cost-center-expenses",
-        label: "Cost center expenses",
+        label: tr("costCenterExpenses"),
         current: comparisonCurrentCostCenterProfitability?.totals?.totalExpenses ?? 0,
         previous: comparisonPreviousCostCenterProfitability?.totals?.totalExpenses ?? 0,
         currency: "AED",
-        signal: "Department cost pressure",
+        signal: tr("departmentCostPressure"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "expenses",
       }),
       makeComparisonMetric({
         id: "vat-due",
-        label: "Net VAT due",
+        label: tr("netVatDue"),
         current: comparisonCurrentVat?.netVATPayable ?? 0,
         previous: comparisonPreviousVat?.netVATPayable ?? 0,
         currency: "AED",
-        signal: "Tax cash flow",
+        signal: tr("taxCashFlow"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "vat",
       }),
       makeComparisonMetric({
         id: "corporate-tax-payable",
-        label: "Corporate tax payable",
+        label: tr("corporateTaxPayable"),
         current: corporateTaxEstimate?.taxPayable ?? 0,
         previous: comparisonPreviousCorporateTaxEstimate?.taxPayable ?? 0,
         currency: "AED",
-        signal: "Tax exposure",
+        signal: tr("taxExposure"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "total-tax-exposure",
-        label: "Total tax exposure",
+        label: tr("totalTaxExposure"),
         current: currentTotalTaxExposure,
         previous: previousTotalTaxExposure,
         currency: "AED",
-        signal: "VAT plus corporate tax",
+        signal: tr("vatPlusCorporateTax"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "tax-exposure-rate",
-        label: "Tax exposure rate",
+        label: tr("taxExposureRate"),
         current: currentTaxExposureRate,
         previous: previousTaxExposureRate,
         currency: "%",
-        signal: "Tax load",
+        signal: tr("taxLoad"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "tax-reserve-coverage",
-        label: "Tax reserve coverage",
+        label: tr("taxReserveCoverage"),
         current: currentTaxReserveCoverage,
         previous: 100,
-        currentLabel: "Current cash",
-        previousLabel: "Fully funded",
+        currentLabel: tr("currentCash"),
+        previousLabel: tr("fullyFunded"),
         currency: "%",
-        signal: "Tax cash coverage",
+        signal: tr("taxCashCoverage"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "tax-funding-gap",
-        label: "Tax funding gap",
+        label: tr("taxFundingGap"),
         current: currentTaxFundingGap,
         previous: 0,
-        currentLabel: "Current gap",
-        previousLabel: "Zero gap",
+        currentLabel: tr("currentGap"),
+        previousLabel: tr("zeroGap"),
         currency: "AED",
-        signal: "Tax cash gap",
+        signal: tr("taxCashGap"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "tax-adjusted-runway-days",
-        label: "Tax-adjusted runway",
+        label: tr("taxAdjustedRunway"),
         current: currentTaxAdjustedRunwayDays,
         previous: currentRunwayDays,
-        currentLabel: "After tax reserve",
-        previousLabel: "Before tax reserve",
+        currentLabel: tr("afterTaxReserve"),
+        previousLabel: tr("beforeTaxReserve"),
         currency: "days",
-        signal: "Post-tax runway",
+        signal: tr("postTaxRunway"),
         favorable: "increase",
         personas: ["owner", "freelancer", "accountant"],
         tab: "tax",
       }),
       makeComparisonMetric({
         id: "payroll-cost",
-        label: "Payroll cost",
+        label: tr("payrollCost"),
         current: currentPayrollValue,
         previous: previousPayrollValue,
         currency: "AED",
-        signal: "Payroll movement",
+        signal: tr("payrollMovement"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-run-count",
-        label: "Payroll run count",
+        label: tr("payrollRunCount"),
         current: currentPayrollRuns.length,
         previous: previousPayrollRuns.length,
         currency: "count",
-        signal: "Payroll run volume",
+        signal: tr("payrollRunVolume"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-deduction-share",
-        label: "Payroll deduction share",
+        label: tr("payrollDeductionShare"),
         current: currentPayrollDeductionShare,
         previous: previousPayrollDeductionShare,
         currency: "%",
-        signal: "Gross-to-net payroll",
+        signal: tr("grossToNetPayroll"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "average-payroll-run-value",
-        label: "Average payroll run value",
+        label: tr("averagePayrollRunValue"),
         current: currentAveragePayrollRunValue,
         previous: previousAveragePayrollRunValue,
         currency: "AED",
-        signal: "Payroll run size",
+        signal: tr("payrollRunSize"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-covered-employees",
-        label: "Payroll covered employees",
+        label: tr("payrollCoveredEmployees"),
         current: currentPayrollCoveredEmployees,
         previous: previousPayrollCoveredEmployees,
         currency: "count",
-        signal: "Payroll headcount",
+        signal: tr("payrollHeadcount"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-cost-per-covered-employee",
-        label: "Payroll cost per covered employee",
+        label: tr("payrollCostPerCoveredEmployee"),
         current: currentPayrollCostPerCoveredEmployee,
         previous: previousPayrollCostPerCoveredEmployee,
         currency: "AED",
-        signal: "Payroll unit cost",
+        signal: tr("payrollUnitCost"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-approval-queue-count",
-        label: "Payroll approval queue",
+        label: tr("payrollApprovalQueue"),
         current: currentPayrollApprovalQueueCount,
         previous: previousPayrollApprovalQueueCount,
         currency: "count",
-        signal: "Payroll approvals",
+        signal: tr("payrollApprovals"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-approval-queue-value",
-        label: "Payroll approval queue value",
+        label: tr("payrollApprovalQueueValue"),
         current: currentPayrollApprovalQueueValue,
         previous: previousPayrollApprovalQueueValue,
         currency: "AED",
-        signal: "Payroll approval value",
+        signal: tr("payrollApprovalValue"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-readiness-queue-count",
-        label: "Payroll readiness queue",
+        label: tr("payrollReadinessQueue"),
         current: currentPayrollReadinessQueueCount,
         previous: previousPayrollReadinessQueueCount,
         currency: "count",
-        signal: "Payroll approvals and WPS",
+        signal: tr("payrollApprovalsAndWps"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-readiness-queue-value",
-        label: "Payroll readiness queue value",
+        label: tr("payrollReadinessQueueValue"),
         current: currentPayrollReadinessQueueValue,
         previous: previousPayrollReadinessQueueValue,
         currency: "AED",
-        signal: "Payroll readiness value",
+        signal: tr("payrollReadinessValue"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "wps-missing-run-count",
-        label: "WPS missing run count",
+        label: tr("wpsMissingRunCount"),
         current: currentWpsMissingRunCount,
         previous: previousWpsMissingRunCount,
         currency: "count",
-        signal: "WPS file gap",
+        signal: tr("wpsFileGap"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "wps-missing-run-value",
-        label: "WPS missing run value",
+        label: tr("wpsMissingRunValue"),
         current: currentWpsMissingRunValue,
         previous: previousWpsMissingRunValue,
         currency: "AED",
-        signal: "WPS file value gap",
+        signal: tr("wpsFileValueGap"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "payroll-expense-share",
-        label: "Payroll expense share",
+        label: tr("payrollExpenseShare"),
         current: currentPayrollExpenseShare,
         previous: previousPayrollExpenseShare,
         currency: "%",
-        signal: "Payroll burden",
+        signal: tr("payrollBurden"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "wps-ready-share",
-        label: "WPS ready share",
+        label: tr("wpsReadyShare"),
         current: currentWpsReadyShare,
         previous: previousWpsReadyShare,
         currency: "%",
-        signal: "Payroll file readiness",
+        signal: tr("payrollFileReadiness"),
         favorable: "increase",
         personas: ["owner", "accountant"],
         tab: "payroll",
       }),
       makeComparisonMetric({
         id: "inventory-movement",
-        label: "Inventory movement",
+        label: tr("inventoryMovement"),
         current: currentInventoryMovementValue,
         previous: previousInventoryMovementValue,
         currency: "AED",
-        signal: "Stock movement",
+        signal: tr("stockMovement"),
         favorable: "neutral",
         personas: ["owner", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "inventory-review-items",
-        label: "Inventory review items",
+        label: tr("inventoryReviewItems"),
         current: inventoryValuationReport.reviewCount,
         previous: 0,
-        currentLabel: "Review items",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewItems"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Stock review queue",
+        signal: tr("stockReviewQueue"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "inventory-review-share",
-        label: "Inventory review share",
+        label: tr("inventoryReviewShare"),
         current: ratioPercent(
           inventoryValuationReport.reviewCount,
           inventoryValuationReport.activeProductCount
         ),
         previous: 0,
-        currentLabel: "Review share",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewShare"),
+        previousLabel: tr("clearBaseline"),
         currency: "%",
-        signal: "Stock review mix",
+        signal: tr("stockReviewMix"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "inventory-review-value",
-        label: "Inventory review value",
+        label: tr("inventoryReviewValue"),
         current: inventoryValuationReport.reviewValueAed,
         previous: 0,
-        currentLabel: "Review value",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewValue"),
+        previousLabel: tr("clearBaseline"),
         currency: "AED",
-        signal: "Stock value at review",
+        signal: tr("stockValueAtReview"),
         favorable: "decrease",
         personas: ["owner", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "fixed-asset-review-items",
-        label: "Fixed asset review items",
+        label: tr("fixedAssetReviewItems"),
         current: fixedAssetRegisterReport.reviewCount,
         previous: 0,
-        currentLabel: "Review items",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewItems"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Asset review queue",
+        signal: tr("assetReviewQueue"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "fixed-asset-review-share",
-        label: "Fixed asset review share",
+        label: tr("fixedAssetReviewShare"),
         current: ratioPercent(
           fixedAssetRegisterReport.reviewCount,
           fixedAssetRegisterReport.activeRows.length
         ),
         previous: 0,
-        currentLabel: "Review share",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewShare"),
+        previousLabel: tr("clearBaseline"),
         currency: "%",
-        signal: "Asset review mix",
+        signal: tr("assetReviewMix"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "fixed-asset-review-value",
-        label: "Fixed asset review value",
+        label: tr("fixedAssetReviewValue"),
         current: fixedAssetRegisterReport.reviewValueAed,
         previous: 0,
-        currentLabel: "Review value",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewValue"),
+        previousLabel: tr("clearBaseline"),
         currency: "AED",
-        signal: "Asset value at review",
+        signal: tr("assetValueAtReview"),
         favorable: "decrease",
         personas: ["owner", "freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "depreciation-review-items",
-        label: "Depreciation review items",
+        label: tr("depreciationReviewItems"),
         current: depreciationScheduleReport.reviewCount,
         previous: 0,
-        currentLabel: "Review items",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewItems"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Depreciation setup queue",
+        signal: tr("depreciationSetupQueue"),
         favorable: "decrease",
         personas: ["freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "depreciation-review-value",
-        label: "Depreciation review value",
+        label: tr("depreciationReviewValue"),
         current: depreciationScheduleReport.reviewValueAed,
         previous: 0,
-        currentLabel: "Review value",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewValue"),
+        previousLabel: tr("clearBaseline"),
         currency: "AED",
-        signal: "Depreciable value at review",
+        signal: tr("depreciableValueAtReview"),
         favorable: "decrease",
         personas: ["freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "depreciation-ready-items",
-        label: "Depreciation ready items",
+        label: tr("depreciationReadyItems"),
         current: depreciationScheduleReport.readyToPostCount,
         previous: 0,
-        currentLabel: "Ready items",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("readyItems"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Depreciation posting queue",
+        signal: tr("depreciationPostingQueue"),
         favorable: "decrease",
         personas: ["freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "depreciation-ready-share",
-        label: "Depreciation ready share",
+        label: tr("depreciationReadyShare"),
         current: ratioPercent(
           depreciationScheduleReport.readyToPostCount,
           depreciationScheduleReport.readyToPostCount + depreciationScheduleReport.reviewCount
         ),
         previous: 100,
-        currentLabel: "Ready share",
-        previousLabel: "Ready",
+        currentLabel: tr("readyShare"),
+        previousLabel: tr("ready"),
         currency: "%",
-        signal: "Depreciation readiness",
+        signal: tr("depreciationReadiness"),
         favorable: "increase",
         personas: ["freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "depreciation-estimate",
-        label: "Depreciation estimate",
+        label: tr("depreciationEstimate"),
         current: currentDepreciationEstimate,
         previous: previousDepreciationEstimate,
         currency: "AED",
-        signal: "Depreciation schedule",
+        signal: tr("depreciationSchedule"),
         favorable: "neutral",
         personas: ["freelancer", "accountant"],
         tab: "balances",
       }),
       makeComparisonMetric({
         id: "consolidated-revenue",
-        label: "Roll-up revenue",
+        label: tr("rollUpRevenue"),
         current: consolidatedStatementsReport.currentComparisonRevenue,
         previous: consolidatedStatementsReport.previousRevenue,
         currency: "AED",
-        signal: "Group revenue",
+        signal: tr("groupRevenue"),
         favorable: "increase",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "consolidated-expenses",
-        label: "Roll-up expenses",
+        label: tr("rollUpExpenses"),
         current: consolidatedStatementsReport.currentComparisonExpenses,
         previous: consolidatedStatementsReport.previousExpenses,
         currency: "AED",
-        signal: "Group expenses",
+        signal: tr("groupExpenses"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "consolidated-net-profit",
-        label: "Roll-up net profit",
+        label: tr("rollUpNetProfit"),
         current: consolidatedStatementsReport.currentComparisonNetProfit,
         previous: consolidatedStatementsReport.previousNetProfit,
         currency: "AED",
-        signal: "Multi-entity roll-up",
+        signal: tr("multiEntityRollUp"),
         favorable: "increase",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "consolidated-margin",
-        label: "Roll-up margin",
+        label: tr("rollUpMargin"),
         current: currentConsolidatedMargin,
         previous: previousConsolidatedMargin,
         currency: "%",
-        signal: "Group profitability",
+        signal: tr("groupProfitability"),
         favorable: "increase",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "consolidation-review-items",
-        label: "Consolidation review items",
+        label: tr("consolidationReviewItems"),
         current: consolidatedStatementsReport.reviewCount,
         previous: 0,
-        currentLabel: "Review items",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("reviewItems"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Consolidation review queue",
+        signal: tr("consolidationReviewQueue"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "month-end-open-checks",
-        label: "Month-end open checks",
+        label: tr("monthEndOpenChecks"),
         current: currentMonthEndOpenChecks,
         previous: 0,
-        currentLabel: "Open checks",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("openChecks"),
+        previousLabel: tr("clearBaseline"),
         currency: "count",
-        signal: "Close checklist",
+        signal: tr("closeChecklist"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "month-end-readiness",
-        label: "Month-end readiness",
+        label: tr("monthEndReadiness"),
         current: currentMonthEndReadiness,
         previous: 100,
-        currentLabel: "Checklist",
-        previousLabel: "Ready",
+        currentLabel: tr("checklist"),
+        previousLabel: tr("ready"),
         currency: "%",
-        signal: "Close readiness",
+        signal: tr("closeReadiness"),
         favorable: "increase",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "audit-high-risk-event-count",
-        label: "Audit high-risk events",
+        label: tr("auditHighRiskEvents"),
         current: currentHighRiskActivityCount,
         previous: previousHighRiskActivityCount,
         currency: "count",
-        signal: "Risky audit activity",
+        signal: tr("riskyAuditActivity"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "audit-high-risk-event-share",
-        label: "Audit high-risk event share",
+        label: tr("auditHighRiskEventShare"),
         current: currentHighRiskActivityShare,
         previous: previousHighRiskActivityShare,
         currency: "%",
-        signal: "Risky activity mix",
+        signal: tr("riskyActivityMix"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "audit-review-event-count",
-        label: "Audit review events",
+        label: tr("auditReviewEvents"),
         current: currentReviewActivityCount,
         previous: previousReviewActivityCount,
         currency: "count",
-        signal: "Audit review workload",
+        signal: tr("auditReviewWorkload"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "audit-review-event-share",
-        label: "Audit review event share",
+        label: tr("auditReviewEventShare"),
         current: currentReviewActivityShare,
         previous: previousReviewActivityShare,
         currency: "%",
-        signal: "Audit review mix",
+        signal: tr("auditReviewMix"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "fx-unrealized-exposure",
-        label: "FX unrealized exposure",
+        label: tr("fxUnrealizedExposure"),
         current: currentFxUnrealizedExposure,
         previous: 0,
-        currentLabel: "Exposure",
-        previousLabel: "Clear baseline",
+        currentLabel: tr("exposure"),
+        previousLabel: tr("clearBaseline"),
         currency: "AED",
-        signal: "FX exposure at review",
+        signal: tr("fxExposureAtReview"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "close",
       }),
       makeComparisonMetric({
         id: "manual-ledger-share",
-        label: "Manual ledger share",
+        label: tr("manualLedgerShare"),
         current: currentManualLedgerShare,
         previous: previousManualLedgerShare,
         currency: "%",
-        signal: "Manual source coverage",
+        signal: tr("manualSourceCoverage"),
         favorable: "decrease",
         personas: ["accountant"],
         tab: "ledger",
       }),
       makeComparisonMetric({
         id: "ledger-activity",
-        label: "Ledger activity",
+        label: tr("ledgerActivity"),
         current: currentLedgerActivity,
         previous: previousLedgerActivity,
         currency: "AED",
-        signal: "Close activity",
+        signal: tr("closeActivity"),
         favorable: "neutral",
         personas: ["accountant"],
         tab: "ledger",
@@ -8185,7 +8204,7 @@ export default function Reports() {
   const auditTrailPeriodLabel =
     dateRange.from && dateRange.to
       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-      : "Latest 200 activity events";
+      : tr("latest200ActivityEvents");
 
   const auditTrailLoading = activityLogsLoading;
 
@@ -8246,7 +8265,7 @@ export default function Reports() {
     const cashMovement = projectedEndingBalance - currentBalance;
     const cashWarning =
       lowestProjection && lowestProjection.projectedBalance < 0
-        ? "Negative cash risk"
+        ? tr("negativeCashRisk")
         : lowestProjection && lowestProjection.projectedBalance < 10000
           ? "Low cash warning"
           : "On track";
@@ -8308,260 +8327,298 @@ export default function Reports() {
     return [
       {
         id: "collections",
-        title: "Collections follow-up",
-        signal: "Overdue customers",
-        detail: "Route overdue receivables into payment chasing.",
+        title: tr("collectionsFollowUp"),
+        signal: tr("overdueCustomers"),
+        detail: tr("routeOverdueReceivablesIntoPaymentChasing"),
         count: balanceReport.overdueCustomerCount,
         amount: balanceReport.customerOverdueAed,
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: Users,
-        actionLabel: "Open queue",
+        actionLabel: tr("openQueue"),
         href: "/payment-chasing",
       },
       {
         id: "bill-pay",
-        title: "Bill pay timing",
-        signal: "Overdue vendors",
-        detail: "Review vendor balances and payable timing.",
+        title: tr("billPayTiming"),
+        signal: tr("overdueVendors"),
+        detail: tr("reviewVendorBalancesAndPayableTiming"),
         count: balanceReport.overdueVendorCount,
         amount: balanceReport.vendorOverdueAed,
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: Wallet,
-        actionLabel: "Open bills",
+        actionLabel: tr("openBills"),
         href: "/bill-pay?tab=summary",
       },
       {
         id: "inventory-risk",
-        title: "Inventory valuation",
+        title: tr("inventoryValuation"),
         signal:
-          inventoryValuationReport.reviewCount > 0 ? "Stock review items" : "Inventory valued",
+          inventoryValuationReport.reviewCount > 0 ? tr("stockReviewItems") : tr("inventoryValued"),
         detail:
           inventoryValuationReport.reviewCount > 0
-            ? `${inventoryValuationReport.reviewCount} products need stock, reorder, or costing review.`
-            : `${inventoryValuationReport.activeProductCount} active products valued for the balance report.`,
+            ? tr("productsNeedStockReorderOrCosting", {
+                reviewCount: inventoryValuationReport.reviewCount,
+              })
+            : tr("activeProductsValuedForTheBalance", {
+                activeProductCount: inventoryValuationReport.activeProductCount,
+              }),
         count: inventoryValuationReport.reviewCount,
         amount: inventoryValuationReport.totalStockValueAed,
         currency: "AED",
         personas: ["owner", "accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open inventory",
+        actionLabel: tr("openInventory"),
         href: "/inventory",
       },
       {
         id: "inventory-movement-review",
-        title: "Inventory movement",
+        title: tr("inventoryMovement"),
         signal:
-          inventoryMovementReport.movementCount > 0 ? "Stock movement posted" : "No stock movement",
+          inventoryMovementReport.movementCount > 0
+            ? tr("stockMovementPosted")
+            : tr("noStockMovement"),
         detail:
           inventoryMovementReport.reorderSignalCount > 0
-            ? `${inventoryMovementReport.reorderSignalCount} products need reorder or negative-stock review after recent movement.`
-            : `${inventoryMovementReport.movementCount} movements across ${inventoryMovementReport.productCount} products in this period.`,
+            ? tr("productsNeedReorderOrNegativeStock", {
+                reorderSignalCount: inventoryMovementReport.reorderSignalCount,
+              })
+            : tr("movementsAcrossProductsInThisPeriod", {
+                movementCount: inventoryMovementReport.movementCount,
+                productCount: inventoryMovementReport.productCount,
+              }),
         count: inventoryMovementReport.reorderSignalCount,
         amount: inventoryMovementReport.outboundValueAed,
         currency: "AED",
         personas: ["owner", "accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open movements",
+        actionLabel: tr("openMovements"),
         href: "/inventory",
       },
       {
         id: "fixed-asset-review",
-        title: "Fixed asset register",
+        title: tr("fixedAssetRegister"),
         signal:
-          fixedAssetRegisterReport.reviewCount > 0 ? "Asset review items" : "Asset register ready",
+          fixedAssetRegisterReport.reviewCount > 0
+            ? tr("assetReviewItems")
+            : tr("assetRegisterReady"),
         detail:
           fixedAssetRegisterReport.capitalizationReviewCount > 0
-            ? `${fixedAssetRegisterReport.capitalizationReviewCount} assets need capitalization journal review.`
-            : `${fixedAssetRegisterReport.totalAssets} active assets with depreciation and NBV tracked.`,
+            ? tr("assetsNeedCapitalizationJournalReview", {
+                capitalizationReviewCount: fixedAssetRegisterReport.capitalizationReviewCount,
+              })
+            : tr("activeAssetsWithDepreciationAndNbv", {
+                totalAssets: fixedAssetRegisterReport.totalAssets,
+              }),
         count: fixedAssetRegisterReport.reviewCount,
         amount: fixedAssetRegisterReport.totalNetBookValue,
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: Building2,
-        actionLabel: "Open fixed assets",
+        actionLabel: tr("openFixedAssets"),
         href: "/fixed-assets",
       },
       {
         id: "depreciation-posting",
-        title: "Depreciation schedule",
+        title: tr("depreciationSchedule"),
         signal:
           depreciationScheduleReport.reviewCount > 0
-            ? "Depreciation setup review"
-            : "Depreciation ready",
+            ? tr("depreciationSetupReview")
+            : tr("depreciationReady"),
         detail:
           depreciationScheduleReport.reviewCount > 0
-            ? `${depreciationScheduleReport.reviewCount} assets need useful-life, date, or cost review before posting.`
-            : `${depreciationScheduleReport.readyToPostCount} assets have ${monthEndPeriodLabel} depreciation suggestions.`,
+            ? tr("assetsNeedUsefulLifeDateOr", {
+                reviewCount: depreciationScheduleReport.reviewCount,
+              })
+            : tr("assetsHaveDepreciationSuggestions", {
+                readyToPostCount: depreciationScheduleReport.readyToPostCount,
+                monthEndPeriodLabel,
+              }),
         count: depreciationScheduleReport.readyToPostCount + depreciationScheduleReport.reviewCount,
         amount: depreciationScheduleReport.periodDepreciationAed,
         currency: "AED",
         personas: ["freelancer", "accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open fixed assets",
+        actionLabel: tr("openFixedAssets"),
         href: "/fixed-assets",
       },
       {
         id: "receipt-posting",
-        title: "Receipt posting",
-        signal: "Receipts waiting",
-        detail: "Clear OCR and posting exceptions before close.",
+        title: tr("receiptPosting"),
+        signal: tr("receiptsWaiting"),
+        detail: tr("clearOcrAndPostingExceptionsBefore"),
         count: expenseReport.unpostedReceipts,
         personas: ["owner", "freelancer", "accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open expenses",
+        actionLabel: tr("openExpenses"),
         tab: "expenses",
       },
       {
         id: "expense-claims-review",
-        title: "Expense claims",
-        signal: expenseClaimReport.reviewCount > 0 ? "Claim queue open" : "Expense claims clear",
+        title: tr("expenseClaims"),
+        signal:
+          expenseClaimReport.reviewCount > 0 ? tr("claimQueueOpen") : tr("expenseClaimsClear"),
         detail:
           expenseClaimReport.submittedCount > 0
-            ? `${expenseClaimReport.submittedCount} submitted claims need approval.`
+            ? tr("submittedClaimsNeedApproval", {
+                submittedCount: expenseClaimReport.submittedCount,
+              })
             : expenseClaimReport.approvedUnpaidCount > 0
-              ? `${expenseClaimReport.approvedUnpaidCount} approved claims are awaiting reimbursement.`
-              : "No claims are pending approval or reimbursement.",
+              ? tr("approvedClaimsAreAwaitingReimbursement", {
+                  approvedUnpaidCount: expenseClaimReport.approvedUnpaidCount,
+                })
+              : tr("noClaimsArePendingApprovalOr"),
         count: expenseClaimReport.reviewCount,
         amount: expenseClaimReport.submittedAmount + expenseClaimReport.approvedUnpaidAmount,
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: ClipboardCheck,
-        actionLabel: "Open claims",
+        actionLabel: tr("openClaims"),
         href: "/expense-claims",
       },
       {
         id: "payroll-wps-review",
-        title: "Payroll and WPS",
+        title: tr("payrollAndWps"),
         signal:
           payrollReport.approvalQueueCount > 0 || payrollReport.wpsMissingCount > 0
-            ? "Payroll action needed"
-            : "Payroll ready",
+            ? tr("payrollActionNeeded")
+            : tr("payrollReady"),
         detail:
           payrollReport.approvalQueueCount > 0
-            ? `${payrollReport.approvalQueueCount} calculated payroll runs need approval.`
+            ? tr("calculatedPayrollRunsNeedApproval", {
+                approvalQueueCount: payrollReport.approvalQueueCount,
+              })
             : payrollReport.wpsMissingCount > 0
-              ? `${payrollReport.wpsMissingCount} payroll runs need SIF generation.`
-              : `${payrollReport.runCount} payroll runs are summarized for owner and accountant review.`,
+              ? tr("payrollRunsNeedSifGeneration", {
+                  wpsMissingCount: payrollReport.wpsMissingCount,
+                })
+              : tr("payrollRunsAreSummarizedForOwner", { runCount: payrollReport.runCount }),
         count: payrollReport.approvalQueueCount + payrollReport.wpsMissingCount,
         amount: payrollReport.totalNet,
         currency: "AED",
         personas: ["owner", "accountant"],
         icon: DollarSign,
-        actionLabel: "Open payroll",
+        actionLabel: tr("openPayroll"),
         href: "/payroll",
       },
       {
         id: "vat-readiness",
-        title: "VAT readiness",
-        signal: vatNet >= 0 ? "VAT payable" : "VAT refund",
-        detail: "Check the filing amount and supporting VAT reports.",
+        title: tr("vatReadiness"),
+        signal: vatNet >= 0 ? tr("vatPayable") : tr("vatRefund"),
+        detail: tr("checkTheFilingAmountAndSupporting"),
         count: Math.abs(vatNet) > 0.005 ? 1 : 0,
         amount: Math.abs(vatNet),
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: FileText,
-        actionLabel: "Open filing",
+        actionLabel: tr("openFiling"),
         href: "/vat-filing",
       },
       {
         id: "sales-mix",
-        title: "Sales mix concentration",
+        title: tr("salesMixConcentration"),
         signal: topProductServiceSalesRow
           ? `${topProductServiceSalesRow.productService} leads sales`
-          : "No line-item sales",
-        detail: "Review product/service concentration before forecasting or pricing changes.",
+          : tr("noLineItemSales"),
+        detail: tr("reviewProductServiceConcentrationBeforeForecasti"),
         count: productServiceTopShare >= 50 ? 1 : 0,
         amount: topProductServiceSalesRow?.amountAed ?? 0,
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: BarChart3,
-        actionLabel: "Open sales mix",
+        actionLabel: tr("openSalesMix"),
         tab: "sales",
       },
       {
         id: "corporate-tax",
-        title: "Corporate tax estimate",
-        signal: corporateTaxPayable > 0.005 ? "Tax payable" : "No current tax due",
-        detail: "Review the Corporate Tax estimate and update the workpaper before draft filing.",
+        title: tr("corporateTaxEstimate"),
+        signal: corporateTaxPayable > 0.005 ? tr("taxPayable") : tr("noCurrentTaxDue"),
+        detail: tr("reviewTheCorporateTaxEstimateAnd"),
         count: corporateTaxPayable > 0.005 ? 1 : 0,
         amount: Math.max(0, corporateTaxPayable),
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: Scale,
-        actionLabel: "Open estimate",
+        actionLabel: tr("openEstimate"),
         tab: "tax",
       },
       {
         id: "close-review",
-        title: "Close review",
-        signal: "Review items",
-        detail: "Inspect trial-balance differences and manual ledger sources.",
+        title: tr("closeReview"),
+        signal: tr("reviewItems"),
+        detail: tr("inspectTrialBalanceDifferencesAndManual"),
         count: closeReviewCount,
         personas: ["accountant"],
         icon: ClipboardCheck,
-        actionLabel: "Open ledger",
+        actionLabel: tr("openLedger"),
         tab: closeReviewCount > 0 && !trialBalanceSummary.isBalanced ? "trial" : "ledger",
       },
       {
         id: "month-end-close",
-        title: "Month-end close status",
-        signal: "Close checklist",
+        title: tr("monthEndCloseStatus"),
+        signal: tr("closeChecklist"),
         detail:
           monthEndReviewChecks > 0
-            ? `${monthEndReviewChecks} close checks need review for ${monthEndPeriodLabel}.`
-            : `${monthEndPeriodLabel} close checklist is complete.`,
+            ? tr("closeChecksNeedReviewFor", { monthEndReviewChecks, monthEndPeriodLabel })
+            : tr("closeChecklistIsComplete", { monthEndPeriodLabel }),
         count: monthEndReviewChecks,
         personas: ["accountant"],
         icon: ClipboardCheck,
-        actionLabel: "Open close status",
+        actionLabel: tr("openCloseStatus"),
         tab: "close",
       },
       {
         id: "audit-trail-review",
-        title: "Audit trail",
-        signal: auditTrailReport.highRiskCount > 0 ? "High-risk activity" : "Activity log reviewed",
+        title: tr("auditTrail"),
+        signal:
+          auditTrailReport.highRiskCount > 0 ? tr("highRiskActivity") : tr("activityLogReviewed"),
         detail:
           auditTrailReport.highRiskCount > 0
-            ? `${auditTrailReport.highRiskCount} delete, void, reject, or error events need reviewer attention.`
-            : `${auditTrailReport.logCount} activity events summarized for reviewer evidence.`,
+            ? tr("deleteVoidRejectOrErrorEvents", { highRiskCount: auditTrailReport.highRiskCount })
+            : tr("activityEventsSummarizedForReviewerEvidence", {
+                logCount: auditTrailReport.logCount,
+              }),
         count: auditTrailReport.highRiskCount,
         personas: ["accountant"],
         icon: FileText,
-        actionLabel: "Open history",
+        actionLabel: tr("openHistory"),
         href: "/history",
       },
       {
         id: "consolidated-statements-review",
-        title: "Management roll-up",
+        title: tr("managementRollUp"),
         signal:
           consolidatedStatementsReport.reviewCount > 0
-            ? "Consolidation review"
-            : "Multi-entity roll-up ready",
+            ? tr("consolidationReview")
+            : tr("multiEntityRollUpReady"),
         detail:
           consolidatedStatementsReport.reviewCount > 0
-            ? `${consolidatedStatementsReport.reviewCount} entity, balance, or FX checks need review before pack delivery.`
-            : `${consolidatedStatementsReport.loadedEntityCount} entities rolled up with no eliminations applied.`,
+            ? tr("entityBalanceOrFxChecksNeed", {
+                reviewCount: consolidatedStatementsReport.reviewCount,
+              })
+            : tr("entitiesRolledUpWithNoEliminations", {
+                loadedEntityCount: consolidatedStatementsReport.loadedEntityCount,
+              }),
         count: consolidatedStatementsReport.reviewCount,
         amount: Math.abs(consolidatedStatementsReport.netProfit),
         currency: "AED",
         personas: ["accountant"],
         icon: FileSpreadsheet,
-        actionLabel: "Open roll-up",
+        actionLabel: tr("openRollUp"),
         tab: "close",
       },
       {
         id: "planning-risk",
-        title: "Planning guardrails",
-        signal: "Budget and cash alerts",
-        detail: "Review cash warnings and budget variance outliers.",
+        title: tr("planningGuardrails"),
+        signal: tr("budgetAndCashAlerts"),
+        detail: tr("reviewCashWarningsAndBudgetVariance"),
         count: planningRiskCount,
         amount: Math.abs(planningReport.variance),
         currency: "AED",
         personas: ["owner", "freelancer", "accountant"],
         icon: AlertTriangle,
-        actionLabel: "Open planning",
+        actionLabel: tr("openPlanning"),
         tab: "planning",
       },
     ];
@@ -8903,16 +8960,23 @@ export default function Reports() {
           preview:
             deliveryPlan?.preview ??
             ({
-              summary: `${subscription.format} to ${subscription.recipients} through ${subscription.channel}.`,
-              readinessLabel: "Catalog preview",
+              summary: tr("toThrough", {
+                format: subscription.format,
+                recipients: subscription.recipients,
+                channel: subscription.channel,
+              }),
+              readinessLabel: tr("catalogPreview"),
               checklist: [
                 {
-                  label: "Reports",
+                  label: tr("reports"),
                   status: readyCount === reports.length ? "ready" : "review",
-                  detail: `${readyCount}/${reports.length} reports ready for this pack.`,
+                  detail: tr("reportsReadyForThisPack", {
+                    readyCount,
+                    reportsCount: reports.length,
+                  }),
                 },
                 {
-                  label: "Guardrail",
+                  label: tr("guardrail"),
                   status: "ready",
                   detail: subscription.deliveryGuardrail,
                 },
@@ -9063,30 +9127,30 @@ export default function Reports() {
       return [
         {
           id: "pack",
-          label: packTemplate ? "Pack" : "No pack",
-          detail: packTemplate?.title ?? "No report pack template covers this workflow yet.",
+          label: packTemplate ? tr("pack") : tr("noPack"),
+          detail: packTemplate?.title ?? tr("noReportPackTemplateCoversThis"),
           variant: packTemplate ? ("success" as const) : ("outline" as const),
         },
         {
           id: "schedule",
-          label: deliverySubscription ? "Scheduled" : "No schedule",
-          detail: deliverySubscription?.cadence ?? "No scheduled report send covers this workflow.",
+          label: deliverySubscription ? tr("scheduled") : tr("noSchedule"),
+          detail: deliverySubscription?.cadence ?? tr("noScheduledReportSendCoversThis"),
           variant: deliverySubscription ? ("info" as const) : ("outline" as const),
         },
         {
           id: "alert",
-          label: triggerRule ? "Alert rule" : "No alert",
-          detail: triggerRule?.title ?? "No automation trigger rule covers this workflow yet.",
+          label: triggerRule ? tr("alertRule") : tr("noAlert"),
+          detail: triggerRule?.title ?? tr("noAutomationTriggerRuleCoversThis"),
           variant: triggerRule
-            ? triggerSeverityMeta[triggerRule.severity].variant
+            ? getTriggerSeverityMeta()[triggerRule.severity].variant
             : ("outline" as const),
         },
         {
           id: "delivery",
-          label: deliverySubscription ? "Delivery" : "No delivery",
+          label: deliverySubscription ? tr("delivery") : tr("noDelivery"),
           detail: deliverySubscription
             ? `${deliverySubscription.channel} · ${deliverySubscription.format}`
-            : "No delivery path covers this workflow yet.",
+            : tr("noDeliveryPathCoversThisWorkflow"),
           variant: deliverySubscription?.statusVariant ?? ("outline" as const),
         },
       ];
@@ -9096,7 +9160,7 @@ export default function Reports() {
       const reportPersona =
         personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
       const context = reportActionContextByPersonaReportId.get(`${reportPersona}:${report.id}`);
-      const status = reportStatusMeta[report.status];
+      const status = getReportStatusMeta()[report.status];
       const localReportHref =
         report.href ??
         (report.tab
@@ -9111,21 +9175,21 @@ export default function Reports() {
               tab: report.tab,
               search: report.name,
             }),
-          label: "Automate",
+          label: tr("automate"),
           testId: `report-workflow-finder-result-automation-${report.id}`,
         },
       ];
       if (context?.comparisonPresets[0]) {
         reportActionLinks.push({
           href: context.comparisonPresets[0].href,
-          label: "Compare",
+          label: tr("compare"),
           testId: `report-workflow-finder-result-comparison-${report.id}`,
         });
       }
       if (context?.deliverySubscriptions[0]) {
         reportActionLinks.push({
           href: context.deliverySubscriptions[0].href,
-          label: "Schedule",
+          label: tr("schedule"),
           testId: `report-workflow-finder-result-delivery-${report.id}`,
         });
       }
@@ -9277,7 +9341,7 @@ export default function Reports() {
       meta: `${rule.cadence} · ${rule.actionLabel}`,
       href: rule.href,
       persona: rule.persona,
-      badgeVariant: triggerSeverityMeta[rule.severity].variant,
+      badgeVariant: getTriggerSeverityMeta()[rule.severity].variant,
       coverageCues: buildReportWorkflowCoverageCues({
         persona: rule.persona,
         reportIds: rule.reportIds,
@@ -9381,12 +9445,12 @@ export default function Reports() {
 
     const preferredTypes = [
       "Report",
-      "Pack",
-      "Brief",
-      "Comparison",
+      tr("pack"),
+      tr("brief"),
+      tr("comparison"),
       "Automation",
-      "Delivery",
-      "Question",
+      tr("delivery"),
+      tr("question"),
     ];
     return preferredTypes
       .flatMap((type) =>
@@ -9469,28 +9533,36 @@ export default function Reports() {
       nextAction: latestFailedRun
         ? {
             kind: "retry" as const,
-            label: "Retry latest failed delivery",
-            detail: `${latestFailedRun.subscriptionTitle} failed ${formatDeliveryRunTimestamp(latestFailedRun.createdAt)}. Retry after confirming recipients and guardrails are still valid.`,
+            label: tr("retryLatestFailedDelivery"),
+            detail: tr("failedRetryAfterConfirmingRecipientsAnd", {
+              subscriptionTitle: latestFailedRun.subscriptionTitle,
+              formatDeliveryRunTimestamp: formatDeliveryRunTimestamp(latestFailedRun.createdAt),
+            }),
             runId: latestFailedRun.id,
-            badge: "Recovery",
+            badge: tr("recovery"),
             badgeVariant: "destructive" as const,
           }
         : firstReviewSubscription
           ? {
               kind: "open" as const,
-              label: "Review delivery guardrails",
-              detail: `${firstReviewSubscription.title} needs review before the next automated send.`,
+              label: tr("reviewDeliveryGuardrails"),
+              detail: tr("needsReviewBeforeTheNextAutomated", {
+                title: firstReviewSubscription.title,
+              }),
               href: firstReviewSubscription.href,
               badge: "Review",
               badgeVariant: "warning" as const,
             }
           : {
               kind: "ready" as const,
-              label: "Keep scheduled sends running",
+              label: tr("keepScheduledSendsRunning"),
               detail:
                 visibleReportDeliverySubscriptions.length > 0
-                  ? `${visibleReportDeliverySubscriptions.length} delivery subscriptions are ready for this view.`
-                  : "No delivery subscriptions match this view yet.",
+                  ? tr("deliverySubscriptionsAreReadyForThis", {
+                      visibleReportDeliverySubscriptionsCount:
+                        visibleReportDeliverySubscriptions.length,
+                    })
+                  : tr("noDeliverySubscriptionsMatchThisView"),
               badge: "Ready",
               badgeVariant: "success" as const,
             },
@@ -9657,7 +9729,8 @@ export default function Reports() {
         plannedReportCount: workspace.plannedReports.length,
         prerequisiteCount: workspace.plannedReports.filter((report) => report.roadmapPrerequisites)
           .length,
-        roadmapStatus: workspace.plannedReports.length > 0 ? "Roadmap gaps" : "Coverage complete",
+        roadmapStatus:
+          workspace.plannedReports.length > 0 ? tr("roadmapGaps") : tr("coverageComplete"),
         nextWorkflow:
           nextReports.length > 0
             ? (reportPersonaHref(nextReports[0], workspace.persona) ??
@@ -9761,8 +9834,11 @@ export default function Reports() {
         recommendations.push({
           id: `comparison-${workspace.persona}-${row.id}`,
           title: row.label,
-          detail: `${row.signal}: ${formatComparisonPercent(row.percentChange)} vs baseline`,
-          badge: "Movement",
+          detail: tr("vsBaseline", {
+            signal: row.signal,
+            formatComparisonPercent: formatComparisonPercent(row.percentChange),
+          }),
+          badge: tr("movement"),
           badgeVariant: comparisonBadgeVariant(row),
           amount: row.delta,
           tab: row.tab,
@@ -9774,8 +9850,8 @@ export default function Reports() {
           id: `primary-${workspace.persona}-${workspace.topReadyReport.id}`,
           title: workspace.topReadyReport.name,
           detail: workspace.topReadyReport.automation,
-          badge: reportStatusMeta[workspace.topReadyReport.status].label,
-          badgeVariant: reportStatusMeta[workspace.topReadyReport.status].variant,
+          badge: getReportStatusMeta()[workspace.topReadyReport.status].label,
+          badgeVariant: getReportStatusMeta()[workspace.topReadyReport.status].variant,
           tab: workspace.topReadyReport.tab,
           href: workspace.topReadyReport.href,
         });
@@ -9810,45 +9886,50 @@ export default function Reports() {
       const checks = [
         {
           id: "ready-reports",
-          label: "Report data refreshed",
-          detail: `${workspace.readyReports} ready/API-backed reports for ${workspace.title}.`,
+          label: tr("reportDataRefreshed"),
+          detail: tr("readyApiBackedReportsFor", {
+            readyReports: workspace.readyReports,
+            title: workspace.title,
+          }),
           status: workspace.readyReports > 0 ? "Ready" : "Review",
           workflow: reportWorkspaceHref(workspace),
         },
         {
           id: "comparison-snapshot",
-          label: "Comparison snapshot attached",
-          detail: `${packComparisonRows.length} current-vs-prior signals in the pack.`,
+          label: tr("comparisonSnapshotAttached"),
+          detail: tr("currentVsPriorSignalsInThe", {
+            packComparisonRowsCount: packComparisonRows.length,
+          }),
           status: packComparisonRows.length > 0 ? "Ready" : "Review",
           workflow: reportsHref({ tab: workspace.primaryTab, persona: workspace.persona }),
         },
         {
           id: "recommended-actions",
-          label: "Recommended actions ranked",
-          detail: `${recommendationCount} next-best report actions included.`,
+          label: tr("recommendedActionsRanked"),
+          detail: tr("nextBestReportActionsIncluded", { recommendationCount }),
           status: recommendationCount > 0 ? "Ready" : "Review",
           workflow: reportWorkspaceHref(workspace),
         },
         {
           id: "automation-review",
-          label: "Automation exceptions reviewed",
+          label: tr("automationExceptionsReviewed"),
           detail:
             pack.openWorkItemCount > 0
-              ? `${pack.openWorkItemCount} open work items before delivery.`
-              : "No open automation work items.",
+              ? tr("openWorkItemsBeforeDelivery", { openWorkItemCount: pack.openWorkItemCount })
+              : tr("noOpenAutomationWorkItems"),
           status: pack.openWorkItemCount > 0 ? "Review" : "Ready",
           workflow: reportWorkspaceHref(workspace),
         },
         {
           id: "delivery-cadence",
-          label: "Delivery cadence configured",
+          label: tr("deliveryCadenceConfigured"),
           detail: workspace.packSchedule.cadence,
           status: workspace.packSchedule.cadence ? "Ready" : "Review",
           workflow: reportWorkspaceHref(workspace),
         },
         {
           id: "recipients",
-          label: "Recipients configured",
+          label: tr("recipientsConfigured"),
           detail: workspace.packSchedule.recipients,
           status: workspace.packSchedule.recipients ? "Ready" : "Review",
           workflow: reportWorkspaceHref(workspace),
@@ -10100,47 +10181,44 @@ export default function Reports() {
       const nextAction =
         failedRunCount > 0
           ? {
-              label: "Recover failed delivery",
-              detail: `${failedRunCount} failed report delivery run${
-                failedRunCount === 1 ? "" : "s"
-              } can be retried after guardrails are fixed.`,
+              label: tr("recoverFailedDelivery"),
+              detail: tr.plural("failedRunsCanBeRetried", failedRunCount),
               href: reportSectionHref(workspace, "delivery-subscriptions"),
-              badge: "Recovery",
+              badge: tr("recovery"),
               badgeVariant: "danger" as const,
             }
           : deliveryIssueCount > 0
             ? {
-                label: "Review delivery setup",
-                detail: `${deliveryIssueCount} delivery subscription${
-                  deliveryIssueCount === 1 ? "" : "s"
-                } need setup, guardrail review, or enablement before auto-send.`,
+                label: tr("reviewDeliverySetup"),
+                detail: tr.plural("deliverySubscriptionsNeedSetup", deliveryIssueCount),
                 href: reportSectionHref(workspace, "delivery-subscriptions"),
-                badge: "Delivery",
+                badge: tr("delivery"),
                 badgeVariant: "warning" as const,
               }
             : openWorkItemCount > 0
               ? {
-                  label: "Clear automation queue",
-                  detail: `${openWorkItemCount} open work item${
-                    openWorkItemCount === 1 ? "" : "s"
-                  } should be resolved before scheduled packs are sent.`,
+                  label: tr("clearAutomationQueue"),
+                  detail: tr.plural("openWorkItemsShouldBeResolved", openWorkItemCount),
                   href: reportSectionHref(workspace, "automation-command-center"),
-                  badge: "Work queue",
+                  badge: tr("workQueue"),
                   badgeVariant: "warning" as const,
                 }
               : comparisonWarnings > 0
                 ? {
-                    label: "Review comparison movement",
-                    detail: `${comparisonWarnings} comparison signal${
-                      comparisonWarnings === 1 ? "" : "s"
-                    } need a note before the next pack delivery.`,
+                    label: tr("reviewComparisonMovement"),
+                    detail: tr.plural("comparisonSignalsNeedNote", comparisonWarnings),
                     href: reportSectionHref(workspace, "recommendations"),
-                    badge: "Movement",
+                    badge: tr("movement"),
                     badgeVariant: "warning" as const,
                   }
                 : {
-                    label: "Keep automation running",
-                    detail: `${readyRuleCount}/${automationRules.length} auto-send rules and ${readyDeliveryCount}/${deliverySubscriptions.length} deliveries are ready.`,
+                    label: tr("keepAutomationRunning"),
+                    detail: tr("autoSendRulesAndDeliveriesAre", {
+                      readyRuleCount,
+                      automationRulesCount: automationRules.length,
+                      readyDeliveryCount,
+                      deliverySubscriptionsCount: deliverySubscriptions.length,
+                    }),
                     href: reportSectionHref(workspace, "automation-command-center"),
                     badge: "Ready",
                     badgeVariant: "success" as const,
@@ -10150,7 +10228,7 @@ export default function Reports() {
         failedRunCount > 0
           ? "Delivery recovery"
           : deliveryIssueCount > 0 || openWorkItemCount > 0 || comparisonWarnings > 0
-            ? "Needs review"
+            ? tr("needsReview")
             : "Ready to automate";
 
       return {
@@ -10319,7 +10397,9 @@ export default function Reports() {
               search: reportWorkflowContextSearchLabel,
             }),
         priorityGap,
-        priorityGapLabel: priorityGap ? reportWorkflowGapFilterLabels[priorityGap] : "No open gap",
+        priorityGapLabel: priorityGap
+          ? reportWorkflowGapFilterLabels[priorityGap]
+          : tr("noOpenGap"),
       };
     });
   }, [reportWorkflowContextSearchLabel, visibleReportAutomationOperations]);
@@ -10329,21 +10409,32 @@ export default function Reports() {
     >((previews, item) => {
       previews[item.workspace.persona] = [
         {
-          label: "Shared context",
+          label: tr("sharedContext"),
           value: item.status,
           status: item.status === "Ready to automate" ? "ready" : "review",
-          detail: `${item.readyReportCount}/${item.reportCount} reports, ${item.readyRuleCount}/${item.automationRuleCount} rules, ${item.readyDeliveryCount}/${item.deliverySubscriptionCount} deliveries ready.`,
+          detail: tr("reportsRulesDeliveriesReady", {
+            readyReportCount: item.readyReportCount,
+            reportCount: item.reportCount,
+            readyRuleCount: item.readyRuleCount,
+            automationRuleCount: item.automationRuleCount,
+            readyDeliveryCount: item.readyDeliveryCount,
+            deliverySubscriptionCount: item.deliverySubscriptionCount,
+          }),
           href: item.shareHref,
         },
         {
-          label: "Priority gap",
+          label: tr("priorityGap"),
           value: item.priorityGapLabel,
           status: item.priorityGap ? "review" : "ready",
-          detail: `${item.reportGapCount} report gaps, ${item.automationRuleGapCount} rule gaps, ${item.deliveryGapCount} delivery gaps.`,
+          detail: tr("reportGapsRuleGapsDeliveryGaps", {
+            reportGapCount: item.reportGapCount,
+            automationRuleGapCount: item.automationRuleGapCount,
+            deliveryGapCount: item.deliveryGapCount,
+          }),
           href: item.gapHref,
         },
         {
-          label: "Next action",
+          label: tr("nextAction"),
           value: item.nextAction.label,
           status: item.nextAction.badgeVariant === "success" ? "ready" : "review",
           detail: item.nextAction.detail,
@@ -10406,7 +10497,7 @@ export default function Reports() {
             : undefined,
           latestRunError:
             latestRun?.status === "failed"
-              ? (latestRun.errorMessage ?? "Retry after fixing delivery settings or guardrails.")
+              ? (latestRun.errorMessage ?? tr("retryAfterFixingDeliverySettingsOr"))
               : null,
           queueDisabled: !subscription.enabled,
         };
@@ -10447,7 +10538,7 @@ export default function Reports() {
       if (variables.subscriptionId === editingReportDeliverySubscriptionId) {
         setEditingReportDeliverySubscriptionId(null);
       }
-      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const subscriptionTitle = result?.subscription?.title ?? tr("reportDelivery");
       const onlyToggledEnabled =
         variables.enabled !== undefined &&
         variables.cadence === undefined &&
@@ -10458,16 +10549,16 @@ export default function Reports() {
       toast({
         title: onlyToggledEnabled
           ? result?.subscription?.enabled
-            ? "Report delivery enabled"
-            : "Report delivery paused"
-          : "Report delivery settings saved",
-        description: `${subscriptionTitle} now uses company delivery settings.`,
+            ? tr("reportDeliveryEnabled")
+            : tr("reportDeliveryPaused")
+          : tr("reportDeliverySettingsSaved"),
+        description: tr("nowUsesCompanyDeliverySettings", { subscriptionTitle }),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not update report delivery",
-        description: error?.message || "Failed to update report delivery settings",
+        title: tr("couldNotUpdateReportDelivery"),
+        description: error?.message || tr("failedToUpdateReportDeliverySettings"),
         variant: "destructive",
       });
     },
@@ -10492,21 +10583,21 @@ export default function Reports() {
       reportDeliveryPlansQuery.refetch();
       reportDeliveryRunsQuery.refetch();
       reportDeliverySchedulerHealthQuery.refetch();
-      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const subscriptionTitle = result?.subscription?.title ?? tr("reportDelivery");
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
-        title: "Report delivery queued",
+        title: tr("reportDeliveryQueued"),
         description: nextRunLabel
-          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
-          : `${subscriptionTitle} queued as an in-app reminder.`,
+          ? tr("queuedFor", { subscriptionTitle, nextRunLabel })
+          : tr("queuedAsAnInAppReminder", { subscriptionTitle }),
       });
     },
     onError: (error: any) => {
       reportDeliveryRunsQuery.refetch();
       reportDeliverySchedulerHealthQuery.refetch();
       toast({
-        title: "Could not queue report delivery",
-        description: error?.message || "Failed to queue report delivery",
+        title: tr("couldNotQueueReportDelivery"),
+        description: error?.message || tr("failedToQueueReportDelivery"),
         variant: "destructive",
       });
     },
@@ -10525,10 +10616,10 @@ export default function Reports() {
           [subscriptionId]: true,
         }));
         toast({
-          title: "Handoff gaps acknowledged",
-          description: `${
-            subscription?.title ?? "This report delivery"
-          } has review gaps in the accountant handoff. Click queue again to send with those gaps acknowledged.`,
+          title: tr("handoffGapsAcknowledged"),
+          description: tr("hasReviewGapsInTheAccountant", {
+            value: subscription?.title ?? "This report delivery",
+          }),
         });
         return;
       }
@@ -10568,16 +10659,16 @@ export default function Reports() {
       reportDeliveryPlansQuery.refetch();
       reportDeliveryRunsQuery.refetch();
       reportDeliverySchedulerHealthQuery.refetch();
-      const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
+      const subscriptionTitle = result?.subscription?.title ?? tr("reportDelivery");
       toast({
-        title: "Report delivery retry queued",
-        description: `${subscriptionTitle} was requeued after recovery.`,
+        title: tr("reportDeliveryRetryQueued"),
+        description: tr("wasRequeuedAfterRecovery", { subscriptionTitle }),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not retry report delivery",
-        description: error?.message || "Failed to retry report delivery",
+        title: tr("couldNotRetryReportDelivery"),
+        description: error?.message || tr("failedToRetryReportDelivery"),
         variant: "destructive",
       });
     },
@@ -10610,16 +10701,16 @@ export default function Reports() {
     const vatReturnRegister: ExportData = {
       sheetName: "VAT Return Register",
       columns: [
-        { header: "Period Start", key: "periodStart", width: 14 },
-        { header: "Period End", key: "periodEnd", width: 14 },
-        { header: "Due Date", key: "dueDate", width: 14 },
-        { header: "Status", key: "status", width: 16 },
-        { header: "Output VAT (AED)", key: "outputVat", width: 18 },
-        { header: "Recoverable VAT (AED)", key: "recoverableVat", width: 20 },
-        { header: "Payable VAT (AED)", key: "payableVat", width: 18 },
-        { header: "FTA Reference", key: "ftaReference", width: 24 },
-        { header: "Payment Status", key: "paymentStatus", width: 18 },
-        { header: "Payment Amount (AED)", key: "paymentAmount", width: 22 },
+        { header: tr("periodStart"), key: "periodStart", width: 14 },
+        { header: tr("periodEnd"), key: "periodEnd", width: 14 },
+        { header: tr("dueDate"), key: "dueDate", width: 14 },
+        { header: tr("status"), key: "status", width: 16 },
+        { header: tr("outputVatAed"), key: "outputVat", width: 18 },
+        { header: tr("recoverableVatAed"), key: "recoverableVat", width: 20 },
+        { header: tr("payableVatAed"), key: "payableVat", width: 18 },
+        { header: tr("ftaReference"), key: "ftaReference", width: 24 },
+        { header: tr("paymentStatus"), key: "paymentStatus", width: 18 },
+        { header: tr("paymentAmountAed"), key: "paymentAmount", width: 22 },
       ],
       rows: vatReturns.map((vatReturn) => ({
         periodStart: vatReturn.periodStart,
@@ -10821,7 +10912,7 @@ export default function Reports() {
       });
     const packPriorityGapLabel =
       packHandoff?.priorityGapLabel ??
-      (packPriorityGap ? reportWorkflowGapFilterLabels[packPriorityGap] : "No open gap");
+      (packPriorityGap ? reportWorkflowGapFilterLabels[packPriorityGap] : tr("noOpenGap"));
     const operationsWorkflow = reportSectionHref(workspace, "automation-operations");
     const commandCenterWorkflow = reportSectionHref(workspace, "automation-command-center");
     const deliveryWorkflow = reportSectionHref(workspace, "delivery-subscriptions");
@@ -10829,21 +10920,21 @@ export default function Reports() {
     const packIndex: ExportData = {
       sheetName: "Pack Index",
       columns: [
-        { header: "Report", key: "report", width: 32 },
-        { header: "Decision Question", key: "decisionQuestion", width: 58 },
-        { header: "Status", key: "status", width: 14 },
-        { header: "Comparison", key: "comparison", width: 24 },
-        { header: "Automation", key: "automation", width: 28 },
-        { header: "Delivery", key: "delivery", width: 22 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("report"), key: "report", width: 32 },
+        { header: tr("decisionQuestion"), key: "decisionQuestion", width: 58 },
+        { header: tr("status"), key: "status", width: 14 },
+        { header: tr("comparison"), key: "comparison", width: 24 },
+        { header: tr("automation"), key: "automation", width: 28 },
+        { header: tr("delivery"), key: "delivery", width: 22 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: workspace.reports.map((report) => ({
         report: report.name,
         decisionQuestion: report.decisionQuestion,
-        status: reportStatusMeta[report.status].label,
+        status: getReportStatusMeta()[report.status].label,
         comparison: report.comparison,
         automation: report.automation,
-        delivery: workbookReportIds.has(report.id) ? "Included in workbook" : "Open workflow",
+        delivery: workbookReportIds.has(report.id) ? tr("includedInWorkbook") : tr("openWorkflow"),
         workflow: reportPersonaHref(report, workspace.persona) ?? reportWorkspaceHref(workspace),
       })),
     };
@@ -10851,9 +10942,9 @@ export default function Reports() {
     const operationsControl: ExportData = {
       sheetName: "Operations Control",
       columns: [
-        { header: "Field", key: "field", width: 34 },
-        { header: "Value", key: "value", width: 70 },
-        { header: "Workflow", key: "workflow", width: 48 },
+        { header: tr("field"), key: "field", width: 34 },
+        { header: tr("value"), key: "value", width: 70 },
+        { header: tr("workflow"), key: "workflow", width: 48 },
       ],
       rows: [
         { field: "Workspace", value: workspace.title, workflow: reportWorkspaceHref(workspace) },
@@ -10941,19 +11032,19 @@ export default function Reports() {
     const accountantHandoff: ExportData = {
       sheetName: "Accountant Handoff",
       columns: [
-        { header: "Workspace", key: "workspace", width: 30 },
-        { header: "Persona", key: "persona", width: 18 },
-        { header: "Status", key: "status", width: 24 },
-        { header: "Priority Gap", key: "priorityGap", width: 24 },
-        { header: "Reports Ready", key: "reportsReady", width: 18 },
-        { header: "Rules Ready", key: "rulesReady", width: 18 },
-        { header: "Deliveries Ready", key: "deliveriesReady", width: 18 },
-        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
-        { header: "Shared Context", key: "sharedContext", width: 54 },
-        { header: "Gap Workflow", key: "gapWorkflow", width: 54 },
-        { header: "Next Action", key: "nextAction", width: 30 },
-        { header: "Next Action Detail", key: "nextActionDetail", width: 78 },
-        { header: "Next Action Workflow", key: "nextActionWorkflow", width: 54 },
+        { header: tr("workspace"), key: "workspace", width: 30 },
+        { header: tr("persona"), key: "persona", width: 18 },
+        { header: tr("status"), key: "status", width: 24 },
+        { header: tr("priorityGap2"), key: "priorityGap", width: 24 },
+        { header: tr("reportsReady"), key: "reportsReady", width: 18 },
+        { header: tr("rulesReady"), key: "rulesReady", width: 18 },
+        { header: tr("deliveriesReady"), key: "deliveriesReady", width: 18 },
+        { header: tr("amountAtRisk"), key: "amountAtRisk", width: 18 },
+        { header: tr("sharedContext2"), key: "sharedContext", width: 54 },
+        { header: tr("gapWorkflow"), key: "gapWorkflow", width: 54 },
+        { header: tr("nextAction2"), key: "nextAction", width: 30 },
+        { header: tr("nextActionDetail"), key: "nextActionDetail", width: 78 },
+        { header: tr("nextActionWorkflow"), key: "nextActionWorkflow", width: 54 },
       ],
       rows: [
         {
@@ -10977,8 +11068,8 @@ export default function Reports() {
           amountAtRisk: `AED ${(packOperations?.amountAtRisk ?? packRuleAmountAtRisk).toFixed(2)}`,
           sharedContext: packSharedContextHref,
           gapWorkflow: packGapHref,
-          nextAction: packOperations?.nextAction.label ?? "Not available",
-          nextActionDetail: packOperations?.nextAction.detail ?? "Not available",
+          nextAction: packOperations?.nextAction.label ?? tr("notAvailable"),
+          nextActionDetail: packOperations?.nextAction.detail ?? tr("notAvailable"),
           nextActionWorkflow: packOperations?.nextAction.href ?? operationsWorkflow,
         },
       ],
@@ -10987,90 +11078,90 @@ export default function Reports() {
     const packSummary: ExportData = {
       sheetName: "Pack Summary",
       columns: [
-        { header: "Metric", key: "metric", width: 34 },
-        { header: "Value", key: "value", width: 80 },
+        { header: tr("metric"), key: "metric", width: 34 },
+        { header: tr("value"), key: "value", width: 80 },
       ],
       rows: [
-        { metric: "Workspace", value: workspace.title },
-        { metric: "Persona", value: workspace.persona },
-        { metric: "Pack automation outcome", value: workspace.automationOutcome },
-        { metric: "Current period", value: comparisonCurrentLabel },
-        { metric: "Prior period", value: comparisonPreviousLabel },
+        { metric: tr("workspace"), value: workspace.title },
+        { metric: tr("persona"), value: workspace.persona },
+        { metric: tr("packAutomationOutcome"), value: workspace.automationOutcome },
+        { metric: tr("currentPeriod"), value: comparisonCurrentLabel },
+        { metric: tr("priorPeriod"), value: comparisonPreviousLabel },
         {
-          metric: "Pack status",
+          metric: tr("packStatus"),
           value: openPackSignals.length > 0 ? "Review before send" : "Ready to send",
         },
         {
-          metric: "Operations status",
+          metric: tr("operationsStatus"),
           value: packOperations?.status ?? "Not available",
         },
         {
-          metric: "Operations next action",
+          metric: tr("operationsNextAction"),
           value: packOperations?.nextAction.label ?? "Not available",
         },
-        { metric: "Workspace reports", value: workspace.reports.length },
-        { metric: "Ready reports", value: workspace.readyReports },
-        { metric: "Coverage categories", value: packCoverageMap.length },
-        { metric: "Decision shortcuts", value: packDecisionShortcuts.length },
-        { metric: "Automation starters", value: packAutomationStarters.length },
-        { metric: "Trigger rules", value: packTriggerRules.length },
-        { metric: "Delivery subscriptions", value: packDeliverySubscriptions.length },
-        { metric: "Pack templates", value: packTemplates.length },
-        { metric: "Planned report gaps", value: packRoadmap?.plannedReportCount ?? 0 },
-        { metric: "Roadmap prerequisites", value: packRoadmap?.prerequisiteCount ?? 0 },
-        { metric: "Roadmap status", value: packRoadmap?.roadmapStatus ?? "Not available" },
+        { metric: tr("workspaceReports"), value: workspace.reports.length },
+        { metric: tr("readyReports"), value: workspace.readyReports },
+        { metric: tr("coverageCategories"), value: packCoverageMap.length },
+        { metric: tr("decisionShortcuts"), value: packDecisionShortcuts.length },
+        { metric: tr("automationStarters"), value: packAutomationStarters.length },
+        { metric: tr("triggerRules"), value: packTriggerRules.length },
+        { metric: tr("deliverySubscriptions"), value: packDeliverySubscriptions.length },
+        { metric: tr("packTemplates"), value: packTemplates.length },
+        { metric: tr("plannedReportGaps"), value: packRoadmap?.plannedReportCount ?? 0 },
+        { metric: tr("roadmapPrerequisites"), value: packRoadmap?.prerequisiteCount ?? 0 },
+        { metric: tr("roadmapStatus"), value: packRoadmap?.roadmapStatus ?? "Not available" },
         {
-          metric: "Top roadmap priority",
+          metric: tr("topRoadmapPriority"),
           value: packRoadmap?.topPriorityReport
             ? `${packRoadmap.topPriorityReport.name} (${packRoadmap.topPriorityScore})`
             : "Not available",
         },
-        { metric: "Workbook sheets", value: workbookSheets.length },
-        { metric: "Comparison metrics", value: packComparisonRows.length },
-        { metric: "Comparison presets", value: packComparisonPresets.length },
-        { metric: "Recommended actions", value: packRecommendations.length },
-        { metric: "Auto-send coverage", value: `${packAutoSendCoveragePercent}%` },
-        { metric: "Ready auto-send rules", value: packReadyAutomationRules },
-        { metric: "Rules needing review", value: packReviewAutomationRules },
-        { metric: "Setup-needed rules", value: packSetupAutomationRules },
-        { metric: "Delivery checks", value: packReadiness?.checks.length ?? 0 },
-        { metric: "Checks needing review", value: packReadiness?.reviewCount ?? 0 },
+        { metric: tr("workbookSheets"), value: workbookSheets.length },
+        { metric: tr("comparisonMetrics"), value: packComparisonRows.length },
+        { metric: tr("comparisonPresets"), value: packComparisonPresets.length },
+        { metric: tr("recommendedActions"), value: packRecommendations.length },
+        { metric: tr("autoSendCoverage"), value: `${packAutoSendCoveragePercent}%` },
+        { metric: tr("readyAutoSendRules"), value: packReadyAutomationRules },
+        { metric: tr("rulesNeedingReview"), value: packReviewAutomationRules },
+        { metric: tr("setupNeededRules"), value: packSetupAutomationRules },
+        { metric: tr("deliveryChecks"), value: packReadiness?.checks.length ?? 0 },
+        { metric: tr("checksNeedingReview"), value: packReadiness?.reviewCount ?? 0 },
         {
-          metric: "Automation health",
+          metric: tr("automationHealth"),
           value: packReadiness
             ? `${packReadiness.automationHealth.score}/100 - ${packReadiness.automationHealth.label}`
             : "Not available",
         },
         {
-          metric: "Automation health review signals",
+          metric: tr("automationHealthReviewSignals"),
           value: packReadiness?.automationHealth.reviewSignals ?? 0,
         },
         {
-          metric: "Automation health trend",
+          metric: tr("automationHealthTrend"),
           value: packHealthTrend
             ? `${packHealthTrend.label} (${packHealthTrend.detail})`
             : "Not available",
         },
-        { metric: "Open automation signals", value: openPackSignals.length },
-        { metric: "Open work items", value: openPackWorkItemCount },
-        { metric: "Amount at risk", value: `AED ${packAmountAtRisk.toFixed(2)}` },
+        { metric: tr("openAutomationSignals"), value: openPackSignals.length },
+        { metric: tr("openWorkItems"), value: openPackWorkItemCount },
+        { metric: tr("amountAtRisk2"), value: `AED ${packAmountAtRisk.toFixed(2)}` },
       ],
     };
 
     const coverageMap: ExportData = {
       sheetName: "Coverage Map",
       columns: [
-        { header: "Category", key: "category", width: 24 },
-        { header: "Reports", key: "reports", width: 14 },
-        { header: "Live", key: "live", width: 10 },
-        { header: "API Ready", key: "apiReady", width: 12 },
-        { header: "Planned", key: "planned", width: 12 },
-        { header: "Workbook Sheets", key: "workbookSheets", width: 16 },
-        { header: "Comparison Types", key: "comparisonTypes", width: 58 },
-        { header: "Automation Hooks", key: "automationHooks", width: 72 },
-        { header: "Personas", key: "personas", width: 30 },
-        { header: "Report List", key: "reportList", width: 72 },
-        { header: "Decision Questions", key: "decisionQuestions", width: 90 },
+        { header: tr("category"), key: "category", width: 24 },
+        { header: tr("reports"), key: "reports", width: 14 },
+        { header: tr("live"), key: "live", width: 10 },
+        { header: tr("apiReady2"), key: "apiReady", width: 12 },
+        { header: tr("planned"), key: "planned", width: 12 },
+        { header: tr("workbookSheets2"), key: "workbookSheets", width: 16 },
+        { header: tr("comparisonTypes"), key: "comparisonTypes", width: 58 },
+        { header: tr("automationHooks"), key: "automationHooks", width: 72 },
+        { header: tr("personas"), key: "personas", width: 30 },
+        { header: tr("reportList"), key: "reportList", width: 72 },
+        { header: tr("decisionQuestions"), key: "decisionQuestions", width: 90 },
       ],
       rows: packCoverageMap.map((coverage) => ({
         category: coverage.category,
@@ -11090,17 +11181,17 @@ export default function Reports() {
     const packTemplatesSheet: ExportData = {
       sheetName: "Pack Templates",
       columns: [
-        { header: "Template", key: "template", width: 34 },
-        { header: "Audience", key: "audience", width: 42 },
-        { header: "Outcome", key: "outcome", width: 70 },
-        { header: "Cadence", key: "cadence", width: 34 },
-        { header: "Delivery", key: "delivery", width: 38 },
-        { header: "Reports", key: "reports", width: 72 },
-        { header: "Ready Reports", key: "readyReports", width: 16 },
-        { header: "Categories", key: "categories", width: 34 },
-        { header: "Comparison Focus", key: "comparisonFocus", width: 58 },
-        { header: "Automation Trigger", key: "automationTrigger", width: 70 },
-        { header: "Workflow", key: "workflow", width: 42 },
+        { header: tr("template"), key: "template", width: 34 },
+        { header: tr("audience"), key: "audience", width: 42 },
+        { header: tr("outcome"), key: "outcome", width: 70 },
+        { header: tr("cadence"), key: "cadence", width: 34 },
+        { header: tr("delivery"), key: "delivery", width: 38 },
+        { header: tr("reports"), key: "reports", width: 72 },
+        { header: tr("readyReports2"), key: "readyReports", width: 16 },
+        { header: tr("categories"), key: "categories", width: 34 },
+        { header: tr("comparisonFocus"), key: "comparisonFocus", width: 58 },
+        { header: tr("automationTrigger"), key: "automationTrigger", width: 70 },
+        { header: tr("workflow"), key: "workflow", width: 42 },
       ],
       rows: packTemplates.map((template) => ({
         template: template.title,
@@ -11120,14 +11211,14 @@ export default function Reports() {
     const decisionShortcutsSheet: ExportData = {
       sheetName: "Decision Shortcuts",
       columns: [
-        { header: "Question", key: "question", width: 46 },
-        { header: "Answer", key: "answer", width: 80 },
-        { header: "Primary Report", key: "primaryReport", width: 30 },
-        { header: "Reports", key: "reports", width: 72 },
-        { header: "Comparison Preset", key: "comparisonPreset", width: 36 },
-        { header: "Automation Starter", key: "automationStarter", width: 38 },
-        { header: "Report Workflow", key: "reportWorkflow", width: 42 },
-        { header: "Shortcut Workflow", key: "shortcutWorkflow", width: 42 },
+        { header: tr("question"), key: "question", width: 46 },
+        { header: tr("answer"), key: "answer", width: 80 },
+        { header: tr("primaryReport"), key: "primaryReport", width: 30 },
+        { header: tr("reports"), key: "reports", width: 72 },
+        { header: tr("comparisonPreset"), key: "comparisonPreset", width: 36 },
+        { header: tr("automationStarter"), key: "automationStarter", width: 38 },
+        { header: tr("reportWorkflow"), key: "reportWorkflow", width: 42 },
+        { header: tr("shortcutWorkflow"), key: "shortcutWorkflow", width: 42 },
       ],
       rows: packDecisionShortcuts.map((shortcut) => ({
         question: shortcut.question,
@@ -11144,20 +11235,20 @@ export default function Reports() {
     const automationStartersSheet: ExportData = {
       sheetName: "Automation Starters",
       columns: [
-        { header: "Starter", key: "starter", width: 34 },
-        { header: "Audience", key: "audience", width: 42 },
-        { header: "Outcome", key: "outcome", width: 72 },
-        { header: "Setup Time", key: "setupTime", width: 18 },
-        { header: "Trigger", key: "trigger", width: 60 },
-        { header: "Ready Reports", key: "readyReports", width: 16 },
-        { header: "Reports", key: "reports", width: 72 },
-        { header: "Playbooks", key: "playbooks", width: 56 },
-        { header: "Queue Signals", key: "queueSignals", width: 56 },
-        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
-        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
-        { header: "Setup Steps", key: "setupSteps", width: 72 },
-        { header: "Primary Action", key: "primaryAction", width: 28 },
-        { header: "Workflow", key: "workflow", width: 42 },
+        { header: tr("starter"), key: "starter", width: 34 },
+        { header: tr("audience"), key: "audience", width: 42 },
+        { header: tr("outcome"), key: "outcome", width: 72 },
+        { header: tr("setupTime"), key: "setupTime", width: 18 },
+        { header: tr("trigger"), key: "trigger", width: 60 },
+        { header: tr("readyReports2"), key: "readyReports", width: 16 },
+        { header: tr("reports"), key: "reports", width: 72 },
+        { header: tr("playbooks"), key: "playbooks", width: 56 },
+        { header: tr("queueSignals"), key: "queueSignals", width: 56 },
+        { header: tr("openWorkItems2"), key: "openWorkItemCount", width: 18 },
+        { header: tr("amountAtRisk"), key: "amountAtRisk", width: 18 },
+        { header: tr("setupSteps"), key: "setupSteps", width: 72 },
+        { header: tr("primaryAction"), key: "primaryAction", width: 28 },
+        { header: tr("workflow"), key: "workflow", width: 42 },
       ],
       rows: packAutomationStarters.map((starter) => ({
         starter: starter.title,
@@ -11180,22 +11271,22 @@ export default function Reports() {
     const triggerRulesSheet: ExportData = {
       sheetName: "Trigger Rules",
       columns: [
-        { header: "Rule", key: "rule", width: 34 },
-        { header: "Severity", key: "severity", width: 16 },
-        { header: "Condition", key: "condition", width: 70 },
-        { header: "Threshold", key: "threshold", width: 74 },
-        { header: "Cadence", key: "cadence", width: 42 },
-        { header: "Reports", key: "reports", width: 72 },
-        { header: "Decision Shortcut", key: "decisionShortcut", width: 42 },
-        { header: "Automation Starter", key: "automationStarter", width: 42 },
-        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
-        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
-        { header: "Action", key: "action", width: 28 },
-        { header: "Workflow", key: "workflow", width: 42 },
+        { header: tr("rule"), key: "rule", width: 34 },
+        { header: tr("severity"), key: "severity", width: 16 },
+        { header: tr("condition"), key: "condition", width: 70 },
+        { header: tr("threshold"), key: "threshold", width: 74 },
+        { header: tr("cadence"), key: "cadence", width: 42 },
+        { header: tr("reports"), key: "reports", width: 72 },
+        { header: tr("decisionShortcut"), key: "decisionShortcut", width: 42 },
+        { header: tr("automationStarter"), key: "automationStarter", width: 42 },
+        { header: tr("openWorkItems2"), key: "openWorkItemCount", width: 18 },
+        { header: tr("amountAtRisk"), key: "amountAtRisk", width: 18 },
+        { header: tr("action"), key: "action", width: 28 },
+        { header: tr("workflow"), key: "workflow", width: 42 },
       ],
       rows: packTriggerRules.map((rule) => ({
         rule: rule.title,
-        severity: triggerSeverityMeta[rule.severity].label,
+        severity: getTriggerSeverityMeta()[rule.severity].label,
         condition: rule.condition,
         threshold: rule.threshold,
         cadence: rule.cadence,
@@ -11212,19 +11303,19 @@ export default function Reports() {
     const deliverySubscriptionsSheet: ExportData = {
       sheetName: "Delivery Subscriptions",
       columns: [
-        { header: "Subscription", key: "subscription", width: 38 },
-        { header: "Audience", key: "audience", width: 42 },
-        { header: "Cadence", key: "cadence", width: 54 },
-        { header: "Channel", key: "channel", width: 36 },
-        { header: "Format", key: "format", width: 32 },
-        { header: "Recipients", key: "recipients", width: 58 },
-        { header: "Pack Template", key: "packTemplate", width: 38 },
-        { header: "Ready Reports", key: "readyReports", width: 16 },
-        { header: "Trigger Rules", key: "triggerRules", width: 64 },
-        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
-        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
-        { header: "Delivery Guardrail", key: "deliveryGuardrail", width: 78 },
-        { header: "Workflow", key: "workflow", width: 42 },
+        { header: tr("subscription"), key: "subscription", width: 38 },
+        { header: tr("audience"), key: "audience", width: 42 },
+        { header: tr("cadence"), key: "cadence", width: 54 },
+        { header: tr("channel"), key: "channel", width: 36 },
+        { header: tr("format"), key: "format", width: 32 },
+        { header: tr("recipients"), key: "recipients", width: 58 },
+        { header: tr("packTemplate"), key: "packTemplate", width: 38 },
+        { header: tr("readyReports2"), key: "readyReports", width: 16 },
+        { header: tr("triggerRules2"), key: "triggerRules", width: 64 },
+        { header: tr("openWorkItems2"), key: "openWorkItemCount", width: 18 },
+        { header: tr("amountAtRisk"), key: "amountAtRisk", width: 18 },
+        { header: tr("deliveryGuardrail"), key: "deliveryGuardrail", width: 78 },
+        { header: tr("workflow"), key: "workflow", width: 42 },
       ],
       rows: packDeliverySubscriptions.map((subscription) => ({
         subscription: subscription.title,
@@ -11246,12 +11337,12 @@ export default function Reports() {
     const recommendedActions: ExportData = {
       sheetName: "Recommended Actions",
       columns: [
-        { header: "Priority", key: "priority", width: 12 },
-        { header: "Action", key: "action", width: 32 },
-        { header: "Trigger", key: "trigger", width: 60 },
-        { header: "Signal", key: "signal", width: 20 },
-        { header: "Amount", key: "amount", width: 18 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("priority"), key: "priority", width: 12 },
+        { header: tr("action"), key: "action", width: 32 },
+        { header: tr("trigger"), key: "trigger", width: 60 },
+        { header: tr("signal"), key: "signal", width: 20 },
+        { header: tr("amount"), key: "amount", width: 18 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: packRecommendations.map((recommendation, index) => ({
         priority: index + 1,
@@ -11273,18 +11364,18 @@ export default function Reports() {
     const reportRoadmapSheet: ExportData = {
       sheetName: "Report Roadmap",
       columns: [
-        { header: "Report", key: "report", width: 32 },
-        { header: "Status", key: "status", width: 18 },
-        { header: "Priority Score", key: "priorityScore", width: 16 },
-        { header: "Persona Impact", key: "personaImpact", width: 18 },
-        { header: "Priority Rationale", key: "priorityRationale", width: 56 },
-        { header: "Category", key: "category", width: 24 },
-        { header: "Comparison", key: "comparison", width: 28 },
-        { header: "Automation Unlock", key: "automation", width: 34 },
-        { header: "Data Source Needed", key: "dataSource", width: 46 },
-        { header: "Workflow Dependency", key: "workflowDependency", width: 50 },
-        { header: "Automation Rule Needed", key: "automationRule", width: 50 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("report"), key: "report", width: 32 },
+        { header: tr("status"), key: "status", width: 18 },
+        { header: tr("priorityScore"), key: "priorityScore", width: 16 },
+        { header: tr("personaImpact"), key: "personaImpact", width: 18 },
+        { header: tr("priorityRationale"), key: "priorityRationale", width: 56 },
+        { header: tr("category"), key: "category", width: 24 },
+        { header: tr("comparison"), key: "comparison", width: 28 },
+        { header: tr("automationUnlock"), key: "automation", width: 34 },
+        { header: tr("dataSourceNeeded"), key: "dataSource", width: 46 },
+        { header: tr("workflowDependency"), key: "workflowDependency", width: 50 },
+        { header: tr("automationRuleNeeded"), key: "automationRule", width: 50 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: workspace.reports
         .slice()
@@ -11299,7 +11390,7 @@ export default function Reports() {
         })
         .map((report) => ({
           report: report.name,
-          status: reportStatusMeta[report.status].label,
+          status: getReportStatusMeta()[report.status].label,
           priorityScore: report.roadmapPriority?.score ?? "",
           personaImpact: report.roadmapPriority?.impactByPersona[workspace.persona] ?? "",
           priorityRationale: report.roadmapPriority?.rationale ?? "",
@@ -11316,29 +11407,29 @@ export default function Reports() {
     const automationCommandCenter: ExportData = {
       sheetName: "Automation Command Center",
       columns: [
-        { header: "Metric", key: "metric", width: 34 },
-        { header: "Value", key: "value", width: 80 },
+        { header: tr("metric"), key: "metric", width: 34 },
+        { header: tr("value"), key: "value", width: 80 },
       ],
       rows: [
-        { metric: "Workspace", value: workspace.title },
-        { metric: "Persona", value: workspace.persona },
-        { metric: "Automation outcome", value: workspace.automationOutcome },
-        { metric: "Total automation rules", value: packAutomationRules.length },
-        { metric: "Delivery subscriptions", value: packDeliverySubscriptions.length },
-        { metric: "Ready auto-send rules", value: packReadyAutomationRules },
-        { metric: "Rules needing review", value: packReviewAutomationRules },
-        { metric: "Setup-needed rules", value: packSetupAutomationRules },
-        { metric: "Auto-send coverage", value: `${packAutoSendCoveragePercent}%` },
-        { metric: "Open rule work items", value: packRuleOpenWorkItemCount },
-        { metric: "Rule amount at risk", value: `AED ${packRuleAmountAtRisk.toFixed(2)}` },
-        { metric: "Comparison metrics linked", value: packRuleComparisonMetricCount },
-        { metric: "Report bundle coverage", value: packRuleReportBundleCount },
+        { metric: tr("workspace"), value: workspace.title },
+        { metric: tr("persona"), value: workspace.persona },
+        { metric: tr("automationOutcome"), value: workspace.automationOutcome },
+        { metric: tr("totalAutomationRules"), value: packAutomationRules.length },
+        { metric: tr("deliverySubscriptions"), value: packDeliverySubscriptions.length },
+        { metric: tr("readyAutoSendRules"), value: packReadyAutomationRules },
+        { metric: tr("rulesNeedingReview"), value: packReviewAutomationRules },
+        { metric: tr("setupNeededRules"), value: packSetupAutomationRules },
+        { metric: tr("autoSendCoverage"), value: `${packAutoSendCoveragePercent}%` },
+        { metric: tr("openRuleWorkItems"), value: packRuleOpenWorkItemCount },
+        { metric: tr("ruleAmountAtRisk"), value: `AED ${packRuleAmountAtRisk.toFixed(2)}` },
+        { metric: tr("comparisonMetricsLinked"), value: packRuleComparisonMetricCount },
+        { metric: tr("reportBundleCoverage"), value: packRuleReportBundleCount },
         {
-          metric: "Pack delivery status",
+          metric: tr("packDeliveryStatus"),
           value: packReadiness?.status ?? "Not available",
         },
         {
-          metric: "Pack checks needing review",
+          metric: tr("packChecksNeedingReview"),
           value: packReadiness?.reviewCount ?? 0,
         },
       ],
@@ -11347,35 +11438,35 @@ export default function Reports() {
     const automationHealth: ExportData = {
       sheetName: "Automation Health",
       columns: [
-        { header: "Metric", key: "metric", width: 34 },
-        { header: "Value", key: "value", width: 42 },
+        { header: tr("metric"), key: "metric", width: 34 },
+        { header: tr("value"), key: "value", width: 42 },
       ],
       rows: packReadiness
         ? [
-            { metric: "Workspace", value: workspace.title },
+            { metric: tr("workspace"), value: workspace.title },
             {
-              metric: "Score",
+              metric: tr("score"),
               value: `${packReadiness.automationHealth.score}/100`,
             },
-            { metric: "Status", value: packReadiness.automationHealth.label },
+            { metric: tr("status"), value: packReadiness.automationHealth.label },
             {
-              metric: "Pack readiness score",
+              metric: tr("packReadinessScore"),
               value: `${packReadiness.automationHealth.readinessScore}/100`,
             },
             {
-              metric: "Automation lane score",
+              metric: tr("automationLaneScore"),
               value: `${packReadiness.automationHealth.automationLaneScore}/100`,
             },
             {
-              metric: "Comparison signal score",
+              metric: tr("comparisonSignalScore"),
               value: `${packReadiness.automationHealth.comparisonScore}/100`,
             },
             {
-              metric: "Comparison warnings",
+              metric: tr("comparisonWarnings"),
               value: packReadiness.automationHealth.comparisonWarnings,
             },
             {
-              metric: "Review signals",
+              metric: tr("reviewSignals"),
               value: packReadiness.automationHealth.reviewSignals,
             },
           ]
@@ -11385,22 +11476,22 @@ export default function Reports() {
     const automationHealthTrend: ExportData = {
       sheetName: "Automation Health Trend",
       columns: [
-        { header: "Metric", key: "metric", width: 34 },
-        { header: "Value", key: "value", width: 52 },
+        { header: tr("metric"), key: "metric", width: 34 },
+        { header: tr("value"), key: "value", width: 52 },
       ],
       rows: packHealthTrend
         ? [
-            { metric: "Workspace", value: workspace.title },
-            { metric: "Trend", value: packHealthTrend.label },
-            { metric: "Current score", value: packHealthTrend.currentScore },
+            { metric: tr("workspace"), value: workspace.title },
+            { metric: tr("trend"), value: packHealthTrend.label },
+            { metric: tr("currentScore"), value: packHealthTrend.currentScore },
             {
-              metric: "Previous score",
+              metric: tr("previousScore"),
               value: packHealthTrend.previousScore ?? "Baseline",
             },
-            { metric: "Delta", value: packHealthTrend.delta },
-            { metric: "Detail", value: packHealthTrend.detail },
+            { metric: tr("delta"), value: packHealthTrend.delta },
+            { metric: tr("detail"), value: packHealthTrend.detail },
             {
-              metric: "Previous captured at",
+              metric: tr("previousCapturedAt"),
               value: packHealthTrend.previousCapturedAt ?? "",
             },
           ]
@@ -11410,10 +11501,10 @@ export default function Reports() {
     const deliveryChecklist: ExportData = {
       sheetName: "Delivery Checklist",
       columns: [
-        { header: "Check", key: "check", width: 34 },
-        { header: "Status", key: "status", width: 18 },
-        { header: "Detail", key: "detail", width: 70 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("check"), key: "check", width: 34 },
+        { header: tr("status"), key: "status", width: 18 },
+        { header: tr("detail"), key: "detail", width: 70 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows:
         packReadiness?.checks.map((check) => ({
@@ -11427,23 +11518,23 @@ export default function Reports() {
     const comparisonSnapshot: ExportData = {
       sheetName: "Comparison Snapshot",
       columns: [
-        { header: "Metric", key: "metric", width: 28 },
-        { header: "Signal", key: "signal", width: 22 },
-        { header: "Current", key: "current", width: 18 },
-        { header: "Baseline", key: "prior", width: 18 },
-        { header: "Change", key: "change", width: 18 },
-        { header: "Change %", key: "changePercent", width: 16 },
-        { header: "Status", key: "status", width: 18 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("metric"), key: "metric", width: 28 },
+        { header: tr("signal"), key: "signal", width: 22 },
+        { header: tr("current"), key: "current", width: 18 },
+        { header: tr("baseline"), key: "prior", width: 18 },
+        { header: tr("change"), key: "change", width: 18 },
+        { header: tr("change2"), key: "changePercent", width: 16 },
+        { header: tr("status"), key: "status", width: 18 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: packComparisonRows.map((row) => {
         const status =
           Math.abs(row.delta) < 0.005
-            ? "Stable"
+            ? tr("stable")
             : row.favorable === "neutral"
-              ? "Context"
+              ? tr("context")
               : (row.favorable === "increase" ? row.delta > 0 : row.delta < 0)
-                ? "Favorable"
+                ? tr("favorable")
                 : "Review";
 
         return {
@@ -11462,14 +11553,14 @@ export default function Reports() {
     const comparisonPresetsSheet: ExportData = {
       sheetName: "Comparison Presets",
       columns: [
-        { header: "Preset", key: "preset", width: 34 },
-        { header: "Question", key: "question", width: 70 },
-        { header: "Baseline", key: "baseline", width: 56 },
-        { header: "Metrics", key: "metrics", width: 56 },
-        { header: "Warnings", key: "warnings", width: 12 },
-        { header: "Reports", key: "reports", width: 72 },
-        { header: "Automation Trigger", key: "automationTrigger", width: 70 },
-        { header: "Workflow", key: "workflow", width: 42 },
+        { header: tr("preset"), key: "preset", width: 34 },
+        { header: tr("question"), key: "question", width: 70 },
+        { header: tr("baseline"), key: "baseline", width: 56 },
+        { header: tr("metrics"), key: "metrics", width: 56 },
+        { header: tr("warnings"), key: "warnings", width: 12 },
+        { header: tr("reports"), key: "reports", width: 72 },
+        { header: tr("automationTrigger"), key: "automationTrigger", width: 70 },
+        { header: tr("workflow"), key: "workflow", width: 42 },
       ],
       rows: packComparisonPresets.map((preset) => ({
         preset: preset.title,
@@ -11486,17 +11577,17 @@ export default function Reports() {
     const automationPlaybooks: ExportData = {
       sheetName: "Automation Playbooks",
       columns: [
-        { header: "Playbook", key: "playbook", width: 34 },
-        { header: "Trigger", key: "trigger", width: 42 },
-        { header: "Cadence", key: "cadence", width: 38 },
-        { header: "Recipients", key: "recipients", width: 42 },
-        { header: "Reports", key: "reports", width: 60 },
-        { header: "Rule Status", key: "status", width: 24 },
-        { header: "Open Work Items", key: "openWorkItemCount", width: 18 },
-        { header: "Amount At Risk", key: "amountAtRisk", width: 18 },
-        { header: "Comparison Metrics", key: "comparisonMetricCount", width: 20 },
-        { header: "Action", key: "action", width: 24 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("playbook"), key: "playbook", width: 34 },
+        { header: tr("trigger"), key: "trigger", width: 42 },
+        { header: tr("cadence"), key: "cadence", width: 38 },
+        { header: tr("recipients"), key: "recipients", width: 42 },
+        { header: tr("reports"), key: "reports", width: 60 },
+        { header: tr("ruleStatus"), key: "status", width: 24 },
+        { header: tr("openWorkItems2"), key: "openWorkItemCount", width: 18 },
+        { header: tr("amountAtRisk"), key: "amountAtRisk", width: 18 },
+        { header: tr("comparisonMetrics2"), key: "comparisonMetricCount", width: 20 },
+        { header: tr("action"), key: "action", width: 24 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: packAutomationRules.map((rule) => ({
         playbook: rule.playbook.title,
@@ -11516,12 +11607,12 @@ export default function Reports() {
     const packAutomationStatus: ExportData = {
       sheetName: "Pack Automation Status",
       columns: [
-        { header: "Signal", key: "signal", width: 26 },
-        { header: "Detail", key: "detail", width: 54 },
-        { header: "Open Count", key: "count", width: 14 },
-        { header: "Amount", key: "amount", width: 18 },
-        { header: "Status", key: "status", width: 20 },
-        { header: "Workflow", key: "workflow", width: 40 },
+        { header: tr("signal"), key: "signal", width: 26 },
+        { header: tr("detail"), key: "detail", width: 54 },
+        { header: tr("openCount"), key: "count", width: 14 },
+        { header: tr("amount"), key: "amount", width: 18 },
+        { header: tr("status"), key: "status", width: 20 },
+        { header: tr("workflow"), key: "workflow", width: 40 },
       ],
       rows: packSignals.map((item) => ({
         signal: item.title,
@@ -11540,8 +11631,8 @@ export default function Reports() {
     const packCadence: ExportData = {
       sheetName: "Pack Cadence",
       columns: [
-        { header: "Field", key: "field", width: 24 },
-        { header: "Value", key: "value", width: 80 },
+        { header: tr("field"), key: "field", width: 24 },
+        { header: tr("value"), key: "value", width: 80 },
       ],
       rows: [
         { field: "Workspace", value: workspace.title },
@@ -11589,14 +11680,14 @@ export default function Reports() {
         `${workspace.persona}_report_pack${exportDateRangeSuffix}`
       );
       toast({
-        title: "Report pack exported",
-        description: `${workspace.title} exported to Excel.`,
+        title: tr("reportPackExported"),
+        description: tr("exportedToExcel", { title: workspace.title }),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: error?.message || "Failed to export report pack",
+        title: tr("exportFailed"),
+        description: error?.message || tr("failedToExportReportPack"),
       });
     } finally {
       setIsExporting(false);
@@ -11624,8 +11715,8 @@ export default function Reports() {
 
     if (result?.success) {
       toast({
-        title: "Report pack exported",
-        description: `${workspace.title} exported to Google Sheets. Opening...`,
+        title: tr("reportPackExported"),
+        description: tr("exportedToGoogleSheetsOpening", { title: workspace.title }),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -11633,8 +11724,8 @@ export default function Reports() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result?.error || "Failed to export report pack to Google Sheets",
+        title: tr("exportFailed"),
+        description: result?.error || tr("failedToExportReportPackTo"),
       });
     }
   };
@@ -11647,62 +11738,62 @@ export default function Reports() {
 
     if (activeTab === "pl" && profitLoss) {
       exportToExcel([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Profit & Loss exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("profitLossExportedToExcel") });
     } else if (activeTab === "bs" && balanceSheet) {
       exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Balance Sheet exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("balanceSheetExportedToExcel") });
     } else if (activeTab === "vat" && vatSummary) {
       exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
-      toast({ title: "Export successful", description: "VAT Summary exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("vatSummaryExportedToExcel") });
     } else if (activeTab === "tax" && corporateTaxEstimate) {
       exportToExcel(
         prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
         `corporate_tax_estimate${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
-        description: "Corporate Tax Estimate exported to Excel",
+        title: tr("exportSuccessful"),
+        description: tr("corporateTaxEstimateExportedToExcel"),
       });
     } else if (activeTab === "trial" && trialBalance) {
       exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Trial Balance exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("trialBalanceExportedToExcel") });
     } else if (activeTab === "sales") {
       if (selectedReportId === "ar-aging") {
         exportToExcel(receivableAgingExportSheets, `ar_aging${dateRangeStr}`);
-        toast({ title: "Export successful", description: "A/R Aging exported to Excel" });
+        toast({ title: tr("exportSuccessful"), description: tr("aRAgingExportedToExcel") });
       } else {
         exportToExcel(
           prepareInvoiceStatusForExport(invoiceStatusReport),
           `invoice_status${dateRangeStr}`
         );
-        toast({ title: "Export successful", description: "Invoice Status exported to Excel" });
+        toast({ title: tr("exportSuccessful"), description: tr("invoiceStatusExportedToExcel") });
       }
     } else if (activeTab === "balances") {
       if (selectedReportId === "ap-aging") {
         exportToExcel(payableAgingExportSheets, `ap_aging${dateRangeStr}`);
-        toast({ title: "Export successful", description: "A/P Aging exported to Excel" });
+        toast({ title: tr("exportSuccessful"), description: tr("aPAgingExportedToExcel") });
       } else {
         exportToExcel(
           prepareBalanceSummaryReportsForExport(balanceReport),
           `balance_reports${dateRangeStr}`
         );
-        toast({ title: "Export successful", description: "Balance reports exported to Excel" });
+        toast({ title: tr("exportSuccessful"), description: tr("balanceReportsExportedToExcel") });
       }
     } else if (activeTab === "expenses") {
       exportToExcel(
         prepareExpenseReportsForExport(expenseReport),
         `expense_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Expense reports exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("expenseReportsExportedToExcel") });
     } else if (activeTab === "payroll") {
       exportToExcel(
         preparePayrollReportsForExport(payrollReport),
         `payroll_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Payroll reports exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("payrollReportsExportedToExcel") });
     } else if (activeTab === "ledger") {
       exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
-      toast({ title: "Export successful", description: "General Ledger exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("generalLedgerExportedToExcel") });
     } else if (activeTab === "close") {
       exportToExcel(
         [
@@ -11713,15 +11804,15 @@ export default function Reports() {
         `close_reports_${monthEndPeriod}${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
-        description: "Close reports exported to Excel",
+        title: tr("exportSuccessful"),
+        description: tr("closeReportsExportedToExcel"),
       });
     } else if (activeTab === "planning") {
       exportToExcel(
         preparePlanningReportsForExport(planningReport),
         `planning_reports${dateRangeStr}`
       );
-      toast({ title: "Export successful", description: "Planning reports exported to Excel" });
+      toast({ title: tr("exportSuccessful"), description: tr("planningReportsExportedToExcel") });
     }
   };
 
@@ -11821,8 +11912,8 @@ export default function Reports() {
 
     if (result?.success) {
       toast({
-        title: "Export successful",
-        description: "Report exported to Google Sheets. Opening...",
+        title: tr("exportSuccessful"),
+        description: tr("reportExportedToGoogleSheetsOpening"),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -11830,8 +11921,8 @@ export default function Reports() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result?.error || "Failed to export to Google Sheets",
+        title: tr("exportFailed"),
+        description: result?.error || tr("failedToExportToGoogleSheets"),
       });
     }
   };
@@ -11847,38 +11938,37 @@ export default function Reports() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Insights"
+        eyebrow={tr("insights")}
         title={t.reports}
         description={
-          (t as any).financialReportsSubtitle ??
-          "Financial reports, comparisons, and automation-ready workspaces"
+          (t as any).financialReportsSubtitle ?? tr("financialReportsComparisonsAndAutomationReady")
         }
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" data-testid="button-report-proof-trail">
               <Link href={evidenceSectionHref("proof-drilldown")}>
-                <FileText className="w-4 h-4 mr-2" />
-                {(t as any).viewProof ?? "View proof"}
+                <FileText className="w-4 h-4 me-2" />
+                {(t as any).viewProof ?? tr("viewProof")}
               </Link>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" disabled={isExporting} data-testid="button-export">
-                  <Download className="w-4 h-4 mr-2" />
-                  {isExporting ? "Exporting..." : t.export}
+                  <Download className="w-4 h-4 me-2" />
+                  {isExporting ? tr("exporting") : t.export}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export to Excel
+                  <FileSpreadsheet className="w-4 h-4 me-2" />
+                  {tr("exportToExcel")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
                   data-testid="menu-export-sheets"
                 >
-                  <SiGooglesheets className="w-4 h-4 mr-2" />
-                  Export to Google Sheets
+                  <SiGooglesheets className="w-4 h-4 me-2" />
+                  {tr("exportToGoogleSheets")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -11904,7 +11994,7 @@ export default function Reports() {
                   >
                     <Link href={backToReportsHref}>
                       <ArrowLeft className="h-3.5 w-3.5" />
-                      Back to reports
+                      {tr("backToReports")}
                     </Link>
                   </Button>
                 ) : null}
@@ -11925,13 +12015,13 @@ export default function Reports() {
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
             <div className="space-y-1.5">
-              <Label>{(t as any).reportCenter ?? "Report Center"}</Label>
+              <Label>{(t as any).reportCenter ?? tr("reportCenter")}</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left"
+                    className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-start"
                     data-testid="button-report-viewer-menu"
                   >
                     <span className="min-w-0">
@@ -11951,14 +12041,14 @@ export default function Reports() {
                   data-testid="menu-report-viewer"
                 >
                   <DropdownMenuLabel>
-                    {(t as any).reportCenter ?? "Report Center"}
+                    {(t as any).reportCenter ?? tr("reportCenter")}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {reportViewerGroups.map((group) => (
                     <DropdownMenuSub key={group.category}>
                       <DropdownMenuSubTrigger>
                         <span className="min-w-0 flex-1 truncate">{group.label}</span>
-                        <span className="mr-2 text-xs font-normal text-muted-foreground">
+                        <span className="me-2 text-xs font-normal text-muted-foreground">
                           {group.options.length}
                         </span>
                       </DropdownMenuSubTrigger>
@@ -11986,7 +12076,7 @@ export default function Reports() {
               </DropdownMenu>
             </div>
             <div className="space-y-1.5">
-              <Label>{(t as any).period ?? "Period"}</Label>
+              <Label>{(t as any).period ?? tr("period")}</Label>
               <div className="rounded-md border bg-background p-2">
                 <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
               </div>
@@ -12001,7 +12091,7 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h2 id="role-focus-title" className="text-xl font-semibold">
-                  Role focus
+                  {tr("roleFocus")}
                 </h2>
                 <p className="text-sm text-muted-foreground">{personaScopeDescription}</p>
               </div>
@@ -12012,8 +12102,12 @@ export default function Reports() {
                 {personaFilterLabel}
               </Badge>
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting role focus">
-              {personaFilters.map((filter) => (
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label={tr("reportingRoleFocus")}
+            >
+              {getPersonaFilters().map((filter) => (
                 <Button
                   key={filter.id}
                   type="button"
@@ -12033,29 +12127,29 @@ export default function Reports() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-                    Saved reporting context
+                    {tr("savedReportingContext")}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Badge variant="info" data-testid="reports-workflow-context-role">
-                      Role: {personaFilterLabel}
+                      {tr("role", { personaFilterLabel })}
                     </Badge>
                     {reportWorkflowContextSearchLabel ? (
                       <Badge variant="outline" data-testid="reports-workflow-context-search">
                         <span className="max-w-[14rem] truncate">
-                          Search: {reportWorkflowContextSearchLabel}
+                          {tr("search", { reportWorkflowContextSearchLabel })}
                         </span>
                       </Badge>
                     ) : (
-                      <Badge variant="outline">No saved search</Badge>
+                      <Badge variant="outline">{tr("noSavedSearch")}</Badge>
                     )}
                     {activeReportWorkflowGapFilterLabel ? (
                       <Badge variant="outline" data-testid="reports-workflow-context-gap">
                         <span className="max-w-[14rem] truncate">
-                          Gap: {activeReportWorkflowGapFilterLabel}
+                          {tr("gap", { activeReportWorkflowGapFilterLabel })}
                         </span>
                       </Badge>
                     ) : (
-                      <Badge variant="outline">No gap filter</Badge>
+                      <Badge variant="outline">{tr("noGapFilter")}</Badge>
                     )}
                   </div>
                 </div>
@@ -12066,7 +12160,7 @@ export default function Reports() {
                         href={reportWorkflowContextShareHref}
                         data-testid="button-open-report-workflow-context-link"
                       >
-                        Open share link
+                        {tr("openShareLink")}
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
@@ -12078,7 +12172,7 @@ export default function Reports() {
                       data-testid="button-reset-report-workflow-context"
                     >
                       <X className="h-3.5 w-3.5" />
-                      Reset context
+                      {tr("resetContext")}
                     </Button>
                   </div>
                 ) : null}
@@ -12092,7 +12186,7 @@ export default function Reports() {
               onValueChange={(value) => setReportWorkspaceTab(value as ReportWorkspaceTab)}
             >
               <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
-                {reportWorkspaceTabs.map((tab) => (
+                {getReportWorkspaceTabs().map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
@@ -12119,7 +12213,7 @@ export default function Reports() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <CardTitle id="reports-home-title" className="text-xl">
-                      Reporting command center
+                      {tr("reportingCommandCenter")}
                     </CardTitle>
                     <CardDescription>{personaScopeDescription}</CardDescription>
                   </div>
@@ -12129,30 +12223,34 @@ export default function Reports() {
                     className="w-fit"
                   >
                     {reportAutomationOperationsNeedingReview > 0
-                      ? `${reportAutomationOperationsNeedingReview} need action`
-                      : "Ready"}
+                      ? tr("needAction", { reportAutomationOperationsNeedingReview })
+                      : tr("ready")}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Ready reports</div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.ready}</div>
+                    <div className="text-xs text-muted-foreground">{tr("readyReports")}</div>
+                    <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
+                      {reportStats.ready}
+                    </div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Live reports</div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.live}</div>
+                    <div className="text-xs text-muted-foreground">{tr("liveReports")}</div>
+                    <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
+                      {reportStats.live}
+                    </div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Automations</div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">
+                    <div className="text-xs text-muted-foreground">{tr("automations")}</div>
+                    <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
                       {reportStats.automationStarters}
                     </div>
                   </div>
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Open queue</div>
-                    <div className="mt-1 font-mono text-2xl font-semibold">
+                    <div className="text-xs text-muted-foreground">{tr("openQueue")}</div>
+                    <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
                       {automationQueueCount}
                     </div>
                   </div>
@@ -12160,12 +12258,12 @@ export default function Reports() {
 
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={reportWorkflowSearch}
                       onChange={(event) => updateReportWorkflowSearch(event.target.value)}
-                      placeholder="Search reports, packs, comparisons, automations"
-                      className="pl-9"
+                      placeholder={tr("searchReportsPacksComparisonsAutomations")}
+                      className="ps-9"
                       data-testid="input-report-home-search"
                     />
                   </div>
@@ -12175,7 +12273,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("reports")}
                     data-testid="button-report-home-search-open"
                   >
-                    Search library
+                    {tr("searchLibrary")}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -12188,7 +12286,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("reports")}
                   >
                     <FileText className="h-4 w-4" />
-                    Reports
+                    {tr("reports")}
                   </Button>
                   <Button
                     type="button"
@@ -12197,7 +12295,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("comparisons")}
                   >
                     <BarChart3 className="h-4 w-4" />
-                    Compare
+                    {tr("compare")}
                   </Button>
                   <Button
                     type="button"
@@ -12206,7 +12304,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("automation")}
                   >
                     <Sparkles className="h-4 w-4" />
-                    Automate
+                    {tr("automate")}
                   </Button>
                   <Button
                     type="button"
@@ -12215,7 +12313,7 @@ export default function Reports() {
                     onClick={() => setReportWorkspaceTab("delivery")}
                   >
                     <Send className="h-4 w-4" />
-                    Delivery
+                    {tr("delivery")}
                   </Button>
                 </div>
               </CardContent>
@@ -12225,7 +12323,7 @@ export default function Reports() {
               <CardHeader className="space-y-3 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Next automation</CardTitle>
+                    <CardTitle className="text-base">{tr("nextAutomation")}</CardTitle>
                     <CardDescription>
                       {reportHomeAutomationOperation?.workspace.title ?? personaFilterLabel}
                     </CardDescription>
@@ -12235,7 +12333,7 @@ export default function Reports() {
                     dot
                     className="w-fit"
                   >
-                    {reportHomeAutomationOperation?.status ?? "No role selected"}
+                    {reportHomeAutomationOperation?.status ?? tr("noRoleSelected")}
                   </Badge>
                 </div>
               </CardHeader>
@@ -12244,14 +12342,14 @@ export default function Reports() {
                   <>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Health</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-muted-foreground">{tr("health")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {reportHomeAutomationOperation.automationScore}/100
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">At risk</div>
-                        <div className="mt-1 truncate font-mono text-sm font-semibold">
+                        <div className="text-muted-foreground">{tr("atRisk")}</div>
+                        <div dir="ltr" className="mt-1 truncate font-mono text-sm font-semibold">
                           {formatCurrency(
                             reportHomeAutomationOperation.amountAtRisk,
                             "AED",
@@ -12270,13 +12368,13 @@ export default function Reports() {
                     </div>
                     <Button asChild size="sm" variant="outline">
                       <Link href={reportHomeAutomationOperation.nextAction.href}>
-                        Open action <ArrowRight className="h-3.5 w-3.5" />
+                        {tr("openAction")} <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Select a role to show the next automation action.
+                    {tr("selectARoleToShowThe")}
                   </div>
                 )}
               </CardContent>
@@ -12286,9 +12384,9 @@ export default function Reports() {
           <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-xl font-semibold">Top reports</h2>
+                <h2 className="text-xl font-semibold">{tr("topReports")}</h2>
                 <p className="text-sm text-muted-foreground">
-                  {personaFilterLabel} shortcuts from the active quick-access profile.
+                  {tr("shortcutsFromTheActiveQuickAccess", { personaFilterLabel })}
                 </p>
               </div>
               <Button
@@ -12297,7 +12395,7 @@ export default function Reports() {
                 variant="outline"
                 onClick={() => setReportWorkspaceTab("reports")}
               >
-                All reports
+                {tr("allReports")}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -12318,7 +12416,7 @@ export default function Reports() {
                             </div>
                           </div>
                           <Badge variant={report.status === "planned" ? "warning" : "success"} dot>
-                            {reportStatusMeta[report.status].label}
+                            {getReportStatusMeta()[report.status].label}
                           </Badge>
                         </div>
                         <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
@@ -12326,19 +12424,19 @@ export default function Reports() {
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button asChild size="sm">
-                            <Link href={href}>Open</Link>
+                            <Link href={href}>{tr("open")}</Link>
                           </Button>
                           <Button asChild size="sm" variant="outline">
-                            <Link href={workflowHref}>Automate</Link>
+                            <Link href={workflowHref}>{tr("automate")}</Link>
                           </Button>
                           {comparisonHref ? (
                             <Button asChild size="sm" variant="ghost">
-                              <Link href={comparisonHref}>Compare</Link>
+                              <Link href={comparisonHref}>{tr("compare")}</Link>
                             </Button>
                           ) : null}
                           {deliveryHref ? (
                             <Button asChild size="sm" variant="ghost">
-                              <Link href={deliveryHref}>Schedule</Link>
+                              <Link href={deliveryHref}>{tr("schedule")}</Link>
                             </Button>
                           ) : null}
                         </div>
@@ -12349,7 +12447,7 @@ export default function Reports() {
               </div>
             ) : (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                No quick-access reports match the current filters.
+                {tr("noQuickAccessReportsMatchThe")}
               </div>
             )}
           </div>
@@ -12359,8 +12457,8 @@ export default function Reports() {
               <CardHeader className="space-y-2 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Suites</CardTitle>
-                    <CardDescription>Report packs ready for recurring review.</CardDescription>
+                    <CardTitle className="text-base">{tr("suites")}</CardTitle>
+                    <CardDescription>{tr("reportPacksReadyForRecurringReview")}</CardDescription>
                   </div>
                   <Button
                     type="button"
@@ -12368,7 +12466,7 @@ export default function Reports() {
                     variant="outline"
                     onClick={() => setReportWorkspaceTab("suites")}
                   >
-                    Open suites
+                    {tr("openSuites")}
                   </Button>
                 </div>
               </CardHeader>
@@ -12397,8 +12495,8 @@ export default function Reports() {
               <CardHeader className="space-y-2 pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-base">Saved views</CardTitle>
-                    <CardDescription>Reusable filters and comparison presets.</CardDescription>
+                    <CardTitle className="text-base">{tr("savedViews")}</CardTitle>
+                    <CardDescription>{tr("reusableFiltersAndComparisonPresets")}</CardDescription>
                   </div>
                   <Button
                     type="button"
@@ -12406,7 +12504,7 @@ export default function Reports() {
                     variant="outline"
                     onClick={() => setReportWorkspaceTab("reports")}
                   >
-                    Open views
+                    {tr("openViews")}
                   </Button>
                 </div>
               </CardHeader>
@@ -12429,7 +12527,7 @@ export default function Reports() {
                   ))
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    No saved views match the current filters.
+                    {tr("noSavedViewsMatchTheCurrent")}
                   </div>
                 )}
               </CardContent>
@@ -12445,15 +12543,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-suites-title" className="text-xl font-semibold">
-              Report suites
+              {tr("reportSuites")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-based bundles that combine reports, comparisons, saved views, packs, and
-              automations into the business workflows users open most.
+              {tr("roleBasedBundlesThatCombineReports")}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportSuiteSummaries.length} suites
+            {tr("suites2", {
+              visibleReportSuiteSummariesCount: visibleReportSuiteSummaries.length,
+            })}
           </Badge>
         </div>
 
@@ -12472,12 +12571,12 @@ export default function Reports() {
                 suite.deliverySubscriptionId;
             const isSuiteDeliveryPaused = suiteDeliverySubscription?.enabled === false;
             const suiteQueueLabel = isQueueingThisSuiteDelivery
-              ? "Queueing"
+              ? tr("queueing")
               : suiteRequiresHandoffAcknowledgement
-                ? "Acknowledge handoff"
+                ? tr("acknowledgeHandoff")
                 : isSuiteDeliveryPaused
                   ? "Paused"
-                  : "Queue delivery";
+                  : tr("queueDelivery");
 
             return (
               <Card
@@ -12509,38 +12608,38 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Comparison</div>
+                      <div className="text-muted-foreground">{tr("comparison")}</div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.comparisonPreset.title}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Pack</div>
+                      <div className="text-muted-foreground">{tr("pack")}</div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.packTemplate.cadence}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Automation</div>
+                      <div className="text-muted-foreground">{tr("automation")}</div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.automationStarter.setupTime}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Trigger rules</div>
-                      <div className="mt-1 font-mono font-medium text-foreground">
+                      <div className="text-muted-foreground">{tr("triggerRules")}</div>
+                      <div dir="ltr" className="mt-1 font-mono font-medium text-foreground">
                         {suite.triggerRules.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Delivery</div>
+                      <div className="text-muted-foreground">{tr("delivery")}</div>
                       <div className="mt-1 truncate font-medium text-foreground">
                         {suite.deliverySubscription.channel}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Saved views</div>
-                      <div className="mt-1 font-mono font-medium text-foreground">
+                      <div className="text-muted-foreground">{tr("savedViews")}</div>
+                      <div dir="ltr" className="mt-1 font-mono font-medium text-foreground">
                         {suite.savedViews.length}
                       </div>
                     </div>
@@ -12552,7 +12651,7 @@ export default function Reports() {
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <div className="font-medium text-foreground">Delivery readiness</div>
+                        <div className="font-medium text-foreground">{tr("deliveryReadiness")}</div>
                         <div className="mt-1 text-muted-foreground">
                           {suiteDeliverySubscription
                             ? `${suiteDeliverySubscription.channel} · ${
@@ -12568,8 +12667,8 @@ export default function Reports() {
                         className="w-fit"
                       >
                         {suiteRequiresHandoffAcknowledgement
-                          ? "Handoff review"
-                          : (suiteDeliverySubscription?.status ?? "Catalog")}
+                          ? tr("handoffReview")
+                          : (suiteDeliverySubscription?.status ?? tr("catalog"))}
                       </Badge>
                     </div>
                   </div>
@@ -12589,25 +12688,25 @@ export default function Reports() {
                     <Button asChild size="sm" variant="outline" className="justify-start">
                       <Link href={suite.comparisonHref}>
                         <BarChart3 className="h-3.5 w-3.5" />
-                        Compare
+                        {tr("compare")}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="justify-start">
                       <Link href={suite.packHref}>
                         <FileText className="h-3.5 w-3.5" />
-                        Pack
+                        {tr("pack")}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
                       <Link href={suite.automationHref}>
                         <Sparkles className="h-3.5 w-3.5" />
-                        Autopilot
+                        {tr("autopilot")}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="justify-start text-accent">
                       <Link href={suite.deliveryHref}>
                         <Send className="h-3.5 w-3.5" />
-                        Delivery
+                        {tr("delivery")}
                       </Link>
                     </Button>
                     <Button
@@ -12646,15 +12745,17 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-management-briefs-title" className="text-xl font-semibold">
-              Management pack briefs
+              {tr("managementPackBriefs")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Advisory-ready KPI, narrative, dimensional, and delivery context for each role.{" "}
-              {personaScopeDescription}
+              {tr("advisoryReadyKpiNarrativeDimensionalAnd", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportManagementBriefSummaries.length} briefs
+            {tr("briefs", {
+              visibleReportManagementBriefSummariesCount:
+                visibleReportManagementBriefSummaries.length,
+            })}
           </Badge>
         </div>
 
@@ -12692,20 +12793,20 @@ export default function Reports() {
 
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">KPIs</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("kpis")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {brief.kpiMetricIds.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Narratives</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("narratives")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {brief.narrativeSections.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-2">
-                      <div className="text-muted-foreground">Dimensions</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("dimensions")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {brief.dimensionBreakdowns.length}
                       </div>
                     </div>
@@ -12713,7 +12814,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      KPI widgets
+                      {tr("kpiWidgets")}
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {brief.kpiWidgets.map((widget) => (
@@ -12734,7 +12835,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Narrative sections
+                      {tr("narrativeSections")}
                     </div>
                     {brief.narrativeSections.map((section) => (
                       <div
@@ -12747,9 +12848,15 @@ export default function Reports() {
                           {section.prompt}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="outline">{section.sourceReportIds.length} reports</Badge>
                           <Badge variant="outline">
-                            {section.comparisonMetricIds.length} metrics
+                            {tr("reports2", {
+                              sourceReportIdsCount: section.sourceReportIds.length,
+                            })}
+                          </Badge>
+                          <Badge variant="outline">
+                            {tr("metrics2", {
+                              comparisonMetricIdsCount: section.comparisonMetricIds.length,
+                            })}
                           </Badge>
                         </div>
                       </div>
@@ -12758,7 +12865,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Dimensional lenses
+                      {tr("dimensionalLenses")}
                     </div>
                     <div className="grid gap-2">
                       {brief.dimensionBreakdowns.map((dimension) => (
@@ -12789,14 +12896,14 @@ export default function Reports() {
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
                       <Link href={brief.href}>
-                        Open brief <ArrowRight className="h-3.5 w-3.5" />
+                        {tr("openBrief")} <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={brief.suiteHref}>Open suite</Link>
+                      <Link href={brief.suiteHref}>{tr("openSuite")}</Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={brief.deliveryHref}>Open delivery</Link>
+                      <Link href={brief.deliveryHref}>{tr("openDelivery")}</Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -12813,15 +12920,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-quick-access-title" className="text-xl font-semibold">
-              Quick access reports
+              {tr("quickAccessReports")}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Role-specific launch boards for the reports, comparison, autopilot, and delivery pack
-              each workspace needs most often.
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("roleSpecificLaunchBoardsForThe")}</p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportQuickAccessSummaries.length} boards
+            {tr("boards", {
+              visibleReportQuickAccessSummariesCount: visibleReportQuickAccessSummaries.length,
+            })}
           </Badge>
         </div>
 
@@ -12875,14 +12981,14 @@ export default function Reports() {
                           </div>
                           <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                             <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link href={href}>Open</Link>
+                              <Link href={href}>{tr("open")}</Link>
                             </Button>
                             <Button asChild size="sm" variant="outline" className="h-7 px-2">
                               <Link
                                 href={workflowHref}
                                 data-testid={`report-quick-access-report-automation-${report.id}`}
                               >
-                                Automate
+                                {tr("automate")}
                               </Link>
                             </Button>
                             {comparisonHref ? (
@@ -12891,7 +12997,7 @@ export default function Reports() {
                                   href={comparisonHref}
                                   data-testid={`report-quick-access-report-comparison-${report.id}`}
                                 >
-                                  Compare
+                                  {tr("compare")}
                                 </Link>
                               </Button>
                             ) : null}
@@ -12901,7 +13007,7 @@ export default function Reports() {
                                   href={deliveryHref}
                                   data-testid={`report-quick-access-report-delivery-${report.id}`}
                                 >
-                                  Schedule
+                                  {tr("schedule")}
                                 </Link>
                               </Button>
                             ) : null}
@@ -12917,7 +13023,7 @@ export default function Reports() {
                       data-testid={`report-quick-access-more-${profile.persona}`}
                     >
                       <div className="text-[11px] font-semibold uppercase text-muted-foreground">
-                        More reports
+                        {tr("moreReports")}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {profile.additionalReports.map(({ report, href }) => (
@@ -12941,19 +13047,19 @@ export default function Reports() {
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.comparisonHref}>
                         <BarChart3 className="h-3.5 w-3.5" />
-                        Comparison
+                        {tr("comparison")}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.automationHref}>
                         <Sparkles className="h-3.5 w-3.5" />
-                        Autopilot
+                        {tr("autopilot")}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="outline" className="h-auto justify-start">
                       <Link href={profile.deliveryHref}>
                         <Send className="h-3.5 w-3.5" />
-                        Delivery
+                        {tr("delivery")}
                       </Link>
                     </Button>
                   </div>
@@ -12971,15 +13077,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-saved-views-title" className="text-xl font-semibold">
-              Saved report views
+              {tr("savedReportViews")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Prebuilt report-view presets with date range, comparison period, basis, currency,
-              dimension, export format, and automation trigger.
+              {tr("prebuiltReportViewPresetsWithDate")}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportSavedViewSummaries.length} views
+            {tr("views", {
+              visibleReportSavedViewSummariesCount: visibleReportSavedViewSummaries.length,
+            })}
           </Badge>
         </div>
 
@@ -13004,12 +13111,12 @@ export default function Reports() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
                   {[
-                    ["Date range", view.dateRangePreset],
-                    ["Comparison", view.comparisonPeriod],
-                    ["Basis", view.basis],
-                    ["Currency", view.currency],
-                    ["Dimension", view.dimension],
-                    ["Export", view.exportFormat],
+                    [tr("dateRange"), view.dateRangePreset],
+                    [tr("comparison"), view.comparisonPeriod],
+                    [tr("basis"), view.basis],
+                    [tr("currency"), view.currency],
+                    [tr("dimension"), view.dimension],
+                    [tr("export"), view.exportFormat],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-md border p-2">
                       <div className="text-muted-foreground">{label}</div>
@@ -13025,17 +13132,17 @@ export default function Reports() {
 
                 <div className="flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
-                    <Link href={view.reportHref}>Open report</Link>
+                    <Link href={view.reportHref}>{tr("openReport")}</Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
-                    <Link href={view.comparisonHref}>Open comparison</Link>
+                    <Link href={view.comparisonHref}>{tr("openComparison")}</Link>
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="text-accent">
                     <Link
                       href={view.workflowHref}
                       data-testid={`report-saved-view-automation-${view.id}`}
                     >
-                      Open automation <ArrowRight className="h-3.5 w-3.5" />
+                      {tr("openAutomation")} <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </Button>
                 </div>
@@ -13053,17 +13160,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-accountant-handoff-title" className="text-xl font-semibold">
-              Accountant handoff
+              {tr("accountantHandoff")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Share role-specific report context, readiness status, and the next automation action
-              without rebuilding the workspace view.
+              {tr("shareRoleSpecificReportContextReadiness")}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
-              ? `${reportAutomationOperationsNeedingReview} handoffs need action`
-              : "Handoffs ready"}
+              ? tr("handoffsNeedAction", { reportAutomationOperationsNeedingReview })
+              : tr("handoffsReady")}
           </Badge>
         </div>
 
@@ -13089,20 +13195,20 @@ export default function Reports() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Reports</div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="text-muted-foreground">{tr("reports")}</div>
+                    <div dir="ltr" className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyReportCount}/{item.reportCount}
                     </div>
                   </div>
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Rules</div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="text-muted-foreground">{tr("rules")}</div>
+                    <div dir="ltr" className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyRuleCount}/{item.automationRuleCount}
                     </div>
                   </div>
                   <div className="rounded-md border p-2">
-                    <div className="text-muted-foreground">Delivery</div>
-                    <div className="mt-1 font-mono font-semibold text-foreground">
+                    <div className="text-muted-foreground">{tr("delivery")}</div>
+                    <div dir="ltr" className="mt-1 font-mono font-semibold text-foreground">
                       {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                     </div>
                   </div>
@@ -13115,8 +13221,8 @@ export default function Reports() {
                   </div>
                   <p className="mt-2 text-muted-foreground">{item.nextAction.detail}</p>
                   <div className="mt-2 text-muted-foreground">
-                    Amount at risk:{" "}
-                    <span className="font-mono text-foreground">
+                    {tr("amountAtRisk3")}
+                    <span dir="ltr" className="font-mono text-foreground">
                       {formatCurrency(item.amountAtRisk, "AED", locale)}
                     </span>
                   </div>
@@ -13128,7 +13234,7 @@ export default function Reports() {
                       href={item.shareHref}
                       data-testid={`report-accountant-handoff-share-${item.workspace.persona}`}
                     >
-                      Open shared view
+                      {tr("openSharedView")}
                     </Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
@@ -13136,7 +13242,7 @@ export default function Reports() {
                       href={item.gapHref}
                       data-testid={`report-accountant-handoff-gap-${item.workspace.persona}`}
                     >
-                      {item.priorityGap ? "Review gap" : "Open finder"}
+                      {item.priorityGap ? tr("reviewGap") : tr("openFinder")}
                     </Link>
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="text-accent">
@@ -13144,7 +13250,7 @@ export default function Reports() {
                       href={item.nextAction.href}
                       data-testid={`report-accountant-handoff-action-${item.workspace.persona}`}
                     >
-                      Next action
+                      {tr("nextAction")}
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </Button>
@@ -13163,16 +13269,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-workflow-readiness-title" className="text-xl font-semibold">
-              Automation readiness
+              {tr("automationReadiness")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-specific coverage gaps before report packs, alerts, and delivery automations run.
+              {tr("roleSpecificCoverageGapsBeforeReport")}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
             {reportAutomationOperationsNeedingReview > 0
-              ? `${reportAutomationOperationsNeedingReview} need review`
-              : "Ready by role"}
+              ? tr("needReview", { reportAutomationOperationsNeedingReview })
+              : tr("readyByRole")}
           </Badge>
         </div>
 
@@ -13189,7 +13295,10 @@ export default function Reports() {
                     {item.workspace.navLabel}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {item.readyReportCount}/{item.reportCount} reports ready
+                    {tr("reportsReady2", {
+                      readyReportCount: item.readyReportCount,
+                      reportCount: item.reportCount,
+                    })}
                   </div>
                 </div>
                 <Badge variant={item.statusVariant} dot>
@@ -13199,20 +13308,20 @@ export default function Reports() {
 
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Score</div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="text-muted-foreground">{tr("score")}</div>
+                  <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                     {item.automationScore}%
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Rules</div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="text-muted-foreground">{tr("rules")}</div>
+                  <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                     {item.readyRuleCount}/{item.automationRuleCount}
                   </div>
                 </div>
                 <div className="rounded-md bg-muted/30 p-2">
-                  <div className="text-muted-foreground">Delivery</div>
-                  <div className="mt-1 font-mono text-base font-semibold">
+                  <div className="text-muted-foreground">{tr("delivery")}</div>
+                  <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                     {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                   </div>
                 </div>
@@ -13222,8 +13331,11 @@ export default function Reports() {
                 className="mt-3 text-xs text-muted-foreground"
                 data-testid={`report-workflow-readiness-gap-${item.workspace.persona}`}
               >
-                {item.reportGapCount} report gaps · {item.automationRuleGapCount} rule gaps ·{" "}
-                {item.deliveryGapCount} delivery gaps
+                {tr("reportGapsRuleGapsDeliveryGaps2", {
+                  reportGapCount: item.reportGapCount,
+                  automationRuleGapCount: item.automationRuleGapCount,
+                  deliveryGapCount: item.deliveryGapCount,
+                })}
               </div>
 
               <div
@@ -13246,7 +13358,7 @@ export default function Reports() {
                   }
                   data-testid={`report-workflow-filter-report-gaps-${item.workspace.persona}`}
                 >
-                  Report gaps
+                  {tr("reportGaps")}
                 </Button>
                 <Button
                   type="button"
@@ -13262,7 +13374,7 @@ export default function Reports() {
                   onClick={() => applyReportWorkflowGapFilter("rule-gaps", item.workspace.persona)}
                   data-testid={`report-workflow-filter-rule-gaps-${item.workspace.persona}`}
                 >
-                  Rule gaps
+                  {tr("ruleGaps")}
                 </Button>
                 <Button
                   type="button"
@@ -13280,7 +13392,7 @@ export default function Reports() {
                   }
                   data-testid={`report-workflow-filter-delivery-gaps-${item.workspace.persona}`}
                 >
-                  Delivery gaps
+                  {tr("deliveryGaps")}
                 </Button>
               </div>
 
@@ -13310,15 +13422,18 @@ export default function Reports() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 id="report-workflow-finder-title" className="text-xl font-semibold">
-              Workflow finder
+              {tr("workflowFinder")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Reports, packs, comparisons, delivery routes, and automations for{" "}
-              {personaFilterLabel.toLowerCase()}.
+              {tr("reportsPacksComparisonsDeliveryRoutesAnd", {
+                personaFilterLabel: personaFilterLabel.toLowerCase(),
+              })}
             </p>
           </div>
           <Badge variant="info" dot data-testid="report-workflow-finder-count">
-            {filteredReportWorkflowFinderResults.length} matches
+            {tr("matches", {
+              filteredReportWorkflowFinderResultsCount: filteredReportWorkflowFinderResults.length,
+            })}
           </Badge>
         </div>
 
@@ -13336,19 +13451,19 @@ export default function Reports() {
               data-testid="button-clear-report-workflow-gap-filter"
             >
               <X className="h-3.5 w-3.5" />
-              Clear filter
+              {tr("clearFilter")}
             </Button>
           </div>
         ) : null}
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={reportWorkflowSearch}
               onChange={(event) => updateReportWorkflowSearch(event.target.value)}
-              placeholder="Search reports, packs, comparisons, automations"
-              className="pl-9"
+              placeholder={tr("searchReportsPacksComparisonsAutomations")}
+              className="ps-9"
               data-testid="input-report-workflow-search"
             />
           </div>
@@ -13360,7 +13475,7 @@ export default function Reports() {
               data-testid="button-clear-report-workflow-search"
             >
               <X className="h-4 w-4" />
-              Clear
+              {tr("clear")}
             </Button>
           ) : null}
         </div>
@@ -13413,7 +13528,7 @@ export default function Reports() {
                       href={result.href}
                       data-testid={`report-workflow-finder-result-open-${result.id}`}
                     >
-                      Open
+                      {tr("open")}
                     </Link>
                   </Button>
                   {result.actionLinks?.map((action) => (
@@ -13432,7 +13547,7 @@ export default function Reports() {
             className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
             data-testid="report-workflow-finder-empty"
           >
-            No report workflows match the current role and search.
+            {tr("noReportWorkflowsMatchTheCurrent")}
           </div>
         )}
       </section>
@@ -13445,11 +13560,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-catalog-readiness-title" className="text-xl font-semibold">
-              Catalog readiness
+              {tr("catalogReadiness")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              API-synced report library coverage for high-level reports, comparison packs, delivery
-              subscriptions, and automation starters. {personaScopeDescription}
+              {tr("apiSyncedReportLibraryCoverageFor", { personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -13464,47 +13578,56 @@ export default function Reports() {
             data-testid="reports-catalog-discovery-status"
           >
             {reportCatalogDiscoveryQuery.isLoading
-              ? "Syncing catalog"
+              ? tr("syncingCatalog")
               : reportCatalogDiscoveryQuery.isError
-                ? "Local catalog fallback"
-                : "Catalog synced"}
+                ? tr("localCatalogFallback")
+                : tr("catalogSynced")}
           </Badge>
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Reports ready</div>
-            <div className="mt-1 font-mono text-2xl font-semibold">
+            <div className="text-xs text-muted-foreground">{tr("reportsReady3")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.ready}/{reportStats.total}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.live} live · {reportStats.planned} planned
+              {tr("livePlanned", { live: reportStats.live, planned: reportStats.planned })}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Pack templates</div>
-            <div className="mt-1 font-mono text-2xl font-semibold">{reportStats.packTemplates}</div>
+            <div className="text-xs text-muted-foreground">{tr("packTemplates")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
+              {reportStats.packTemplates}
+            </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.reportSuites} suites · {reportStats.deliverySubscriptions} delivery
+              {tr("suitesDelivery", {
+                reportSuites: reportStats.reportSuites,
+                deliverySubscriptions: reportStats.deliverySubscriptions,
+              })}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Comparison presets</div>
-            <div className="mt-1 font-mono text-2xl font-semibold">
+            <div className="text-xs text-muted-foreground">{tr("comparisonPresets")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.comparisonPresets}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.quickAccessProfiles} quick boards · current-vs-prior paths
+              {tr("quickBoardsCurrentVsPriorPaths", {
+                quickAccessProfiles: reportStats.quickAccessProfiles,
+              })}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Automation starters</div>
-            <div className="mt-1 font-mono text-2xl font-semibold">
+            <div className="text-xs text-muted-foreground">{tr("automationStarters")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
               {reportStats.automationStarters}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {reportStats.automationPlaybooks} playbooks · {reportStats.automationImpactProfiles}{" "}
-              impact profiles
+              {tr("playbooksImpactProfiles", {
+                automationPlaybooks: reportStats.automationPlaybooks,
+                automationImpactProfiles: reportStats.automationImpactProfiles,
+              })}
             </div>
           </div>
         </div>
@@ -13538,20 +13661,20 @@ export default function Reports() {
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Packs</div>
-                      <div className="mt-1 font-mono font-semibold">
+                      <div className="text-muted-foreground">{tr("packs")}</div>
+                      <div dir="ltr" className="mt-1 font-mono font-semibold">
                         {workspace.packTemplateCount}
                       </div>
                     </div>
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Comps</div>
-                      <div className="mt-1 font-mono font-semibold">
+                      <div className="text-muted-foreground">{tr("comps")}</div>
+                      <div dir="ltr" className="mt-1 font-mono font-semibold">
                         {workspace.comparisonPresetCount}
                       </div>
                     </div>
                     <div className="rounded-md bg-secondary/40 p-2">
-                      <div className="text-muted-foreground">Starters</div>
-                      <div className="mt-1 font-mono font-semibold">
+                      <div className="text-muted-foreground">{tr("starters")}</div>
+                      <div dir="ltr" className="mt-1 font-mono font-semibold">
                         {workspace.automationStarterCount}
                       </div>
                     </div>
@@ -13570,11 +13693,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-role-setup-title" className="text-xl font-semibold">
-              Role setup paths
+              {tr("roleSetupPaths")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              First-run checklists for owners, solo entrepreneurs, freelancers, and accountants to
-              move from report review into automated delivery. {personaScopeDescription}
+              {tr("firstRunChecklistsForOwnersSolo", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="outline">
@@ -13582,7 +13704,7 @@ export default function Reports() {
               (total, workspace) => total + workspace.setupStepCount,
               0
             )}{" "}
-            steps
+            {tr("steps")}
           </Badge>
         </div>
 
@@ -13595,7 +13717,9 @@ export default function Reports() {
                     <CardTitle className="text-base font-semibold">{workspace.navLabel}</CardTitle>
                     <CardDescription>{workspace.automationOutcome}</CardDescription>
                   </div>
-                  <Badge variant="info">{workspace.setupStepCount} steps</Badge>
+                  <Badge variant="info">
+                    {tr("steps2", { setupStepCount: workspace.setupStepCount })}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -13615,7 +13739,9 @@ export default function Reports() {
                             {step.outcome}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1">
-                            <Badge variant="outline">{step.reports.length} reports</Badge>
+                            <Badge variant="outline">
+                              {tr("reports3", { reportsCount: step.reports.length })}
+                            </Badge>
                             <Badge variant="outline">{step.command}</Badge>
                           </div>
                         </div>
@@ -13637,11 +13763,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-role-workflows-title" className="text-xl font-semibold">
-              Role workflow checklist
+              {tr("roleWorkflowChecklist")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Recurring report routines for owner, freelancer, and accountant workspaces after the
-              first setup path is complete. {personaScopeDescription}
+              {tr("recurringReportRoutinesForOwnerFreelancer", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info">
@@ -13649,7 +13774,7 @@ export default function Reports() {
               (total, workspace) => total + workspace.workflowStepCount,
               0
             )}{" "}
-            workflows
+            {tr("workflows")}
           </Badge>
         </div>
 
@@ -13675,7 +13800,9 @@ export default function Reports() {
                         <CardDescription>{workspace.focus}</CardDescription>
                       </div>
                     </div>
-                    <Badge variant="outline">{workspace.workflowStepCount} workflows</Badge>
+                    <Badge variant="outline">
+                      {tr("workflows2", { workflowStepCount: workspace.workflowStepCount })}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -13704,7 +13831,9 @@ export default function Reports() {
                           </div>
 
                           <div className="flex flex-wrap gap-1">
-                            <Badge variant="outline">{step.reports.length} reports</Badge>
+                            <Badge variant="outline">
+                              {tr("reports3", { reportsCount: step.reports.length })}
+                            </Badge>
                             {step.reportSuite ? (
                               <Badge variant="outline">{step.reportSuite.workflow}</Badge>
                             ) : null}
@@ -13718,7 +13847,7 @@ export default function Reports() {
                             data-testid={`report-role-workflow-defaults-${step.id}`}
                           >
                             <div>
-                              <div className="font-medium text-foreground">Default view</div>
+                              <div className="font-medium text-foreground">{tr("defaultView")}</div>
                               <Link
                                 href={step.defaultViewHref}
                                 className="mt-1 block text-muted-foreground hover:text-primary"
@@ -13727,12 +13856,14 @@ export default function Reports() {
                               </Link>
                             </div>
                             <div>
-                              <div className="font-medium text-foreground">Handoff guardrail</div>
+                              <div className="font-medium text-foreground">
+                                {tr("handoffGuardrail")}
+                              </div>
                               <div className="mt-1 text-muted-foreground">
                                 {step.handoffGuardrail}
                               </div>
                               <div className="mt-1 text-muted-foreground">
-                                Recipients: {step.handoffRecipients}
+                                {tr("recipients2", { handoffRecipients: step.handoffRecipients })}
                               </div>
                             </div>
                           </div>
@@ -13744,10 +13875,10 @@ export default function Reports() {
                               </Link>
                             </Button>
                             <Button asChild size="sm" variant="outline">
-                              <Link href={step.automationHref}>Open automation</Link>
+                              <Link href={step.automationHref}>{tr("openAutomation")}</Link>
                             </Button>
                             <Button asChild size="sm" variant="outline">
-                              <Link href={step.deliveryHref}>Open delivery</Link>
+                              <Link href={step.deliveryHref}>{tr("openDelivery")}</Link>
                             </Button>
                           </div>
                         </div>
@@ -13768,15 +13899,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-operations-title" className="text-xl font-semibold">
-              Report automation operations
+              {tr("reportAutomationOperations")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              One operating view for report readiness, auto-send rules, delivery recovery, and next
-              actions across owner, freelancer, and accountant workspaces. {personaScopeDescription}
+              {tr("oneOperatingViewForReportReadiness", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportAutomationOperationsNeedingReview > 0 ? "warning" : "success"} dot>
-            {reportAutomationOperationsNeedingReview} need action
+            {tr("needAction", { reportAutomationOperationsNeedingReview })}
           </Badge>
         </div>
 
@@ -13814,42 +13944,46 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Health</div>
+                        <div className="text-xs text-muted-foreground">{tr("health")}</div>
                         <div className="mt-1 flex items-baseline gap-1">
-                          <span className="font-mono text-lg font-semibold">
+                          <span dir="ltr" className="font-mono text-lg font-semibold">
                             {item.automationScore}
                           </span>
                           <span className="text-xs text-muted-foreground">/100</span>
                         </div>
                         <Badge variant={item.automationHealthVariant} dot className="mt-2">
-                          Automation
+                          {tr("automation")}
                         </Badge>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Reports ready</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("reportsReady3")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.readyReportCount}/{item.reportCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.recommendationCount} recommended actions
+                          {tr("recommendedActions2", {
+                            recommendationCount: item.recommendationCount,
+                          })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Auto-send rules</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("autoSendRules")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.readyRuleCount}/{item.automationRuleCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.openWorkItemCount} open work items
+                          {tr("openWorkItems3", { openWorkItemCount: item.openWorkItemCount })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Deliveries ready</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">
+                          {tr("deliveriesReady2")}
+                        </div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.readyDeliveryCount}/{item.deliverySubscriptionCount}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {item.failedRunCount} failed runs
+                          {tr("failedRuns", { failedRunCount: item.failedRunCount })}
                         </div>
                       </div>
                     </div>
@@ -13857,7 +13991,7 @@ export default function Reports() {
                     <div className="rounded-md border p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium uppercase text-muted-foreground">
-                          Next action
+                          {tr("nextAction")}
                         </div>
                         <Badge variant={item.nextAction.badgeVariant} dot>
                           {item.nextAction.badge}
@@ -13871,7 +14005,7 @@ export default function Reports() {
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={item.nextAction.href}>Open action</Link>
+                          <Link href={item.nextAction.href}>{tr("openAction")}</Link>
                         </Button>
                         <Button
                           type="button"
@@ -13879,21 +14013,24 @@ export default function Reports() {
                           variant={personaFilter === workspace.persona ? "default" : "ghost"}
                           onClick={() => setReportPersonaFilter(workspace.persona)}
                         >
-                          Set focus
+                          {tr("setFocus")}
                         </Button>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Amount at risk</div>
-                        <div className="mt-1 truncate font-mono font-semibold text-foreground">
+                        <div className="text-muted-foreground">{tr("amountAtRisk2")}</div>
+                        <div
+                          dir="ltr"
+                          className="mt-1 truncate font-mono font-semibold text-foreground"
+                        >
                           {formatCurrency(item.amountAtRisk, "AED", locale)}
                         </div>
                       </div>
                       <div className="rounded-md bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Comparison warnings</div>
-                        <div className="mt-1 font-mono font-semibold text-foreground">
+                        <div className="text-muted-foreground">{tr("comparisonWarnings")}</div>
+                        <div dir="ltr" className="mt-1 font-mono font-semibold text-foreground">
                           {item.comparisonWarnings}
                         </div>
                       </div>
@@ -13902,12 +14039,12 @@ export default function Reports() {
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm" variant="outline">
                         <Link href={reportSectionHref(workspace, "automation-command-center")}>
-                          Open command center
+                          {tr("openCommandCenter")}
                         </Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href={reportSectionHref(workspace, "delivery-subscriptions")}>
-                          Open delivery
+                          {tr("openDelivery")}
                         </Link>
                       </Button>
                     </div>
@@ -13926,18 +14063,19 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-impact-title" className="text-xl font-semibold">
-              Automation impact
+              {tr("automationImpact")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Estimated monthly work removed by ready report rules, scheduled packs, and linked
-              automation starters. {personaScopeDescription}
+              {tr("estimatedMonthlyWorkRemovedByReady", { personaScopeDescription })}
             </p>
           </div>
           <Badge
             variant={reportAutomationImpactTotals.reviewItemCount > 0 ? "warning" : "success"}
             dot
           >
-            {reportAutomationImpactTotals.estimatedMonthlyHoursSaved} hrs saved/mo
+            {tr("hrsSavedMo", {
+              estimatedMonthlyHoursSaved: reportAutomationImpactTotals.estimatedMonthlyHoursSaved,
+            })}
           </Badge>
         </div>
 
@@ -13984,15 +14122,15 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Hours saved</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-muted-foreground">{tr("hoursSaved")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.estimatedMonthlyHoursSaved}
                         </div>
-                        <div className="mt-1 text-muted-foreground">estimated / month</div>
+                        <div className="mt-1 text-muted-foreground">{tr("estimatedMonth")}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Automated items</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-muted-foreground">{tr("automatedItems")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.estimatedAutomatedItemCount}
                         </div>
                         <div className="mt-1 text-muted-foreground">
@@ -14000,21 +14138,21 @@ export default function Reports() {
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Coverage</div>
-                        <div className="mt-1 font-mono text-lg font-semibold">
+                        <div className="text-muted-foreground">{tr("coverage")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-lg font-semibold">
                           {item.estimate.coverageScore}%
                         </div>
                         <div className="mt-1 text-muted-foreground">
-                          {item.triggerRules.length} trigger rules
+                          {tr("triggerRules3", { triggerRulesCount: item.triggerRules.length })}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Amount watched</div>
-                        <div className="mt-1 truncate font-mono text-sm font-semibold">
+                        <div className="text-muted-foreground">{tr("amountWatched")}</div>
+                        <div dir="ltr" className="mt-1 truncate font-mono text-sm font-semibold">
                           {formatCurrency(item.estimate.amountAtRisk, "AED", locale)}
                         </div>
                         <div className="mt-1 text-muted-foreground">
-                          {item.estimate.reviewItemCount} review items
+                          {tr("reviewItems2", { reviewItemCount: item.estimate.reviewItemCount })}
                         </div>
                       </div>
                     </div>
@@ -14037,7 +14175,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Outcome signals
+                        {tr("outcomeSignals")}
                       </div>
                       {item.profile.outcomeSignals.map((signal) => (
                         <div
@@ -14047,11 +14185,11 @@ export default function Reports() {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="font-medium text-foreground">{signal.label}</div>
-                            <Badge variant="info">Proxy</Badge>
+                            <Badge variant="info">{tr("proxy")}</Badge>
                           </div>
                           <div className="mt-1 text-muted-foreground">{signal.currentProxy}</div>
                           <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                            Missing counter: {signal.missingCounter}
+                            {tr("missingCounter", { missingCounter: signal.missingCounter })}
                           </div>
                           <div className="mt-1 text-muted-foreground">{signal.guardrail}</div>
                         </div>
@@ -14071,10 +14209,10 @@ export default function Reports() {
 
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm" variant="outline">
-                        <Link href={item.commandCenterHref}>Open command center</Link>
+                        <Link href={item.commandCenterHref}>{tr("openCommandCenter")}</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={item.starterHref}>Open autopilot</Link>
+                        <Link href={item.starterHref}>{tr("openAutopilot")}</Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -14092,15 +14230,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="decision-shortcuts-title" className="text-xl font-semibold">
-              Decision shortcuts
+              {tr("decisionShortcuts")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Business questions that route owners, freelancers, and accountants to the right
-              reports, comparisons, and automation starter. {personaScopeDescription}
+              {tr("businessQuestionsThatRouteOwnersFreelancers", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportDecisionShortcuts.length} questions
+            {tr("questions", {
+              visibleReportDecisionShortcutsCount: visibleReportDecisionShortcuts.length,
+            })}
           </Badge>
         </div>
 
@@ -14137,14 +14276,14 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Primary report</div>
+                      <div className="text-muted-foreground">{tr("primaryReport2")}</div>
                       <div className="mt-1 font-medium text-foreground">
                         {shortcut.primaryReport.name}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Report bundle</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("reportBundle")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {shortcut.reports.length}
                       </div>
                     </div>
@@ -14164,13 +14303,13 @@ export default function Reports() {
                   <div className="space-y-2 text-xs text-muted-foreground">
                     {shortcut.comparisonPreset ? (
                       <div>
-                        <span className="font-medium text-foreground">Comparison:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("comparison2")}</span>{" "}
                         {shortcut.comparisonPreset.title}
                       </div>
                     ) : null}
                     {shortcut.automationStarter ? (
                       <div>
-                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("automation2")}</span>{" "}
                         {shortcut.automationStarter.title}
                       </div>
                     ) : null}
@@ -14178,17 +14317,17 @@ export default function Reports() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href={shortcut.primaryReportHref}>Open report</Link>
+                      <Link href={shortcut.primaryReportHref}>{tr("openReport")}</Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={shortcut.comparisonHref}>Open comparison</Link>
+                      <Link href={shortcut.comparisonHref}>{tr("openComparison")}</Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
                       <Link
                         href={shortcut.workflowHref}
                         data-testid={`report-decision-shortcut-automation-${shortcut.id}`}
                       >
-                        Open automation
+                        {tr("openAutomation")}
                       </Link>
                     </Button>
                   </div>
@@ -14206,15 +14345,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-starters-title" className="text-xl font-semibold">
-              Automation starters
+              {tr("automationStarters")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Persona-specific setup paths for turning report packs, comparisons, and open queues
-              into automated workflows. {personaScopeDescription}
+              {tr("personaSpecificSetupPathsForTurning", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportAutomationStarters.length} starters
+            {tr("starters2", {
+              visibleReportAutomationStartersCount: visibleReportAutomationStarters.length,
+            })}
           </Badge>
         </div>
 
@@ -14224,7 +14364,7 @@ export default function Reports() {
         >
           <div className="rounded-md border p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-muted-foreground">Last scan</div>
+              <div className="text-muted-foreground">{tr("lastScan")}</div>
               <Badge
                 variant={
                   latestReportDeliverySchedulerScan?.status === "error"
@@ -14235,7 +14375,7 @@ export default function Reports() {
                 }
                 dot
               >
-                {latestReportDeliverySchedulerScan?.status ?? "pending"}
+                {latestReportDeliverySchedulerScan?.status ?? tr("pending")}
               </Badge>
             </div>
             <div className="mt-1 font-medium text-foreground">
@@ -14243,32 +14383,32 @@ export default function Reports() {
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Queued by scan</div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="text-muted-foreground">{tr("queuedByScan")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.queuedRuns ?? 0}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Guardrail skips</div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="text-muted-foreground">{tr("guardrailSkips")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
               {reportDeliverySchedulerGuardrailSkips}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Handoff skips</div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="text-muted-foreground">{tr("handoffSkips")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
               {reportDeliverySchedulerHandoffSkipCount}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Actor skips</div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="text-muted-foreground">{tr("actorSkips")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.skippedNoActor ?? 0}
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-muted-foreground">Scan errors</div>
-            <div className="mt-1 font-mono text-base font-semibold">
+            <div className="text-muted-foreground">{tr("scanErrors")}</div>
+            <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
               {latestReportDeliverySchedulerScan?.errors ?? 0}
             </div>
           </div>
@@ -14282,15 +14422,17 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-foreground">
-                  Scheduled sends held for handoff
+                  {tr("scheduledSendsHeldForHandoff")}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  These due report packs were not auto-sent because the latest scheduler scan found
-                  unresolved handoff gaps.
+                  {tr("theseDueReportPacksWereNot")}
                 </p>
               </div>
               <Badge variant="warning" dot>
-                {reportDeliverySchedulerHandoffReviews.length} held
+                {tr("held", {
+                  reportDeliverySchedulerHandoffReviewsCount:
+                    reportDeliverySchedulerHandoffReviews.length,
+                })}
               </Badge>
             </div>
             <div className="mt-3 grid gap-2">
@@ -14310,11 +14452,11 @@ export default function Reports() {
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild size="sm" variant="outline" className="h-7 px-2">
                       <Link href={review.href}>
-                        Open handoff <ArrowRight className="h-3.5 w-3.5" />
+                        {tr("openHandoff")} <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                      <Link href={review.subscriptionHref}>Open delivery</Link>
+                      <Link href={review.subscriptionHref}>{tr("openDelivery")}</Link>
                     </Button>
                   </div>
                 </div>
@@ -14349,8 +14491,8 @@ export default function Reports() {
                       </div>
                       <Badge variant={starter.openWorkItemCount > 0 ? "warning" : "success"} dot>
                         {starter.openWorkItemCount > 0
-                          ? `${starter.openWorkItemCount} open`
-                          : "Ready"}
+                          ? tr("open2", { openWorkItemCount: starter.openWorkItemCount })
+                          : tr("ready")}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -14359,37 +14501,37 @@ export default function Reports() {
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Setup</div>
+                        <div className="text-muted-foreground">{tr("setup")}</div>
                         <div className="font-medium text-foreground">{starter.setupTime}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Ready reports</div>
-                        <div className="font-mono text-base font-semibold">
+                        <div className="text-muted-foreground">{tr("readyReports")}</div>
+                        <div dir="ltr" className="font-mono text-base font-semibold">
                           {starter.readyCount}/{starter.reports.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Playbooks</div>
-                        <div className="font-mono text-base font-semibold">
+                        <div className="text-muted-foreground">{tr("playbooks")}</div>
+                        <div dir="ltr" className="font-mono text-base font-semibold">
                           {starter.playbooks.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">At risk</div>
-                        <div className="truncate font-mono text-sm font-semibold">
+                        <div className="text-muted-foreground">{tr("atRisk")}</div>
+                        <div dir="ltr" className="truncate font-mono text-sm font-semibold">
                           {formatCurrency(starter.amountAtRisk, "AED", locale)}
                         </div>
                       </div>
                     </div>
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">Trigger:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("trigger2")}</span>{" "}
                       {starter.trigger}
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Setup checklist
+                        {tr("setupChecklist")}
                       </div>
                       {starter.setupSteps.map((step) => (
                         <div key={step} className="flex gap-2 text-xs text-muted-foreground">
@@ -14420,7 +14562,7 @@ export default function Reports() {
                         variant="outline"
                         onClick={() => setReportPersonaFilter(starter.persona)}
                       >
-                        Filter workspace
+                        {tr("filterWorkspace")}
                       </Button>
                     </div>
                   </CardContent>
@@ -14438,15 +14580,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="trigger-rules-title" className="text-xl font-semibold">
-              Trigger rules
+              {tr("triggerRules")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Report-driven thresholds that route cash, tax, close, and advisory signals into
-              automation. {personaScopeDescription}
+              {tr("reportDrivenThresholdsThatRouteCash", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleReportAutomationTriggerRules.length} rules
+            {tr("rules2", {
+              visibleReportAutomationTriggerRulesCount: visibleReportAutomationTriggerRules.length,
+            })}
           </Badge>
         </div>
 
@@ -14456,7 +14599,7 @@ export default function Reports() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {visibleReportAutomationTriggerRules.map((rule) => {
               const WorkspaceIcon = rule.workspace.icon;
-              const severity = triggerSeverityMeta[rule.severity];
+              const severity = getTriggerSeverityMeta()[rule.severity];
 
               return (
                 <Card
@@ -14484,19 +14627,19 @@ export default function Reports() {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <p>{rule.condition}</p>
                       <div className="rounded-md border p-3 text-xs">
-                        <span className="font-medium text-foreground">Threshold:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("threshold2")}</span>{" "}
                         {rule.threshold}
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="text-muted-foreground">{tr("cadence")}</div>
                         <div className="mt-1 font-medium text-foreground">{rule.cadence}</div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Open work</div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="text-muted-foreground">{tr("openWork")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                           {rule.openWorkItemCount}
                         </div>
                       </div>
@@ -14516,13 +14659,13 @@ export default function Reports() {
                     <div className="space-y-2 text-xs text-muted-foreground">
                       {rule.decisionShortcut ? (
                         <div>
-                          <span className="font-medium text-foreground">Question:</span>{" "}
+                          <span className="font-medium text-foreground">{tr("question2")}</span>{" "}
                           {rule.decisionShortcut.question}
                         </div>
                       ) : null}
                       {rule.automationStarter ? (
                         <div>
-                          <span className="font-medium text-foreground">Automation:</span>{" "}
+                          <span className="font-medium text-foreground">{tr("automation2")}</span>{" "}
                           {rule.automationStarter.title}
                         </div>
                       ) : null}
@@ -14533,10 +14676,10 @@ export default function Reports() {
                         <Link href={rule.primaryReportHref}>{rule.actionLabel}</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={rule.decisionShortcutHref}>Open question</Link>
+                        <Link href={rule.decisionShortcutHref}>{tr("openQuestion")}</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={rule.automationStarterHref}>Open automation</Link>
+                        <Link href={rule.automationStarterHref}>{tr("openAutomation")}</Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -14554,11 +14697,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-delivery-subscriptions-title" className="text-xl font-semibold">
-              Delivery subscriptions
+              {tr("deliverySubscriptions")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Scheduled report packs that define cadence, recipients, channel, and guardrails before
-              auto-send. {personaScopeDescription}
+              {tr("scheduledReportPacksThatDefineCadence", { personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -14571,7 +14713,9 @@ export default function Reports() {
             }
             dot
           >
-            {visibleReportDeliverySubscriptions.length} subscriptions
+            {tr("subscriptions", {
+              visibleReportDeliverySubscriptionsCount: visibleReportDeliverySubscriptions.length,
+            })}
           </Badge>
         </div>
 
@@ -14607,11 +14751,12 @@ export default function Reports() {
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                Automation recovery
+                {tr("automationRecovery")}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Failed delivery recovery and review queue for the current{" "}
-                {personaFilterLabel.toLowerCase()} reporting view.
+                {tr("failedDeliveryRecoveryAndReviewQueue", {
+                  personaFilterLabel: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
             <Badge variant={reportDeliveryRecoverySummary.nextAction.badgeVariant} dot>
@@ -14624,8 +14769,8 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-failed-runs"
             >
-              <div className="text-muted-foreground">Failed runs</div>
-              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+              <div className="text-muted-foreground">{tr("failedRuns2")}</div>
+              <div dir="ltr" className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.failedRunCount}
               </div>
             </div>
@@ -14633,8 +14778,8 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-retryable-subscriptions"
             >
-              <div className="text-muted-foreground">Retryable subscriptions</div>
-              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+              <div className="text-muted-foreground">{tr("retryableSubscriptions")}</div>
+              <div dir="ltr" className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.retryableSubscriptionCount}
               </div>
             </div>
@@ -14642,8 +14787,8 @@ export default function Reports() {
               className="rounded-md bg-secondary/40 p-2"
               data-testid="report-delivery-recovery-review-subscriptions"
             >
-              <div className="text-muted-foreground">Needs review</div>
-              <div className="mt-1 font-mono text-base font-semibold text-foreground">
+              <div className="text-muted-foreground">{tr("needsReview")}</div>
+              <div dir="ltr" className="mt-1 font-mono text-base font-semibold text-foreground">
                 {reportDeliveryRecoverySummary.reviewSubscriptionCount}
               </div>
             </div>
@@ -14675,7 +14820,7 @@ export default function Reports() {
                 data-testid="report-delivery-recovery-retry-latest"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Retry latest
+                {tr("retryLatest")}
               </Button>
             ) : reportDeliveryRecoverySummary.nextAction.kind === "open" ? (
               <Button asChild size="sm" variant="outline">
@@ -14683,7 +14828,7 @@ export default function Reports() {
                   href={reportDeliveryRecoverySummary.nextAction.href}
                   data-testid="report-delivery-recovery-open-review"
                 >
-                  Open review
+                  {tr("openReview")}
                 </Link>
               </Button>
             ) : null}
@@ -14696,10 +14841,13 @@ export default function Reports() {
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-sm font-semibold text-foreground">Automation command strip</div>
+              <div className="text-sm font-semibold text-foreground">
+                {tr("automationCommandStrip")}
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                One-click recovery, guardrail review, delivery queueing, and comparison paths for{" "}
-                {personaFilterLabel.toLowerCase()} workflows.
+                {tr("oneClickRecoveryGuardrailReviewDelivery", {
+                  personaFilterLabel: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -14709,8 +14857,13 @@ export default function Reports() {
                 data-testid="report-delivery-command-pinned"
               >
                 {pinnedReportDeliveryAutomationCommand
-                  ? `Pinned: ${reportDeliveryAutomationCommandLabels[pinnedReportDeliveryAutomationCommand]}`
-                  : "No pinned command"}
+                  ? tr("pinned", {
+                      value:
+                        getReportDeliveryAutomationCommandLabels()[
+                          pinnedReportDeliveryAutomationCommand
+                        ],
+                    })
+                  : tr("noPinnedCommand")}
               </Badge>
               <Badge variant="info" dot>
                 {personaFilterLabel}
@@ -14728,7 +14881,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-                  Retry recovery
+                  {tr("retryRecovery")}
                 </div>
                 <Button
                   type="button"
@@ -14742,7 +14895,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Requeue the latest failed scheduled report pack.
+                {tr("requeueTheLatestFailedScheduledReport")}
               </div>
               <Button
                 type="button"
@@ -14761,7 +14914,7 @@ export default function Reports() {
                 }}
                 data-testid="report-delivery-command-retry"
               >
-                Retry now
+                {tr("retryNow")}
               </Button>
             </div>
 
@@ -14774,7 +14927,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                  Review guardrails
+                  {tr("reviewGuardrails")}
                 </div>
                 <Button
                   type="button"
@@ -14788,7 +14941,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Open the first delivery needing setup, enablement, or review.
+                {tr("openTheFirstDeliveryNeedingSetup")}
               </div>
               {reportDeliveryAutomationCommandTargets.reviewSubscription ? (
                 <Button asChild size="sm" variant="outline" className="mt-2">
@@ -14796,7 +14949,7 @@ export default function Reports() {
                     href={reportDeliveryAutomationCommandTargets.reviewSubscription.href}
                     data-testid="report-delivery-command-review"
                   >
-                    Open review
+                    {tr("openReview")}
                   </Link>
                 </Button>
               ) : (
@@ -14808,7 +14961,7 @@ export default function Reports() {
                   disabled
                   data-testid="report-delivery-command-review"
                 >
-                  No review
+                  {tr("noReview")}
                 </Button>
               )}
             </div>
@@ -14822,7 +14975,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <Send className="h-3.5 w-3.5 text-muted-foreground" />
-                  Queue next pack
+                  {tr("queueNextPack")}
                 </div>
                 <Button
                   type="button"
@@ -14836,7 +14989,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Queue the next enabled delivery subscription for this role.
+                {tr("queueTheNextEnabledDeliverySubscription")}
               </div>
               <Button
                 type="button"
@@ -14857,8 +15010,8 @@ export default function Reports() {
                 data-testid="report-delivery-command-queue"
               >
                 {commandQueueSubscriptionRequiresHandoffAcknowledgement
-                  ? "Acknowledge handoff"
-                  : "Queue pack"}
+                  ? tr("acknowledgeHandoff")
+                  : tr("queuePack")}
               </Button>
             </div>
 
@@ -14871,7 +15024,7 @@ export default function Reports() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                  Open comparison
+                  {tr("openComparison")}
                 </div>
                 <Button
                   type="button"
@@ -14887,7 +15040,7 @@ export default function Reports() {
                 </Button>
               </div>
               <div className="mt-1 text-muted-foreground">
-                Review the highest-priority comparison pack for this persona.
+                {tr("reviewTheHighestPriorityComparisonPack")}
               </div>
               {reportDeliveryAutomationCommandTargets.comparisonPreset ? (
                 <Button asChild size="sm" variant="outline" className="mt-2">
@@ -14895,7 +15048,7 @@ export default function Reports() {
                     href={reportDeliveryAutomationCommandTargets.comparisonPreset.href}
                     data-testid="report-delivery-command-comparison"
                   >
-                    Open comparison
+                    {tr("openComparison")}
                   </Link>
                 </Button>
               ) : (
@@ -14907,7 +15060,7 @@ export default function Reports() {
                   disabled
                   data-testid="report-delivery-command-comparison"
                 >
-                  No comparison
+                  {tr("noComparison")}
                 </Button>
               )}
             </div>
@@ -14922,15 +15075,16 @@ export default function Reports() {
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <ListFilter className="h-4 w-4 text-muted-foreground" />
-                Delivery run timeline
+                {tr("deliveryRunTimeline")}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Filter queued, sent, and failed report-pack automations within the current{" "}
-                {personaFilterLabel.toLowerCase()} view.
+                {tr("filterQueuedSentAndFailedReport", {
+                  personaFilterLabel: personaFilterLabel.toLowerCase(),
+                })}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Delivery run status">
-              {reportDeliveryRunStatusFilters.map((filter) => (
+            <div className="flex flex-wrap gap-2" role="group" aria-label={tr("deliveryRunStatus")}>
+              {getReportDeliveryRunStatusFilters().map((filter) => (
                 <Button
                   key={filter.id}
                   type="button"
@@ -14940,7 +15094,10 @@ export default function Reports() {
                   data-testid={`report-delivery-run-filter-${filter.id}`}
                 >
                   {filter.label}
-                  <span className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px]">
+                  <span
+                    dir="ltr"
+                    className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px]"
+                  >
                     {reportDeliveryRunStatusCounts[filter.id]}
                   </span>
                 </Button>
@@ -14972,15 +15129,19 @@ export default function Reports() {
                   </div>
                   <div className="mt-2 font-medium text-foreground">{run.subscriptionTitle}</div>
                   <div className="mt-1 text-muted-foreground">
-                    Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
-                    {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                    {tr("scheduledReports", {
+                      formatDeliveryRunTimestamp: formatDeliveryRunTimestamp(run.scheduledFor),
+                      readyReportCount: run.readyReportCount,
+                      reportCount: run.reportCount,
+                      channel: run.channel,
+                    })}
                   </div>
                   {run.errorMessage ? (
                     <div className="mt-1 text-destructive">{run.errorMessage}</div>
                   ) : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button asChild size="sm" variant="outline">
-                      <Link href={run.subscriptionHref}>Open subscription</Link>
+                      <Link href={run.subscriptionHref}>{tr("openSubscription")}</Link>
                     </Button>
                     {run.status === "failed" ? (
                       <Button
@@ -14992,7 +15153,7 @@ export default function Reports() {
                         data-testid={`report-delivery-run-timeline-retry-${run.id}`}
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
-                        Retry delivery
+                        {tr("retryDelivery")}
                       </Button>
                     ) : null}
                   </div>
@@ -15005,8 +15166,13 @@ export default function Reports() {
               data-testid="report-delivery-run-timeline-empty"
             >
               {reportDeliveryRunStatusFilter === "all"
-                ? `No delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`
-                : `No ${reportDeliveryRunStatusFilter} delivery runs match this ${personaFilterLabel.toLowerCase()} view yet.`}
+                ? tr("noDeliveryRunsMatchThisView", {
+                    personaFilterLabel: personaFilterLabel.toLowerCase(),
+                  })
+                : tr("noDeliveryRunsMatchThisView2", {
+                    reportDeliveryRunStatusFilter,
+                    personaFilterLabel: personaFilterLabel.toLowerCase(),
+                  })}
             </div>
           )}
         </div>
@@ -15058,26 +15224,26 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Cadence</div>
+                        <div className="text-muted-foreground">{tr("cadence")}</div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.cadence}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Channel</div>
+                        <div className="text-muted-foreground">{tr("channel")}</div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.channel}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Ready reports</div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="text-muted-foreground">{tr("readyReports")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                           {subscription.readyCount}/{subscription.reports.length}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Open work</div>
-                        <div className="mt-1 font-mono text-base font-semibold">
+                        <div className="text-muted-foreground">{tr("openWork")}</div>
+                        <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                           {subscription.openWorkItemCount}
                         </div>
                       </div>
@@ -15085,23 +15251,23 @@ export default function Reports() {
 
                     <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Next delivery</div>
+                        <div className="text-muted-foreground">{tr("nextDelivery")}</div>
                         <div className="mt-1 font-medium text-foreground">
                           {subscription.enabled
-                            ? subscription.nextRunLabel || "Calculated on queue"
-                            : "Paused"}
+                            ? subscription.nextRunLabel || tr("calculatedOnQueue")
+                            : tr("paused")}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Settings</div>
+                        <div className="text-muted-foreground">{tr("settings")}</div>
                         <div className="mt-1 font-medium capitalize text-foreground">
                           {subscription.settingsSource}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-muted-foreground">Suite</div>
+                        <div className="text-muted-foreground">{tr("suite")}</div>
                         <div className="mt-1 font-medium text-foreground">
-                          {subscription.reportSuites[0]?.title ?? "Not linked"}
+                          {subscription.reportSuites[0]?.title ?? tr("notLinked")}
                         </div>
                       </div>
                     </div>
@@ -15117,7 +15283,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-cadence-${subscription.id}`}
                               className="text-xs"
                             >
-                              Cadence
+                              {tr("cadence")}
                             </Label>
                             <Input
                               id={`report-delivery-cadence-${subscription.id}`}
@@ -15134,7 +15300,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-channel-${subscription.id}`}
                               className="text-xs"
                             >
-                              Channel
+                              {tr("channel")}
                             </Label>
                             <Input
                               id={`report-delivery-channel-${subscription.id}`}
@@ -15151,7 +15317,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-format-${subscription.id}`}
                               className="text-xs"
                             >
-                              Format
+                              {tr("format")}
                             </Label>
                             <Input
                               id={`report-delivery-format-${subscription.id}`}
@@ -15168,7 +15334,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-recipients-${subscription.id}`}
                               className="text-xs"
                             >
-                              Recipients
+                              {tr("recipients")}
                             </Label>
                             <Input
                               id={`report-delivery-recipients-${subscription.id}`}
@@ -15185,7 +15351,7 @@ export default function Reports() {
                               htmlFor={`report-delivery-guardrail-${subscription.id}`}
                               className="text-xs"
                             >
-                              Guardrail
+                              {tr("guardrail")}
                             </Label>
                             <Textarea
                               id={`report-delivery-guardrail-${subscription.id}`}
@@ -15231,7 +15397,7 @@ export default function Reports() {
                             }
                           >
                             <Save className="h-4 w-4" />
-                            Save delivery settings
+                            {tr("saveDeliverySettings")}
                           </Button>
                           <Button
                             type="button"
@@ -15241,22 +15407,22 @@ export default function Reports() {
                             onClick={() => setEditingReportDeliverySubscriptionId(null)}
                           >
                             <X className="h-4 w-4" />
-                            Cancel
+                            {tr("cancel")}
                           </Button>
                         </div>
                       </div>
                     ) : (
                       <div className="rounded-md border p-3 text-xs text-muted-foreground">
                         <div>
-                          <span className="font-medium text-foreground">Format:</span>{" "}
+                          <span className="font-medium text-foreground">{tr("format2")}</span>{" "}
                           {subscription.format}
                         </div>
                         <div className="mt-1">
-                          <span className="font-medium text-foreground">Recipients:</span>{" "}
+                          <span className="font-medium text-foreground">{tr("recipients3")}</span>{" "}
                           {subscription.recipients}
                         </div>
                         <div className="mt-1">
-                          <span className="font-medium text-foreground">Guardrail:</span>{" "}
+                          <span className="font-medium text-foreground">{tr("guardrail2")}</span>{" "}
                           {subscription.deliveryGuardrail}
                         </div>
                       </div>
@@ -15268,7 +15434,7 @@ export default function Reports() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-medium text-foreground">Pack preview</div>
+                          <div className="font-medium text-foreground">{tr("packPreview")}</div>
                           <p className="mt-1 text-muted-foreground">
                             {subscription.preview.summary}
                           </p>
@@ -15342,7 +15508,7 @@ export default function Reports() {
                                 </div>
                               </div>
                               <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                                <Link href={row.href}>Open</Link>
+                                <Link href={row.href}>{tr("open")}</Link>
                               </Button>
                             </div>
                           ))}
@@ -15353,7 +15519,7 @@ export default function Reports() {
                           variant="warning"
                           data-testid={`report-delivery-handoff-acknowledgement-${subscription.id}`}
                         >
-                          Acknowledge handoff gaps before queueing
+                          {tr("acknowledgeHandoffGapsBeforeQueueing")}
                         </Badge>
                       ) : null}
                     </div>
@@ -15363,7 +15529,9 @@ export default function Reports() {
                       data-testid={`report-delivery-run-history-${subscription.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-foreground">Recent delivery runs</div>
+                        <div className="font-medium text-foreground">
+                          {tr("recentDeliveryRuns")}
+                        </div>
                         <Badge variant="neutral">{subscription.deliveryRuns.length}</Badge>
                       </div>
                       {subscription.latestDeliveryRun ? (
@@ -15383,18 +15551,23 @@ export default function Reports() {
                                   </span>
                                 </div>
                                 <div className="mt-1 text-muted-foreground">
-                                  Scheduled {formatDeliveryRunTimestamp(run.scheduledFor)} -{" "}
-                                  {run.readyReportCount}/{run.reportCount} reports - {run.channel}
+                                  {tr("scheduledReports", {
+                                    formatDeliveryRunTimestamp: formatDeliveryRunTimestamp(
+                                      run.scheduledFor
+                                    ),
+                                    readyReportCount: run.readyReportCount,
+                                    reportCount: run.reportCount,
+                                    channel: run.channel,
+                                  })}
                                 </div>
                                 {run.status === "failed" ? (
                                   <div className="mt-1 text-destructive">
-                                    {run.errorMessage ??
-                                      "Retry after fixing delivery settings or guardrails."}
+                                    {run.errorMessage ?? tr("retryAfterFixingDeliverySettingsOr")}
                                   </div>
                                 ) : null}
                                 {run.retriedFromRunId ? (
                                   <div className="mt-1 text-muted-foreground">
-                                    Requeued from a failed delivery run.
+                                    {tr("requeuedFromAFailedDeliveryRun")}
                                   </div>
                                 ) : null}
                               </div>
@@ -15421,7 +15594,7 @@ export default function Reports() {
                                     onClick={() => retryReportDeliveryRun.mutate(run.id)}
                                   >
                                     <RotateCcw className="h-3.5 w-3.5" />
-                                    Retry delivery
+                                    {tr("retryDelivery")}
                                   </Button>
                                 ) : null}
                               </div>
@@ -15430,18 +15603,21 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="mt-3 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                          No queued delivery runs yet.
+                          {tr("noQueuedDeliveryRunsYet")}
                         </div>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Trigger rules
+                        {tr("triggerRules")}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {subscription.triggerRules.map((rule) => (
-                          <Badge key={rule.id} variant={triggerSeverityMeta[rule.severity].variant}>
+                          <Badge
+                            key={rule.id}
+                            variant={getTriggerSeverityMeta()[rule.severity].variant}
+                          >
                             {rule.title}
                           </Badge>
                         ))}
@@ -15461,7 +15637,7 @@ export default function Reports() {
 
                     <div className="flex flex-wrap gap-2">
                       <Button asChild size="sm">
-                        <Link href={subscription.href}>Open subscription</Link>
+                        <Link href={subscription.href}>{tr("openSubscription")}</Link>
                       </Button>
                       <Button
                         type="button"
@@ -15477,8 +15653,8 @@ export default function Reports() {
                         }
                       >
                         {subscriptionRequiresHandoffAcknowledgement
-                          ? "Acknowledge handoff"
-                          : "Queue delivery"}
+                          ? tr("acknowledgeHandoff")
+                          : tr("queueDelivery")}
                       </Button>
                       {!isEditingDeliverySettings ? (
                         <Button
@@ -15491,7 +15667,7 @@ export default function Reports() {
                           onClick={() => startEditingReportDeliverySubscription(subscription)}
                         >
                           <Pencil className="h-4 w-4" />
-                          Edit settings
+                          {tr("editSettings")}
                         </Button>
                       ) : null}
                       <Button
@@ -15508,18 +15684,20 @@ export default function Reports() {
                           })
                         }
                       >
-                        {subscription.enabled ? "Pause delivery" : "Enable delivery"}
+                        {subscription.enabled ? tr("pauseDelivery") : tr("enableDelivery")}
                       </Button>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={subscription.packTemplateHref}>Open pack</Link>
+                        <Link href={subscription.packTemplateHref}>{tr("openPack")}</Link>
                       </Button>
                       {subscription.reportSuites[0] ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={subscription.reportSuites[0].href}>Open suite</Link>
+                          <Link href={subscription.reportSuites[0].href}>{tr("openSuite")}</Link>
                         </Button>
                       ) : null}
                       <Button asChild size="sm" variant="outline">
-                        <Link href={subscription.automationStarterHref}>Open automation</Link>
+                        <Link href={subscription.automationStarterHref}>
+                          {tr("openAutomation")}
+                        </Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -15537,15 +15715,16 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="recommended-reports-title" className="text-xl font-semibold">
-              Recommended reports
+              {tr("recommendedReports")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Next-best report actions based on open automation queues and current-vs-prior
-              movement. {personaScopeDescription}
+              {tr("nextBestReportActionsBasedOn", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visiblePersonaRecommendations.length} role views
+            {tr("roleViews", {
+              visiblePersonaRecommendationsCount: visiblePersonaRecommendations.length,
+            })}
           </Badge>
         </div>
 
@@ -15575,7 +15754,9 @@ export default function Reports() {
                           <CardDescription>{workspace.focus}</CardDescription>
                         </div>
                       </div>
-                      <Badge variant="outline">{workspace.readyReports} ready</Badge>
+                      <Badge variant="outline">
+                        {tr("ready2", { readyReports: workspace.readyReports })}
+                      </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -15593,7 +15774,7 @@ export default function Reports() {
                               {recommendation.detail}
                             </div>
                             {typeof recommendation.amount === "number" ? (
-                              <div className="font-mono text-xs text-muted-foreground">
+                              <div dir="ltr" className="font-mono text-xs text-muted-foreground">
                                 {formatCurrency(recommendation.amount, "AED", locale)}
                               </div>
                             ) : null}
@@ -15601,7 +15782,7 @@ export default function Reports() {
 
                           {recommendation.href ? (
                             <Button asChild size="sm" variant="outline">
-                              <Link href={recommendation.href}>Open</Link>
+                              <Link href={recommendation.href}>{tr("open")}</Link>
                             </Button>
                           ) : (
                             <Button
@@ -15610,7 +15791,7 @@ export default function Reports() {
                               variant="outline"
                               onClick={() => recommendation.tab && setActiveTab(recommendation.tab)}
                             >
-                              Open
+                              {tr("open")}
                             </Button>
                           )}
                         </div>
@@ -15631,21 +15812,20 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-product-depth-title" className="text-xl font-semibold">
-              Reporting workflow map
+              {tr("reportingWorkflowMap")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Open the reporting work that is ready, being hardened, or waiting on deeper accounting
-              evidence. {personaScopeDescription}
+              {tr("openTheReportingWorkThatIs", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot data-testid="report-product-depth-count">
-            {visibleReportProductDepthSubgoalCount} subgoals
+            {tr("subgoals", { visibleReportProductDepthSubgoalCount })}
           </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {visibleReportProductDepthAreas.map((area) => {
-            const areaStatus = productDepthStatusMeta[area.status];
+            const areaStatus = getProductDepthStatusMeta()[area.status];
 
             return (
               <Card
@@ -15666,7 +15846,7 @@ export default function Reports() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {area.subgoals.map((subgoal) => {
-                    const subgoalStatus = productDepthStatusMeta[subgoal.status];
+                    const subgoalStatus = getProductDepthStatusMeta()[subgoal.status];
 
                     return (
                       <div
@@ -15692,7 +15872,7 @@ export default function Reports() {
                             ) : null}
                           </div>
                           <Button asChild size="sm" variant="outline">
-                            <Link href={subgoal.href}>Open workflow</Link>
+                            <Link href={subgoal.href}>{tr("openWorkflow")}</Link>
                           </Button>
                         </div>
 
@@ -15717,11 +15897,13 @@ export default function Reports() {
                                     variant="outline"
                                     className="h-7 shrink-0 px-2"
                                   >
-                                    <Link href={target.href}>Open target</Link>
+                                    <Link href={target.href}>{tr("openTarget")}</Link>
                                   </Button>
                                 </div>
                                 <div className="mt-2 flex flex-wrap gap-1">
-                                  <Badge variant="outline">{target.reportIds.length} reports</Badge>
+                                  <Badge variant="outline">
+                                    {tr("reports4", { reportIdsCount: target.reportIds.length })}
+                                  </Badge>
                                   {target.sourceEntities.slice(0, 3).map((entity) => (
                                     <Badge key={entity} variant="neutral">
                                       {entity}
@@ -15740,7 +15922,7 @@ export default function Reports() {
                           <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
                             {subgoal.evidenceCheckpoints.map((checkpoint) => {
                               const checkpointStatus =
-                                productDepthEvidenceCheckpointStatusMeta[checkpoint.status];
+                                getProductDepthEvidenceCheckpointStatusMeta()[checkpoint.status];
 
                               return (
                                 <div
@@ -15766,7 +15948,7 @@ export default function Reports() {
                         {subgoal.requiredSourceRecords?.length ? (
                           <div className="mt-3 space-y-2">
                             <div className="text-xs font-medium uppercase text-muted-foreground">
-                              Required source records
+                              {tr("requiredSourceRecords")}
                             </div>
                             <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                               {subgoal.requiredSourceRecords.map((record) => (
@@ -15780,7 +15962,7 @@ export default function Reports() {
                                     {record.systemOfRecord}
                                   </div>
                                   <div className="mt-2 rounded-md bg-secondary/40 p-2 text-muted-foreground">
-                                    Unlocks: {record.unlocks}
+                                    {tr("unlocks", { unlocks: record.unlocks })}
                                   </div>
                                 </div>
                               ))}
@@ -15789,27 +15971,37 @@ export default function Reports() {
                         ) : null}
 
                         <div className="mt-3 flex flex-wrap gap-1">
-                          <Badge variant="outline">{subgoal.reportIds.length} reports</Badge>
                           <Badge variant="outline">
-                            {subgoal.comparisonPresetIds.length} comparisons
+                            {tr("reports4", { reportIdsCount: subgoal.reportIds.length })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.automationStarterIds.length} automations
+                            {tr("comparisons", {
+                              comparisonPresetIdsCount: subgoal.comparisonPresetIds.length,
+                            })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.deliverySubscriptionIds.length} deliveries
+                            {tr("automations2", {
+                              automationStarterIdsCount: subgoal.automationStarterIds.length,
+                            })}
                           </Badge>
                           <Badge variant="outline">
-                            {subgoal.decisionShortcutIds.length} questions
+                            {tr("deliveries", {
+                              deliverySubscriptionIdsCount: subgoal.deliverySubscriptionIds.length,
+                            })}
+                          </Badge>
+                          <Badge variant="outline">
+                            {tr("questions2", {
+                              decisionShortcutIdsCount: subgoal.decisionShortcutIds.length,
+                            })}
                           </Badge>
                         </div>
 
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="text-xs text-muted-foreground">
-                            Next: {subgoal.nextAction}
+                            {tr("next", { nextAction: subgoal.nextAction })}
                           </div>
                           <Button asChild size="sm" variant="ghost" className="justify-start">
-                            <Link href={area.href}>Open header</Link>
+                            <Link href={area.href}>{tr("openHeader")}</Link>
                           </Button>
                         </div>
                       </div>
@@ -15829,11 +16021,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-readiness-title" className="text-xl font-semibold">
-              Report pack readiness
+              {tr("reportPackReadiness")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Delivery checks for scheduled packs before they reach owners, freelancers, or
-              accountants. {personaScopeDescription}
+              {tr("deliveryChecksForScheduledPacksBefore", { personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -15844,7 +16035,8 @@ export default function Reports() {
             }
             dot
           >
-            {visibleReportPackReadiness.reduce((sum, item) => sum + item.reviewCount, 0)} review
+            {visibleReportPackReadiness.reduce((sum, item) => sum + item.reviewCount, 0)}{" "}
+            {tr("review2")}
           </Badge>
         </div>
 
@@ -15882,9 +16074,9 @@ export default function Reports() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-medium uppercase text-muted-foreground">
-                          Automation health
+                          {tr("automationHealth")}
                         </div>
-                        <div className="mt-1 font-mono text-2xl font-semibold">
+                        <div dir="ltr" className="mt-1 font-mono text-2xl font-semibold">
                           {item.automationHealth.score}
                           <span className="text-xs font-normal text-muted-foreground">/100</span>
                         </div>
@@ -15895,20 +16087,20 @@ export default function Reports() {
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div>
-                        <div className="text-muted-foreground">Pack</div>
-                        <div className="font-mono font-semibold">
+                        <div className="text-muted-foreground">{tr("pack")}</div>
+                        <div dir="ltr" className="font-mono font-semibold">
                           {item.automationHealth.readinessScore}%
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Lanes</div>
-                        <div className="font-mono font-semibold">
+                        <div className="text-muted-foreground">{tr("lanes")}</div>
+                        <div dir="ltr" className="font-mono font-semibold">
                           {item.automationHealth.automationLaneScore}%
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Review</div>
-                        <div className="font-mono font-semibold">
+                        <div className="text-muted-foreground">{tr("review")}</div>
+                        <div dir="ltr" className="font-mono font-semibold">
                           {item.automationHealth.reviewSignals}
                         </div>
                       </div>
@@ -15919,7 +16111,7 @@ export default function Reports() {
                         data-testid={`automation-health-trend-${item.workspace.persona}`}
                       >
                         <div>
-                          <div className="text-xs font-medium">Health trend</div>
+                          <div className="text-xs font-medium">{tr("healthTrend")}</div>
                           <div className="text-xs text-muted-foreground">{healthTrend.detail}</div>
                         </div>
                         <Badge variant={healthTrend.variant} dot>
@@ -15943,7 +16135,7 @@ export default function Reports() {
                           {check.status}
                         </Badge>
                         <Button asChild size="sm" variant="outline">
-                          <Link href={check.workflow}>Open</Link>
+                          <Link href={check.workflow}>{tr("open")}</Link>
                         </Button>
                       </div>
                     </div>
@@ -15962,11 +16154,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="period-comparison-title" className="text-xl font-semibold">
-              Period comparison
+              {tr("periodComparison")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {comparisonCurrentLabel} compared with {comparisonPreviousLabel}.{" "}
-              {personaScopeDescription}
+              {tr("comparedWith", {
+                comparisonCurrentLabel,
+                comparisonPreviousLabel,
+                personaScopeDescription,
+              })}
             </p>
           </div>
           <Badge
@@ -15977,8 +16172,8 @@ export default function Reports() {
           >
             {personaFilter === "all"
               ? comparisonRanges.isCustom
-                ? "Custom range"
-                : "Month to date"
+                ? tr("customRange")
+                : tr("monthToDate")
               : personaFilterLabel}
           </Badge>
         </div>
@@ -15998,7 +16193,9 @@ export default function Reports() {
                       <CardDescription>{preset.baseline}</CardDescription>
                     </div>
                     <Badge variant={preset.warningCount > 0 ? "warning" : "success"} dot>
-                      {preset.warningCount > 0 ? `${preset.warningCount} review` : "Clear"}
+                      {preset.warningCount > 0
+                        ? tr("review3", { warningCount: preset.warningCount })
+                        : tr("clear")}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -16038,7 +16235,7 @@ export default function Reports() {
                       {preset.automationTrigger}
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={preset.href}>Open preset</Link>
+                      <Link href={preset.href}>{tr("openPreset")}</Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -16068,25 +16265,25 @@ export default function Reports() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
-                        {row.currentLabel ?? "Current"}
+                        {row.currentLabel ?? tr("current")}
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {formatComparisonValue(row, row.current, locale)}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
                       <div className="text-xs text-muted-foreground">
-                        {row.previousLabel ?? "Previous"}
+                        {row.previousLabel ?? tr("previous")}
                       </div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {formatComparisonValue(row, row.previous, locale)}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground">Movement</div>
-                      <div className="truncate font-mono text-sm font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("movement")}</div>
+                      <div dir="ltr" className="truncate font-mono text-sm font-semibold">
                         {formatComparisonValue(row, row.delta, locale)}
                       </div>
                     </div>
@@ -16096,7 +16293,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => setActiveTab(row.tab)}
                     >
-                      Open
+                      {tr("open")}
                     </Button>
                   </div>
                 </CardContent>
@@ -16113,14 +16310,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-queues-title" className="text-xl font-semibold">
-              Automation queues
+              {tr("automationQueues")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Live report signals routed to the next workflow. {personaScopeDescription}
+              {tr("liveReportSignalsRoutedToThe", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant={automationQueueCount > 0 ? "warning" : "success"} dot>
-            {automationQueueCount} open
+            {tr("open3", { automationQueueCount })}
           </Badge>
         </div>
 
@@ -16145,7 +16342,7 @@ export default function Reports() {
                         </div>
                       </div>
                       <Badge variant={hasAction ? "warning" : "success"} dot>
-                        {hasAction ? "Review" : "Clear"}
+                        {hasAction ? tr("review") : tr("clear")}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -16153,11 +16350,13 @@ export default function Reports() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
                         <div className="text-xs text-muted-foreground">{item.signal}</div>
-                        <div className="font-mono text-2xl font-semibold">{item.count}</div>
+                        <div dir="ltr" className="font-mono text-2xl font-semibold">
+                          {item.count}
+                        </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Amount</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("amount")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {typeof item.amount === "number"
                             ? formatCurrency(item.amount, item.currency ?? "AED", locale)
                             : "-"}
@@ -16202,15 +16401,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-coverage-title" className="text-xl font-semibold">
-              Automation coverage
+              {tr("automationCoverage")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role coverage across live reports, comparison lenses, workflow links, and pack
-              cadence. {personaScopeDescription}
+              {tr("roleCoverageAcrossLiveReportsComparison", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant="info" dot>
-            {visibleAutomationCoverage.length} role views
+            {tr("roleViews2", { visibleAutomationCoverageCount: visibleAutomationCoverage.length })}
           </Badge>
         </div>
 
@@ -16248,26 +16446,26 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Live reports</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("liveReports")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {item.liveReportCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Automations</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("automations")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {item.automatedSignalCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Comparisons</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("comparisons2")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {item.comparisonTypeCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Workflows</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("workflows3")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {item.workflowReportCount}
                         </div>
                       </div>
@@ -16276,18 +16474,20 @@ export default function Reports() {
                     <div className="rounded-md border p-3">
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span className="font-medium uppercase text-muted-foreground">
-                          Open work
+                          {tr("openWork")}
                         </span>
-                        <span className="font-mono">
-                          {item.openWorkItemCount} items -{" "}
-                          {formatCurrency(item.amountAtRisk, "AED", locale)}
+                        <span dir="ltr" className="font-mono">
+                          {tr("items", {
+                            openWorkItemCount: item.openWorkItemCount,
+                            formatCurrency: formatCurrency(item.amountAtRisk, "AED", locale),
+                          })}
                         </span>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Signal coverage
+                        {tr("signalCoverage")}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {item.topSignals.map((signal) => (
@@ -16300,11 +16500,11 @@ export default function Reports() {
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Pack cadence:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("packCadence")}</span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Pack automation:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("packAutomation")}</span>{" "}
                         {workspace.packSchedule.automation}
                       </div>
                     </div>
@@ -16316,9 +16516,11 @@ export default function Reports() {
                         variant="outline"
                         onClick={() => navigate(reportWorkspaceHref(workspace))}
                       >
-                        Open workspace
+                        {tr("openWorkspace")}
                       </Button>
-                      <Badge variant="outline">{item.playbookCount} playbooks</Badge>
+                      <Badge variant="outline">
+                        {tr("playbooks2", { playbookCount: item.playbookCount })}
+                      </Badge>
                     </div>
                   </CardContent>
                 </Card>
@@ -16335,11 +16537,10 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="automation-command-center-title" className="text-xl font-semibold">
-              Automation command center
+              {tr("automationCommandCenter")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Auto-send readiness across report rules, blocker queues, and pack delivery.{" "}
-              {personaScopeDescription}
+              {tr("autoSendReadinessAcrossReportRules", { personaScopeDescription })}
             </p>
           </div>
           <Badge
@@ -16352,7 +16553,9 @@ export default function Reports() {
             }
             dot
           >
-            {reportAutomationCommandCenter.autoSendCoveragePercent}% auto-send coverage
+            {tr("autoSendCoverage2", {
+              autoSendCoveragePercent: reportAutomationCommandCenter.autoSendCoveragePercent,
+            })}
           </Badge>
         </div>
 
@@ -16363,10 +16566,10 @@ export default function Reports() {
             <CardHeader className="space-y-3 pb-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle className="text-base font-semibold">Auto-send readiness</CardTitle>
-                  <CardDescription>
-                    Rule coverage and open work before scheduled report packs are sent.
-                  </CardDescription>
+                  <CardTitle className="text-base font-semibold">
+                    {tr("autoSendReadiness")}
+                  </CardTitle>
+                  <CardDescription>{tr("ruleCoverageAndOpenWorkBefore")}</CardDescription>
                 </div>
                 <Badge
                   variant={
@@ -16378,8 +16581,10 @@ export default function Reports() {
                   }
                   dot
                 >
-                  {reportAutomationCommandCenter.readyRuleCount}/
-                  {reportAutomationCommandCenter.ruleCount} rules ready
+                  {tr("rulesReady2", {
+                    readyRuleCount: reportAutomationCommandCenter.readyRuleCount,
+                    ruleCount: reportAutomationCommandCenter.ruleCount,
+                  })}
                 </Badge>
               </div>
             </CardHeader>
@@ -16387,27 +16592,27 @@ export default function Reports() {
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-5">
                 {[
                   {
-                    label: "Automation rules",
+                    label: tr("automationRules"),
                     value: reportAutomationCommandCenter.ruleCount,
                   },
                   {
-                    label: "Ready auto-send",
+                    label: tr("readyAutoSend"),
                     value: reportAutomationCommandCenter.readyRuleCount,
                   },
                   {
-                    label: "Need review",
+                    label: tr("needReview2"),
                     value: reportAutomationCommandCenter.reviewRuleCount,
                   },
                   {
-                    label: "Setup needed",
+                    label: tr("setupNeeded"),
                     value: reportAutomationCommandCenter.setupRuleCount,
                   },
                   {
-                    label: "Open work",
+                    label: tr("openWork"),
                     value: reportAutomationCommandCenter.openWorkItemCount,
                   },
                   {
-                    label: "Amount at risk",
+                    label: tr("amountAtRisk2"),
                     value: formatCurrency(
                       reportAutomationCommandCenter.amountAtRisk,
                       "AED",
@@ -16416,25 +16621,26 @@ export default function Reports() {
                     className: "text-sm",
                   },
                   {
-                    label: "Comparisons linked",
+                    label: tr("comparisonsLinked"),
                     value: reportAutomationCommandCenter.comparisonMetricCount,
                   },
                   {
-                    label: "Report bundle",
+                    label: tr("reportBundle"),
                     value: reportAutomationCommandCenter.reportBundleCount,
                   },
                   {
-                    label: "Packs ready",
+                    label: tr("packsReady"),
                     value: reportAutomationCommandCenter.readyPackCount,
                   },
                   {
-                    label: "Packs in review",
+                    label: tr("packsInReview"),
                     value: reportAutomationCommandCenter.reviewPackCount,
                   },
                 ].map((metric) => (
                   <div key={metric.label} className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">{metric.label}</div>
                     <div
+                      dir="ltr"
                       className={`truncate font-mono text-lg font-semibold ${
                         metric.className ?? ""
                       }`}
@@ -16448,7 +16654,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="space-y-2">
                   <div className="text-xs font-medium uppercase text-muted-foreground">
-                    Top blockers
+                    {tr("topBlockers")}
                   </div>
                   {reportAutomationCommandCenter.topReviewRules.length ? (
                     reportAutomationCommandCenter.topReviewRules.map((rule) => (
@@ -16465,12 +16671,18 @@ export default function Reports() {
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {rule.workspace.title} - {rule.openWorkItemCount} open work items -{" "}
-                            {formatCurrency(rule.amountAtRisk, "AED", locale)}
+                            {tr("openWorkItems4", {
+                              title: rule.workspace.title,
+                              openWorkItemCount: rule.openWorkItemCount,
+                              formatCurrency: formatCurrency(rule.amountAtRisk, "AED", locale),
+                            })}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {rule.liveReportCount}/{rule.reportCount} reports live with{" "}
-                            {rule.comparisonMetricCount} linked comparisons.
+                            {tr("reportsLiveWithLinkedComparisons", {
+                              liveReportCount: rule.liveReportCount,
+                              reportCount: rule.reportCount,
+                              comparisonMetricCount: rule.comparisonMetricCount,
+                            })}
                           </div>
                         </div>
                         <Button asChild size="sm" variant="outline">
@@ -16480,14 +16692,14 @@ export default function Reports() {
                     ))
                   ) : (
                     <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      All visible rules are ready for auto-send when pack delivery runs.
+                      {tr("allVisibleRulesAreReadyFor")}
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2">
                   <div className="text-xs font-medium uppercase text-muted-foreground">
-                    Pack delivery readiness
+                    {tr("packDeliveryReadiness")}
                   </div>
                   {visibleReportPackReadiness.map((item) => (
                     <div
@@ -16498,8 +16710,10 @@ export default function Reports() {
                       <div className="min-w-0">
                         <div className="font-medium">{item.workspace.title}</div>
                         <div className="text-xs text-muted-foreground">
-                          {item.reviewCount} checks need review - health{" "}
-                          {item.automationHealth.score}/100
+                          {tr("checksNeedReviewHealth100", {
+                            reviewCount: item.reviewCount,
+                            score: item.automationHealth.score,
+                          })}
                         </div>
                       </div>
                       <Badge variant={item.reviewCount > 0 ? "warning" : "success"} dot>
@@ -16521,15 +16735,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-automation-rules-title" className="text-xl font-semibold">
-              Report automation rules
+              {tr("reportAutomationRules")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-specific pack rules that connect triggers, reports, recipients, and next
-              workflows. {personaScopeDescription}
+              {tr("roleSpecificPackRulesThatConnect", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportAutomationRuleReviewCount > 0 ? "warning" : "success"} dot>
-            {reportAutomationRuleReviewCount} need review
+            {tr("needReview3", { reportAutomationRuleReviewCount })}
           </Badge>
         </div>
 
@@ -16564,26 +16777,26 @@ export default function Reports() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Reports</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("reports")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {rule.liveReportCount}/{rule.reportCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Comparisons</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("comparisons2")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {rule.comparisonMetricCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Open work</div>
-                        <div className="font-mono text-lg font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("openWork")}</div>
+                        <div dir="ltr" className="font-mono text-lg font-semibold">
                           {rule.openWorkItemCount}
                         </div>
                       </div>
                       <div className="rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground">Amount</div>
-                        <div className="truncate font-mono text-sm font-semibold">
+                        <div className="text-xs text-muted-foreground">{tr("amount")}</div>
+                        <div dir="ltr" className="truncate font-mono text-sm font-semibold">
                           {formatCurrency(rule.amountAtRisk, "AED", locale)}
                         </div>
                       </div>
@@ -16591,22 +16804,22 @@ export default function Reports() {
 
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Trigger:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("trigger2")}</span>{" "}
                         {rule.playbook.trigger}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("cadence2")}</span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Recipients:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("recipients3")}</span>{" "}
                         {workspace.packSchedule.recipients}
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Report bundle
+                        {tr("reportBundle")}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {rule.linkedReports.slice(0, 5).map((report) => (
@@ -16622,7 +16835,7 @@ export default function Reports() {
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Rule signals
+                        {tr("ruleSignals")}
                       </div>
                       {rule.matchingSignals.length ? (
                         rule.matchingSignals.slice(0, 3).map((signal) => (
@@ -16635,20 +16848,20 @@ export default function Reports() {
                               <div className="text-xs text-muted-foreground">{signal.signal}</div>
                             </div>
                             <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
-                              {signal.count > 0 ? signal.count : "Clear"}
+                              {signal.count > 0 ? signal.count : tr("clear")}
                             </Badge>
                           </div>
                         ))
                       ) : (
                         <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                          No live exceptions currently map to this rule.
+                          {tr("noLiveExceptionsCurrentlyMapTo")}
                         </div>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <div className="text-xs font-medium uppercase text-muted-foreground">
-                        Automation runbook
+                        {tr("automationRunbook")}
                       </div>
                       {rule.runbookSteps.map((step, index) => (
                         <div
@@ -16673,10 +16886,19 @@ export default function Reports() {
                                 <Badge variant="outline">{step.phase}</Badge>
                               </div>
                               <div className="flex flex-wrap gap-1">
-                                <Badge variant="outline">{step.reportIds.length} reports</Badge>
-                                <Badge variant="outline">{step.triggerRuleIds.length} rules</Badge>
                                 <Badge variant="outline">
-                                  {step.deliverySubscriptionIds.length} deliveries
+                                  {tr("reports4", { reportIdsCount: step.reportIds.length })}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {tr("rules3", {
+                                    triggerRuleIdsCount: step.triggerRuleIds.length,
+                                  })}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {tr("deliveries", {
+                                    deliverySubscriptionIdsCount:
+                                      step.deliverySubscriptionIds.length,
+                                  })}
                                 </Badge>
                               </div>
                               <Button asChild size="sm" variant="outline">
@@ -16708,15 +16930,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-roadmap-title" className="text-xl font-semibold">
-              Report roadmap
+              {tr("reportRoadmap")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Planned report gaps by role, with the automation unlocks each workspace gains next.{" "}
-              {personaScopeDescription}
+              {tr("plannedReportGapsByRoleWith", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant={visiblePlannedReportCount > 0 ? "warning" : "success"} dot>
-            {visiblePlannedReportCount} planned
+            {tr("planned2", { visiblePlannedReportCount })}
           </Badge>
         </div>
 
@@ -16746,24 +16967,26 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Live now</div>
-                      <div className="font-mono text-lg font-semibold">{item.liveReportCount}</div>
+                      <div className="text-xs text-muted-foreground">{tr("liveNow")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
+                        {item.liveReportCount}
+                      </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Planned</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("planned")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {item.plannedReportCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Categories</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("categories")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {item.plannedCategories.length}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Prereqs</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("prereqs")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {item.prerequisiteCount}
                       </div>
                     </div>
@@ -16774,7 +16997,7 @@ export default function Reports() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <div className="text-xs font-medium uppercase text-muted-foreground">
-                            Top roadmap priority
+                            {tr("topRoadmapPriority")}
                           </div>
                           <div className="mt-1 text-sm font-medium">
                             {item.topPriorityReport.name}
@@ -16783,8 +17006,11 @@ export default function Reports() {
                         <div className="flex flex-wrap gap-1">
                           <Badge variant="warning">{item.topPriorityScore}</Badge>
                           {item.topPriorityImpact ? (
-                            <Badge variant={roadmapImpactMeta[item.topPriorityImpact].variant} dot>
-                              {roadmapImpactMeta[item.topPriorityImpact].label}
+                            <Badge
+                              variant={getRoadmapImpactMeta()[item.topPriorityImpact].variant}
+                              dot
+                            >
+                              {getRoadmapImpactMeta()[item.topPriorityImpact].label}
                             </Badge>
                           ) : null}
                         </div>
@@ -16797,7 +17023,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Next report unlocks
+                      {tr("nextReportUnlocks")}
                     </div>
                     {item.nextReports.length > 0 ? (
                       item.nextReports.map((report) => {
@@ -16815,8 +17041,8 @@ export default function Reports() {
                                   <Badge variant="warning">{report.roadmapPriority.score}</Badge>
                                 ) : null}
                                 {impact ? (
-                                  <Badge variant={roadmapImpactMeta[impact].variant} dot>
-                                    {roadmapImpactMeta[impact].label}
+                                  <Badge variant={getRoadmapImpactMeta()[impact].variant} dot>
+                                    {getRoadmapImpactMeta()[impact].label}
                                   </Badge>
                                 ) : null}
                               </div>
@@ -16832,19 +17058,19 @@ export default function Reports() {
                                 <div className="grid gap-2 pt-2 text-xs text-muted-foreground">
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Data source:
+                                      {tr("dataSource")}
                                     </span>{" "}
                                     {report.roadmapPrerequisites.dataSource}
                                   </div>
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Workflow dependency:
+                                      {tr("workflowDependency2")}
                                     </span>{" "}
                                     {report.roadmapPrerequisites.workflowDependency}
                                   </div>
                                   <div>
                                     <span className="font-medium text-foreground">
-                                      Automation rule:
+                                      {tr("automationRule")}
                                     </span>{" "}
                                     {report.roadmapPrerequisites.automationRule}
                                   </div>
@@ -16858,7 +17084,7 @@ export default function Reports() {
                                   reportWorkspaceHref(workspace)
                                 }
                               >
-                                Open area
+                                {tr("openArea")}
                               </Link>
                             </Button>
                           </div>
@@ -16866,19 +17092,19 @@ export default function Reports() {
                       })
                     ) : (
                       <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                        All target reports for this workspace are live or API-backed.
+                        {tr("allTargetReportsForThisWorkspace")}
                       </div>
                     )}
                   </div>
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation unlocks
+                      {tr("automationUnlocks")}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedAutomationHooks.length > 0
                         ? item.plannedAutomationHooks
-                        : ["No planned automation gaps"]
+                        : [tr("noPlannedAutomationGaps")]
                       ).map((hook) => (
                         <Badge key={hook} variant="outline">
                           {hook}
@@ -16889,12 +17115,12 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Workflow dependencies
+                      {tr("workflowDependencies")}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(item.plannedWorkflowDependencies.length > 0
                         ? item.plannedWorkflowDependencies
-                        : ["No planned workflow dependencies"]
+                        : [tr("noPlannedWorkflowDependencies")]
                       ).map((dependency) => (
                         <Badge key={dependency} variant="outline">
                           {dependency}
@@ -16904,7 +17130,7 @@ export default function Reports() {
                   </div>
 
                   <Button asChild size="sm" variant="outline">
-                    <Link href={item.nextWorkflow}>Open next workflow</Link>
+                    <Link href={item.nextWorkflow}>{tr("openNextWorkflow")}</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -16920,15 +17146,14 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-automation-title" className="text-xl font-semibold">
-              Report pack automation
+              {tr("reportPackAutomation")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Scheduled workspace packs with live report signals before delivery.{" "}
-              {personaScopeDescription}
+              {tr("scheduledWorkspacePacksWithLiveReport", { personaScopeDescription })}
             </p>
           </div>
           <Badge variant={reportPackReviewCount > 0 ? "warning" : "success"} dot>
-            {reportPackReviewCount} need review
+            {tr("needReview4", { reportPackReviewCount })}
           </Badge>
         </div>
 
@@ -16962,24 +17187,26 @@ export default function Reports() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Health</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("health")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {automationHealth?.score ?? 0}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Open signals</div>
-                      <div className="font-mono text-lg font-semibold">{item.openSignalCount}</div>
+                      <div className="text-xs text-muted-foreground">{tr("openSignals")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
+                        {item.openSignalCount}
+                      </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Work items</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("workItems")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {item.openWorkItemCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Amount</div>
-                      <div className="truncate font-mono text-sm font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("amount")}</div>
+                      <div dir="ltr" className="truncate font-mono text-sm font-semibold">
                         {formatCurrency(item.amountAtRisk, "AED", locale)}
                       </div>
                     </div>
@@ -16987,18 +17214,18 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3 text-xs text-muted-foreground">
                     <div>
-                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("delivery2")}</span>{" "}
                       {workspace.packSchedule.delivery}
                     </div>
                     <div className="mt-1">
-                      <span className="font-medium text-foreground">Recipients:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("recipients3")}</span>{" "}
                       {workspace.packSchedule.recipients}
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Report pack readiness
+                      {tr("reportPackReadiness")}
                     </div>
                     {readiness?.checks.slice(0, 4).map((check) => (
                       <div
@@ -17018,7 +17245,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Live signals
+                      {tr("liveSignals")}
                     </div>
                     {item.signals.slice(0, 3).map((signal) => (
                       <div
@@ -17030,7 +17257,7 @@ export default function Reports() {
                           <div className="text-xs text-muted-foreground">{signal.detail}</div>
                         </div>
                         <Badge variant={signal.count > 0 ? "warning" : "success"} dot>
-                          {signal.count > 0 ? signal.count : "Clear"}
+                          {signal.count > 0 ? signal.count : tr("clear")}
                         </Badge>
                       </div>
                     ))}
@@ -17043,7 +17270,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => navigate(reportWorkspaceHref(workspace))}
                     >
-                      Open workspace
+                      {tr("openWorkspace")}
                     </Button>
                     <Button
                       type="button"
@@ -17052,8 +17279,8 @@ export default function Reports() {
                       disabled={isExporting || !selectedCompanyId}
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                     >
-                      <SiGooglesheets className="mr-2 h-4 w-4" />
-                      Send pack
+                      <SiGooglesheets className="me-2 h-4 w-4" />
+                      {tr("sendPack")}
                     </Button>
                   </div>
                 </CardContent>
@@ -17070,7 +17297,7 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="comparison-snapshots-title" className="text-xl font-semibold">
-              Comparison snapshots
+              {tr("comparisonSnapshots")}
             </h2>
             <p className="text-sm text-muted-foreground">
               {comparisonCurrentLabel} vs {comparisonPreviousLabel}. {personaScopeDescription}
@@ -17079,18 +17306,16 @@ export default function Reports() {
           <Badge variant={personaFilter === "all" ? "outline" : "info"}>
             {personaFilter === "all"
               ? comparisonRanges.isCustom
-                ? "Selected range"
-                : "Month to date"
+                ? tr("selectedRange")
+                : tr("monthToDate")
               : personaFilterLabel}
           </Badge>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Current vs prior period</CardTitle>
-            <CardDescription>
-              High-level movement across revenue, profit, sales, spend, and tax cash flow.
-            </CardDescription>
+            <CardTitle>{tr("currentVsPriorPeriod")}</CardTitle>
+            <CardDescription>{tr("highLevelMovementAcrossRevenueProfit")}</CardDescription>
           </CardHeader>
           <CardContent>
             {comparisonLoading ? (
@@ -17100,13 +17325,13 @@ export default function Reports() {
                 <Table className="min-w-[920px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Metric</TableHead>
-                      <TableHead>Signal</TableHead>
-                      <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Baseline</TableHead>
-                      <TableHead className="text-right">Change</TableHead>
-                      <TableHead>Roles</TableHead>
-                      <TableHead className="text-right">Open</TableHead>
+                      <TableHead>{tr("metric")}</TableHead>
+                      <TableHead>{tr("signal")}</TableHead>
+                      <TableHead className="text-end">{tr("current")}</TableHead>
+                      <TableHead className="text-end">{tr("baseline")}</TableHead>
+                      <TableHead className="text-end">{tr("change")}</TableHead>
+                      <TableHead>{tr("roles")}</TableHead>
+                      <TableHead className="text-end">{tr("open")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -17118,14 +17343,14 @@ export default function Reports() {
                             {row.signal}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-end font-mono">
                           {formatComparisonValue(row, row.current, locale)}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-end font-mono">
                           {formatComparisonValue(row, row.previous, locale)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-mono font-medium">
+                        <TableCell className="text-end">
+                          <div dir="ltr" className="font-mono font-medium">
                             {formatComparisonValue(row, row.delta, locale)}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -17141,14 +17366,14 @@ export default function Reports() {
                             ))}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             onClick={() => setActiveTab(row.tab)}
                           >
-                            Open
+                            {tr("open")}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -17168,14 +17393,15 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="persona-workspaces-title" className="text-xl font-semibold">
-              Workspaces
+              {tr("workspaces")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Role-focused report coverage for owners, solo entrepreneurs, freelancers, and
-              accountants.
+              {tr("roleFocusedReportCoverageForOwners")}
             </p>
           </div>
-          <Badge variant="outline">{visibleWorkspaceSummaries.length} roles</Badge>
+          <Badge variant="outline">
+            {tr("roles2", { visibleWorkspaceSummariesCount: visibleWorkspaceSummaries.length })}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
@@ -17195,27 +17421,27 @@ export default function Reports() {
                       </div>
                     </div>
                     <Badge variant={workspace.readyReports > 0 ? "success" : "neutral"} dot>
-                      {workspace.readyReports} ready
+                      {tr("ready2", { readyReports: workspace.readyReports })}
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Reports</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("reports")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {workspace.catalogReportCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Ready</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("ready")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {workspace.readyReports}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">Automations</div>
-                      <div className="font-mono text-lg font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("automations")}</div>
+                      <div dir="ltr" className="font-mono text-lg font-semibold">
                         {workspace.automationCount}
                       </div>
                     </div>
@@ -17226,20 +17452,20 @@ export default function Reports() {
                     data-testid={`report-workspace-catalog-metadata-${workspace.persona}`}
                   >
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Packs</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("packs")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {workspace.packTemplateCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Comparisons</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("comparisons2")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {workspace.comparisonPresetCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="text-muted-foreground">Starters</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="text-muted-foreground">{tr("starters")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {workspace.automationStarterCount}
                       </div>
                     </div>
@@ -17247,8 +17473,10 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium">Readiness</span>
-                      <span className="font-mono">{workspace.readiness}%</span>
+                      <span className="font-medium">{tr("readiness")}</span>
+                      <span dir="ltr" className="font-mono">
+                        {workspace.readiness}%
+                      </span>
                     </div>
                     <div className="h-2 rounded-full bg-secondary">
                       <div
@@ -17259,7 +17487,7 @@ export default function Reports() {
                   </div>
 
                   <div className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">Primary signal</div>
+                    <div className="text-xs text-muted-foreground">{tr("primarySignal")}</div>
                     <div className="text-sm font-medium">{workspace.topReadyReport?.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {workspace.topReadyReport?.automation}
@@ -17268,7 +17496,7 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation outcome
+                      {tr("automationOutcome")}
                     </div>
                     <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {workspace.automationOutcome}
@@ -17277,19 +17505,19 @@ export default function Reports() {
 
                   <div className="rounded-md border p-3">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Report pack cadence
+                      {tr("reportPackCadence")}
                     </div>
                     <div className="mt-2 space-y-2 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Cadence:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("cadence2")}</span>{" "}
                         {workspace.packSchedule.cadence}
                       </div>
                       <div>
-                        <span className="font-medium text-foreground">Delivery:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("delivery2")}</span>{" "}
                         {workspace.packSchedule.delivery}
                       </div>
                       <div>
-                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("automation2")}</span>{" "}
                         {workspace.packSchedule.automation}
                       </div>
                     </div>
@@ -17297,7 +17525,7 @@ export default function Reports() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium uppercase text-muted-foreground">
-                      Automation playbooks
+                      {tr("automationPlaybooks")}
                     </div>
                     {workspace.automations.map((playbook) => {
                       const linkedReports = playbook.reportIds
@@ -17312,7 +17540,7 @@ export default function Reports() {
                             <div className="min-w-0 space-y-1">
                               <div className="text-sm font-medium">{playbook.title}</div>
                               <div className="text-xs text-muted-foreground">
-                                Trigger: {playbook.trigger}
+                                {tr("trigger3", { trigger: playbook.trigger })}
                               </div>
                               <div className="flex flex-wrap gap-1 pt-1">
                                 {linkedReports.slice(0, 3).map((report) => (
@@ -17344,14 +17572,14 @@ export default function Reports() {
                       }}
                       data-testid={`button-open-workspace-${workspace.persona}`}
                     >
-                      Open reports
+                      {tr("openReports")}
                     </Button>
                     <Button asChild size="sm" variant="outline">
                       <Link
                         href={reportSectionHref(workspace, "automation-command-center")}
                         data-testid={`button-open-automation-center-${workspace.persona}`}
                       >
-                        Open automations
+                        {tr("openAutomations")}
                       </Link>
                     </Button>
                     <Button
@@ -17360,7 +17588,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => setReportPersonaFilter(workspace.persona)}
                     >
-                      Filter library
+                      {tr("filterLibrary")}
                     </Button>
                     <Button
                       type="button"
@@ -17370,8 +17598,8 @@ export default function Reports() {
                       onClick={() => handleExportWorkspacePack(workspace)}
                       data-testid={`button-export-workspace-pack-${workspace.persona}`}
                     >
-                      <Download className="mr-2 h-4 w-4" />
-                      Export pack
+                      <Download className="me-2 h-4 w-4" />
+                      {tr("exportPack")}
                     </Button>
                     <Button
                       type="button"
@@ -17381,8 +17609,8 @@ export default function Reports() {
                       onClick={() => handleExportWorkspacePackToSheets(workspace)}
                       data-testid={`button-export-workspace-pack-sheets-${workspace.persona}`}
                     >
-                      <SiGooglesheets className="mr-2 h-4 w-4" />
-                      Sheets pack
+                      <SiGooglesheets className="me-2 h-4 w-4" />
+                      {tr("sheetsPack")}
                     </Button>
                   </div>
                 </CardContent>
@@ -17399,13 +17627,15 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-pack-templates-title" className="text-xl font-semibold">
-              Report pack templates
+              {tr("reportPackTemplates")}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Ready-made packs for recurring owner, freelancer, and accountant decisions.
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("readyMadePacksForRecurringOwner")}</p>
           </div>
-          <Badge variant="outline">{visibleReportPackTemplates.length} templates</Badge>
+          <Badge variant="outline">
+            {tr("templates", {
+              visibleReportPackTemplatesCount: visibleReportPackTemplates.length,
+            })}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -17435,12 +17665,12 @@ export default function Reports() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border p-3">
-                      <div className="font-medium text-foreground">Cadence</div>
+                      <div className="font-medium text-foreground">{tr("cadence")}</div>
                       <div className="mt-1 text-muted-foreground">{template.cadence}</div>
                     </div>
                     <div className="rounded-md border p-3">
-                      <div className="font-medium text-foreground">Ready reports</div>
-                      <div className="mt-1 font-mono text-base font-semibold">
+                      <div className="font-medium text-foreground">{tr("readyReports")}</div>
+                      <div dir="ltr" className="mt-1 font-mono text-base font-semibold">
                         {template.readyCount}/{template.reports.length}
                       </div>
                     </div>
@@ -17448,15 +17678,15 @@ export default function Reports() {
 
                   <div className="space-y-2 text-xs text-muted-foreground">
                     <div>
-                      <span className="font-medium text-foreground">Comparisons:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("comparisons3")}</span>{" "}
                       {template.comparisonFocus}
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">Automation:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("automation2")}</span>{" "}
                       {template.automationTrigger}
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">Delivery:</span>{" "}
+                      <span className="font-medium text-foreground">{tr("delivery2")}</span>{" "}
                       {template.delivery}
                     </div>
                   </div>
@@ -17474,7 +17704,7 @@ export default function Reports() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href={template.href}>Open template</Link>
+                      <Link href={template.href}>{tr("openTemplate")}</Link>
                     </Button>
                     <Button
                       type="button"
@@ -17482,7 +17712,7 @@ export default function Reports() {
                       variant="outline"
                       onClick={() => setReportPersonaFilter(template.persona)}
                     >
-                      Filter library
+                      {tr("filterLibrary")}
                     </Button>
                   </div>
                 </CardContent>
@@ -17499,15 +17729,17 @@ export default function Reports() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="report-center-title" className="text-xl font-semibold">
-              Report center
+              {tr("reportCenter2")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {reportStats.ready} ready/API-backed reports from a {reportStats.total}-report target
-              catalog.
+              {tr("readyApiBackedReportsFromA", {
+                ready: reportStats.ready,
+                total: reportStats.total,
+              })}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Report persona filter">
-            {personaFilters.map((filter) => (
+          <div className="flex flex-wrap gap-2" role="group" aria-label={tr("reportPersonaFilter")}>
+            {getPersonaFilters().map((filter) => (
               <Button
                 key={filter.id}
                 type="button"
@@ -17526,34 +17758,40 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Inline reports
+                {tr("inlineReports")}
               </CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="font-mono text-2xl font-semibold">{reportStats.live}</div>
+              <div dir="ltr" className="font-mono text-2xl font-semibold">
+                {reportStats.live}
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Ready/API-backed
+                {tr("readyApiBacked")}
               </CardTitle>
               <Building2 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="font-mono text-2xl font-semibold">{reportStats.ready}</div>
+              <div dir="ltr" className="font-mono text-2xl font-semibold">
+                {reportStats.ready}
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Target catalog
+                {tr("targetCatalog")}
               </CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="font-mono text-2xl font-semibold">{reportStats.total}</div>
+              <div dir="ltr" className="font-mono text-2xl font-semibold">
+                {reportStats.total}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -17563,14 +17801,11 @@ export default function Reports() {
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle>Pinned reports</CardTitle>
-                  <CardDescription>
-                    Report shortcuts saved for the current role filter and shown first in the
-                    library.
-                  </CardDescription>
+                  <CardTitle>{tr("pinnedReports")}</CardTitle>
+                  <CardDescription>{tr("reportShortcutsSavedForTheCurrent")}</CardDescription>
                 </div>
                 <Badge variant="success" dot>
-                  {favoriteReports.length} pinned
+                  {tr("pinned2", { favoriteReportsCount: favoriteReports.length })}
                 </Badge>
               </div>
             </CardHeader>
@@ -17595,7 +17830,7 @@ export default function Reports() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={openHref}>Open</Link>
+                          <Link href={openHref}>{tr("open")}</Link>
                         </Button>
                         <Button
                           type="button"
@@ -17604,7 +17839,7 @@ export default function Reports() {
                           onClick={() => toggleReportFavorite(report)}
                           data-testid={`report-favorite-shortcut-toggle-${report.id}`}
                         >
-                          Unpin
+                          {tr("unpin")}
                         </Button>
                       </div>
                     </div>
@@ -17616,8 +17851,8 @@ export default function Reports() {
         ) : (
           <Card data-testid="favorite-report-shortcuts-empty">
             <CardContent className="flex flex-col gap-2 p-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>Pin reports from the library to keep role-specific shortcuts here.</span>
-              <Badge variant="neutral">No pinned reports</Badge>
+              <span>{tr("pinReportsFromTheLibraryTo")}</span>
+              <Badge variant="neutral">{tr("noPinnedReports")}</Badge>
             </CardContent>
           </Card>
         )}
@@ -17626,12 +17861,12 @@ export default function Reports() {
           <CardHeader className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle>Report coverage map</CardTitle>
-                <CardDescription>
-                  Category-level view of report depth, comparison coverage, and automation hooks.
-                </CardDescription>
+                <CardTitle>{tr("reportCoverageMap")}</CardTitle>
+                <CardDescription>{tr("categoryLevelViewOfReportDepth")}</CardDescription>
               </div>
-              <Badge variant="outline">{reportCoverageMap.length} categories</Badge>
+              <Badge variant="outline">
+                {tr("categories2", { reportCoverageMapCount: reportCoverageMap.length })}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -17653,28 +17888,33 @@ export default function Reports() {
                       <div className="min-w-0">
                         <div className="font-medium">{coverage.category}</div>
                         <div className="text-xs text-muted-foreground">
-                          {coverage.reports.length} reports for {coverage.personas.join(", ")}
+                          {tr("reportsFor", {
+                            reportsCount: coverage.reports.length,
+                            personas: coverage.personas.join(", "),
+                          })}
                         </div>
                       </div>
                       <Badge variant={coverage.plannedCount > 0 ? "warning" : "success"} dot>
-                        {readyCount} ready
+                        {tr("ready3", { readyCount })}
                       </Badge>
                     </div>
 
                     <dl className="grid grid-cols-3 gap-2 text-xs">
                       <div className="rounded-md bg-muted/40 p-2">
-                        <dt className="text-muted-foreground">Live</dt>
-                        <dd className="font-mono text-base font-semibold">{coverage.liveCount}</dd>
+                        <dt className="text-muted-foreground">{tr("live")}</dt>
+                        <dd dir="ltr" className="font-mono text-base font-semibold">
+                          {coverage.liveCount}
+                        </dd>
                       </div>
                       <div className="rounded-md bg-muted/40 p-2">
                         <dt className="text-muted-foreground">API</dt>
-                        <dd className="font-mono text-base font-semibold">
+                        <dd dir="ltr" className="font-mono text-base font-semibold">
                           {coverage.apiReadyCount}
                         </dd>
                       </div>
                       <div className="rounded-md bg-muted/40 p-2">
-                        <dt className="text-muted-foreground">Planned</dt>
-                        <dd className="font-mono text-base font-semibold">
+                        <dt className="text-muted-foreground">{tr("planned")}</dt>
+                        <dd dir="ltr" className="font-mono text-base font-semibold">
                           {coverage.plannedCount}
                         </dd>
                       </div>
@@ -17682,11 +17922,11 @@ export default function Reports() {
 
                     <div className="space-y-2 text-xs text-muted-foreground">
                       <div className="break-words">
-                        <span className="font-medium text-foreground">Comparisons:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("comparisons3")}</span>{" "}
                         {coverage.comparisonTypes.slice(0, 3).join(", ")}
                       </div>
                       <div className="break-words">
-                        <span className="font-medium text-foreground">Automations:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("automations3")}</span>{" "}
                         {coverage.automationHooks.slice(0, 3).join(", ")}
                       </div>
                     </div>
@@ -17710,28 +17950,25 @@ export default function Reports() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Report library</CardTitle>
-            <CardDescription>
-              Decision question, status, comparison mode, and automation hook for each report
-              family.
-            </CardDescription>
+            <CardTitle>{tr("reportLibrary")}</CardTitle>
+            <CardDescription>{tr("decisionQuestionStatusComparisonModeAnd")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table className="min-w-[960px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Report</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Comparison</TableHead>
-                    <TableHead>Automation</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{tr("report")}</TableHead>
+                    <TableHead>{tr("category")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("comparison")}</TableHead>
+                    <TableHead>{tr("automation")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredReports.map((report) => {
-                    const status = reportStatusMeta[report.status];
+                    const status = getReportStatusMeta()[report.status];
                     const isFavoriteReport = favoriteReportIdSet.has(report.id);
                     const reportPersona =
                       personaFilter === "all" ? (report.personas[0] ?? "owner") : personaFilter;
@@ -17761,7 +17998,7 @@ export default function Reports() {
                             <div className="font-medium">{report.name}</div>
                             {isFavoriteReport ? (
                               <Badge variant="success" dot>
-                                Pinned
+                                {tr("pinned3")}
                               </Badge>
                             ) : null}
                           </div>
@@ -17795,17 +18032,17 @@ export default function Reports() {
                               data-testid={`report-library-favorite-${report.id}`}
                             >
                               <Pin className="h-3.5 w-3.5" />
-                              {isFavoriteReport ? "Pinned" : "Pin"}
+                              {isFavoriteReport ? tr("pinned3") : tr("pin")}
                             </Button>
                             {openHref ? (
                               <Button asChild size="sm" variant="outline">
                                 <Link href={openHref}>
-                                  {report.status === "planned" ? "Open area" : "Open"}
+                                  {report.status === "planned" ? tr("openArea") : tr("open")}
                                 </Link>
                               </Button>
                             ) : (
                               <Button type="button" size="sm" variant="ghost" disabled>
-                                Queued
+                                {tr("queued")}
                               </Button>
                             )}
                             <Button asChild size="sm" variant="outline">
@@ -17813,7 +18050,7 @@ export default function Reports() {
                                 href={workflowHref}
                                 data-testid={`report-library-automation-${report.id}`}
                               >
-                                Automate
+                                {tr("automate")}
                               </Link>
                             </Button>
                             {comparisonHref ? (
@@ -17822,7 +18059,7 @@ export default function Reports() {
                                   href={comparisonHref}
                                   data-testid={`report-library-comparison-${report.id}`}
                                 >
-                                  Compare
+                                  {tr("compare")}
                                 </Link>
                               </Button>
                             ) : null}
@@ -17832,7 +18069,7 @@ export default function Reports() {
                                   href={deliveryHref}
                                   data-testid={`report-library-delivery-${report.id}`}
                                 >
-                                  Schedule
+                                  {tr("schedule")}
                                 </Link>
                               </Button>
                             ) : null}
@@ -17852,14 +18089,15 @@ export default function Reports() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 id="connected-report-centers-title" className="text-lg font-semibold">
-                  Connected report centers
+                  {tr("connectedReportCenters")}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Live report families served by adjacent workspaces, kept discoverable from this
-                  report center.
+                  {tr("liveReportFamiliesServedByAdjacent")}
                 </p>
               </div>
-              <Badge variant="outline">{connectedReportCenters.length} connected</Badge>
+              <Badge variant="outline">
+                {tr("connected", { connectedReportCentersCount: connectedReportCenters.length })}
+              </Badge>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               {connectedReportCenters.map((report) => (
@@ -17870,19 +18108,19 @@ export default function Reports() {
                         <CardTitle className="text-base font-semibold">{report.name}</CardTitle>
                         <CardDescription>{report.category}</CardDescription>
                       </div>
-                      <Badge variant={reportStatusMeta[report.status].variant} dot>
-                        {reportStatusMeta[report.status].label}
+                      <Badge variant={getReportStatusMeta()[report.status].variant} dot>
+                        {getReportStatusMeta()[report.status].label}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="rounded-md border p-3 text-xs text-muted-foreground">
                       <div>
-                        <span className="font-medium text-foreground">Comparison:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("comparison2")}</span>{" "}
                         {report.comparison}
                       </div>
                       <div className="mt-1">
-                        <span className="font-medium text-foreground">Automation:</span>{" "}
+                        <span className="font-medium text-foreground">{tr("automation2")}</span>{" "}
                         {report.automation}
                       </div>
                     </div>
@@ -17894,7 +18132,7 @@ export default function Reports() {
                       ))}
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href={report.href}>Open report center</Link>
+                      <Link href={report.href}>{tr("openReportCenter")}</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -17906,7 +18144,10 @@ export default function Reports() {
 
       <div className={reportWorkspacePanelClass("reports", "space-y-6")}>
         {!hasFocusedReportSelection ? (
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Report Center">
+          <section
+            className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+            aria-label={tr("reportCenter")}
+          >
             {reportViewerGroups.map((group) => (
               <Card key={group.category} className="overflow-hidden">
                 <CardHeader className="border-b bg-muted/20 pb-3">
@@ -17915,8 +18156,7 @@ export default function Reports() {
                     <Badge variant="outline">{group.options.length}</Badge>
                   </div>
                   <CardDescription className="line-clamp-2">
-                    {(t as any).reportCategoryCardDesc ??
-                      "Open a report from this category. Persona ranking changes recommendations, not report names."}
+                    {(t as any).reportCategoryCardDesc ?? tr("openAReportFromThisCategory")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y p-0">
@@ -17926,7 +18166,7 @@ export default function Reports() {
                       type="button"
                       disabled={!option.href && !option.tab}
                       onClick={() => openReportViewerOption(option.id)}
-                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                       data-testid={`button-report-center-${option.id}`}
                     >
                       <span className="min-w-0">
@@ -17959,31 +18199,31 @@ export default function Reports() {
                 {t.vatSummary}
               </TabsTrigger>
               <TabsTrigger value="tax" data-testid="tab-corporate-tax">
-                Corporate Tax
+                {tr("corporateTax")}
               </TabsTrigger>
               <TabsTrigger value="sales" data-testid="tab-invoice-status">
-                Sales
+                {tr("sales")}
               </TabsTrigger>
               <TabsTrigger value="balances" data-testid="tab-balance-summaries">
-                Balances
+                {tr("balances")}
               </TabsTrigger>
               <TabsTrigger value="expenses" data-testid="tab-expense-reports">
-                Expenses
+                {tr("expenses")}
               </TabsTrigger>
               <TabsTrigger value="payroll" data-testid="tab-payroll-reports">
-                Payroll
+                {tr("payroll")}
               </TabsTrigger>
               <TabsTrigger value="trial" data-testid="tab-trial-balance">
                 {t.trialBalance}
               </TabsTrigger>
               <TabsTrigger value="ledger" data-testid="tab-ledger-reports">
-                Ledger
+                {tr("ledger")}
               </TabsTrigger>
               <TabsTrigger value="close" data-testid="tab-month-end-close-status">
-                Close
+                {tr("close")}
               </TabsTrigger>
               <TabsTrigger value="planning" data-testid="tab-planning-reports">
-                Planning
+                {tr("planning")}
               </TabsTrigger>
             </TabsList>
 
@@ -17991,7 +18231,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("totalRevenue")}</CardTitle>
                     <div className="w-8 h-8 rounded-md bg-success-subtle flex items-center justify-center">
                       <TrendingUp className="w-4 h-4 text-success " />
                     </div>
@@ -18001,6 +18241,7 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div
+                        dir="ltr"
                         className="text-2xl font-bold font-mono"
                         data-testid="text-total-revenue"
                       >
@@ -18012,7 +18253,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("totalExpenses")}</CardTitle>
                     <div className="w-8 h-8 rounded-md bg-danger-subtle flex items-center justify-center">
                       <TrendingDown className="w-4 h-4 text-destructive " />
                     </div>
@@ -18022,6 +18263,7 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div
+                        dir="ltr"
                         className="text-2xl font-bold font-mono"
                         data-testid="text-total-expenses"
                       >
@@ -18033,7 +18275,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("netProfit2")}</CardTitle>
                     <div className="w-8 h-8 rounded-md bg-info-subtle flex items-center justify-center">
                       <DollarSign className="w-4 h-4 text-info " />
                     </div>
@@ -18042,7 +18284,11 @@ export default function Reports() {
                     {plLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="text-2xl font-bold font-mono" data-testid="text-net-profit">
+                      <div
+                        dir="ltr"
+                        className="text-2xl font-bold font-mono"
+                        data-testid="text-net-profit"
+                      >
                         {formatCurrency(profitLoss?.netProfit || 0, "AED", locale)}
                       </div>
                     )}
@@ -18052,11 +18298,11 @@ export default function Reports() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>{t.profitLoss} Statement</CardTitle>
+                  <CardTitle>{tr("statement", { profitLoss: t.profitLoss })}</CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "All time"}
+                      : tr("allTime")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -18065,7 +18311,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-success ">Revenue</h3>
+                        <h3 className="font-semibold mb-3 text-success ">{tr("revenue")}</h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.revenue?.map((item, index) => (
@@ -18073,17 +18319,17 @@ export default function Reports() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">
                                   {item.accountCode || "-"}
                                 </TableCell>
-                                <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell>{item.accountName || tr("unknownAccount")}</TableCell>
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(item.amount ?? 0, "AED", locale)}
                                 </TableCell>
                               </TableRow>
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Revenue
+                                {tr("totalRevenue")}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-semibold">
+                              <TableCell className="text-end font-mono font-semibold">
                                 {formatCurrency(profitLoss?.totalRevenue || 0, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18092,7 +18338,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">Expenses</h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">{tr("expenses")}</h3>
                         <Table>
                           <TableBody>
                             {profitLoss?.expenses?.map((item, index) => (
@@ -18100,17 +18346,17 @@ export default function Reports() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">
                                   {item.accountCode || "-"}
                                 </TableCell>
-                                <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell>{item.accountName || tr("unknownAccount")}</TableCell>
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(item.amount ?? 0, "AED", locale)}
                                 </TableCell>
                               </TableRow>
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Expenses
+                                {tr("totalExpenses")}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-semibold">
+                              <TableCell className="text-end font-mono font-semibold">
                                 {formatCurrency(profitLoss?.totalExpenses || 0, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18120,8 +18366,9 @@ export default function Reports() {
 
                       <div className="border-t-4 pt-4">
                         <div className="flex justify-between items-center text-lg font-semibold">
-                          <span>Net Profit</span>
+                          <span>{tr("netProfit2")}</span>
                           <span
+                            dir="ltr"
                             className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
                           >
                             {formatCurrency(profitLoss?.netProfit ?? 0, "AED", locale)}
@@ -18140,8 +18387,8 @@ export default function Reports() {
                   <CardTitle>{t.balanceSheet}</CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
-                      ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "Assets, liabilities, and equity as of today"}
+                      ? tr("asOf", { format: format(dateRange.to, "MMM dd, yyyy") })
+                      : tr("assetsLiabilitiesAndEquityAsOf")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -18150,7 +18397,7 @@ export default function Reports() {
                   ) : (
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-semibold mb-3 text-info ">Assets</h3>
+                        <h3 className="font-semibold mb-3 text-info ">{tr("assets")}</h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.assets?.map((item, index) => (
@@ -18158,17 +18405,17 @@ export default function Reports() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">
                                   {item.accountCode || "-"}
                                 </TableCell>
-                                <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell>{item.accountName || tr("unknownAccount")}</TableCell>
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(item.amount ?? 0, "AED", locale)}
                                 </TableCell>
                               </TableRow>
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Assets
+                                {tr("totalAssets")}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-semibold">
+                              <TableCell className="text-end font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalAssets || 0, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18177,7 +18424,9 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-destructive ">Liabilities</h3>
+                        <h3 className="font-semibold mb-3 text-destructive ">
+                          {tr("liabilities")}
+                        </h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.liabilities?.map((item, index) => (
@@ -18185,17 +18434,17 @@ export default function Reports() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">
                                   {item.accountCode || "-"}
                                 </TableCell>
-                                <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell>{item.accountName || tr("unknownAccount")}</TableCell>
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(item.amount ?? 0, "AED", locale)}
                                 </TableCell>
                               </TableRow>
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Liabilities
+                                {tr("totalLiabilities")}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-semibold">
+                              <TableCell className="text-end font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalLiabilities || 0, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18204,7 +18453,7 @@ export default function Reports() {
                       </div>
 
                       <div>
-                        <h3 className="font-semibold mb-3 text-chart-5 ">Equity</h3>
+                        <h3 className="font-semibold mb-3 text-chart-5 ">{tr("equity")}</h3>
                         <Table>
                           <TableBody>
                             {balanceSheet?.equity?.map((item, index) => (
@@ -18212,17 +18461,17 @@ export default function Reports() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">
                                   {item.accountCode || "-"}
                                 </TableCell>
-                                <TableCell>{item.accountName || "Unknown Account"}</TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell>{item.accountName || tr("unknownAccount")}</TableCell>
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(item.amount ?? 0, "AED", locale)}
                                 </TableCell>
                               </TableRow>
                             ))}
                             <TableRow className="border-t-2">
                               <TableCell colSpan={2} className="font-semibold">
-                                Total Equity
+                                {tr("totalEquity")}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-semibold">
+                              <TableCell className="text-end font-mono font-semibold">
                                 {formatCurrency(balanceSheet?.totalEquity || 0, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18242,7 +18491,7 @@ export default function Reports() {
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "UAE VAT (5%) summary for the current period"}
+                      : tr("uaeVat5SummaryForThe")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -18252,17 +18501,17 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-success ">Sales (Output VAT)</h3>
+                          <h3 className="font-semibold text-success ">{tr("salesOutputVat")}</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Subtotal</span>
-                              <span className="font-mono">
+                              <span className="text-muted-foreground">{tr("subtotal")}</span>
+                              <span dir="ltr" className="font-mono">
                                 {formatCurrency(vatSummary?.salesSubtotal || 0, "AED", locale)}
                               </span>
                             </div>
                             <div className="flex justify-between font-medium">
-                              <span>VAT Collected (5%)</span>
-                              <span className="font-mono">
+                              <span>{tr("vatCollected5")}</span>
+                              <span dir="ltr" className="font-mono">
                                 {formatCurrency(vatSummary?.salesVAT || 0, "AED", locale)}
                               </span>
                             </div>
@@ -18270,17 +18519,17 @@ export default function Reports() {
                         </div>
 
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-info ">Purchases (Input VAT)</h3>
+                          <h3 className="font-semibold text-info ">{tr("purchasesInputVat")}</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Subtotal</span>
-                              <span className="font-mono">
+                              <span className="text-muted-foreground">{tr("subtotal")}</span>
+                              <span dir="ltr" className="font-mono">
                                 {formatCurrency(vatSummary?.purchasesSubtotal || 0, "AED", locale)}
                               </span>
                             </div>
                             <div className="flex justify-between font-medium">
-                              <span>VAT Paid (5%)</span>
-                              <span className="font-mono">
+                              <span>{tr("vatPaid5")}</span>
+                              <span dir="ltr" className="font-mono">
                                 {formatCurrency(vatSummary?.purchasesVAT || 0, "AED", locale)}
                               </span>
                             </div>
@@ -18290,8 +18539,9 @@ export default function Reports() {
 
                       <div className="border-t-4 pt-6">
                         <div className="flex justify-between items-center text-lg font-semibold">
-                          <span>Net VAT Payable to FTA</span>
+                          <span>{tr("netVatPayableToFta")}</span>
                           <span
+                            dir="ltr"
                             className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
                           >
                             {formatCurrency(
@@ -18299,13 +18549,13 @@ export default function Reports() {
                               "AED",
                               locale
                             )}
-                            {(vatSummary?.netVATPayable ?? 0) < 0 && " (Refund)"}
+                            {(vatSummary?.netVATPayable ?? 0) < 0 && tr("refund")}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-2">
                           {(vatSummary?.netVATPayable ?? 0) >= 0
-                            ? "Amount to be paid to the Federal Tax Authority"
-                            : "Amount to be refunded by the Federal Tax Authority"}
+                            ? tr("amountToBePaidToThe")
+                            : tr("amountToBeRefundedByThe")}
                         </p>
                       </div>
                     </div>
@@ -18318,7 +18568,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Tax Payable</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("taxPayable2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18328,6 +18578,7 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div
+                        dir="ltr"
                         className="font-mono text-2xl font-bold"
                         data-testid="text-corporate-tax-payable"
                       >
@@ -18339,7 +18590,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Taxable Income</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("taxableIncome2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18348,7 +18599,7 @@ export default function Reports() {
                     {corporateTaxLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(corporateTaxEstimate?.taxableIncome ?? 0, "AED", locale)}
                       </div>
                     )}
@@ -18357,7 +18608,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Above Band</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("aboveBand")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18367,11 +18618,13 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <>
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {formatCurrency(corporateTaxEstimate?.taxableAmount ?? 0, "AED", locale)}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
+                          {tr("returnedRate", {
+                            value: ((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2),
+                          })}
                         </p>
                       </>
                     )}
@@ -18380,7 +18633,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Journals</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("postedJournals")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18389,7 +18642,7 @@ export default function Reports() {
                     {corporateTaxLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
                       </div>
                     )}
@@ -18401,7 +18654,7 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Corporate Tax Estimate</CardTitle>
+                      <CardTitle>{tr("corporateTaxEstimate2")}</CardTitle>
                       <CardDescription>
                         {corporateTaxEstimate
                           ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
@@ -18409,7 +18662,7 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/corporate-tax">Open Corporate Tax</Link>
+                      <Link href="/corporate-tax">{tr("openCorporateTax")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18428,24 +18681,23 @@ export default function Reports() {
                           </p>
                         </div>
                         <p className="max-w-md text-sm text-muted-foreground">
-                          Estimate only. Open Corporate Tax to adjust the workpaper or save a draft;
-                          this report does not submit to the FTA or post accounting entries.
+                          {tr("estimateOnlyOpenCorporateTaxTo")}
                         </p>
                       </div>
 
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Bridge</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead>Note</TableHead>
+                            <TableHead>{tr("bridge")}</TableHead>
+                            <TableHead className="text-end">{tr("amount")}</TableHead>
+                            <TableHead>{tr("note")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {corporateTaxBridgeRows.map((row) => (
                             <TableRow key={row.metric}>
                               <TableCell className="font-medium">{row.metric}</TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(row.amount, "AED", locale)}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
@@ -18470,7 +18722,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Invoice Value</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("invoiceValue2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18479,7 +18731,7 @@ export default function Reports() {
                     {salesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(invoiceStatusReport.invoiceValueAed, "AED", locale)}
                       </div>
                     )}
@@ -18488,7 +18740,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Active Invoices</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("activeInvoices")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -18497,7 +18749,7 @@ export default function Reports() {
                     {salesLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {invoiceStatusReport.activeInvoiceCount}
                       </div>
                     )}
@@ -18506,7 +18758,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("unpaidInvoices")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -18515,7 +18767,7 @@ export default function Reports() {
                     {salesLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {invoiceStatusReport.unpaidCount}
                       </div>
                     )}
@@ -18524,7 +18776,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Overdue Outstanding</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      {tr("overdueOutstanding")}
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -18533,7 +18787,7 @@ export default function Reports() {
                     {salesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : invoiceStatusReport.overdueCurrency ? (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(
                           invoiceStatusReport.overdueOutstanding,
                           invoiceStatusReport.overdueCurrency,
@@ -18541,7 +18795,7 @@ export default function Reports() {
                         )}
                       </div>
                     ) : (
-                      <div className="text-sm font-medium">Mixed currencies</div>
+                      <div className="text-sm font-medium">{tr("mixedCurrencies")}</div>
                     )}
                   </CardContent>
                 </Card>
@@ -18551,13 +18805,11 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>A/R Aging</CardTitle>
-                      <CardDescription>
-                        Open customer invoices aged from due date, net of recorded payments.
-                      </CardDescription>
+                      <CardTitle>{tr("aRAging")}</CardTitle>
+                      <CardDescription>{tr("openCustomerInvoicesAgedFromDue")}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payment-chasing">Open collections</Link>
+                      <Link href="/payment-chasing">{tr("openCollections")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18568,26 +18820,28 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Current</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("current")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.current, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Overdue</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("overdue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.overdue, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Over 90 days</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("over90Days")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.over90, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Total receivable</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">
+                            {tr("totalReceivable")}
+                          </div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(receivableAgingSummary.total, "AED", locale)}
                           </div>
                         </div>
@@ -18597,35 +18851,35 @@ export default function Reports() {
                         <Table className="min-w-[920px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Current</TableHead>
-                              <TableHead className="text-right">1-30</TableHead>
-                              <TableHead className="text-right">31-60</TableHead>
-                              <TableHead className="text-right">61-90</TableHead>
-                              <TableHead className="text-right">90+</TableHead>
-                              <TableHead className="text-right">Total</TableHead>
+                              <TableHead>{tr("customer")}</TableHead>
+                              <TableHead className="text-end">{tr("current")}</TableHead>
+                              <TableHead className="text-end">1-30</TableHead>
+                              <TableHead className="text-end">31-60</TableHead>
+                              <TableHead className="text-end">61-90</TableHead>
+                              <TableHead className="text-end">90+</TableHead>
+                              <TableHead className="text-end">{tr("total")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {receivableAgingRows.map((row) => (
                               <TableRow key={row.id}>
                                 <TableCell className="font-medium">{row.name}</TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.current, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.days30, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.days60, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.days90, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.over90, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(row.total, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -18636,7 +18890,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No open receivables found for aging.
+                      {tr("noOpenReceivablesFoundForAging")}
                     </div>
                   )}
                 </CardContent>
@@ -18646,18 +18900,18 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Sales by product/service</CardTitle>
-                      <CardDescription>
-                        Line-item sales mix, AED value, VAT, and service concentration.
-                      </CardDescription>
+                      <CardTitle>{tr("salesByProductService")}</CardTitle>
+                      <CardDescription>{tr("lineItemSalesMixAedValue")}</CardDescription>
                     </div>
                     <Badge
                       variant={productServiceTopShare >= 50 ? "warning" : "success"}
                       dot={productServiceSalesRows.length > 0}
                     >
                       {productServiceSalesRows.length
-                        ? `${productServiceTopShare.toFixed(1)}% top share`
-                        : "No line items"}
+                        ? tr("topShare", {
+                            productServiceTopShare: productServiceTopShare.toFixed(1),
+                          })
+                        : tr("noLineItems")}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -18669,12 +18923,12 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Product / service</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
-                            <TableHead className="text-right">Sales</TableHead>
-                            <TableHead className="text-right">VAT</TableHead>
-                            <TableHead className="text-right">Avg unit</TableHead>
+                            <TableHead>{tr("productService")}</TableHead>
+                            <TableHead className="text-end">{tr("invoices")}</TableHead>
+                            <TableHead className="text-end">{tr("quantity")}</TableHead>
+                            <TableHead className="text-end">{tr("sales")}</TableHead>
+                            <TableHead className="text-end">{tr("vat")}</TableHead>
+                            <TableHead className="text-end">{tr("avgUnit")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18683,22 +18937,25 @@ export default function Reports() {
                               <TableCell>
                                 <div className="font-medium">{row.productService}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {row.lineCount} lines - {row.supplyTypes.join(", ")}
+                                  {tr("lines", {
+                                    lineCount: row.lineCount,
+                                    supplyTypes: row.supplyTypes.join(", "),
+                                  })}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {row.invoiceCount}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {row.quantity.toLocaleString(locale, { maximumFractionDigits: 2 })}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(row.amountAed, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(row.vatAed, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(row.averageUnitPriceAed, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18708,7 +18965,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No invoice line-item sales found for this period.
+                      {tr("noInvoiceLineItemSalesFound")}
                     </div>
                   )}
                 </CardContent>
@@ -18717,8 +18974,8 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["invoice-status"])}>
                   <CardHeader>
-                    <CardTitle>Invoice status</CardTitle>
-                    <CardDescription>Status mix and AED-equivalent invoice value.</CardDescription>
+                    <CardTitle>{tr("invoiceStatus")}</CardTitle>
+                    <CardDescription>{tr("statusMixAndAedEquivalentInvoice")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {salesLoading ? (
@@ -18727,9 +18984,9 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead>{tr("status")}</TableHead>
+                            <TableHead className="text-end">{tr("invoices")}</TableHead>
+                            <TableHead className="text-end">{tr("value")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18740,8 +18997,8 @@ export default function Reports() {
                                   {invoiceStatusLabel(row.status)}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right font-mono">{row.count}</TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono">{row.count}</TableCell>
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(row.amountAed, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -18750,7 +19007,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No invoices found for this period.
+                        {tr("noInvoicesFoundForThisPeriod")}
                       </div>
                     )}
                   </CardContent>
@@ -18758,10 +19015,8 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["revenue-customer"])}>
                   <CardHeader>
-                    <CardTitle>Revenue by customer</CardTitle>
-                    <CardDescription>
-                      Issued invoice value by customer, shown in AED.
-                    </CardDescription>
+                    <CardTitle>{tr("revenueByCustomer")}</CardTitle>
+                    <CardDescription>{tr("issuedInvoiceValueByCustomerShown")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {salesLoading ? (
@@ -18771,19 +19026,19 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Invoices</TableHead>
-                              <TableHead className="text-right">Value</TableHead>
+                              <TableHead>{tr("customer")}</TableHead>
+                              <TableHead className="text-end">{tr("invoices")}</TableHead>
+                              <TableHead className="text-end">{tr("value")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {customerRevenue.map((row) => (
                               <TableRow key={row.customerName}>
                                 <TableCell className="font-medium">{row.customerName}</TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.invoiceCount}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(row.amountAed, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -18793,7 +19048,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No issued customer revenue found for this period.
+                        {tr("noIssuedCustomerRevenueFoundFor")}
                       </div>
                     )}
                   </CardContent>
@@ -18804,13 +19059,13 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Reminder routing</CardTitle>
+                      <CardTitle>{tr("reminderRouting")}</CardTitle>
                       <CardDescription>
-                        Overdue customer balances grouped by recommended chase level.
+                        {tr("overdueCustomerBalancesGroupedByRecommended")}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payment-chasing">Open chasing queue</Link>
+                      <Link href="/payment-chasing">{tr("openChasingQueue")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -18822,28 +19077,30 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Customer</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Outstanding</TableHead>
-                            <TableHead className="text-right">Oldest</TableHead>
-                            <TableHead className="text-right">Next level</TableHead>
+                            <TableHead>{tr("customer")}</TableHead>
+                            <TableHead className="text-end">{tr("invoices")}</TableHead>
+                            <TableHead className="text-end">{tr("outstanding")}</TableHead>
+                            <TableHead className="text-end">{tr("oldest")}</TableHead>
+                            <TableHead className="text-end">{tr("nextLevel")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {overdueCustomerRows.map((row) => (
                             <TableRow key={`${row.customerName}-${row.currency}`}>
                               <TableCell className="font-medium">{row.customerName}</TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {row.invoiceCount}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(row.outstanding, row.currency, locale)}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {row.maxDaysOverdue} days
+                              <TableCell className="text-end font-mono">
+                                {tr("days", { maxDaysOverdue: row.maxDaysOverdue })}
                               </TableCell>
-                              <TableCell className="text-right">
-                                <Badge variant="warning">Level {row.recommendedLevel}</Badge>
+                              <TableCell className="text-end">
+                                <Badge variant="warning">
+                                  {tr("level", { recommendedLevel: row.recommendedLevel })}
+                                </Badge>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -18852,7 +19109,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No overdue invoices in the reminder queue.
+                      {tr("noOverdueInvoicesInTheReminder")}
                     </div>
                   )}
                 </CardContent>
@@ -18860,11 +19117,11 @@ export default function Reports() {
 
               <Card className={reportSectionClass(["invoice-status"])}>
                 <CardHeader>
-                  <CardTitle>Invoice detail</CardTitle>
+                  <CardTitle>{tr("invoiceDetail")}</CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "All invoice dates"}
+                      : tr("allInvoiceDates")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -18875,14 +19132,14 @@ export default function Reports() {
                       <Table className="min-w-[900px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Invoice</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead>Issue date</TableHead>
-                            <TableHead>Due date</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right">AED value</TableHead>
-                            <TableHead className="text-right">Proof</TableHead>
+                            <TableHead>{tr("invoice")}</TableHead>
+                            <TableHead>{tr("customer")}</TableHead>
+                            <TableHead>{tr("issueDate")}</TableHead>
+                            <TableHead>{tr("dueDate2")}</TableHead>
+                            <TableHead>{tr("status")}</TableHead>
+                            <TableHead className="text-end">{tr("amount")}</TableHead>
+                            <TableHead className="text-end">{tr("aedValue")}</TableHead>
+                            <TableHead className="text-end">{tr("proof")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -18891,7 +19148,7 @@ export default function Reports() {
                               <TableCell className="font-mono font-medium">
                                 {invoice.number}
                               </TableCell>
-                              <TableCell>{invoice.customerName || "Unknown Customer"}</TableCell>
+                              <TableCell>{invoice.customerName || tr("unknownCustomer")}</TableCell>
                               <TableCell className="text-muted-foreground">
                                 {formatReportDate(invoice.date)}
                               </TableCell>
@@ -18903,20 +19160,20 @@ export default function Reports() {
                                   {invoiceStatusLabel(invoice.status)}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(
                                   invoice.total ?? 0,
                                   invoice.currency || "AED",
                                   locale
                                 )}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(amountInAed(invoice), "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-end">
                                 <Button asChild size="sm" variant="outline">
                                   <Link href={evidenceSourceHref("invoice", invoice.id)}>
-                                    Proof
+                                    {tr("proof")}
                                   </Link>
                                 </Button>
                               </TableCell>
@@ -18927,7 +19184,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No invoices found for this period.
+                      {tr("noInvoicesFoundForThisPeriod")}
                     </div>
                   )}
                 </CardContent>
@@ -18951,7 +19208,9 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Customer Open Balance</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      {tr("customerOpenBalance")}
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingUp className="h-4 w-4 text-success " />
                     </div>
@@ -18960,7 +19219,7 @@ export default function Reports() {
                     {balancesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(balanceReport.customerOpenAed, "AED", locale)}
                       </div>
                     )}
@@ -18969,7 +19228,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Customer Overdue</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("customerOverdue")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -18979,11 +19238,13 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {formatCurrency(balanceReport.customerOverdueAed, "AED", locale)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {balanceReport.overdueCustomerCount} customers
+                          {tr("customers", {
+                            overdueCustomerCount: balanceReport.overdueCustomerCount,
+                          })}
                         </div>
                       </div>
                     )}
@@ -18992,7 +19253,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Vendor Open Balance</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("vendorOpenBalance")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -19001,7 +19262,7 @@ export default function Reports() {
                     {balancesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(balanceReport.vendorOpenAed, "AED", locale)}
                       </div>
                     )}
@@ -19010,7 +19271,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net AR Less AP</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("netArLessAp")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19019,7 +19280,7 @@ export default function Reports() {
                     {balancesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(balanceReport.netBalanceAed, "AED", locale)}
                       </div>
                     )}
@@ -19031,13 +19292,11 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>A/P Aging</CardTitle>
-                      <CardDescription>
-                        Open vendor bills aged from due date, net of recorded payments.
-                      </CardDescription>
+                      <CardTitle>{tr("aPAging")}</CardTitle>
+                      <CardDescription>{tr("openVendorBillsAgedFromDue")}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                      <Link href="/bill-pay?tab=summary">{tr("openBillPay")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19048,26 +19307,26 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Current</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("current")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(payableAgingSummary.current, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Overdue</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("overdue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(payableAgingSummary.overdue, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Over 90 days</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("over90Days")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(payableAgingSummary.over90, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Open bills</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("openBills")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {payableAgingSummary.billCount.toLocaleString(locale)}
                           </div>
                         </div>
@@ -19076,27 +19335,27 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Aging buckets</div>
+                            <div className="font-medium">{tr("agingBuckets")}</div>
                             <div className="text-xs text-muted-foreground">
-                              Bill count and open AED balance by due-date bucket.
+                              {tr("billCountAndOpenAedBalance")}
                             </div>
                           </div>
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Bucket</TableHead>
-                                <TableHead className="text-right">Bills</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead>{tr("bucket")}</TableHead>
+                                <TableHead className="text-end">{tr("bills")}</TableHead>
+                                <TableHead className="text-end">{tr("amount")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {payableAgingBuckets.map((bucket) => (
                                 <TableRow key={bucket.label}>
                                   <TableCell className="font-medium">{bucket.label}</TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {bucket.count.toLocaleString(locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono font-medium">
+                                  <TableCell className="text-end font-mono font-medium">
                                     {formatCurrency(bucket.amount, "AED", locale)}
                                   </TableCell>
                                 </TableRow>
@@ -19109,11 +19368,11 @@ export default function Reports() {
                           <Table className="min-w-[760px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Vendor</TableHead>
-                                <TableHead className="text-right">Bills</TableHead>
-                                <TableHead className="text-right">Open</TableHead>
-                                <TableHead className="text-right">Overdue</TableHead>
-                                <TableHead className="text-right">Oldest</TableHead>
+                                <TableHead>{tr("vendor")}</TableHead>
+                                <TableHead className="text-end">{tr("bills")}</TableHead>
+                                <TableHead className="text-end">{tr("open")}</TableHead>
+                                <TableHead className="text-end">{tr("overdue")}</TableHead>
+                                <TableHead className="text-end">{tr("oldest")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19126,30 +19385,30 @@ export default function Reports() {
                                       variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                                       dot
                                     >
-                                      {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                                      {row.overdueBalanceAed > 0 ? tr("payQueue") : tr("current")}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {row.billCount}
                                   </TableCell>
-                                  <TableCell className="text-right">
-                                    <div className="font-mono font-medium">
+                                  <TableCell className="text-end">
+                                    <div dir="ltr" className="font-mono font-medium">
                                       {formatCurrency(row.openBalance, row.currency, locale)}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
                                       {formatCurrency(row.openBalanceAed, "AED", locale)}
                                     </div>
                                   </TableCell>
-                                  <TableCell className="text-right">
-                                    <div className="font-mono font-medium">
+                                  <TableCell className="text-end">
+                                    <div dir="ltr" className="font-mono font-medium">
                                       {formatCurrency(row.overdueBalance, row.currency, locale)}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
                                       {formatCurrency(row.overdueBalanceAed, "AED", locale)}
                                     </div>
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
-                                    {row.maxDaysOverdue} days
+                                  <TableCell className="text-end font-mono">
+                                    {tr("days", { maxDaysOverdue: row.maxDaysOverdue })}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -19160,7 +19419,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No open payables found for aging.
+                      {tr("noOpenPayablesFoundForAging")}
                     </div>
                   )}
                 </CardContent>
@@ -19171,13 +19430,13 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Customer balance summary</CardTitle>
+                        <CardTitle>{tr("customerBalanceSummary")}</CardTitle>
                         <CardDescription>
-                          Current open receivables from issued invoices, net of recorded payments.
+                          {tr("currentOpenReceivablesFromIssuedInvoices")}
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/payment-chasing">Open collections</Link>
+                        <Link href="/payment-chasing">{tr("openCollections")}</Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -19189,11 +19448,11 @@ export default function Reports() {
                         <Table className="min-w-[760px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Customer</TableHead>
-                              <TableHead className="text-right">Invoices</TableHead>
-                              <TableHead className="text-right">Open</TableHead>
-                              <TableHead className="text-right">Overdue</TableHead>
-                              <TableHead className="text-right">Oldest</TableHead>
+                              <TableHead>{tr("customer")}</TableHead>
+                              <TableHead className="text-end">{tr("invoices")}</TableHead>
+                              <TableHead className="text-end">{tr("open")}</TableHead>
+                              <TableHead className="text-end">{tr("overdue")}</TableHead>
+                              <TableHead className="text-end">{tr("oldest")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19206,30 +19465,30 @@ export default function Reports() {
                                     variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                                     dot
                                   >
-                                    {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
+                                    {row.overdueBalanceAed > 0 ? tr("collections") : tr("current")}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.invoiceCount}
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <div className="font-mono font-medium">
+                                <TableCell className="text-end">
+                                  <div dir="ltr" className="font-mono font-medium">
                                     {formatCurrency(row.openBalance, row.currency, locale)}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {formatCurrency(row.openBalanceAed, "AED", locale)}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <div className="font-mono font-medium">
+                                <TableCell className="text-end">
+                                  <div dir="ltr" className="font-mono font-medium">
                                     {formatCurrency(row.overdueBalance, row.currency, locale)}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {formatCurrency(row.overdueBalanceAed, "AED", locale)}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  {row.maxDaysOverdue} days
+                                <TableCell className="text-end font-mono">
+                                  {tr("days", { maxDaysOverdue: row.maxDaysOverdue })}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -19238,7 +19497,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No open customer balances.
+                        {tr("noOpenCustomerBalances")}
                       </div>
                     )}
                   </CardContent>
@@ -19248,13 +19507,13 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Vendor balance summary</CardTitle>
+                        <CardTitle>{tr("vendorBalanceSummary")}</CardTitle>
                         <CardDescription>
-                          Current open payables from vendor bills, net of recorded payments.
+                          {tr("currentOpenPayablesFromVendorBills")}
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/bill-pay?tab=summary">Open bill pay</Link>
+                        <Link href="/bill-pay?tab=summary">{tr("openBillPay")}</Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -19266,11 +19525,11 @@ export default function Reports() {
                         <Table className="min-w-[760px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Vendor</TableHead>
-                              <TableHead className="text-right">Bills</TableHead>
-                              <TableHead className="text-right">Open</TableHead>
-                              <TableHead className="text-right">Overdue</TableHead>
-                              <TableHead className="text-right">Oldest</TableHead>
+                              <TableHead>{tr("vendor")}</TableHead>
+                              <TableHead className="text-end">{tr("bills")}</TableHead>
+                              <TableHead className="text-end">{tr("open")}</TableHead>
+                              <TableHead className="text-end">{tr("overdue")}</TableHead>
+                              <TableHead className="text-end">{tr("oldest")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19283,30 +19542,30 @@ export default function Reports() {
                                     variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                                     dot
                                   >
-                                    {row.overdueBalanceAed > 0 ? "Pay queue" : "Current"}
+                                    {row.overdueBalanceAed > 0 ? tr("payQueue") : tr("current")}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.billCount}
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <div className="font-mono font-medium">
+                                <TableCell className="text-end">
+                                  <div dir="ltr" className="font-mono font-medium">
                                     {formatCurrency(row.openBalance, row.currency, locale)}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {formatCurrency(row.openBalanceAed, "AED", locale)}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <div className="font-mono font-medium">
+                                <TableCell className="text-end">
+                                  <div dir="ltr" className="font-mono font-medium">
                                     {formatCurrency(row.overdueBalance, row.currency, locale)}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {formatCurrency(row.overdueBalanceAed, "AED", locale)}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  {row.maxDaysOverdue} days
+                                <TableCell className="text-end font-mono">
+                                  {tr("days", { maxDaysOverdue: row.maxDaysOverdue })}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -19315,7 +19574,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No open vendor balances.
+                        {tr("noOpenVendorBalances")}
                       </div>
                     )}
                   </CardContent>
@@ -19326,13 +19585,11 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Inventory valuation</CardTitle>
-                      <CardDescription>
-                        Stock quantity, cost value, reorder risk, and costing exceptions.
-                      </CardDescription>
+                      <CardTitle>{tr("inventoryValuation")}</CardTitle>
+                      <CardDescription>{tr("stockQuantityCostValueReorderRisk")}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/inventory">Open inventory</Link>
+                      <Link href="/inventory">{tr("openInventory")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19343,14 +19600,16 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Active products</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">
+                            {tr("activeProducts")}
+                          </div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.activeProductCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Stock value</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("stockValue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               inventoryValuationReport.totalStockValueAed,
                               "AED",
@@ -19359,14 +19618,14 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Low stock</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("lowStock")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.lowStockCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Costing review</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("costingReview")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryValuationReport.missingCostCount}
                           </div>
                         </div>
@@ -19376,13 +19635,13 @@ export default function Reports() {
                         <Table className="min-w-[940px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Product</TableHead>
-                              <TableHead>Unit</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Stock</TableHead>
-                              <TableHead className="text-right">Unit cost</TableHead>
-                              <TableHead className="text-right">Value</TableHead>
-                              <TableHead className="text-right">Movements</TableHead>
+                              <TableHead>{tr("product")}</TableHead>
+                              <TableHead>{tr("unit")}</TableHead>
+                              <TableHead>{tr("status")}</TableHead>
+                              <TableHead className="text-end">{tr("stock")}</TableHead>
+                              <TableHead className="text-end">{tr("unitCost")}</TableHead>
+                              <TableHead className="text-end">{tr("value")}</TableHead>
+                              <TableHead className="text-end">{tr("movements")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19391,7 +19650,7 @@ export default function Reports() {
                                 <TableCell>
                                   <div className="font-medium">{product.name}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    {product.sku || "No SKU"}
+                                    {product.sku || tr("noSku")}
                                   </div>
                                 </TableCell>
                                 <TableCell>{product.unit}</TableCell>
@@ -19409,26 +19668,26 @@ export default function Reports() {
                                     dot
                                   >
                                     {product.isNegativeStock
-                                      ? "Negative stock"
+                                      ? tr("negativeStock")
                                       : product.isMissingCost
-                                        ? "Missing cost"
+                                        ? tr("missingCost")
                                         : product.isLowStock
-                                          ? "Low stock"
+                                          ? tr("lowStock")
                                           : product.isActive
-                                            ? "Valued"
-                                            : "Inactive"}
+                                            ? tr("valued")
+                                            : tr("inactive")}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {product.currentStock.toLocaleString(locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(product.unitCost, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(product.stockValueAed, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {product.movementCount}
                                 </TableCell>
                               </TableRow>
@@ -19439,7 +19698,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No inventory products found yet.
+                      {tr("noInventoryProductsFoundYet")}
                     </div>
                   )}
                 </CardContent>
@@ -19449,13 +19708,13 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Inventory movement</CardTitle>
+                      <CardTitle>{tr("inventoryMovement")}</CardTitle>
                       <CardDescription>
-                        Stock receipts, sales, returns, and adjustments for the selected period.
+                        {tr("stockReceiptsSalesReturnsAndAdjustments")}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/inventory">Open movements</Link>
+                      <Link href="/inventory">{tr("openMovements")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19466,26 +19725,26 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Movements</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("movements")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.movementCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Inbound units</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("inboundUnits")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.inboundUnits.toLocaleString(locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Outbound units</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("outboundUnits")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {inventoryMovementReport.outboundUnits.toLocaleString(locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Movement value</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("movementValue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               inventoryMovementReport.totalMovementValueAed,
                               "AED",
@@ -19498,9 +19757,9 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Movement type mix</div>
+                            <div className="font-medium">{tr("movementTypeMix")}</div>
                             <div className="text-xs text-muted-foreground">
-                              Quantity and value by movement type.
+                              {tr("quantityAndValueByMovementType")}
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -19514,11 +19773,13 @@ export default function Reports() {
                                     {row.type}
                                   </Badge>
                                   <div className="mt-1 text-xs text-muted-foreground">
-                                    {row.count} movements / {row.quantity.toLocaleString(locale)}{" "}
-                                    units
+                                    {tr("movementsUnits", {
+                                      count: row.count,
+                                      quantity: row.quantity.toLocaleString(locale),
+                                    })}
                                   </div>
                                 </div>
-                                <div className="text-right font-mono">
+                                <div className="text-end font-mono">
                                   {formatCurrency(row.valueAed, "AED", locale)}
                                 </div>
                               </div>
@@ -19530,13 +19791,13 @@ export default function Reports() {
                           <Table className="min-w-[920px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Product</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Quantity</TableHead>
-                                <TableHead className="text-right">Unit cost</TableHead>
-                                <TableHead className="text-right">Value</TableHead>
-                                <TableHead>Reference</TableHead>
+                                <TableHead>{tr("date")}</TableHead>
+                                <TableHead>{tr("product")}</TableHead>
+                                <TableHead>{tr("type")}</TableHead>
+                                <TableHead className="text-end">{tr("quantity")}</TableHead>
+                                <TableHead className="text-end">{tr("unitCost")}</TableHead>
+                                <TableHead className="text-end">{tr("value")}</TableHead>
+                                <TableHead>{tr("reference")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19548,7 +19809,7 @@ export default function Reports() {
                                   <TableCell>
                                     <div className="font-medium">{movement.productName}</div>
                                     <div className="text-xs text-muted-foreground">
-                                      {movement.sku || movement.unit || "No SKU"}
+                                      {movement.sku || movement.unit || tr("noSku")}
                                     </div>
                                   </TableCell>
                                   <TableCell>
@@ -19556,16 +19817,16 @@ export default function Reports() {
                                       {movement.type}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {movement.type === "sale" ? "-" : "+"}
                                     {Math.abs(movement.quantity).toLocaleString(locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {movement.unitCost
                                       ? formatCurrency(movement.unitCost, "AED", locale)
                                       : "-"}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono font-medium">
+                                  <TableCell className="text-end font-mono font-medium">
                                     {formatCurrency(movement.valueAed, "AED", locale)}
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">
@@ -19580,7 +19841,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No inventory movements found for this period.
+                      {tr("noInventoryMovementsFoundForThis")}
                     </div>
                   )}
                 </CardContent>
@@ -19590,14 +19851,15 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Depreciation schedule</CardTitle>
+                      <CardTitle>{tr("depreciationSchedule")}</CardTitle>
                       <CardDescription>
-                        Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")}{" "}
-                        from the fixed asset register.
+                        {tr("estimatedDepreciationForFromTheFixed", {
+                          format: format(depreciationPeriodDate, "MMMM yyyy"),
+                        })}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/fixed-assets">Open fixed assets</Link>
+                      <Link href="/fixed-assets">{tr("openFixedAssets")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19608,8 +19870,10 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Period depreciation</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">
+                            {tr("periodDepreciation")}
+                          </div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               depreciationScheduleReport.periodDepreciationAed,
                               "AED",
@@ -19618,8 +19882,8 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Annual run-rate</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("annualRunRate")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               depreciationScheduleReport.annualDepreciationAed,
                               "AED",
@@ -19628,14 +19892,14 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Ready to post</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("readyToPost")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {depreciationScheduleReport.readyToPostCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Setup review</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("setupReview")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {depreciationScheduleReport.reviewCount}
                           </div>
                         </div>
@@ -19645,12 +19909,14 @@ export default function Reports() {
                         <Table className="min-w-[980px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Asset</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead className="text-right">Remaining</TableHead>
-                              <TableHead className="text-right">Monthly depreciation</TableHead>
-                              <TableHead className="text-right">Projected NBV</TableHead>
-                              <TableHead>Status</TableHead>
+                              <TableHead>{tr("asset")}</TableHead>
+                              <TableHead>{tr("method")}</TableHead>
+                              <TableHead className="text-end">{tr("remaining")}</TableHead>
+                              <TableHead className="text-end">
+                                {tr("monthlyDepreciation")}
+                              </TableHead>
+                              <TableHead className="text-end">{tr("projectedNbv")}</TableHead>
+                              <TableHead>{tr("status")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -19665,13 +19931,13 @@ export default function Reports() {
                                 <TableCell className="capitalize">
                                   {row.method.replace(/_/g, " ")}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.remainingDepreciable, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(row.monthlyDepreciation, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.projectedNetBookValue, "AED", locale)}
                                 </TableCell>
                                 <TableCell>
@@ -19692,7 +19958,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No active fixed assets available for depreciation.
+                      {tr("noActiveFixedAssetsAvailableFor")}
                     </div>
                   )}
                 </CardContent>
@@ -19702,14 +19968,13 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Fixed asset register</CardTitle>
+                      <CardTitle>{tr("fixedAssetRegister")}</CardTitle>
                       <CardDescription>
-                        Asset cost, accumulated depreciation, net book value, and capitalization
-                        review.
+                        {tr("assetCostAccumulatedDepreciationNetBook")}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/fixed-assets">Open fixed assets</Link>
+                      <Link href="/fixed-assets">{tr("openFixedAssets")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -19720,20 +19985,20 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Active assets</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("activeAssets")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {fixedAssetRegisterReport.totalAssets}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Asset cost</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("assetCost")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(fixedAssetRegisterReport.totalCost, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Net book value</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("netBookValue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(
                               fixedAssetRegisterReport.totalNetBookValue,
                               "AED",
@@ -19742,8 +20007,8 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Review items</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("reviewItems")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {fixedAssetRegisterReport.reviewCount}
                           </div>
                         </div>
@@ -19754,13 +20019,13 @@ export default function Reports() {
                           <Table className="min-w-[960px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Asset</TableHead>
-                                <TableHead>Category</TableHead>
-                                <TableHead>Purchase date</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Cost</TableHead>
-                                <TableHead className="text-right">Depreciation</TableHead>
-                                <TableHead className="text-right">NBV</TableHead>
+                                <TableHead>{tr("asset")}</TableHead>
+                                <TableHead>{tr("category")}</TableHead>
+                                <TableHead>{tr("purchaseDate")}</TableHead>
+                                <TableHead>{tr("status")}</TableHead>
+                                <TableHead className="text-end">{tr("cost")}</TableHead>
+                                <TableHead className="text-end">{tr("depreciation")}</TableHead>
+                                <TableHead className="text-end">NBV</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -19771,7 +20036,7 @@ export default function Reports() {
                                     <div className="text-xs text-muted-foreground">
                                       {asset.asset_number ||
                                         asset.serial_number ||
-                                        "No asset number"}
+                                        tr("noAssetNumber")}
                                     </div>
                                   </TableCell>
                                   <TableCell>{asset.category}</TableCell>
@@ -19781,17 +20046,17 @@ export default function Reports() {
                                   <TableCell>
                                     <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
                                       {asset.needs_capitalization_je
-                                        ? "Capitalization review"
+                                        ? tr("capitalizationReview")
                                         : asset.status}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(asset.purchaseCost, "AED", locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(asset.accumulatedDepreciation, "AED", locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono font-medium">
+                                  <TableCell className="text-end font-mono font-medium">
                                     {formatCurrency(asset.netBookValue, "AED", locale)}
                                   </TableCell>
                                 </TableRow>
@@ -19802,12 +20067,12 @@ export default function Reports() {
 
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Category valuation</div>
+                            <div className="font-medium">{tr("categoryValuation")}</div>
                             <div className="text-xs text-muted-foreground">
-                              Active assets grouped by category.
+                              {tr("activeAssetsGroupedByCategory")}
                             </div>
                           </div>
-                          <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
+                          <div className="max-h-[420px] space-y-3 overflow-auto pe-1">
                             {fixedAssetRegisterReport.byCategory.length ? (
                               fixedAssetRegisterReport.byCategory.map((category) => (
                                 <div
@@ -19817,17 +20082,17 @@ export default function Reports() {
                                   <div>
                                     <div className="font-medium">{category.category}</div>
                                     <div className="text-xs text-muted-foreground">
-                                      {category.count} assets
+                                      {tr("assets2", { count: category.count })}
                                     </div>
                                   </div>
-                                  <div className="text-right font-mono">
+                                  <div className="text-end font-mono">
                                     {formatCurrency(category.totalNetBookValue, "AED", locale)}
                                   </div>
                                 </div>
                               ))
                             ) : (
                               <div className="text-sm text-muted-foreground">
-                                No active asset categories.
+                                {tr("noActiveAssetCategories")}
                               </div>
                             )}
                           </div>
@@ -19836,7 +20101,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No fixed assets registered yet.
+                      {tr("noFixedAssetsRegisteredYet")}
                     </div>
                   )}
                 </CardContent>
@@ -19844,39 +20109,37 @@ export default function Reports() {
 
               <Card className={cn(hasFocusedReportSelection && "hidden")}>
                 <CardHeader>
-                  <CardTitle>Balance automation queues</CardTitle>
-                  <CardDescription>
-                    Current open-balance signals for collections and payable follow-up.
-                  </CardDescription>
+                  <CardTitle>{tr("balanceAutomationQueues")}</CardTitle>
+                  <CardDescription>{tr("currentOpenBalanceSignalsForCollections")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Collections queue</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("collectionsQueue")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {balanceReport.overdueCustomerCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Bill pay queue</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("billPayQueue")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {balanceReport.overdueVendorCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Inventory review</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("inventoryReview")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {inventoryValuationReport.reviewCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Asset review</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("assetReview")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {fixedAssetRegisterReport.reviewCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Last refreshed</div>
+                      <div className="text-xs text-muted-foreground">{tr("lastRefreshed")}</div>
                       <div className="text-sm font-medium">
                         {formatReportDate(balanceReport.generatedAt)}
                       </div>
@@ -19893,7 +20156,7 @@ export default function Reports() {
                   "rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
                 )}
               >
-                <span className="font-medium text-foreground">Source basis:</span>{" "}
+                <span className="font-medium text-foreground">{tr("sourceBasis")}</span>{" "}
                 {expenseReport.basis}
               </div>
               <div
@@ -19904,7 +20167,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Expenses</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("postedExpenses")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingDown className="h-4 w-4 text-destructive " />
                     </div>
@@ -19913,7 +20176,7 @@ export default function Reports() {
                     {expensesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(expenseReport.totalAed, "AED", locale)}
                       </div>
                     )}
@@ -19922,7 +20185,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Gross Expense Debits</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      {tr("grossExpenseDebits")}
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19931,7 +20196,7 @@ export default function Reports() {
                     {expensesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(expenseReport.subtotalAed, "AED", locale)}
                       </div>
                     )}
@@ -19940,7 +20205,9 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Receipt VAT Captured</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      {tr("receiptVatCaptured")}
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -19949,7 +20216,7 @@ export default function Reports() {
                     {expensesLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(expenseReport.vatAed, "AED", locale)}
                       </div>
                     )}
@@ -19958,7 +20225,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posting Queue</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("postingQueue2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -19968,11 +20235,13 @@ export default function Reports() {
                       <Skeleton className="h-8 w-20" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {expenseReport.unpostedReceipts}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {expenseReport.autoPostedReceipts} auto-posted
+                          {tr("autoPosted", {
+                            autoPostedReceipts: expenseReport.autoPostedReceipts,
+                          })}
                         </div>
                       </div>
                     )}
@@ -19983,10 +20252,8 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["expenses-vendor"])}>
                   <CardHeader>
-                    <CardTitle>Expenses by vendor</CardTitle>
-                    <CardDescription>
-                      Posted expense-account activity grouped by linked bill or receipt vendor.
-                    </CardDescription>
+                    <CardTitle>{tr("expensesByVendor")}</CardTitle>
+                    <CardDescription>{tr("postedExpenseAccountActivityGroupedBy")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {expensesLoading ? (
@@ -19996,23 +20263,23 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Vendor</TableHead>
-                              <TableHead className="text-right">Entries</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Net expense</TableHead>
+                              <TableHead>{tr("vendor")}</TableHead>
+                              <TableHead className="text-end">{tr("entries")}</TableHead>
+                              <TableHead className="text-end">{tr("lines2")}</TableHead>
+                              <TableHead className="text-end">{tr("netExpense")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {expenseReport.byVendor.map((row) => (
                               <TableRow key={row.label}>
                                 <TableCell className="font-medium">{row.label}</TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.entryCount}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {row.lineCount}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.netExpenseAed, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -20022,7 +20289,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No expenses found for this period.
+                        {tr("noExpensesFoundForThisPeriod")}
                       </div>
                     )}
                   </CardContent>
@@ -20030,9 +20297,9 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["expenses-category"])}>
                   <CardHeader>
-                    <CardTitle>Expenses by category</CardTitle>
+                    <CardTitle>{tr("expensesByCategory")}</CardTitle>
                     <CardDescription>
-                      Posted expense-account activity grouped by chart-of-account category.
+                      {tr("postedExpenseAccountActivityGroupedBy2")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -20043,27 +20310,27 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Category</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
-                              <TableHead className="text-right">Net expense</TableHead>
+                              <TableHead>{tr("category")}</TableHead>
+                              <TableHead className="text-end">{tr("lines2")}</TableHead>
+                              <TableHead className="text-end">{tr("debit")}</TableHead>
+                              <TableHead className="text-end">{tr("credit")}</TableHead>
+                              <TableHead className="text-end">{tr("netExpense")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {expenseReport.byCategory.map((row) => (
                               <TableRow key={row.label}>
                                 <TableCell className="font-medium">{row.label}</TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.lineCount}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.debitAed, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.creditAed, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(row.netExpenseAed, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -20073,7 +20340,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No categorized expenses found for this period.
+                        {tr("noCategorizedExpensesFoundForThis")}
                       </div>
                     )}
                   </CardContent>
@@ -20084,13 +20351,13 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Expense claims</CardTitle>
+                      <CardTitle>{tr("expenseClaims")}</CardTitle>
                       <CardDescription>
-                        Claim status, approval routing, and reimbursement queue.
+                        {tr("claimStatusApprovalRoutingAndReimbursement")}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/expense-claims">Open claims</Link>
+                      <Link href="/expense-claims">{tr("openClaims")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -20101,26 +20368,28 @@ export default function Reports() {
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Claims</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("claims")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.claimCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Claim value</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("claimValue")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {formatCurrency(expenseClaimReport.totalAmount, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Needs approval</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("needsApproval")}</div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.submittedCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-4">
-                          <div className="text-xs text-muted-foreground">Approved unpaid</div>
-                          <div className="font-mono text-2xl font-semibold">
+                          <div className="text-xs text-muted-foreground">
+                            {tr("approvedUnpaid")}
+                          </div>
+                          <div dir="ltr" className="font-mono text-2xl font-semibold">
                             {expenseClaimReport.approvedUnpaidCount}
                           </div>
                         </div>
@@ -20129,9 +20398,9 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Claim status mix</div>
+                            <div className="font-medium">{tr("claimStatusMix")}</div>
                             <div className="text-xs text-muted-foreground">
-                              Current date-range claims by workflow status.
+                              {tr("currentDateRangeClaimsByWorkflow")}
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -20145,10 +20414,10 @@ export default function Reports() {
                                     {row.status}
                                   </Badge>
                                   <div className="mt-1 text-xs text-muted-foreground">
-                                    {row.count} claims
+                                    {tr("claims2", { count: row.count })}
                                   </div>
                                 </div>
-                                <div className="text-right font-mono">
+                                <div className="text-end font-mono">
                                   {formatCurrency(row.totalAmount, "AED", locale)}
                                 </div>
                               </div>
@@ -20160,11 +20429,11 @@ export default function Reports() {
                           <Table className="min-w-[880px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Claim</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Submitted</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead>{tr("claim")}</TableHead>
+                                <TableHead>{tr("status")}</TableHead>
+                                <TableHead>{tr("created")}</TableHead>
+                                <TableHead>{tr("submitted")}</TableHead>
+                                <TableHead className="text-end">{tr("amount")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -20187,7 +20456,7 @@ export default function Reports() {
                                   <TableCell className="text-muted-foreground">
                                     {formatReportDate(claim.submitted_at)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono font-medium">
+                                  <TableCell className="text-end font-mono font-medium">
                                     {formatCurrency(
                                       expenseClaimAmount(claim),
                                       claim.currency || "AED",
@@ -20203,7 +20472,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No expense claims found for this period.
+                      {tr("noExpenseClaimsFoundForThis")}
                     </div>
                   )}
                 </CardContent>
@@ -20213,39 +20482,37 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Posting automation</CardTitle>
-                      <CardDescription>
-                        Receipts ready for review, posting, and autopilot follow-up.
-                      </CardDescription>
+                      <CardTitle>{tr("postingAutomation")}</CardTitle>
+                      <CardDescription>{tr("receiptsReadyForReviewPostingAnd")}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/receipts">Open receipts</Link>
+                      <Link href="/receipts">{tr("openReceipts")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Captured receipts</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("capturedReceipts")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {expenseReport.receiptCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Auto-posted</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("autoPosted2")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {expenseReport.autoPostedReceipts}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Needs posting</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("needsPosting")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {expenseReport.unpostedReceipts}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Claims review</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("claimsReview")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {expenseClaimReport.reviewCount}
                       </div>
                     </div>
@@ -20255,11 +20522,11 @@ export default function Reports() {
 
               <Card className={reportSectionClass(["expenses-vendor", "expenses-category"])}>
                 <CardHeader>
-                  <CardTitle>Posted expense detail</CardTitle>
+                  <CardTitle>{tr("postedExpenseDetail")}</CardTitle>
                   <CardDescription>
                     {dateRange.from && dateRange.to
                       ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                      : "All posted journal entry dates"}
+                      : tr("allPostedJournalEntryDates")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -20270,14 +20537,14 @@ export default function Reports() {
                       <Table className="min-w-[980px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Entry</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Vendor</TableHead>
-                            <TableHead>Expense account</TableHead>
-                            <TableHead>Source</TableHead>
-                            <TableHead className="text-right">Debit</TableHead>
-                            <TableHead className="text-right">Credit</TableHead>
-                            <TableHead className="text-right">Net expense</TableHead>
+                            <TableHead>{tr("entry")}</TableHead>
+                            <TableHead>{tr("date")}</TableHead>
+                            <TableHead>{tr("vendor")}</TableHead>
+                            <TableHead>{tr("expenseAccount")}</TableHead>
+                            <TableHead>{tr("source")}</TableHead>
+                            <TableHead className="text-end">{tr("debit")}</TableHead>
+                            <TableHead className="text-end">{tr("credit")}</TableHead>
+                            <TableHead className="text-end">{tr("netExpense")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -20292,22 +20559,22 @@ export default function Reports() {
                               <TableCell className="font-medium">{line.vendor}</TableCell>
                               <TableCell>
                                 <div className="font-medium">{line.accountName}</div>
-                                <div className="font-mono text-xs text-muted-foreground">
+                                <div dir="ltr" className="font-mono text-xs text-muted-foreground">
                                   {line.accountCode || "-"}
                                 </div>
                               </TableCell>
                               <TableCell className="capitalize">{line.source}</TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {line.debitAed > 0
                                   ? formatCurrency(line.debitAed, "AED", locale)
                                   : "-"}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {line.creditAed > 0
                                   ? formatCurrency(line.creditAed, "AED", locale)
                                   : "-"}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(line.netExpenseAed, "AED", locale)}
                               </TableCell>
                             </TableRow>
@@ -20317,7 +20584,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted expense-account journal lines found for this period.
+                      {tr("noPostedExpenseAccountJournalLines")}
                     </div>
                   )}
                 </CardContent>
@@ -20333,7 +20600,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Net payroll</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("netPayroll")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20342,7 +20609,7 @@ export default function Reports() {
                     {payrollLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(payrollReport.totalNet, "AED", locale)}
                       </div>
                     )}
@@ -20351,7 +20618,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Payroll runs</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("payrollRuns")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20360,14 +20627,16 @@ export default function Reports() {
                     {payrollLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">{payrollReport.runCount}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
+                        {payrollReport.runCount}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs approval</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("needsApproval")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20376,7 +20645,7 @@ export default function Reports() {
                     {payrollLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {payrollReport.approvalQueueCount}
                       </div>
                     )}
@@ -20385,7 +20654,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs SIF</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("needsSif")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20394,7 +20663,7 @@ export default function Reports() {
                     {payrollLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {payrollReport.wpsMissingCount}
                       </div>
                     )}
@@ -20406,13 +20675,11 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Payroll Summary</CardTitle>
-                      <CardDescription>
-                        Pay-period totals, approval state, and WPS/SIF readiness.
-                      </CardDescription>
+                      <CardTitle>{tr("payrollSummary")}</CardTitle>
+                      <CardDescription>{tr("payPeriodTotalsApprovalStateAnd")}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/payroll">Open payroll</Link>
+                      <Link href="/payroll">{tr("openPayroll")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -20424,9 +20691,9 @@ export default function Reports() {
                       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-md border p-4">
                           <div className="mb-3">
-                            <div className="font-medium">Payroll status mix</div>
+                            <div className="font-medium">{tr("payrollStatusMix")}</div>
                             <div className="text-xs text-muted-foreground">
-                              Current date-range payroll by workflow status.
+                              {tr("currentDateRangePayrollByWorkflow")}
                             </div>
                           </div>
                           <div className="space-y-3">
@@ -20440,10 +20707,13 @@ export default function Reports() {
                                     {row.status}
                                   </Badge>
                                   <div className="mt-1 text-xs text-muted-foreground">
-                                    {row.count} runs / {row.employeeCount} employees
+                                    {tr("runsEmployees", {
+                                      count: row.count,
+                                      employeeCount: row.employeeCount,
+                                    })}
                                   </div>
                                 </div>
-                                <div className="text-right font-mono">
+                                <div className="text-end font-mono">
                                   {formatCurrency(row.totalNet, "AED", locale)}
                                 </div>
                               </div>
@@ -20455,13 +20725,13 @@ export default function Reports() {
                           <Table className="min-w-[920px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Period</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Employees</TableHead>
-                                <TableHead className="text-right">Basic</TableHead>
-                                <TableHead className="text-right">Allowances</TableHead>
-                                <TableHead className="text-right">Deductions</TableHead>
-                                <TableHead className="text-right">Net</TableHead>
+                                <TableHead>{tr("period")}</TableHead>
+                                <TableHead>{tr("status")}</TableHead>
+                                <TableHead className="text-end">{tr("employees")}</TableHead>
+                                <TableHead className="text-end">{tr("basic")}</TableHead>
+                                <TableHead className="text-end">{tr("allowances")}</TableHead>
+                                <TableHead className="text-end">{tr("deductions")}</TableHead>
+                                <TableHead className="text-end">{tr("net")}</TableHead>
                                 <TableHead>SIF</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -20476,27 +20746,27 @@ export default function Reports() {
                                       {run.status}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {run.employee_count}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(payrollAmount(run.total_basic), "AED", locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(
                                       payrollAmount(run.total_allowances),
                                       "AED",
                                       locale
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(
                                       payrollAmount(run.total_deductions),
                                       "AED",
                                       locale
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono font-medium">
+                                  <TableCell className="text-end font-mono font-medium">
                                     {formatCurrency(payrollAmount(run.total_net), "AED", locale)}
                                   </TableCell>
                                   <TableCell>
@@ -20504,7 +20774,7 @@ export default function Reports() {
                                       variant={run.sif_file_content ? "success" : "warning"}
                                       dot
                                     >
-                                      {run.sif_file_content ? "Generated" : "Needed"}
+                                      {run.sif_file_content ? tr("generated") : tr("needed")}
                                     </Badge>
                                   </TableCell>
                                 </TableRow>
@@ -20516,7 +20786,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No payroll runs found for this period.
+                      {tr("noPayrollRunsFoundForThis")}
                     </div>
                   )}
                 </CardContent>
@@ -20524,34 +20794,32 @@ export default function Reports() {
 
               <Card className={reportSectionClass(["wps-sif-summary"])}>
                 <CardHeader>
-                  <CardTitle>WPS / SIF readiness</CardTitle>
-                  <CardDescription>
-                    Generated SIF files and approved payroll runs ready for UAE WPS processing.
-                  </CardDescription>
+                  <CardTitle>{tr("wpsSifReadiness")}</CardTitle>
+                  <CardDescription>{tr("generatedSifFilesAndApprovedPayroll")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">SIF generated</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("sifGenerated")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {payrollReport.sifGeneratedCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">WPS ready</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("wpsReady")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {payrollReport.wpsReadyCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Approved runs</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("approvedRuns")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {payrollReport.approvedCount}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Latest period</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("latestPeriod")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {payrollPeriodLabel(payrollReport.latestRun)}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
@@ -20567,7 +20835,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("debitCreditStatus")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {trialBalanceSummary.isBalanced ? (
                         <CheckCircle2 className="h-4 w-4 text-success " />
@@ -20582,6 +20850,7 @@ export default function Reports() {
                     ) : (
                       <div className="space-y-1">
                         <div
+                          dir="ltr"
                           className="font-mono text-2xl font-bold"
                           data-testid="text-trial-balance-difference"
                         >
@@ -20592,7 +20861,7 @@ export default function Reports() {
                           )}
                         </div>
                         <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                          {trialBalanceSummary.isBalanced ? "Balanced" : "Needs review"}
+                          {trialBalanceSummary.isBalanced ? tr("balanced") : tr("needsReview")}
                         </Badge>
                       </div>
                     )}
@@ -20601,7 +20870,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Active Accounts</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("activeAccounts")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20610,7 +20879,7 @@ export default function Reports() {
                     {trialBalanceLoading ? (
                       <Skeleton className="h-8 w-24" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {trialBalanceSummary.activeAccounts}
                       </div>
                     )}
@@ -20619,7 +20888,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">FX Accounts</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("fxAccounts")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20628,7 +20897,7 @@ export default function Reports() {
                     {trialBalanceLoading ? (
                       <Skeleton className="h-8 w-24" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {trialBalanceSummary.foreignCurrencyAccounts}
                       </div>
                     )}
@@ -20644,12 +20913,14 @@ export default function Reports() {
                       <CardDescription>
                         {dateRange.from && dateRange.to
                           ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                          : "Posted account balances through today"}
+                          : tr("postedAccountBalancesThroughToday")}
                       </CardDescription>
                     </div>
                     {!trialBalanceLoading && (
                       <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                        {trialBalanceSummary.isBalanced ? "Ready for close" : "Difference flagged"}
+                        {trialBalanceSummary.isBalanced
+                          ? tr("readyForClose")
+                          : tr("differenceFlagged")}
                       </Badge>
                     )}
                   </div>
@@ -20662,13 +20933,13 @@ export default function Reports() {
                       <Table className="min-w-[900px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Code</TableHead>
-                            <TableHead>Account</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Debit</TableHead>
-                            <TableHead className="text-right">Credit</TableHead>
-                            <TableHead className="text-right">Balance</TableHead>
-                            <TableHead>Flags</TableHead>
+                            <TableHead>{tr("code")}</TableHead>
+                            <TableHead>{tr("account")}</TableHead>
+                            <TableHead>{tr("type")}</TableHead>
+                            <TableHead className="text-end">{tr("debit")}</TableHead>
+                            <TableHead className="text-end">{tr("credit")}</TableHead>
+                            <TableHead className="text-end">{tr("balance")}</TableHead>
+                            <TableHead>{tr("flags")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -20678,28 +20949,28 @@ export default function Reports() {
                                 {row.accountCode || "-"}
                               </TableCell>
                               <TableCell className="font-medium">
-                                {row.accountName || "Unknown Account"}
+                                {row.accountName || tr("unknownAccount")}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="capitalize">
                                   {row.accountType}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(
                                   row.totalDebit ?? 0,
                                   trialBalance.reportCurrency,
                                   locale
                                 )}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(
                                   row.totalCredit ?? 0,
                                   trialBalance.reportCurrency,
                                   locale
                                 )}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(
                                   row.balance ?? 0,
                                   trialBalance.reportCurrency,
@@ -20717,23 +20988,23 @@ export default function Reports() {
                           ))}
                           <TableRow className="border-t-2">
                             <TableCell colSpan={3} className="font-semibold">
-                              Totals
+                              {tr("totals")}
                             </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
+                            <TableCell className="text-end font-mono font-semibold">
                               {formatCurrency(
                                 trialBalance.totals?.sumDebits ?? 0,
                                 trialBalance.reportCurrency ?? "AED",
                                 locale
                               )}
                             </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
+                            <TableCell className="text-end font-mono font-semibold">
                               {formatCurrency(
                                 trialBalance.totals?.sumCredits ?? 0,
                                 trialBalance.reportCurrency ?? "AED",
                                 locale
                               )}
                             </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
+                            <TableCell className="text-end font-mono font-semibold">
                               {formatCurrency(
                                 trialBalance.totals?.difference ?? 0,
                                 trialBalance.reportCurrency ?? "AED",
@@ -20747,7 +21018,7 @@ export default function Reports() {
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted accounts found for this period.
+                      {tr("noPostedAccountsFoundForThis")}
                     </div>
                   )}
                 </CardContent>
@@ -20763,7 +21034,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Posted Entries</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("postedEntries")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20772,14 +21043,18 @@ export default function Reports() {
                     {ledgerLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">{ledgerReport.entryCount}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
+                        {ledgerReport.entryCount}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Debit / Credit Difference</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      {tr("debitCreditDifference")}
+                    </CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {ledgerReport.difference < 0.005 ? (
                         <CheckCircle2 className="h-4 w-4 text-success " />
@@ -20793,14 +21068,14 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {formatCurrency(ledgerReport.difference, "AED", locale)}
                         </div>
                         <Badge
                           variant={ledgerReport.difference < 0.005 ? "success" : "warning"}
                           dot
                         >
-                          {ledgerReport.difference < 0.005 ? "Balanced" : "Needs review"}
+                          {ledgerReport.difference < 0.005 ? tr("balanced") : tr("needsReview")}
                         </Badge>
                       </div>
                     )}
@@ -20809,7 +21084,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Accounts Touched</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("accountsTouched")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <Scale className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20818,7 +21093,7 @@ export default function Reports() {
                     {ledgerLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {ledgerReport.accountCount}
                       </div>
                     )}
@@ -20827,7 +21102,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Review Queue</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("reviewQueue")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -20837,11 +21112,13 @@ export default function Reports() {
                       <Skeleton className="h-8 w-20" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {ledgerReport.reviewEntries}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {ledgerReport.foreignCurrencyLines} FX lines
+                          {tr("fxLines", {
+                            foreignCurrencyLines: ledgerReport.foreignCurrencyLines,
+                          })}
                         </div>
                       </div>
                     )}
@@ -20852,10 +21129,8 @@ export default function Reports() {
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <Card className={reportSectionClass(["account-transactions"])}>
                   <CardHeader>
-                    <CardTitle>Account transactions</CardTitle>
-                    <CardDescription>
-                      Account-level debit, credit, and activity totals.
-                    </CardDescription>
+                    <CardTitle>{tr("accountTransactions")}</CardTitle>
+                    <CardDescription>{tr("accountLevelDebitCreditAndActivity")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {ledgerLoading ? (
@@ -20865,11 +21140,11 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Account</TableHead>
-                              <TableHead>Type</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
+                              <TableHead>{tr("account")}</TableHead>
+                              <TableHead>{tr("type")}</TableHead>
+                              <TableHead className="text-end">{tr("lines2")}</TableHead>
+                              <TableHead className="text-end">{tr("debit")}</TableHead>
+                              <TableHead className="text-end">{tr("credit")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -20877,7 +21152,10 @@ export default function Reports() {
                               <TableRow key={row.accountId}>
                                 <TableCell>
                                   <div className="font-medium">{row.accountName}</div>
-                                  <div className="font-mono text-xs text-muted-foreground">
+                                  <div
+                                    dir="ltr"
+                                    className="font-mono text-xs text-muted-foreground"
+                                  >
                                     {row.accountCode || "-"}
                                   </div>
                                 </TableCell>
@@ -20886,13 +21164,13 @@ export default function Reports() {
                                     {row.accountType}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {row.lineCount}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.debit, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.credit, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -20902,7 +21180,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No posted account activity found for this period.
+                        {tr("noPostedAccountActivityFoundFor")}
                       </div>
                     )}
                   </CardContent>
@@ -20910,8 +21188,8 @@ export default function Reports() {
 
                 <Card className={reportSectionClass(["general-ledger"])}>
                   <CardHeader>
-                    <CardTitle>Source review</CardTitle>
-                    <CardDescription>Automation routing by journal entry source.</CardDescription>
+                    <CardTitle>{tr("sourceReview")}</CardTitle>
+                    <CardDescription>{tr("automationRoutingByJournalEntrySource")}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {ledgerLoading ? (
@@ -20920,29 +21198,25 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Source</TableHead>
-                            <TableHead className="text-right">Entries</TableHead>
-                            <TableHead className="text-right">Lines</TableHead>
-                            <TableHead className="text-right">Activity</TableHead>
-                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead>{tr("source")}</TableHead>
+                            <TableHead className="text-end">{tr("entries")}</TableHead>
+                            <TableHead className="text-end">{tr("lines2")}</TableHead>
+                            <TableHead className="text-end">{tr("activity")}</TableHead>
+                            <TableHead className="text-end">{tr("status")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {ledgerSourceRows.map((row) => (
                             <TableRow key={row.source}>
                               <TableCell className="capitalize">{row.source}</TableCell>
-                              <TableCell className="text-right font-mono">
-                                {row.entryCount}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {row.lineCount}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">{row.entryCount}</TableCell>
+                              <TableCell className="text-end font-mono">{row.lineCount}</TableCell>
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(row.amountAed, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-end">
                                 <Badge variant={row.needsReview ? "warning" : "success"} dot>
-                                  {row.needsReview ? "Review" : "Linked"}
+                                  {row.needsReview ? tr("review") : tr("linked")}
                                 </Badge>
                               </TableCell>
                             </TableRow>
@@ -20951,7 +21225,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No journal sources found for this period.
+                        {tr("noJournalSourcesFoundForThis")}
                       </div>
                     )}
                   </CardContent>
@@ -20962,20 +21236,23 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>General ledger detail</CardTitle>
+                      <CardTitle>{tr("generalLedgerDetail")}</CardTitle>
                       <CardDescription>
                         {dateRange.from && dateRange.to
                           ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-                          : "All posted journal entry dates"}
+                          : tr("allPostedJournalEntryDates")}
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">
-                        {ledgerLines.length} rows · page {ledgerDetailCurrentPage} of{" "}
-                        {ledgerDetailPageCount}
+                        {tr("rowsPageOf", {
+                          ledgerLinesCount: ledgerLines.length,
+                          ledgerDetailCurrentPage,
+                          ledgerDetailPageCount,
+                        })}
                       </Badge>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/journal">Open journal</Link>
+                        <Link href="/journal">{tr("openJournal")}</Link>
                       </Button>
                     </div>
                   </div>
@@ -20986,26 +21263,27 @@ export default function Reports() {
                   ) : ledgerLines.length ? (
                     <div className="space-y-3">
                       <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                        Showing rows {ledgerDetailStartIndex + 1}-
+                        {tr("showingRows", { value: ledgerDetailStartIndex + 1 })}
                         {Math.min(
                           ledgerDetailStartIndex + ledgerDetailPageSize,
                           ledgerLines.length
                         )}{" "}
-                        of {ledgerLines.length}. Excel and Google Sheets exports include every
-                        filtered ledger line.
+                        {tr("ofExcelAndGoogleSheetsExports", {
+                          ledgerLinesCount: ledgerLines.length,
+                        })}
                       </div>
                       <div className="overflow-x-auto rounded-md border">
                         <Table className="min-w-[980px]">
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Entry</TableHead>
-                              <TableHead>Date</TableHead>
-                              <TableHead>Account</TableHead>
-                              <TableHead>Source</TableHead>
-                              <TableHead>Memo</TableHead>
-                              <TableHead className="text-right">Debit</TableHead>
-                              <TableHead className="text-right">Credit</TableHead>
-                              <TableHead>Flags</TableHead>
+                              <TableHead>{tr("entry")}</TableHead>
+                              <TableHead>{tr("date")}</TableHead>
+                              <TableHead>{tr("account")}</TableHead>
+                              <TableHead>{tr("source")}</TableHead>
+                              <TableHead>{tr("memo")}</TableHead>
+                              <TableHead className="text-end">{tr("debit")}</TableHead>
+                              <TableHead className="text-end">{tr("credit")}</TableHead>
+                              <TableHead>{tr("flags")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -21019,7 +21297,10 @@ export default function Reports() {
                                 </TableCell>
                                 <TableCell>
                                   <div className="font-medium">{line.accountName}</div>
-                                  <div className="font-mono text-xs text-muted-foreground">
+                                  <div
+                                    dir="ltr"
+                                    className="font-mono text-xs text-muted-foreground"
+                                  >
                                     {line.accountCode || "-"}
                                   </div>
                                 </TableCell>
@@ -21027,10 +21308,10 @@ export default function Reports() {
                                 <TableCell className="max-w-[240px] truncate text-muted-foreground">
                                   {line.memo || "-"}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {line.credit > 0
                                     ? formatCurrency(line.credit, "AED", locale)
                                     : "-"}
@@ -21049,7 +21330,7 @@ export default function Reports() {
                       </div>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-xs text-muted-foreground">
-                          Table is paginated for readability; exports are not truncated.
+                          {tr("tableIsPaginatedForReadabilityExports")}
                         </p>
                         <div className="flex items-center gap-2">
                           <Button
@@ -21059,8 +21340,8 @@ export default function Reports() {
                             disabled={ledgerDetailCurrentPage <= 1}
                             onClick={() => setLedgerDetailPage((page) => Math.max(1, page - 1))}
                           >
-                            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                            Previous
+                            <ArrowLeft className="me-1.5 h-3.5 w-3.5" />
+                            {tr("previous")}
                           </Button>
                           <Button
                             type="button"
@@ -21073,15 +21354,15 @@ export default function Reports() {
                               )
                             }
                           >
-                            Next
-                            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                            {tr("next2")}
+                            <ArrowRight className="ms-1.5 h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No posted journal lines found for this period.
+                      {tr("noPostedJournalLinesFoundFor")}
                     </div>
                   )}
                 </CardContent>
@@ -21097,7 +21378,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Close Readiness</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("closeReadiness2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21106,7 +21387,7 @@ export default function Reports() {
                     {monthEndCloseLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {monthEndReadinessPercent}%
                       </div>
                     )}
@@ -21115,7 +21396,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("completed")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <CheckCircle2 className="h-4 w-4 text-success " />
                     </div>
@@ -21124,14 +21405,16 @@ export default function Reports() {
                     {monthEndCloseLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">{monthEndCompletedChecks}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
+                        {monthEndCompletedChecks}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("needsReview2")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <AlertTriangle className="h-4 w-4 text-warning " />
                     </div>
@@ -21140,20 +21423,24 @@ export default function Reports() {
                     {monthEndCloseLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">{monthEndReviewChecks}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
+                        {monthEndReviewChecks}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Close Period</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("closePeriod")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="font-mono text-2xl font-bold">{monthEndPeriod}</div>
+                    <div dir="ltr" className="font-mono text-2xl font-bold">
+                      {monthEndPeriod}
+                    </div>
                     <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
                   </CardContent>
                 </Card>
@@ -21163,7 +21450,7 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Month-End Close Status</CardTitle>
+                      <CardTitle>{tr("monthEndCloseStatus2")}</CardTitle>
                       <CardDescription>
                         {monthEndCloseStatus
                           ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
@@ -21171,7 +21458,7 @@ export default function Reports() {
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/month-end">Open month-end</Link>
+                      <Link href="/month-end">{tr("openMonthEnd")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -21182,10 +21469,10 @@ export default function Reports() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Check</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Details</TableHead>
+                          <TableHead>{tr("check")}</TableHead>
+                          <TableHead>{tr("status")}</TableHead>
+                          <TableHead>{tr("description")}</TableHead>
+                          <TableHead>{tr("details")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -21197,7 +21484,7 @@ export default function Reports() {
                                 variant={item.status === "complete" ? "success" : "warning"}
                                 dot
                               >
-                                {item.status === "complete" ? "Complete" : "Needs review"}
+                                {item.status === "complete" ? tr("complete") : tr("needsReview")}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
@@ -21210,7 +21497,7 @@ export default function Reports() {
                     </Table>
                   ) : (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No month-end close checks found for this period.
+                      {tr("noMonthEndCloseChecksFound")}
                     </div>
                   )}
                 </CardContent>
@@ -21219,11 +21506,11 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle id="audit-trail-title">Audit Trail</CardTitle>
+                      <CardTitle id="audit-trail-title">{tr("auditTrail2")}</CardTitle>
                       <CardDescription>{auditTrailPeriodLabel}</CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/history">Open history</Link>
+                      <Link href="/history">{tr("openHistory")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -21234,26 +21521,28 @@ export default function Reports() {
                     <>
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Events</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("events")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {auditTrailReport.logCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">High risk</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("highRisk")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {auditTrailReport.highRiskCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Posting actions</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">
+                            {tr("postingActions")}
+                          </div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {auditTrailReport.postingActionCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Users</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("users")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {auditTrailReport.userCount}
                           </div>
                         </div>
@@ -21261,21 +21550,21 @@ export default function Reports() {
 
                       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                         <div className="space-y-3">
-                          <div className="text-sm font-medium">Activity by action</div>
+                          <div className="text-sm font-medium">{tr("activityByAction")}</div>
                           {auditTrailReport.actionRows.slice(0, 6).length ? (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Action</TableHead>
-                                  <TableHead className="text-right">Events</TableHead>
-                                  <TableHead>Latest</TableHead>
+                                  <TableHead>{tr("action")}</TableHead>
+                                  <TableHead className="text-end">{tr("events")}</TableHead>
+                                  <TableHead>{tr("latest")}</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {auditTrailReport.actionRows.slice(0, 6).map((row) => (
                                   <TableRow key={row.key}>
                                     <TableCell className="capitalize">{row.label}</TableCell>
-                                    <TableCell className="text-right font-mono">
+                                    <TableCell className="text-end font-mono">
                                       {row.count}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
@@ -21287,27 +21576,27 @@ export default function Reports() {
                             </Table>
                           ) : (
                             <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                              No activity actions found for this period.
+                              {tr("noActivityActionsFoundForThis")}
                             </div>
                           )}
                         </div>
 
                         <div className="space-y-3">
-                          <div className="text-sm font-medium">Activity by record type</div>
+                          <div className="text-sm font-medium">{tr("activityByRecordType")}</div>
                           {auditTrailReport.entityRows.slice(0, 6).length ? (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Record type</TableHead>
-                                  <TableHead className="text-right">Events</TableHead>
-                                  <TableHead>Latest</TableHead>
+                                  <TableHead>{tr("recordType")}</TableHead>
+                                  <TableHead className="text-end">{tr("events")}</TableHead>
+                                  <TableHead>{tr("latest")}</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {auditTrailReport.entityRows.slice(0, 6).map((row) => (
                                   <TableRow key={row.key}>
                                     <TableCell className="capitalize">{row.label}</TableCell>
-                                    <TableCell className="text-right font-mono">
+                                    <TableCell className="text-end font-mono">
                                       {row.count}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
@@ -21319,7 +21608,7 @@ export default function Reports() {
                             </Table>
                           ) : (
                             <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                              No audited record types found for this period.
+                              {tr("noAuditedRecordTypesFoundFor")}
                             </div>
                           )}
                         </div>
@@ -21330,11 +21619,11 @@ export default function Reports() {
                           <Table className="min-w-[920px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Record</TableHead>
-                                <TableHead>Risk</TableHead>
-                                <TableHead>Description</TableHead>
+                                <TableHead>{tr("date")}</TableHead>
+                                <TableHead>{tr("action")}</TableHead>
+                                <TableHead>{tr("record")}</TableHead>
+                                <TableHead>{tr("risk")}</TableHead>
+                                <TableHead>{tr("description")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -21346,7 +21635,10 @@ export default function Reports() {
                                   <TableCell className="capitalize">{row.actionLabel}</TableCell>
                                   <TableCell>
                                     <div className="capitalize">{row.entityLabel}</div>
-                                    <div className="font-mono text-xs text-muted-foreground">
+                                    <div
+                                      dir="ltr"
+                                      className="font-mono text-xs text-muted-foreground"
+                                    >
                                       {row.entityId || "-"}
                                     </div>
                                   </TableCell>
@@ -21365,7 +21657,7 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                          No activity logs found for this period.
+                          {tr("noActivityLogsFoundForThis")}
                         </div>
                       )}
                     </>
@@ -21376,14 +21668,15 @@ export default function Reports() {
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <CardTitle>Management roll-up</CardTitle>
+                      <CardTitle>{tr("managementRollUp")}</CardTitle>
                       <CardDescription>
-                        {consolidatedStatementsReport.periodLabel}. Accessible-company management
-                        view; no eliminations applied.
+                        {tr("accessibleCompanyManagementViewNoEliminations", {
+                          periodLabel: consolidatedStatementsReport.periodLabel,
+                        })}
                       </CardDescription>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/financial-statements">Open statements</Link>
+                      <Link href="/financial-statements">{tr("openStatements")}</Link>
                     </Button>
                   </div>
                 </CardHeader>
@@ -21394,15 +21687,15 @@ export default function Reports() {
                     <>
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Entities</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("entities")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {consolidatedStatementsReport.loadedEntityCount}/
                             {consolidatedStatementsReport.entityCount}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Revenue</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("revenue")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {formatCurrency(
                               consolidatedStatementsReport.totalRevenue,
                               "AED",
@@ -21411,14 +21704,14 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Net profit</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("netProfit")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {formatCurrency(consolidatedStatementsReport.netProfit, "AED", locale)}
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Assets</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("assets")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {formatCurrency(
                               consolidatedStatementsReport.totalAssets,
                               "AED",
@@ -21427,8 +21720,8 @@ export default function Reports() {
                           </div>
                         </div>
                         <div className="rounded-md border p-3">
-                          <div className="text-xs text-muted-foreground">Review items</div>
-                          <div className="font-mono text-xl font-semibold">
+                          <div className="text-xs text-muted-foreground">{tr("reviewItems")}</div>
+                          <div dir="ltr" className="font-mono text-xl font-semibold">
                             {consolidatedStatementsReport.reviewCount}
                           </div>
                         </div>
@@ -21453,13 +21746,13 @@ export default function Reports() {
                           <Table className="min-w-[980px]">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Company</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Revenue</TableHead>
-                                <TableHead className="text-right">Net profit</TableHead>
-                                <TableHead className="text-right">Assets</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Review</TableHead>
+                                <TableHead>{tr("company")}</TableHead>
+                                <TableHead>{tr("type")}</TableHead>
+                                <TableHead className="text-end">{tr("revenue")}</TableHead>
+                                <TableHead className="text-end">{tr("netProfit")}</TableHead>
+                                <TableHead className="text-end">{tr("assets")}</TableHead>
+                                <TableHead>{tr("status")}</TableHead>
+                                <TableHead>{tr("review")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -21472,13 +21765,13 @@ export default function Reports() {
                                     </div>
                                   </TableCell>
                                   <TableCell className="capitalize">{row.companyType}</TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(row.revenue, "AED", locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(row.netProfit, "AED", locale)}
                                   </TableCell>
-                                  <TableCell className="text-right font-mono">
+                                  <TableCell className="text-end font-mono">
                                     {formatCurrency(row.assets, "AED", locale)}
                                   </TableCell>
                                   <TableCell>
@@ -21487,7 +21780,7 @@ export default function Reports() {
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="max-w-[360px] text-sm text-muted-foreground">
-                                    {row.reviewReason || "Ready for accountant pack."}
+                                    {row.reviewReason || tr("readyForAccountantPack")}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -21496,7 +21789,7 @@ export default function Reports() {
                         </div>
                       ) : (
                         <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                          No accessible companies found for this management roll-up.
+                          {tr("noAccessibleCompaniesFoundForThis")}
                         </div>
                       )}
                     </>
@@ -21514,7 +21807,7 @@ export default function Reports() {
               >
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Budget</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("budget")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21523,7 +21816,7 @@ export default function Reports() {
                     {planningLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(planningReport.budgetTotal, "AED", locale)}
                       </div>
                     )}
@@ -21532,7 +21825,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Actual</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("actual")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21541,7 +21834,7 @@ export default function Reports() {
                     {planningLoading ? (
                       <Skeleton className="h-8 w-32" />
                     ) : (
-                      <div className="font-mono text-2xl font-bold">
+                      <div dir="ltr" className="font-mono text-2xl font-bold">
                         {formatCurrency(planningReport.actualTotal, "AED", locale)}
                       </div>
                     )}
@@ -21550,7 +21843,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Variance</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("variance")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       {planningReport.variance >= 0 ? (
                         <CheckCircle2 className="h-4 w-4 text-success " />
@@ -21564,11 +21857,11 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {formatCurrency(planningReport.variance, "AED", locale)}
                         </div>
                         <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
-                          {planningReport.variance >= 0 ? "Under budget" : "Over budget"}
+                          {planningReport.variance >= 0 ? tr("underBudget") : tr("overBudget")}
                         </Badge>
                       </div>
                     )}
@@ -21577,7 +21870,7 @@ export default function Reports() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                    <CardTitle className="text-sm font-medium">Projected Cash</CardTitle>
+                    <CardTitle className="text-sm font-medium">{tr("projectedCash")}</CardTitle>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
                       <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -21587,7 +21880,7 @@ export default function Reports() {
                       <Skeleton className="h-8 w-32" />
                     ) : (
                       <div className="space-y-1">
-                        <div className="font-mono text-2xl font-bold">
+                        <div dir="ltr" className="font-mono text-2xl font-bold">
                           {formatCurrency(planningReport.projectedEndingBalance, "AED", locale)}
                         </div>
                         <Badge
@@ -21613,15 +21906,15 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Budget vs actual</CardTitle>
+                        <CardTitle>{tr("budgetVsActual")}</CardTitle>
                         <CardDescription>
                           {planningReport.budget
                             ? `${planningReport.budget.name} (${planningReport.budget.fiscalYear})`
-                            : "Create a budget to compare actuals."}
+                            : tr("createABudgetToCompareActuals")}
                         </CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/budgets">Open budgets</Link>
+                        <Link href="/budgets">{tr("openBudgets")}</Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -21632,32 +21925,32 @@ export default function Reports() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Budget</TableHead>
-                            <TableHead className="text-right">Actual</TableHead>
-                            <TableHead className="text-right">Variance</TableHead>
-                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead>{tr("category")}</TableHead>
+                            <TableHead className="text-end">{tr("budget")}</TableHead>
+                            <TableHead className="text-end">{tr("actual")}</TableHead>
+                            <TableHead className="text-end">{tr("variance")}</TableHead>
+                            <TableHead className="text-end">{tr("status")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {planningReport.largestVarianceLines.map((line) => (
                             <TableRow key={line.id}>
                               <TableCell className="font-medium">{line.category}</TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(line.totals.budget, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className="text-end font-mono">
                                 {formatCurrency(line.totals.actual, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className="text-end font-mono font-medium">
                                 {formatCurrency(line.totals.variance, "AED", locale)}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-end">
                                 <Badge
                                   variant={line.totals.variance >= 0 ? "success" : "warning"}
                                   dot
                                 >
-                                  {line.totals.variance >= 0 ? "Under" : "Over"}
+                                  {line.totals.variance >= 0 ? tr("under") : tr("over")}
                                 </Badge>
                               </TableCell>
                             </TableRow>
@@ -21666,7 +21959,7 @@ export default function Reports() {
                       </Table>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No budget variance data available.
+                        {tr("noBudgetVarianceDataAvailable")}
                       </div>
                     )}
                   </CardContent>
@@ -21676,13 +21969,11 @@ export default function Reports() {
                   <CardHeader>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <CardTitle>Cash flow forecast</CardTitle>
-                        <CardDescription>
-                          90-day projected inflows, outflows, and balance.
-                        </CardDescription>
+                        <CardTitle>{tr("cashFlowForecast")}</CardTitle>
+                        <CardDescription>{tr("n90DayProjectedInflowsOutflowsAnd")}</CardDescription>
                       </div>
                       <Button asChild size="sm" variant="outline">
-                        <Link href="/cashflow-forecast">Open forecast</Link>
+                        <Link href="/cashflow-forecast">{tr("openForecast")}</Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -21694,27 +21985,29 @@ export default function Reports() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Week</TableHead>
-                              <TableHead>Period</TableHead>
-                              <TableHead className="text-right">In</TableHead>
-                              <TableHead className="text-right">Out</TableHead>
-                              <TableHead className="text-right">Balance</TableHead>
+                              <TableHead>{tr("week")}</TableHead>
+                              <TableHead>{tr("period")}</TableHead>
+                              <TableHead className="text-end">{tr("in")}</TableHead>
+                              <TableHead className="text-end">{tr("out")}</TableHead>
+                              <TableHead className="text-end">{tr("balance")}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {planningReport.projections.map((row) => (
                               <TableRow key={row.week}>
-                                <TableCell className="font-medium">Week {row.week}</TableCell>
+                                <TableCell className="font-medium">
+                                  {tr("week2", { week: row.week })}
+                                </TableCell>
                                 <TableCell className="text-muted-foreground">
                                   {row.weekStart} - {row.weekEnd}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.expectedInflows, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
+                                <TableCell className="text-end font-mono">
                                   {formatCurrency(row.expectedOutflows, "AED", locale)}
                                 </TableCell>
-                                <TableCell className="text-right font-mono font-medium">
+                                <TableCell className="text-end font-mono font-medium">
                                   {formatCurrency(row.projectedBalance, "AED", locale)}
                                 </TableCell>
                               </TableRow>
@@ -21724,7 +22017,7 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No cash flow projection data available.
+                        {tr("noCashFlowProjectionDataAvailable")}
                       </div>
                     )}
                   </CardContent>
@@ -21733,28 +22026,26 @@ export default function Reports() {
 
               <Card className={cn(hasFocusedReportSelection && "hidden")}>
                 <CardHeader>
-                  <CardTitle>Planning automation</CardTitle>
-                  <CardDescription>
-                    Signals that should drive alerts and follow-up workflows.
-                  </CardDescription>
+                  <CardTitle>{tr("planningAutomation")}</CardTitle>
+                  <CardDescription>{tr("signalsThatShouldDriveAlertsAnd")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Over-budget lines</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("overBudgetLines")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {planningReport.overBudgetLines}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Cash movement</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("cashMovement")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {formatCurrency(planningReport.cashMovement, "AED", locale)}
                       </div>
                     </div>
                     <div className="rounded-md border p-4">
-                      <div className="text-xs text-muted-foreground">Forecast insights</div>
-                      <div className="font-mono text-2xl font-semibold">
+                      <div className="text-xs text-muted-foreground">{tr("forecastInsights")}</div>
+                      <div dir="ltr" className="font-mono text-2xl font-semibold">
                         {planningReport.insights.length}
                       </div>
                     </div>

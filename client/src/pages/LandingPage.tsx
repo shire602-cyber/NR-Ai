@@ -36,167 +36,157 @@ import {
   hoverLift,
 } from "@/lib/animations";
 import { useI18n } from "@/lib/i18n";
+import { messages as pageMessages } from "./LandingPage.i18n";
 
 // ──────────────────────────────────────────────
 // Data
 // ──────────────────────────────────────────────
 
-const features = [
+const getFeatures = () => [
   {
     icon: Scan,
-    title: "AI Receipt OCR",
-    description:
-      "Photograph receipts and review AI-extracted vendor, amount, date, and VAT fields before posting.",
+    title: pageMessages.t("aiReceiptOcr"),
+    description: pageMessages.t("photographReceiptsAndReviewAiExtracted"),
     color: "text-chart-5",
     bg: "bg-chart-5/10",
   },
   {
     icon: FileCheck,
-    title: "VAT Workflows",
-    description:
-      "VAT 201 workpapers, e-invoicing support, and audit-ready ledgers for UAE tax review.",
+    title: pageMessages.t("vatWorkflows"),
+    description: pageMessages.t("vat201WorkpapersEInvoicingSupport"),
     color: "text-info",
     bg: "bg-info/10",
   },
   {
     icon: RefreshCw,
-    title: "Bank Reconciliation",
-    description:
-      "CSV statement imports with smart matching for UAE bank layouts. Reconcile statement lines before posting.",
+    title: pageMessages.t("bankReconciliation"),
+    description: pageMessages.t("csvStatementImportsWithSmartMatching"),
     color: "text-success",
     bg: "bg-success/10",
   },
   {
     icon: Globe,
-    title: "Multi-Currency",
-    description:
-      "AED as home currency with real-time FX rates for USD, EUR, GBP, and 150+ more. Gain/loss auto-posted.",
+    title: pageMessages.t("multiCurrency"),
+    description: pageMessages.t("aedAsHomeCurrencyWithReal"),
     color: "text-warning",
     bg: "bg-warning/10",
   },
   {
     icon: Languages,
-    title: "Arabic + English",
-    description:
-      "Full bilingual interface and documents. Switch between Arabic and English with one click.",
+    title: pageMessages.t("arabicEnglish"),
+    description: pageMessages.t("fullBilingualInterfaceAndDocumentsSwitch"),
     color: "text-destructive",
     bg: "bg-destructive/10",
   },
   {
     icon: LayoutDashboard,
-    title: "Real-Time Dashboard",
-    description:
-      "Cash flow, P&L, VAT liability, and KPIs updated live. Spot issues before month-end.",
+    title: pageMessages.t("realTimeDashboard"),
+    description: pageMessages.t("cashFlowPLVatLiability"),
     color: "text-info",
     bg: "bg-info/10",
   },
   {
     icon: FileText,
-    title: "Invoice Management",
-    description:
-      "Create VAT-ready tax invoices, send by email, and track payment status from the invoice list.",
+    title: pageMessages.t("invoiceManagement"),
+    description: pageMessages.t("createVatReadyTaxInvoicesSend"),
     color: "text-info",
     bg: "bg-info/10",
   },
   {
     icon: Users,
-    title: "Payroll (WPS SIF)",
-    description:
-      "Generate WPS-compliant SIF files, calculate end-of-service gratuity, and manage leave accruals.",
+    title: pageMessages.t("payrollWpsSif"),
+    description: pageMessages.t("generateWpsCompliantSifFilesCalculate"),
     color: "text-chart-5",
     bg: "bg-chart-5/10",
   },
 ];
 
-const steps = [
+const getSteps = () => [
   {
     number: "01",
-    title: "Sign Up",
-    description:
-      "Create your account in under 2 minutes. No credit card required for the free tier.",
+    title: pageMessages.t("signUp"),
+    description: pageMessages.t("createYourAccountInUnder2"),
     icon: CheckCircle2,
   },
   {
     number: "02",
-    title: "Import Your Statement",
-    description:
-      "Use the sample CSV or upload UAE bank statement exports, then review match suggestions before posting.",
+    title: pageMessages.t("importYourStatement"),
+    description: pageMessages.t("useTheSampleCsvOrUpload"),
     icon: Shield,
   },
   {
     number: "03",
-    title: "Review Suggested Work",
-    description:
-      "Review suggested categories, VAT extraction, invoice matches, and generated reports before relying on them.",
+    title: pageMessages.t("reviewSuggestedWork"),
+    description: pageMessages.t("reviewSuggestedCategoriesVatExtractionInvoice"),
     icon: Zap,
   },
 ];
 
-const plans = [
+const getPlans = () => [
   {
     name: "Free",
     price: "0",
     period: "forever",
-    description: "Perfect for sole traders and freelancers getting started.",
-    cta: "Start Free",
+    description: pageMessages.t("perfectForSoleTradersAndFreelancers"),
+    cta: pageMessages.t("startFree"),
     href: "/register",
     popular: false,
     features: [
-      "50 transactions / month",
-      "5 invoices / month",
-      "Receipt OCR (10/mo)",
-      "VAT calculator",
-      "English only",
-      "Email support",
+      pageMessages.t("n50TransactionsMonth"),
+      pageMessages.t("n5InvoicesMonth"),
+      pageMessages.t("receiptOcr10Mo"),
+      pageMessages.t("vatCalculator"),
+      pageMessages.t("englishOnly"),
+      pageMessages.t("emailSupport"),
     ],
   },
   {
     name: "Professional",
     price: "99",
     period: "/month",
-    description: "Everything a growing UAE SME needs — guided and automated where supported.",
-    cta: "Start Free Trial",
+    description: pageMessages.t("everythingAGrowingUaeSmeNeeds"),
+    cta: pageMessages.t("startFreeTrial"),
     href: "/register",
     popular: true,
     features: [
-      "Unlimited transactions",
-      "Unlimited invoices",
-      "Unlimited Receipt OCR",
-      "VAT 201 workpaper export",
-      "Bank reconciliation",
-      "Multi-currency (AED + 150+)",
-      "Arabic + English UI",
-      "WPS Payroll (SIF)",
-      "Real-time dashboard",
-      "Email notifications",
-      "Priority support",
+      pageMessages.t("unlimitedTransactions"),
+      pageMessages.t("unlimitedInvoices"),
+      pageMessages.t("unlimitedReceiptOcr"),
+      pageMessages.t("vat201WorkpaperExport"),
+      pageMessages.t("bankReconciliation2"),
+      pageMessages.t("multiCurrencyAed150"),
+      pageMessages.t("arabicEnglishUi"),
+      pageMessages.t("wpsPayrollSif"),
+      pageMessages.t("realTimeDashboard2"),
+      pageMessages.t("emailNotifications"),
+      pageMessages.t("prioritySupport"),
     ],
   },
   {
     name: "Enterprise",
     price: "Custom",
     period: "",
-    description: "For accounting firms and multi-entity businesses.",
-    cta: "Contact Us",
+    description: pageMessages.t("forAccountingFirmsAndMultiEntity"),
+    cta: pageMessages.t("contactUs"),
     href: "mailto:hello@muhasib.ai",
     popular: false,
     features: [
-      "Everything in Professional",
-      "Multi-entity / group companies",
-      "Dedicated account manager",
-      "Custom integrations",
-      "Enterprise support terms",
-      "On-site training",
-      "Tax audit preparation support",
+      pageMessages.t("everythingInProfessional"),
+      pageMessages.t("multiEntityGroupCompanies"),
+      pageMessages.t("dedicatedAccountManager"),
+      pageMessages.t("customIntegrations"),
+      pageMessages.t("enterpriseSupportTerms"),
+      pageMessages.t("onSiteTraining"),
+      pageMessages.t("taxAuditPreparationSupport"),
     ],
   },
 ];
 
-const stats = [
-  { value: 12000, suffix: "+", label: "Invoices Generated" },
-  { value: 99, suffix: "%", label: "AI Accuracy Rate" },
-  { value: 20, suffix: "hrs", label: "Saved Per Month" },
-  { value: 500, suffix: "+", label: "UAE Businesses" },
+const getStats = () => [
+  { value: 12000, suffix: "+", label: pageMessages.t("invoicesGenerated") },
+  { value: 99, suffix: "%", label: pageMessages.t("aiAccuracyRate") },
+  { value: 20, suffix: "hrs", label: pageMessages.t("savedPerMonth") },
+  { value: 500, suffix: "+", label: pageMessages.t("uaeBusinesses") },
 ];
 
 // ──────────────────────────────────────────────
@@ -204,6 +194,8 @@ const stats = [
 // ──────────────────────────────────────────────
 
 export default function LandingPage() {
+  const tr = pageMessages.useT();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { locale, setLocale } = useI18n();
@@ -220,7 +212,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Navbar ── */}
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        className={`fixed top-0 start-0 end-0 z-50 transition-all duration-300 ${
           scrolled ? "bg-background/95 backdrop-blur border-b shadow-sm" : "bg-transparent"
         }`}
       >
@@ -242,25 +234,25 @@ export default function LandingPage() {
                 href="#features"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Features
+                {tr("features")}
               </a>
               <a
                 href="#how-it-works"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                How it works
+                {tr("howItWorks")}
               </a>
               <a
                 href="#pricing"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Pricing
+                {tr("pricing")}
               </a>
               <a
                 href="#contact"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Contact
+                {tr("contact")}
               </a>
             </nav>
 
@@ -270,23 +262,24 @@ export default function LandingPage() {
                 variant="ghost"
                 size="sm"
                 onClick={toggleLocale}
-                aria-label={locale === "en" ? "Switch to Arabic" : "Switch to English"}
+                aria-label={locale === "en" ? tr("switchToArabic") : tr("switchToEnglish")}
                 data-testid="button-language-toggle"
                 className="gap-1.5"
               >
                 <Languages className="w-4 h-4" />
                 <span className="text-xs font-semibold">
-                  {locale === "en" ? "العربية" : "English"}
+                  {/* The switch label names the OTHER language in its own script. */}
+                  {tr.locale === "en" ? "العربية" : "English"}
                 </span>
               </Button>
               <Link href="/login">
                 <Button variant="ghost" size="sm">
-                  Sign In
+                  {tr("signIn")}
                 </Button>
               </Link>
               <Link href="/register">
                 <Button size="sm" className="bg-primary hover:bg-primary/90">
-                  Start Free Trial
+                  {tr("startFreeTrial")}
                 </Button>
               </Link>
             </div>
@@ -295,7 +288,7 @@ export default function LandingPage() {
             <button
               className="md:hidden p-2 rounded-md hover:bg-muted transition-colors"
               onClick={() => setMenuOpen((o) => !o)}
-              aria-label="Toggle menu"
+              aria-label={tr("toggleMenu")}
             >
               {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -317,28 +310,28 @@ export default function LandingPage() {
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Features
+                  {tr("features")}
                 </a>
                 <a
                   href="#how-it-works"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  How it works
+                  {tr("howItWorks")}
                 </a>
                 <a
                   href="#pricing"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Pricing
+                  {tr("pricing")}
                 </a>
                 <a
                   href="#contact"
                   onClick={() => setMenuOpen(false)}
                   className="text-sm font-medium py-2"
                 >
-                  Contact
+                  {tr("contact")}
                 </a>
                 <Separator />
                 <Button
@@ -351,16 +344,16 @@ export default function LandingPage() {
                   data-testid="button-language-toggle-mobile"
                 >
                   <Languages className="w-4 h-4" />
-                  {locale === "en" ? "العربية" : "English"}
+                  {tr.locale === "en" ? "العربية" : "English"}
                 </Button>
                 <Link href="/login">
                   <Button variant="outline" className="w-full" onClick={() => setMenuOpen(false)}>
-                    Sign In
+                    {tr("signIn")}
                   </Button>
                 </Link>
                 <Link href="/register">
                   <Button className="w-full bg-primary" onClick={() => setMenuOpen(false)}>
-                    Start Free Trial
+                    {tr("startFreeTrial")}
                   </Button>
                 </Link>
               </div>
@@ -374,7 +367,7 @@ export default function LandingPage() {
         {/* Background gradient blobs */}
         <div className="absolute inset-0 -z-10">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
-          <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-chart-5/5 rounded-full blur-3xl" />
+          <div className="absolute top-20 end-0 w-[400px] h-[400px] bg-chart-5/5 rounded-full blur-3xl" />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -383,22 +376,21 @@ export default function LandingPage() {
               variant="outline"
               className="mb-6 px-4 py-1.5 text-sm font-medium border-primary/30 text-primary bg-primary/5"
             >
-              <Award className="w-3.5 h-3.5 mr-1.5" />
-              Powered by Najma Al Raeda — Registered UAE Accounting Firm
+              <Award className="w-3.5 h-3.5 me-1.5" />
+              {tr("poweredByNajmaAlRaedaRegistered")}
             </Badge>
           </ScrollReveal>
 
           <ScrollReveal delay={0.1}>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
-              AI Bookkeeping <span className="text-primary">Built for</span>
-              <br className="hidden sm:block" /> UAE Businesses
+              {tr("aiBookkeeping")} <span className="text-primary">{tr("builtFor")}</span>
+              <br className="hidden sm:block" /> {tr("uaeBusinesses")}
             </h1>
           </ScrollReveal>
 
           <ScrollReveal delay={0.2}>
             <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-              VAT workflow support, AI receipt scanning, and full Arabic support for UAE SMEs in one
-              platform.
+              {tr("vatWorkflowSupportAiReceiptScanning")}
             </p>
           </ScrollReveal>
 
@@ -410,28 +402,28 @@ export default function LandingPage() {
                     size="lg"
                     className="bg-primary hover:bg-primary/90 px-8 text-base h-12 shadow-lg shadow-primary/25"
                   >
-                    Start Free Trial
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    {tr("startFreeTrial")}
+                    <ArrowRight className="w-4 h-4 ms-2" />
                   </Button>
                 </motion.div>
               </Link>
               <a href="mailto:hello@muhasib.ai">
                 <motion.div whileHover={hoverLift}>
                   <Button size="lg" variant="outline" className="px-8 text-base h-12">
-                    Book a Demo
-                    <ChevronRight className="w-4 h-4 ml-1" />
+                    {tr("bookADemo")}
+                    <ChevronRight className="w-4 h-4 ms-1" />
                   </Button>
                 </motion.div>
               </a>
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              No credit card required · Cancel anytime · Guided launch onboarding
+              {tr("noCreditCardRequiredCancelAnytime")}
             </p>
           </ScrollReveal>
 
           {/* Stats */}
           <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-3xl mx-auto">
-            {stats.map((stat, i) => (
+            {getStats().map((stat, i) => (
               <ScrollReveal key={stat.label} delay={0.1 * i}>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-primary">
@@ -451,18 +443,18 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              Powerful Features
+              {tr("powerfulFeatures")}
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              Everything You Need to Run Your Finances
+              {tr("everythingYouNeedToRunYour")}
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Built from the ground up for UAE businesses — VAT-ready, bilingual, and AI-assisted.
+              {tr("builtFromTheGroundUpFor")}
             </p>
           </ScrollReveal>
 
           <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {features.map((f) => {
+            {getFeatures().map((f) => {
               const Icon = f.icon;
               return (
                 <StaggerItem key={f.title}>
@@ -495,22 +487,22 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              Simple Setup
+              {tr("simpleSetup")}
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              Up and Running in Minutes
+              {tr("upAndRunningInMinutes")}
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Three steps from sign-up to automated bookkeeping.
+              {tr("threeStepsFromSignUpTo")}
             </p>
           </ScrollReveal>
 
           <div className="relative">
             {/* Connector line (desktop) */}
-            <div className="hidden lg:block absolute top-16 left-1/6 right-1/6 h-px bg-gradient-to-r from-primary/10 via-primary/40 to-primary/10" />
+            <div className="hidden lg:block absolute top-16 start-1/6 end-1/6 h-px bg-gradient-to-r from-primary/10 via-primary/40 to-primary/10" />
 
             <StaggerContainer className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-              {steps.map((step, i) => {
+              {getSteps().map((step, i) => {
                 const Icon = step.icon;
                 return (
                   <StaggerItem key={step.number}>
@@ -519,11 +511,14 @@ export default function LandingPage() {
                         <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/10">
                           <Icon className="w-7 h-7 text-primary" />
                         </div>
-                        <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shadow">
+                        <span className="absolute -top-2 -end-2 w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shadow">
                           {i + 1}
                         </span>
                       </div>
-                      <div className="text-xs font-mono font-bold text-primary/60 mb-2 tracking-widest">
+                      <div
+                        dir="ltr"
+                        className="text-xs font-mono font-bold text-primary/60 mb-2 tracking-widest"
+                      >
                         {step.number}
                       </div>
                       <h3 className="text-xl font-semibold mb-3">{step.title}</h3>
@@ -541,8 +536,8 @@ export default function LandingPage() {
                 size="lg"
                 className="bg-primary hover:bg-primary/90 px-10 shadow-lg shadow-primary/25"
               >
-                Get Started Free
-                <ArrowRight className="w-4 h-4 ml-2" />
+                {tr("getStartedFree")}
+                <ArrowRight className="w-4 h-4 ms-2" />
               </Button>
             </Link>
           </ScrollReveal>
@@ -554,18 +549,18 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-14">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              Simple Pricing
+              {tr("simplePricing")}
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              Start Free, Scale as You Grow
+              {tr("startFreeScaleAsYouGrow")}
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              No hidden fees. No setup costs. Cancel anytime.
+              {tr("noHiddenFeesNoSetupCosts")}
             </p>
           </ScrollReveal>
 
           <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {plans.map((plan) => (
+            {getPlans().map((plan) => (
               <StaggerItem key={plan.name}>
                 <motion.div whileHover={hoverLift} className="h-full">
                   <Card
@@ -578,7 +573,7 @@ export default function LandingPage() {
                     {plan.popular && (
                       <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
                         <Badge className="bg-primary text-white px-4 py-1 text-xs font-semibold shadow-lg">
-                          Most Popular
+                          {tr("mostPopular")}
                         </Badge>
                       </div>
                     )}
@@ -588,7 +583,7 @@ export default function LandingPage() {
                       <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
                       <div className="mt-4 flex items-baseline gap-1">
                         {plan.price === "Custom" ? (
-                          <span className="text-3xl font-bold">Custom</span>
+                          <span className="text-3xl font-bold">{tr("custom")}</span>
                         ) : (
                           <>
                             <span className="text-sm font-medium text-muted-foreground">AED</span>
@@ -644,28 +639,27 @@ export default function LandingPage() {
               </div>
 
               {/* Text */}
-              <div className="flex-1 text-center lg:text-left">
+              <div className="flex-1 text-center lg:text-start">
                 <Badge
                   variant="outline"
                   className="mb-3 border-primary/30 text-primary bg-primary/5"
                 >
-                  Trusted Partner
+                  {tr("trustedPartner")}
                 </Badge>
                 <h2 className="text-2xl lg:text-3xl font-bold mb-3">
-                  Powered by Najma Al Raeda Accounting
+                  {tr("poweredByNajmaAlRaedaAccounting")}
                 </h2>
                 <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                  Muhasib.ai is the official digital platform of{" "}
-                  <strong>Najma Al Raeda (NRA) Accounting</strong> — a UAE-registered accounting
-                  firm with over a decade of experience serving Emirati businesses. NRA supports
-                  accounting review, VAT workflows, and filing preparation through qualified staff.
+                  {tr("muhasibAiIsTheOfficialDigital")}
+                  <strong>{tr("najmaAlRaedaNraAccounting")}</strong>{" "}
+                  {tr("aUaeRegisteredAccountingFirmWith")}
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-4 justify-center lg:justify-start">
                   {[
-                    { icon: Shield, text: "Qualified accounting review" },
-                    { icon: Award, text: "UAE Registered Firm" },
-                    { icon: CheckCircle2, text: "Serving UAE since 2017" },
+                    { icon: Shield, text: tr("qualifiedAccountingReview") },
+                    { icon: Award, text: tr("uaeRegisteredFirm") },
+                    { icon: CheckCircle2, text: tr("servingUaeSince2017") },
                   ].map((item) => {
                     const Icon = item.icon;
                     return (
@@ -687,10 +681,10 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <ScrollReveal>
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-              Ready to Automate Your Bookkeeping?
+              {tr("readyToAutomateYourBookkeeping")}
             </h2>
             <p className="text-primary-foreground/80 text-lg mb-8">
-              Start with guided onboarding, sample data, and VAT-ready workflows for UAE SMEs.
+              {tr("startWithGuidedOnboardingSampleData")}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link href="/register">
@@ -699,8 +693,8 @@ export default function LandingPage() {
                   variant="secondary"
                   className="px-10 h-12 text-base font-semibold shadow-lg"
                 >
-                  Start Free Trial
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  {tr("startFreeTrial")}
+                  <ArrowRight className="w-4 h-4 ms-2" />
                 </Button>
               </Link>
               <a href="mailto:hello@muhasib.ai">
@@ -709,12 +703,12 @@ export default function LandingPage() {
                   variant="outline"
                   className="px-10 h-12 text-base border-white/40 text-white hover:bg-card/10 hover:text-white"
                 >
-                  Book a Demo
+                  {tr("bookADemo")}
                 </Button>
               </a>
             </div>
             <p className="text-primary-foreground/60 text-sm mt-4">
-              Free plan available · No credit card required · Cancel anytime
+              {tr("freePlanAvailableNoCreditCard")}
             </p>
           </ScrollReveal>
         </div>
@@ -725,11 +719,13 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal className="text-center mb-12">
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
-              Get in Touch
+              {tr("getInTouch")}
             </Badge>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">Talk to Our Team</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+              {tr("talkToOurTeam")}
+            </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Questions about VAT, onboarding, or pricing? Our UAE-based team is here to help.
+              {tr("questionsAboutVatOnboardingOrPricing")}
             </p>
           </ScrollReveal>
 
@@ -739,7 +735,7 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <Mail className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-semibold text-base mb-1">Email</h3>
+                <h3 className="font-semibold text-base mb-1">{tr("email")}</h3>
                 <a
                   href="mailto:hello@muhasib.ai"
                   className="text-sm text-primary hover:underline"
@@ -747,7 +743,9 @@ export default function LandingPage() {
                 >
                   hello@muhasib.ai
                 </a>
-                <p className="text-xs text-muted-foreground mt-2">Replies within 1 business day</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {tr("repliesWithin1BusinessDay")}
+                </p>
               </CardContent>
             </Card>
 
@@ -756,7 +754,7 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <Phone className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-semibold text-base mb-1">Phone</h3>
+                <h3 className="font-semibold text-base mb-1">{tr("phone")}</h3>
                 <a
                   href="tel:+97141234567"
                   className="text-sm text-primary hover:underline"
@@ -764,7 +762,7 @@ export default function LandingPage() {
                 >
                   +971 4 123 4567
                 </a>
-                <p className="text-xs text-muted-foreground mt-2">Sun – Thu, 9:00 – 18:00 GST</p>
+                <p className="text-xs text-muted-foreground mt-2">{tr("sunThu9001800")}</p>
               </CardContent>
             </Card>
 
@@ -773,9 +771,11 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <MapPin className="w-5 h-5 text-primary" />
                 </div>
-                <h3 className="font-semibold text-base mb-1">Office</h3>
+                <h3 className="font-semibold text-base mb-1">{tr("office")}</h3>
                 <p className="text-sm text-foreground">Dubai, UAE</p>
-                <p className="text-xs text-muted-foreground mt-2">Najma Al Raeda Accounting LLC</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {tr("najmaAlRaedaAccountingLlc")}
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -795,32 +795,32 @@ export default function LandingPage() {
                 <span className="font-bold text-base">Muhasib.ai</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                AI-assisted accounting for UAE businesses. VAT-ready, bilingual, and guided.
+                {tr("aiAssistedAccountingForUaeBusinesses")}
               </p>
             </div>
 
             {/* Product */}
             <div>
-              <h4 className="font-semibold text-sm mb-3">Product</h4>
+              <h4 className="font-semibold text-sm mb-3">{tr("product")}</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
                   <a href="#features" className="hover:text-foreground transition-colors">
-                    Features
+                    {tr("features")}
                   </a>
                 </li>
                 <li>
                   <a href="#pricing" className="hover:text-foreground transition-colors">
-                    Pricing
+                    {tr("pricing")}
                   </a>
                 </li>
                 <li>
                   <Link href="/login" className="hover:text-foreground transition-colors">
-                    Sign In
+                    {tr("signIn")}
                   </Link>
                 </li>
                 <li>
                   <Link href="/register" className="hover:text-foreground transition-colors">
-                    Sign Up
+                    {tr("signUp")}
                   </Link>
                 </li>
               </ul>
@@ -828,29 +828,29 @@ export default function LandingPage() {
 
             {/* Compliance */}
             <div>
-              <h4 className="font-semibold text-sm mb-3">Compliance</h4>
+              <h4 className="font-semibold text-sm mb-3">{tr("compliance")}</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>VAT 201 Workpaper Exports</li>
-                <li>Corporate Tax (CT)</li>
-                <li>E-Invoicing (Phase 1 & 2)</li>
-                <li>WPS Payroll (SIF)</li>
-                <li>IFRS-Ready Reports</li>
+                <li>{tr("vat201WorkpaperExports")}</li>
+                <li>{tr("corporateTaxCt")}</li>
+                <li>{tr("eInvoicingPhase12")}</li>
+                <li>{tr("wpsPayrollSif")}</li>
+                <li>{tr("ifrsReadyReports")}</li>
               </ul>
-              <h4 className="font-semibold text-sm mt-5 mb-3">Legal</h4>
+              <h4 className="font-semibold text-sm mt-5 mb-3">{tr("legal")}</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>
                   <Link href="/privacy" className="hover:text-foreground transition-colors">
-                    Privacy Policy
+                    {tr("privacyPolicy")}
                   </Link>
                 </li>
                 <li>
                   <Link href="/terms" className="hover:text-foreground transition-colors">
-                    Terms of Service
+                    {tr("termsOfService")}
                   </Link>
                 </li>
                 <li>
                   <Link href="/cookies" className="hover:text-foreground transition-colors">
-                    Cookie Policy
+                    {tr("cookiePolicy")}
                   </Link>
                 </li>
               </ul>
@@ -858,11 +858,11 @@ export default function LandingPage() {
 
             {/* Contact */}
             <div>
-              <h4 className="font-semibold text-sm mb-3">Contact NRA</h4>
+              <h4 className="font-semibold text-sm mb-3">{tr("contactNra")}</h4>
               <ul className="space-y-2.5 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" />
-                  <span>Dubai, United Arab Emirates</span>
+                  <span>{tr("dubaiUnitedArabEmirates")}</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 shrink-0 text-primary" />
@@ -909,7 +909,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-muted-foreground">
             <span>
-              © {new Date().getFullYear()} Muhasib.ai · Powered by Najma Al Raeda Accounting LLC
+              {tr("muhasibAiPoweredByNajmaAl", { getFullYear: new Date().getFullYear() })}
             </span>
             <div className="flex gap-4">
               <Link
@@ -917,21 +917,21 @@ export default function LandingPage() {
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-privacy"
               >
-                Privacy Policy
+                {tr("privacyPolicy")}
               </Link>
               <Link
                 href="/terms"
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-terms"
               >
-                Terms of Service
+                {tr("termsOfService")}
               </Link>
               <Link
                 href="/cookies"
                 className="hover:text-foreground transition-colors"
                 data-testid="link-footer-cookies"
               >
-                Cookie Policy
+                {tr("cookiePolicy")}
               </Link>
             </div>
           </div>

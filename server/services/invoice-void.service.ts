@@ -34,6 +34,7 @@ import { resolveInvoiceFx } from "./invoice-fx";
 import { acquireDocumentLock, LOCK_NS } from "./document-lock";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { syncInvoiceStatusFromBalance } from "./invoice-credit-status";
+import { uaeCalendarDate } from "../utils/date";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("invoice-void");
@@ -61,12 +62,25 @@ export async function voidOrCancelInvoice(args: {
   // Everything that needs the pool is read BEFORE the transaction is opened.
   const preliminary = await storage.getInvoice(invoiceId, companyId);
   if (!preliminary) return fail(404, "INVOICE_NOT_FOUND", "Invoice not found");
+  // An opening-balance invoice posted nothing of its own (its amount is inside the opening
+  // balances), so voiding it would flip the status and leave the receivable in the ledger.
+  if ((preliminary as any).isOpeningBalance) {
+    return fail(
+      409,
+      "OPENING_BALANCE_INVOICE",
+      "This invoice was entered as an opening balance. Reverse the opening balances to remove it."
+    );
+  }
   const accounts = await storage.getAccountsByCompanyId(companyId);
   const accountsReceivable = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
   const vatPayable = accounts.find(
     (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
   );
-  const reversalDate = new Date();
+  // The reversal is dated the UAE calendar day of the void (UTC midnight of that day, the way the
+  // ledger reads dates), because that date decides which VAT period reports the cancellation
+  // (vat-document-effect.ts). postedAt stays the real instant.
+  const postedAtNow = new Date();
+  const reversalDate = uaeCalendarDate(postedAtNow);
   // Block reversal posting into a locked period - without this we could flip
   // status without writing the offsetting JE. Only needed when a JE will be
   // posted (an unposted draft has nothing to reverse).
@@ -183,7 +197,7 @@ export async function voidOrCancelInvoice(args: {
           reversalReason: `Invoice ${targetStatus}`,
           createdBy: userId,
           postedBy: userId,
-          postedAt: reversalDate,
+          postedAt: postedAtNow,
         } as any,
         reversalLines as any,
         { tx }

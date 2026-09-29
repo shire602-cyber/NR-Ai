@@ -54,8 +54,11 @@ import {
   hoverScale,
   hoverLift,
 } from "@/lib/animations";
+import { messages as pageMessages } from "./Landing.i18n";
 
 export default function Landing() {
+  const tr = pageMessages.useT();
+
   const { locale, setLocale } = useI18n();
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -77,142 +80,97 @@ export default function Landing() {
 
   const t = {
     nav: {
-      features: locale === "en" ? "Features" : "الميزات",
-      pricing: locale === "en" ? "Pricing" : "الأسعار",
-      testimonials: locale === "en" ? "Testimonials" : "آراء العملاء",
-      login: locale === "en" ? "Login" : "تسجيل الدخول",
-      getStarted: locale === "en" ? "Start Free" : "ابدأ مجاناً",
-      languageToggle: locale === "en" ? "العربية" : "EN",
+      features: tr("features"),
+      pricing: tr("pricing"),
+      testimonials: tr("testimonials"),
+      login: tr("login"),
+      getStarted: tr("startFree"),
+      // The switch label names the OTHER language in its own script.
+      languageToggle: tr.locale === "en" ? "العربية" : "EN",
     },
     hero: {
-      badge:
-        locale === "en"
-          ? "Serving UAE businesses since 2017 • Registered Accounting Firm"
-          : "نخدم الشركات الإماراتية منذ 2017 • شركة محاسبة مسجلة",
-      headline:
-        locale === "en"
-          ? "AI-Assisted UAE Tax Workflows"
-          : "سير عمل ضريبي إماراتي بمساعدة الذكاء الاصطناعي",
-      headlineAccent:
-        locale === "en"
-          ? "Fast Review. AI-Driven. UAE Tax Ready."
-          : "مراجعة أسرع. مدعوم بالذكاء الاصطناعي. جاهز للضرائب الإماراتية.",
-      subheadline:
-        locale === "en"
-          ? "Track tax deadlines, review AI-assisted categorization, and save time with guided bookkeeping workflows from NR Accounting Services."
-          : "تابع مواعيد الضرائب، وراجع التصنيف بمساعدة الذكاء الاصطناعي، ووفّر الوقت مع سير عمل محاسبي موجه من NR Accounting Services.",
-      ctaPrimary: locale === "en" ? "Start Now for AED 99/month" : "ابدأ الآن بـ 99 درهم/شهر",
-      ctaSecondary: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
-      noCreditCard: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
-      cancelAnytime:
-        locale === "en" ? "UAE tax workflow support" : "دعم سير عمل الضرائب الإماراتية",
+      badge: tr("servingUaeBusinessesSince2017Registered"),
+      headline: tr("aiAssistedUaeTaxWorkflows"),
+      headlineAccent: tr("fastReviewAiDrivenUaeTax"),
+      subheadline: tr("trackTaxDeadlinesReviewAiAssisted"),
+      ctaPrimary: tr("startNowForAed99Month"),
+      ctaSecondary: tr("bookADemo"),
+      noCreditCard: tr("talkToAnExpert"),
+      cancelAnytime: tr("uaeTaxWorkflowSupport"),
     },
     stats: {
-      invoices: locale === "en" ? "VAT-ready invoices" : "فواتير جاهزة لضريبة القيمة المضافة",
-      accuracy: locale === "en" ? "Review prompts" : "تنبيهات المراجعة",
-      timeSaved: locale === "en" ? "CSV bank imports" : "استيراد كشوف البنك CSV",
-      businesses: locale === "en" ? "CT schedules" : "جداول ضريبة الشركات",
+      invoices: tr("vatReadyInvoices"),
+      accuracy: tr("reviewPrompts"),
+      timeSaved: tr("csvBankImports"),
+      businesses: tr("ctSchedules"),
     },
     features: {
-      badge: locale === "en" ? "Powerful Features" : "ميزات قوية",
-      title:
-        locale === "en"
-          ? "Everything You Need to Master Your Finances"
-          : "كل ما تحتاجه لإتقان شؤونك المالية",
-      subtitle:
-        locale === "en"
-          ? "Built from the ground up for UAE businesses with cutting-edge AI technology"
-          : "مصمم من الأساس للشركات الإماراتية بتقنية ذكاء اصطناعي متطورة",
+      badge: tr("powerfulFeatures"),
+      title: tr("everythingYouNeedToMasterYour"),
+      subtitle: tr("builtFromTheGroundUpFor"),
     },
     testimonials: {
-      badge: locale === "en" ? "Loved by Businesses" : "محبوب من الشركات",
-      title: locale === "en" ? "What Our Customers Say" : "ماذا يقول عملاؤنا",
+      badge: tr("lovedByBusinesses"),
+      title: tr("whatOurCustomersSay"),
     },
     pricing: {
-      badge: locale === "en" ? "Simple Pricing" : "أسعار بسيطة",
-      title: locale === "en" ? "Choose Your Plan" : "اختر خطتك",
-      subtitle:
-        locale === "en"
-          ? "Start free, scale as you grow. No hidden fees."
-          : "ابدأ مجاناً، توسع مع نموك. بدون رسوم خفية.",
-      monthly: locale === "en" ? "/month" : "/شهر",
-      popular: locale === "en" ? "Most Popular" : "الأكثر شعبية",
-      getStarted: locale === "en" ? "Get Started" : "ابدأ الآن",
-      contactSales: locale === "en" ? "Contact Sales" : "تواصل مع المبيعات",
+      badge: tr("simplePricing"),
+      title: tr("chooseYourPlan"),
+      subtitle: tr("startFreeScaleAsYouGrow"),
+      monthly: tr("month"),
+      popular: tr("mostPopular"),
+      getStarted: tr("getStarted"),
+      contactSales: tr("contactSales"),
     },
     cta: {
-      title: locale === "en" ? "Ready to Transform Your Business?" : "مستعد لتحويل عملك؟",
-      subtitle:
-        locale === "en"
-          ? "Start with guided onboarding, VAT-ready workflows, and sample data"
-          : "ابدأ بإعداد موجه وسير عمل جاهز لضريبة القيمة المضافة وبيانات تجريبية",
-      primary: locale === "en" ? "Start Your Free Trial" : "ابدأ تجربتك المجانية",
-      secondary: locale === "en" ? "Talk to Sales" : "تحدث مع المبيعات",
-      guarantee:
-        locale === "en"
-          ? "14-day free trial • No credit card required • Cancel anytime"
-          : "تجربة مجانية 14 يوم • لا حاجة لبطاقة ائتمان • إلغاء في أي وقت",
+      title: tr("readyToTransformYourBusiness"),
+      subtitle: tr("startWithGuidedOnboardingVatReady"),
+      primary: tr("startYourFreeTrial"),
+      secondary: tr("talkToSales"),
+      guarantee: tr("n14DayFreeTrialNoCredit"),
     },
   };
 
   const features = [
     {
       icon: Bot,
-      title: locale === "en" ? "AI Expense Categorization" : "تصنيف المصروفات بالذكاء الاصطناعي",
-      description:
-        locale === "en"
-          ? "AI-assisted review prompts help categorize expenses while your team keeps approval control."
-          : "تساعد تنبيهات المراجعة المدعومة بالذكاء الاصطناعي على تصنيف المصروفات مع بقاء الاعتماد بيد فريقك.",
+      title: tr("aiExpenseCategorization"),
+      description: tr("aiAssistedReviewPromptsHelpCategorize"),
       color: "from-violet-500 to-purple-600",
       bgColor: "bg-chart-5/10",
     },
     {
       icon: FileCheck,
-      title: locale === "en" ? "Smart Invoicing" : "فوترة ذكية",
-      description:
-        locale === "en"
-          ? "Create VAT-ready invoices in seconds with auto VAT calculation and PDF export."
-          : "أنشئ فواتير جاهزة لضريبة القيمة المضافة في ثوانٍ مع حساب ضريبة تلقائي.",
+      title: tr("smartInvoicing"),
+      description: tr("createVatReadyInvoicesInSeconds"),
       color: "from-blue-500 to-cyan-600",
       bgColor: "bg-info/10",
     },
     {
       icon: Scan,
-      title: locale === "en" ? "Receipt OCR Scanner" : "ماسح الإيصالات",
-      description:
-        locale === "en"
-          ? "Bulk upload receipts. AI-assisted extraction prepares Arabic or English fields for review."
-          : "ارفع إيصالات متعددة. يساعدك الذكاء الاصطناعي في تجهيز الحقول بالعربية أو الإنجليزية للمراجعة.",
+      title: tr("receiptOcrScanner"),
+      description: tr("bulkUploadReceiptsAiAssistedExtraction"),
       color: "from-emerald-500 to-green-600",
       bgColor: "bg-success/10",
     },
     {
       icon: PieChart,
-      title: locale === "en" ? "Real-Time Reports" : "تقارير فورية",
-      description:
-        locale === "en"
-          ? "Access P&L, balance sheets, and VAT summaries instantly. Export workpapers for review."
-          : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر أوراق العمل للمراجعة.",
+      title: tr("realTimeReports"),
+      description: tr("accessPLBalanceSheetsAnd"),
       color: "from-orange-500 to-amber-600",
       bgColor: "bg-warning/10",
     },
     {
       icon: MessageSquare,
-      title: locale === "en" ? "AI CFO Assistant" : "مساعد مالي ذكي",
-      description:
-        locale === "en"
-          ? "Ask questions about your finances in plain language. Get instant AI-powered insights."
-          : "اسأل عن شؤونك المالية بلغة بسيطة. احصل على رؤى فورية مدعومة بالذكاء الاصطناعي.",
+      title: tr("aiCfoAssistant"),
+      description: tr("askQuestionsAboutYourFinancesIn"),
       color: "from-pink-500 to-rose-600",
       bgColor: "bg-chart-5/10",
     },
     {
       icon: Shield,
-      title: locale === "en" ? "Security Controls" : "ضوابط الأمان",
-      description:
-        locale === "en"
-          ? "Role-based access, audit logs, managed infrastructure controls, and secure transport."
-          : "صلاحيات قائمة على الأدوار، وسجلات تدقيق، وضوابط بنية تحتية مدارة، ونقل آمن.",
+      title: tr("securityControls"),
+      description: tr("roleBasedAccessAuditLogsManaged"),
       color: "from-slate-500 to-gray-600",
       bgColor: "bg-muted-foreground/10",
     },
@@ -220,107 +178,89 @@ export default function Landing() {
 
   const testimonials = [
     {
-      name: locale === "en" ? "Ahmed K." : "أحمد ك.",
-      role: locale === "en" ? "E-commerce Business Owner, Dubai" : "صاحب عمل تجارة إلكترونية، دبي",
+      name: tr("ahmedK"),
+      role: tr("eCommerceBusinessOwnerDubai"),
       image:
         "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face",
-      quote:
-        locale === "en"
-          ? "The guided setup made invoices, receipt review, and VAT workpapers much easier to manage in one place."
-          : "ساعدنا الإعداد الموجه في إدارة الفواتير ومراجعة الإيصالات وأوراق عمل ضريبة القيمة المضافة في مكان واحد.",
+      quote: tr("theGuidedSetupMadeInvoicesReceipt"),
       rating: 5,
-      industry: locale === "en" ? "E-commerce" : "التجارة الإلكترونية",
+      industry: tr("eCommerce"),
     },
     {
-      name: locale === "en" ? "Fatima M." : "فاطمة م.",
-      role:
-        locale === "en" ? "CFO, Real Estate Investment Firm" : "المدير المالي، شركة استثمار عقاري",
+      name: tr("fatimaM"),
+      role: tr("cfoRealEstateInvestmentFirm"),
       image:
         "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face",
-      quote:
-        locale === "en"
-          ? "Managing 15+ properties was a nightmare before. The AI categorization is spot-on and the bilingual support means our Arabic documents are handled perfectly. Saved us from 3 potential audit issues."
-          : "كانت إدارة 15+ عقار كابوساً قبل ذلك. التصنيف الذكي دقيق تماماً والدعم ثنائي اللغة يعني أن مستنداتنا العربية تُعالج بشكل مثالي. وفر علينا 3 مشاكل تدقيق محتملة.",
+      quote: tr("managing15PropertiesWasANightmare"),
       rating: 5,
-      industry: locale === "en" ? "Real Estate" : "العقارات",
+      industry: tr("realEstate"),
     },
     {
-      name: locale === "en" ? "Khalid S." : "خالد س.",
-      role: locale === "en" ? "Freelance Consultant" : "مستشار مستقل",
+      name: tr("khalidS"),
+      role: tr("freelanceConsultant"),
       image:
         "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face",
-      quote:
-        locale === "en"
-          ? "As a freelancer, I needed something simple but professional. The OCR receipt scanner is fast, and the VAT-ready workflow keeps my records organized. Worth every dirham."
-          : "كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات سريع، وسير العمل الجاهز لضريبة القيمة المضافة يحافظ على تنظيم سجلاتي. يستحق كل درهم.",
+      quote: tr("asAFreelancerINeededSomething"),
       rating: 5,
-      industry: locale === "en" ? "Consulting" : "الاستشارات",
+      industry: tr("consulting"),
     },
   ];
 
   const pricingPlans = [
     {
-      name: locale === "en" ? "Starter" : "المبتدئ",
+      name: tr("starter"),
       price: "AED 99",
-      priceNote: locale === "en" ? "per month" : "شهرياً",
-      description:
-        locale === "en"
-          ? "Perfect for freelancers and small businesses"
-          : "مثالي للعاملين المستقلين والشركات الصغيرة",
+      priceNote: tr("perMonth"),
+      description: tr("perfectForFreelancersAndSmallBusinesses"),
       features: [
-        locale === "en" ? "Up to 100 invoices/month" : "حتى 100 فاتورة/شهر",
-        locale === "en" ? "AI expense categorization" : "تصنيف مصروفات بالذكاء الاصطناعي",
-        locale === "en" ? "Unlimited receipt OCR scans" : "مسح إيصالات OCR غير محدود",
-        locale === "en" ? "VAT/CT workpaper reports" : "تقارير أوراق عمل الضريبة",
-        locale === "en" ? "Email & chat support" : "دعم البريد والدردشة",
+        tr("upTo100InvoicesMonth"),
+        tr("aiExpenseCategorization2"),
+        tr("unlimitedReceiptOcrScans"),
+        tr("vatCtWorkpaperReports"),
+        tr("emailChatSupport"),
       ],
-      cta: locale === "en" ? "Start Now" : "ابدأ الآن",
+      cta: tr("startNow"),
       popular: false,
       icon: Layers,
     },
     {
-      name: locale === "en" ? "Professional" : "الاحترافي",
+      name: tr("professional"),
       price: "AED 299",
-      priceNote: locale === "en" ? "per month" : "شهرياً",
-      description:
-        locale === "en"
-          ? "For growing businesses that need more power"
-          : "للشركات النامية التي تحتاج قوة أكبر",
+      priceNote: tr("perMonth"),
+      description: tr("forGrowingBusinessesThatNeedMore"),
       features: [
-        locale === "en" ? "Unlimited invoices & transactions" : "فواتير ومعاملات غير محدودة",
-        locale === "en" ? "AI CFO financial advisor" : "مستشار مالي ذكي",
-        locale === "en" ? "VAT/CT review workflows" : "سير عمل مراجعة الضريبة",
-        locale === "en" ? "Multi-currency support" : "دعم متعدد العملات",
-        locale === "en" ? "Bank reconciliation" : "مطابقة بنكية",
-        locale === "en" ? "Priority phone support" : "دعم هاتفي أولوية",
-        locale === "en" ? "Custom financial reports" : "تقارير مالية مخصصة",
+        tr("unlimitedInvoicesTransactions"),
+        tr("aiCfoFinancialAdvisor"),
+        tr("vatCtReviewWorkflows"),
+        tr("multiCurrencySupport"),
+        tr("bankReconciliation"),
+        tr("priorityPhoneSupport"),
+        tr("customFinancialReports"),
       ],
-      cta: locale === "en" ? "Start Now" : "ابدأ الآن",
+      cta: tr("startNow"),
       popular: true,
       icon: Crown,
     },
     {
-      name: locale === "en" ? "Enterprise" : "المؤسسات",
-      price: locale === "en" ? "Custom" : "مخصص",
-      priceNote: locale === "en" ? "Contact us" : "تواصل معنا",
-      description:
-        locale === "en"
-          ? "For large organizations with complex needs"
-          : "للمؤسسات الكبيرة ذات الاحتياجات المعقدة",
+      name: tr("enterprise"),
+      price: tr("custom"),
+      priceNote: tr("contactUs"),
+      description: tr("forLargeOrganizationsWithComplexNeeds"),
       features: [
-        locale === "en" ? "Everything in Professional" : "كل ما في الاحترافي",
-        locale === "en" ? "Multi-company support" : "دعم متعدد الشركات",
-        locale === "en" ? "Dedicated accountant" : "محاسب مخصص",
-        locale === "en" ? "API access & integrations" : "وصول API وتكاملات",
-        locale === "en" ? "White-label options" : "خيارات العلامة البيضاء",
-        locale === "en" ? "Enterprise support terms" : "شروط دعم المؤسسات",
+        tr("everythingInProfessional"),
+        tr("multiCompanySupport"),
+        tr("dedicatedAccountant"),
+        tr("apiAccessIntegrations"),
+        tr("whiteLabelOptions"),
+        tr("enterpriseSupportTerms"),
       ],
-      cta: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
+      cta: tr("talkToAnExpert"),
       popular: false,
       icon: Gem,
     },
   ];
 
+  // i18n-ignore: company names (logo strip) are proper names
   const logos = ["Emirates NBD", "ADNOC", "Etisalat", "Dubai Holding", "Majid Al Futtaim", "Emaar"];
 
   return (
@@ -331,7 +271,7 @@ export default function Landing() {
       {/* Premium Animated Background */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <motion.div
-          className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[128px]"
+          className="absolute top-0 start-1/4 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[128px]"
           animate={{
             scale: [1, 1.2, 1],
             opacity: [0.3, 0.5, 0.3],
@@ -345,7 +285,7 @@ export default function Landing() {
           }}
         />
         <motion.div
-          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/15 rounded-full blur-[128px]"
+          className="absolute bottom-0 end-1/4 w-[500px] h-[500px] bg-chart-5/15 rounded-full blur-[128px]"
           animate={{
             scale: [1, 1.3, 1],
             opacity: [0.2, 0.4, 0.2],
@@ -399,7 +339,7 @@ export default function Landing() {
                 <Briefcase className="w-5 h-5 text-white" />
               </motion.div>
               <motion.div
-                className="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-background"
+                className="absolute -top-1 -end-1 w-3 h-3 bg-success rounded-full border-2 border-background"
                 animate={{
                   scale: [1, 1.2, 1],
                   opacity: [1, 0.7, 1],
@@ -421,7 +361,7 @@ export default function Landing() {
                 Muhasib.ai
               </span>
               <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
-                {locale === "en" ? "by NR Accounting Services" : "من NR Accounting Services"}
+                {tr("byNrAccountingServices")}
               </span>
             </motion.div>
           </Link>
@@ -470,7 +410,7 @@ export default function Landing() {
                   animate={{ rotate: [0, 360] }}
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                 >
-                  <Globe className="w-4 h-4 mr-2" />
+                  <Globe className="w-4 h-4 me-2" />
                 </motion.div>
                 {t.nav.languageToggle}
               </Button>
@@ -505,7 +445,7 @@ export default function Landing() {
                     animate={{ x: [0, 4, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
                   >
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <ArrowRight className="w-4 h-4 ms-2" />
                   </motion.div>
                 </Button>
               </motion.div>
@@ -556,7 +496,7 @@ export default function Landing() {
                   onClick={toggleLanguage}
                   data-testid="mobile-button-language-toggle"
                 >
-                  <Globe className="w-4 h-4 mr-2" />
+                  <Globe className="w-4 h-4 me-2" />
                   {t.nav.languageToggle}
                 </Button>
                 <Link href="/login">
@@ -570,7 +510,7 @@ export default function Landing() {
                     data-testid="mobile-button-get-started"
                   >
                     {t.nav.getStarted}
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <ArrowRight className="w-4 h-4 ms-2" />
                   </Button>
                 </Link>
               </div>
@@ -682,7 +622,7 @@ export default function Landing() {
                           animate={{ x: [0, 5, 0] }}
                           transition={{ duration: 1.5, repeat: Infinity }}
                         >
-                          <ArrowRight className="w-5 h-5 ml-2" />
+                          <ArrowRight className="w-5 h-5 ms-2" />
                         </motion.div>
                       </Button>
                     </motion.div>
@@ -698,7 +638,7 @@ export default function Landing() {
                         animate={{ scale: [1, 1.1, 1] }}
                         transition={{ duration: 2, repeat: Infinity }}
                       >
-                        <Play className="w-5 h-5 mr-2" />
+                        <Play className="w-5 h-5 me-2" />
                       </motion.div>
                       {t.hero.ctaSecondary}
                     </Button>
@@ -748,7 +688,7 @@ export default function Landing() {
                           <div className="w-3 h-3 rounded-full bg-warning" />
                           <div className="w-3 h-3 rounded-full bg-success" />
                         </div>
-                        <div className="text-xs text-muted-foreground font-mono">
+                        <div dir="ltr" className="text-xs text-muted-foreground font-mono">
                           dashboard.bookkeep.ai
                         </div>
                       </div>
@@ -757,19 +697,19 @@ export default function Landing() {
                       <div className="grid grid-cols-3 gap-4 mb-6">
                         {[
                           {
-                            label: "Revenue",
+                            label: tr("revenue"),
                             value: "AED 127,500",
                             color: "text-success",
                             icon: TrendingUp,
                           },
                           {
-                            label: "Expenses",
+                            label: tr("expenses"),
                             value: "AED 43,200",
                             color: "text-warning",
                             icon: Wallet,
                           },
                           {
-                            label: "Profit",
+                            label: tr("profit"),
                             value: "AED 84,300",
                             color: "text-primary",
                             icon: BarChart3,
@@ -780,7 +720,7 @@ export default function Landing() {
                               <stat.icon className={`w-4 h-4 ${stat.color}`} />
                               <span className="text-xs text-muted-foreground">{stat.label}</span>
                             </div>
-                            <div className={`font-bold font-mono text-sm ${stat.color}`}>
+                            <div dir="ltr" className={`font-bold font-mono text-sm ${stat.color}`}>
                               {stat.value}
                             </div>
                           </div>
@@ -795,10 +735,10 @@ export default function Landing() {
                           </div>
                           <div className="flex-1">
                             <div className="text-sm font-medium mb-1">
-                              AI just categorized 12 expenses
+                              {tr("aiJustCategorized12Expenses")}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              Saved you 15 minutes of manual work
+                              {tr("savedYou15MinutesOfManual")}
                             </div>
                           </div>
                           <CheckCircle2 className="w-5 h-5 text-success" />
@@ -820,7 +760,9 @@ export default function Landing() {
                               <span className="text-sm">{inv.name}</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="font-mono text-sm">{inv.amount}</span>
+                              <span dir="ltr" className="font-mono text-sm">
+                                {inv.amount}
+                              </span>
                               <Badge
                                 variant={inv.status === "Paid" ? "default" : "secondary"}
                                 className="text-xs"
@@ -838,7 +780,7 @@ export default function Landing() {
                 {/* Floating Elements */}
                 <Floating intensity={20} duration={3}>
                   <motion.div
-                    className="absolute -top-6 -right-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-xl shadow-green-500/30 flex items-center justify-center"
+                    className="absolute -top-6 -end-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-xl shadow-green-500/30 flex items-center justify-center"
                     whileHover={{ scale: 1.1, rotate: 360 }}
                     transition={{ duration: 0.5 }}
                   >
@@ -847,7 +789,7 @@ export default function Landing() {
                 </Floating>
                 <Floating intensity={15} duration={2}>
                   <motion.div
-                    className="absolute -bottom-4 -left-4 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-xl shadow-violet-500/30 flex items-center gap-2"
+                    className="absolute -bottom-4 -start-4 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-xl shadow-violet-500/30 flex items-center gap-2"
                     animate={{
                       boxShadow: [
                         "0 10px 40px -10px hsl(262 83% 58% / 0.3)",
@@ -863,7 +805,7 @@ export default function Landing() {
                     }}
                   >
                     <Zap className="w-4 h-4 text-white" />
-                    <span className="text-white text-sm font-medium">Review queue ready</span>
+                    <span className="text-white text-sm font-medium">{tr("reviewQueueReady")}</span>
                   </motion.div>
                 </Floating>
               </div>
@@ -879,9 +821,7 @@ export default function Landing() {
       >
         <div className="container max-w-7xl mx-auto px-6 lg:px-8">
           <p className="text-center text-sm text-muted-foreground mb-8">
-            {locale === "en"
-              ? "Built for UAE SME accounting workflows"
-              : "مصمم لسير عمل المحاسبة للشركات الصغيرة والمتوسطة في الإمارات"}
+            {tr("builtForUaeSmeAccountingWorkflows")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8 lg:gap-16 opacity-50">
             {logos.map((logo, i) => (
@@ -942,6 +882,7 @@ export default function Landing() {
                     <stat.icon className="w-7 h-7 text-white" />
                   </motion.div>
                   <motion.div
+                    dir="ltr"
                     className="text-4xl lg:text-5xl font-bold font-mono mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent"
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -965,7 +906,7 @@ export default function Landing() {
               className="mb-4 px-4 py-1.5 bg-primary/10 text-primary border-primary/20"
               variant="outline"
             >
-              <Sparkles className="w-4 h-4 mr-2" />
+              <Sparkles className="w-4 h-4 me-2" />
               {t.features.badge}
             </Badge>
             <h2 className="text-3xl lg:text-5xl font-bold mb-4" data-testid="features-title">
@@ -1011,7 +952,7 @@ export default function Landing() {
                     </h3>
                     <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
                     <motion.div
-                      className="absolute bottom-6 right-6"
+                      className="absolute bottom-6 end-6"
                       initial={{ opacity: 0, scale: 0 }}
                       whileHover={{ opacity: 1, scale: 1, rotate: 45 }}
                       transition={{ duration: 0.3 }}
@@ -1039,7 +980,7 @@ export default function Landing() {
               variant="outline"
               data-testid="testimonials-badge"
             >
-              <Quote className="w-4 h-4 mr-2" />
+              <Quote className="w-4 h-4 me-2" />
               {t.testimonials.badge}
             </Badge>
             <h2 className="text-3xl lg:text-5xl font-bold mb-4" data-testid="testimonials-title">
@@ -1088,7 +1029,7 @@ export default function Landing() {
               variant="outline"
               data-testid="pricing-badge"
             >
-              <CreditCard className="w-4 h-4 mr-2" />
+              <CreditCard className="w-4 h-4 me-2" />
               {t.pricing.badge}
             </Badge>
             <h2 className="text-3xl lg:text-5xl font-bold mb-4" data-testid="pricing-title">
@@ -1114,7 +1055,7 @@ export default function Landing() {
                 data-testid={`pricing-${plan.name.toLowerCase()}`}
               >
                 {plan.popular && (
-                  <div className="absolute top-0 right-0 px-4 py-1.5 bg-gradient-to-r from-primary to-violet-600 text-white text-sm font-medium rounded-bl-lg">
+                  <div className="absolute top-0 end-0 px-4 py-1.5 bg-gradient-to-r from-primary to-violet-600 text-white text-sm font-medium rounded-es-lg">
                     {t.pricing.popular}
                   </div>
                 )}
@@ -1163,7 +1104,7 @@ export default function Landing() {
                     data-testid={`pricing-button-${plan.name.toLowerCase()}`}
                   >
                     {plan.cta}
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <ArrowRight className="w-4 h-4 ms-2" />
                   </Button>
                 </Link>
               </Card>
@@ -1181,9 +1122,7 @@ export default function Landing() {
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card/10 backdrop-blur-sm border border-white/20 mb-8">
               <Rocket className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium">
-                {locale === "en" ? "Launch Your Financial Transformation" : "أطلق تحولك المالي"}
-              </span>
+              <span className="text-sm font-medium">{tr("launchYourFinancialTransformation")}</span>
             </div>
 
             <h2
@@ -1207,7 +1146,7 @@ export default function Landing() {
                   data-testid="cta-button-start-trial"
                 >
                   {t.cta.primary}
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                  <ArrowRight className="w-5 h-5 ms-2" />
                 </Button>
               </Link>
               <Button
@@ -1242,78 +1181,78 @@ export default function Landing() {
                 </div>
                 <div>
                   <div className="font-bold text-xl">Muhasib.ai</div>
-                  <div className="text-xs text-muted-foreground">by NR Accounting Services</div>
+                  <div className="text-xs text-muted-foreground">
+                    {tr("byNrAccountingServices")}
+                  </div>
                 </div>
               </div>
               <p className="text-muted-foreground max-w-sm mb-6">
-                {locale === "en"
-                  ? "Registered accounting firm serving UAE businesses since 2017. AI-assisted bookkeeping with VAT-ready workflows."
-                  : "شركة محاسبة مسجلة تخدم الشركات الإماراتية منذ 2017. محاسبة بمساعدة الذكاء الاصطناعي وسير عمل جاهز لضريبة القيمة المضافة."}
+                {tr("registeredAccountingFirmServingUaeBusinesses")}
               </p>
               <div className="flex items-center gap-4">
                 <Badge variant="outline" className="gap-1.5">
                   <Shield className="w-3 h-3" />
-                  SOC/ISO Roadmap
+                  {tr("socIsoRoadmap")}
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Lock className="w-3 h-3" />
-                  Secure Transport
+                  {tr("secureTransport")}
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Award className="w-3 h-3" />
-                  VAT Ready
+                  {tr("vatReady")}
                 </Badge>
               </div>
             </div>
 
             {/* Links */}
             <div>
-              <h4 className="font-semibold mb-4">{locale === "en" ? "Product" : "المنتج"}</h4>
+              <h4 className="font-semibold mb-4">{tr("product")}</h4>
               <ul className="space-y-3 text-sm text-muted-foreground">
                 <li>
                   <a href="#features" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Features" : "الميزات"}
+                    {tr("features")}
                   </a>
                 </li>
                 <li>
                   <a href="#pricing" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Pricing" : "الأسعار"}
+                    {tr("pricing")}
                   </a>
                 </li>
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Security" : "الأمان"}
+                    {tr("security")}
                   </a>
                 </li>
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Roadmap" : "خارطة الطريق"}
+                    {tr("roadmap")}
                   </a>
                 </li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-semibold mb-4">{locale === "en" ? "Company" : "الشركة"}</h4>
+              <h4 className="font-semibold mb-4">{tr("company")}</h4>
               <ul className="space-y-3 text-sm text-muted-foreground">
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "About" : "حولنا"}
+                    {tr("about")}
                   </a>
                 </li>
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Blog" : "المدونة"}
+                    {tr("blog")}
                   </a>
                 </li>
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Careers" : "الوظائف"}
+                    {tr("careers")}
                   </a>
                 </li>
                 <li>
                   <a href="#" className="hover:text-foreground transition-colors">
-                    {locale === "en" ? "Contact" : "اتصل بنا"}
+                    {tr("contact")}
                   </a>
                 </li>
               </ul>
@@ -1322,15 +1261,15 @@ export default function Landing() {
 
           <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              © 2025 Muhasib.ai by NR Accounting Services.{" "}
-              {locale === "en" ? "All rights reserved." : "جميع الحقوق محفوظة."}
+              {tr("n2025MuhasibAiByNrAccounting")}
+              {tr("allRightsReserved")}
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground transition-colors">
-                {locale === "en" ? "Privacy Policy" : "سياسة الخصوصية"}
+                {tr("privacyPolicy")}
               </a>
               <a href="#" className="hover:text-foreground transition-colors">
-                {locale === "en" ? "Terms of Service" : "شروط الخدمة"}
+                {tr("termsOfService")}
               </a>
             </div>
           </div>

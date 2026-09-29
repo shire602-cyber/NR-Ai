@@ -38,6 +38,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel, prepareFxGainsLossesForExport } from "@/lib/export";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { Plus, ArrowRightLeft, RefreshCw, Download, Trash2, AlertTriangle } from "lucide-react";
+import { messages as pageMessages } from "./ExchangeRates.i18n";
 
 const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "PKR", "EGP", "BHD", "QAR"];
 // A rate is always entered as "1 <foreign currency> = <rate> AED".
@@ -90,6 +91,8 @@ interface FxGainsLossesReport {
 }
 
 export default function ExchangeRates() {
+  const trl = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -162,10 +165,10 @@ export default function ExchangeRates() {
       });
       setShowAddDialog(false);
       setFormRate("");
-      toast({ title: "Exchange rate added successfully" });
+      toast({ title: trl("exchangeRateAddedSuccessfully") });
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to add rate", description: error?.message, variant: "destructive" });
+      toast({ title: trl("failedToAddRate"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -202,7 +205,11 @@ export default function ExchangeRates() {
       setConvertResult(data);
     },
     onError: (error: Error) => {
-      toast({ title: "Conversion failed", description: error?.message, variant: "destructive" });
+      toast({
+        title: trl("conversionFailed"),
+        description: error?.message,
+        variant: "destructive",
+      });
       setConvertResult(null);
     },
   });
@@ -210,7 +217,7 @@ export default function ExchangeRates() {
   const handleAddRate = () => {
     const rate = parseFloat(formRate);
     if (isNaN(rate) || rate <= 0) {
-      toast({ title: "Please enter a valid rate", variant: "destructive" });
+      toast({ title: trl("pleaseEnterAValidRate"), variant: "destructive" });
       return;
     }
     createMutation.mutate({
@@ -225,7 +232,7 @@ export default function ExchangeRates() {
   const handleConvert = () => {
     const amount = parseFloat(convertAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast({ title: "Please enter a valid amount", variant: "destructive" });
+      toast({ title: trl("pleaseEnterAValidAmount"), variant: "destructive" });
       return;
     }
     convertMutation.mutate();
@@ -234,8 +241,8 @@ export default function ExchangeRates() {
   const handleExportFxReport = async () => {
     if (!fxReport) {
       toast({
-        title: "No report data",
-        description: "FX Gains and Losses is still loading or has no rows to export.",
+        title: trl("noReportData"),
+        description: trl("fxGainsAndLossesIsStill"),
         variant: "destructive",
       });
       return;
@@ -247,13 +254,13 @@ export default function ExchangeRates() {
         `fx_gains_losses_${new Date().toISOString().slice(0, 10)}`
       );
       toast({
-        title: "Report exported",
-        description: "FX Gains and Losses has been downloaded.",
+        title: trl("reportExported"),
+        description: trl("fxGainsAndLossesHasBeen"),
       });
     } catch (error) {
       toast({
-        title: "Export failed",
-        description: error instanceof Error ? error.message : "Unable to export FX report.",
+        title: trl("exportFailed"),
+        description: error instanceof Error ? error.message : trl("unableToExportFxReport"),
         variant: "destructive",
       });
     }
@@ -277,7 +284,7 @@ export default function ExchangeRates() {
   if (!companyId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">No company found. Please create a company first.</p>
+        <p className="text-muted-foreground">{trl("noCompanyFoundPleaseCreateA")}</p>
       </div>
     );
   }
@@ -285,11 +292,11 @@ export default function ExchangeRates() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Exchange Rates"
-        description="Manage currency exchange rates and convert amounts"
+        eyebrow={trl("accounting")}
+        title={trl("exchangeRates")}
+        description={trl("manageCurrencyExchangeRatesAndConvert")}
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={trl("backToReports")}
         actions={
           <>
             <Button
@@ -297,12 +304,12 @@ export default function ExchangeRates() {
               onClick={handleExportFxReport}
               disabled={isLoadingFxReport || !fxReport}
             >
-              <Download className="h-4 w-4 mr-2" />
-              Export
+              <Download className="h-4 w-4 me-2" />
+              {trl("export")}
             </Button>
             <Button onClick={() => setShowAddDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Rate
+              <Plus className="h-4 w-4 me-2" />
+              {trl("addRate")}
             </Button>
           </>
         }
@@ -327,11 +334,10 @@ export default function ExchangeRates() {
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>FX Gains and Losses</CardTitle>
+            <CardTitle>{trl("fxGainsAndLosses")}</CardTitle>
             <CardDescription>
-              As of {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : "today"} · Source
-              basis: the outstanding balance of issued foreign-currency invoices and approved
-              foreign-currency vendor bills, remeasured using saved exchange rates. Values are shown in{" "}
+              {trl("asOf")} {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : trl("today")}{" "}
+              {trl("sourceBasisTheOutstandingBalanceOf")}
               {fxReport?.baseCurrency || "AED"}.
             </CardDescription>
           </div>
@@ -347,7 +353,7 @@ export default function ExchangeRates() {
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Open exposures
+                    {trl("openExposures")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
                     {(fxReport?.receivables?.length ?? 0) + (fxReport?.payables?.length ?? 0)}
@@ -355,7 +361,7 @@ export default function ExchangeRates() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Unrealized gains
+                    {trl("unrealizedGains")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-success">
                     {formatCurrency(fxReport?.totalUnrealizedGain ?? 0, "AED", locale)}
@@ -363,7 +369,7 @@ export default function ExchangeRates() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Unrealized losses
+                    {trl("unrealizedLosses")}
                   </p>
                   <p className="mt-1 text-2xl font-semibold text-destructive">
                     {formatCurrency(fxReport?.totalUnrealizedLoss ?? 0, "AED", locale)}
@@ -371,7 +377,7 @@ export default function ExchangeRates() {
                 </div>
                 <div className="rounded-md border bg-muted/20 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Net gain / loss
+                    {trl("netGainLoss")}
                   </p>
                   <p
                     className={`mt-1 text-2xl font-semibold ${
@@ -389,14 +395,14 @@ export default function ExchangeRates() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Counterparty</TableHead>
-                      <TableHead>Currency</TableHead>
-                      <TableHead className="text-right">Foreign amount</TableHead>
-                      <TableHead className="text-right">Transaction rate</TableHead>
-                      <TableHead className="text-right">Current rate</TableHead>
-                      <TableHead className="text-right">Gain / loss</TableHead>
+                      <TableHead>{trl("type")}</TableHead>
+                      <TableHead>{trl("reference")}</TableHead>
+                      <TableHead>{trl("counterparty")}</TableHead>
+                      <TableHead>{trl("currency")}</TableHead>
+                      <TableHead className="text-end">{trl("foreignAmount")}</TableHead>
+                      <TableHead className="text-end">{trl("transactionRate")}</TableHead>
+                      <TableHead className="text-end">{trl("currentRate")}</TableHead>
+                      <TableHead className="text-end">{trl("gainLoss")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -404,7 +410,7 @@ export default function ExchangeRates() {
                     0 ? (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          No open foreign-currency exposures for the selected as-of date.
+                          {trl("noOpenForeignCurrencyExposuresFor")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -415,17 +421,17 @@ export default function ExchangeRates() {
                             <TableCell className="font-mono text-sm">{row.entityNumber}</TableCell>
                             <TableCell>{row.counterparty}</TableCell>
                             <TableCell className="font-medium">{row.currency}</TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-end font-mono">
                               {formatNumber(row.foreignAmount, locale)}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-end font-mono">
                               {formatNumber(row.transactionRate, locale)}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-end font-mono">
                               {formatNumber(row.currentRate, locale)}
                             </TableCell>
                             <TableCell
-                              className={`text-right font-mono ${
+                              className={`text-end font-mono ${
                                 row.unrealizedGainLoss >= 0 ? "text-success" : "text-destructive"
                               }`}
                             >
@@ -448,14 +454,14 @@ export default function ExchangeRates() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5" />
-            Currency Converter
+            {trl("currencyConverter")}
           </CardTitle>
-          <CardDescription>Convert amounts using your latest exchange rates</CardDescription>
+          <CardDescription>{trl("convertAmountsUsingYourLatestExchange")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div className="space-y-2">
-              <Label>From</Label>
+              <Label>{trl("from")}</Label>
               <Select value={convertFrom} onValueChange={setConvertFrom}>
                 <SelectTrigger>
                   <SelectValue />
@@ -470,7 +476,7 @@ export default function ExchangeRates() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>To</Label>
+              <Label>{trl("to")}</Label>
               <Select value={convertTo} onValueChange={setConvertTo}>
                 <SelectTrigger>
                   <SelectValue />
@@ -485,12 +491,12 @@ export default function ExchangeRates() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label>{trl("amount")}</Label>
               <Input
                 type="number"
                 step="0.01"
                 min="0"
-                placeholder="Enter amount"
+                placeholder={trl("enterAmount")}
                 value={convertAmount}
                 onChange={(e) => {
                   setConvertAmount(e.target.value);
@@ -500,11 +506,11 @@ export default function ExchangeRates() {
             </div>
             <Button onClick={handleConvert} disabled={convertMutation.isPending || !convertAmount}>
               {convertMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="h-4 w-4 me-2 animate-spin" />
               ) : (
-                <ArrowRightLeft className="h-4 w-4 mr-2" />
+                <ArrowRightLeft className="h-4 w-4 me-2" />
               )}
-              Convert
+              {trl("convert")}
             </Button>
           </div>
           {convertResult && (
@@ -514,9 +520,16 @@ export default function ExchangeRates() {
                 {formatNumber(convertResult.convertedAmount, locale)} {convertResult.to}
               </p>
               <p className="text-sm text-muted-foreground">
-                Rate: 1 {convertResult.from} = {convertResult.rate.toFixed(6)} {convertResult.to}
+                {trl("rate1", {
+                  from: convertResult.from,
+                  rate: convertResult.rate.toFixed(6),
+                  to: convertResult.to,
+                })}
                 {convertResult.effectiveDate && (
-                  <> (as of {formatDate(convertResult.effectiveDate, locale)})</>
+                  <>
+                    {" "}
+                    {trl("asOf2", { formatDate: formatDate(convertResult.effectiveDate, locale) })}
+                  </>
                 )}
               </p>
             </div>
@@ -527,8 +540,13 @@ export default function ExchangeRates() {
       {/* Exchange Rates Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Saved Rates</CardTitle>
-          <CardDescription>{tr("Rates you entered for your company, plus official rates. Your own rate is used first.", "الأسعار التي أدخلتها لشركتك بالإضافة إلى الأسعار الرسمية. يُستخدم سعرك الخاص أولاً.")}</CardDescription>
+          <CardTitle>{trl("savedRates")}</CardTitle>
+          <CardDescription>
+            {tr(
+              "Rates you entered for your company, plus official rates. Your own rate is used first.",
+              "الأسعار التي أدخلتها لشركتك بالإضافة إلى الأسعار الرسمية. يُستخدم سعرك الخاص أولاً."
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingRates ? (
@@ -540,17 +558,17 @@ export default function ExchangeRates() {
           ) : !rates || rates.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <ArrowRightLeft className="h-12 w-12 mx-auto mb-2 opacity-30" />
-              <p>No exchange rates configured yet.</p>
-              <p className="text-sm">Add your first rate to get started.</p>
+              <p>{trl("noExchangeRatesConfiguredYet")}</p>
+              <p className="text-sm">{trl("addYourFirstRateToGet")}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{tr("Rate", "السعر")}</TableHead>
-                  <TableHead>Effective Date</TableHead>
+                  <TableHead>{trl("effectiveDate")}</TableHead>
                   <TableHead>{tr("Applies to", "ينطبق على")}</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>{trl("source")}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -567,7 +585,7 @@ export default function ExchangeRates() {
                         : tr("Your company", "شركتك")}
                     </TableCell>
                     <TableCell className="capitalize">{rate.source}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {rate.scope !== "system" && (
                         <Button
                           variant="ghost"
@@ -600,7 +618,7 @@ export default function ExchangeRates() {
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Exchange Rate</DialogTitle>
+            <DialogTitle>{trl("addExchangeRate")}</DialogTitle>
             <DialogDescription>
               {tr(
                 "Add an exchange rate for your company. It is used only for your company's documents.",
@@ -612,9 +630,14 @@ export default function ExchangeRates() {
             <div className="space-y-2">
               <Label>{tr("Foreign currency", "العملة الأجنبية")}</Label>
               <div className="flex items-center gap-2" dir="ltr">
-                <span className="font-mono text-sm">1</span>
+                <span dir="ltr" className="font-mono text-sm">
+                  1
+                </span>
                 <Select value={formFromCurrency} onValueChange={setFormFromCurrency}>
-                  <SelectTrigger className="w-28" aria-label={tr("Foreign currency", "العملة الأجنبية")}>
+                  <SelectTrigger
+                    className="w-28"
+                    aria-label={tr("Foreign currency", "العملة الأجنبية")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -625,7 +648,9 @@ export default function ExchangeRates() {
                     ))}
                   </SelectContent>
                 </Select>
-                <span className="font-mono text-sm">=</span>
+                <span dir="ltr" className="font-mono text-sm">
+                  =
+                </span>
                 <Input
                   type="number"
                   step="0.000001"
@@ -638,7 +663,9 @@ export default function ExchangeRates() {
                   value={formRate}
                   onChange={(e) => setFormRate(e.target.value)}
                 />
-                <span className="font-mono text-sm">{BASE_CURRENCY}</span>
+                <span dir="ltr" className="font-mono text-sm">
+                  {BASE_CURRENCY}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 {tr(
@@ -648,7 +675,7 @@ export default function ExchangeRates() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label>Effective Date</Label>
+              <Label>{trl("effectiveDate")}</Label>
               <Input
                 type="date"
                 value={formEffectiveDate}
@@ -658,10 +685,10 @@ export default function ExchangeRates() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
+              {trl("cancel")}
             </Button>
             <Button onClick={handleAddRate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Adding..." : "Add Rate"}
+              {createMutation.isPending ? trl("adding") : trl("addRate")}
             </Button>
           </DialogFooter>
         </DialogContent>

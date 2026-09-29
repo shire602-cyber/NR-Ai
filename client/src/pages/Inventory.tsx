@@ -57,18 +57,23 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
+import { messages as pageMessages } from "./Inventory.i18n";
 
 // ─── Schemas ──────────────────────────────────────────────
 
 const productFormSchema = z.object({
-  name: z.string().min(1, "Product name is required"),
+  name: z.string().min(1, pageMessages.marker("productNameIsRequired")),
   nameAr: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  unitPrice: z.coerce.number().min(0, "Unit price must be >= 0"),
-  costPrice: z.coerce.number().min(0, "Cost price must be >= 0").optional().nullable(),
-  vatRate: z.coerce.number().min(0).max(1, "VAT rate must be between 0 and 1"),
-  unit: z.string().min(1, "Unit is required"),
+  unitPrice: z.coerce.number().min(0, pageMessages.marker("unitPriceMustBe0")),
+  costPrice: z.coerce
+    .number()
+    .min(0, pageMessages.marker("costPriceMustBe0"))
+    .optional()
+    .nullable(),
+  vatRate: z.coerce.number().min(0).max(1, pageMessages.marker("vatRateMustBeBetween0")),
+  unit: z.string().min(1, pageMessages.marker("unitIsRequired")),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
 });
 
@@ -76,7 +81,7 @@ type ProductFormData = z.infer<typeof productFormSchema>;
 
 const movementFormSchema = z.object({
   type: z.enum(["purchase", "adjustment", "return"]),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  quantity: z.coerce.number().int().min(1, pageMessages.marker("quantityMustBeAtLeast1")),
   unitCost: z.coerce.number().min(0).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
@@ -86,6 +91,8 @@ type MovementFormData = z.infer<typeof movementFormSchema>;
 // ─── Component ────────────────────────────────────────────
 
 export default function Inventory() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -145,12 +152,12 @@ export default function Inventory() {
       apiRequest("POST", `/api/companies/${companyId}/products`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: "Product Created", description: "The product has been added successfully." });
+      toast({ title: tr("productCreated"), description: tr("theProductHasBeenAddedSuccessfully") });
       setProductDialogOpen(false);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -160,15 +167,15 @@ export default function Inventory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       toast({
-        title: "Product Updated",
-        description: "The product has been updated successfully.",
+        title: tr("productUpdated"),
+        description: tr("theProductHasBeenUpdatedSuccessfully"),
       });
       setProductDialogOpen(false);
       setEditingProduct(null);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -176,10 +183,10 @@ export default function Inventory() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/products/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: "Product Deleted", description: "The product has been deleted." });
+      toast({ title: tr("productDeleted"), description: tr("theProductHasBeenDeleted") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -191,13 +198,16 @@ export default function Inventory() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/inventory-movements`],
       });
-      toast({ title: "Stock Updated", description: "Inventory movement recorded successfully." });
+      toast({
+        title: tr("stockUpdated"),
+        description: tr("inventoryMovementRecordedSuccessfully"),
+      });
       setAddStockDialogOpen(false);
       setStockProduct(null);
       movementForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -264,13 +274,27 @@ export default function Inventory() {
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
       case "purchase":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Purchase</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            {tr("purchase")}
+          </Badge>
+        );
       case "sale":
-        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sale</Badge>;
+        return (
+          <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">
+            {tr("sale")}
+          </Badge>
+        );
       case "adjustment":
-        return <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle">Adjustment</Badge>;
+        return (
+          <Badge className="bg-warning-subtle text-warning-subtle-foreground hover:bg-warning-subtle">
+            {tr("adjustment")}
+          </Badge>
+        );
       case "return":
-        return <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10">Return</Badge>;
+        return (
+          <Badge className="bg-chart-5/10 text-chart-5 hover:bg-chart-5/10">{tr("return")}</Badge>
+        );
       default:
         return <Badge variant="secondary">{type}</Badge>;
     }
@@ -278,7 +302,7 @@ export default function Inventory() {
 
   const getProductName = (productId: string): string => {
     const product = productsList.find((p) => p.id === productId);
-    return product?.name || "Unknown Product";
+    return product?.name || tr("unknownProduct");
   };
 
   const filteredProducts = productsList.filter((product) => {
@@ -296,7 +320,7 @@ export default function Inventory() {
   if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
+        <div className="text-muted-foreground">{t.loading || tr("loading")}</div>
       </div>
     );
   }
@@ -304,7 +328,7 @@ export default function Inventory() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground">{tr("pleaseCreateACompanyFirst")}</div>
       </div>
     );
   }
@@ -317,11 +341,9 @@ export default function Inventory() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Package className="w-8 h-8" />
-            {(t as any).inventory || "Inventory"}
+            {(t as any).inventory || tr("inventory")}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your products and track inventory movements
-          </p>
+          <p className="text-muted-foreground mt-1">{tr("manageYourProductsAndTrackInventory")}</p>
         </div>
       </div>
 
@@ -329,11 +351,11 @@ export default function Inventory() {
         <TabsList>
           <TabsTrigger value="products" className="flex items-center gap-2">
             <Package className="w-4 h-4" />
-            Products
+            {tr("products")}
           </TabsTrigger>
           <TabsTrigger value="movements" className="flex items-center gap-2">
             <ArrowDownUp className="w-4 h-4" />
-            Movements
+            {tr("movements")}
           </TabsTrigger>
         </TabsList>
 
@@ -343,19 +365,19 @@ export default function Inventory() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Products</CardTitle>
+                  <CardTitle>{tr("products")}</CardTitle>
                   <CardDescription>
-                    {productsList.length} product{productsList.length !== 1 ? "s" : ""} in inventory
+                    {tr.plural("productsInInventory", productsList.length)}
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  Add Product
+                  {tr("addProduct")}
                 </Button>
               </div>
               <div className="mt-4">
                 <Input
-                  placeholder="Search products by name or SKU..."
+                  placeholder={tr("searchProductsByNameOrSku")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="max-w-sm"
@@ -365,27 +387,25 @@ export default function Inventory() {
             <CardContent>
               {isLoadingProducts ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
+                  {t.loading || tr("loading")}
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery
-                    ? "No products match your search."
-                    : "No products yet. Add your first product to get started."}
+                  {searchQuery ? tr("noProductsMatchYourSearch") : tr("noProductsYetAddYourFirst")}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
+                        <TableHead>{tr("name")}</TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead className="text-right">Unit Price</TableHead>
-                        <TableHead className="text-right">Cost Price</TableHead>
-                        <TableHead className="text-right">Stock</TableHead>
-                        <TableHead>Unit</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+                        <TableHead className="text-end">{tr("unitPrice")}</TableHead>
+                        <TableHead className="text-end">{tr("costPrice")}</TableHead>
+                        <TableHead className="text-end">{tr("stock")}</TableHead>
+                        <TableHead>{tr("unit")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
+                        <TableHead className="text-end">{t.actions || tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -406,13 +426,13 @@ export default function Inventory() {
                             <TableCell className="text-muted-foreground">
                               {product.sku || "-"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {formatCurrency(product.unitPrice, "AED", locale)}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {formatCurrency(product.costPrice || 0, "AED", locale)}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <div className="flex items-center justify-end gap-2">
                                 {product.currentStock}
                                 {isLowStock && (
@@ -421,7 +441,7 @@ export default function Inventory() {
                                     className="text-xs flex items-center gap-1"
                                   >
                                     <AlertTriangle className="w-3 h-3" />
-                                    Low
+                                    {tr("low")}
                                   </Badge>
                                 )}
                               </div>
@@ -429,20 +449,23 @@ export default function Inventory() {
                             <TableCell>{product.unit}</TableCell>
                             <TableCell>
                               {product.isActive ? (
-                                <Badge variant="secondary" className="bg-success-subtle text-success-subtle-foreground">
-                                  Active
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-success-subtle text-success-subtle-foreground"
+                                >
+                                  {tr("active")}
                                 </Badge>
                               ) : (
-                                <Badge variant="secondary">{t.inactive || "Inactive"}</Badge>
+                                <Badge variant="secondary">{t.inactive || tr("inactive")}</Badge>
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleOpenEditDialog(product)}
-                                  title="Edit"
+                                  title={tr("edit")}
                                 >
                                   <Edit className="w-4 h-4" />
                                 </Button>
@@ -450,7 +473,7 @@ export default function Inventory() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleOpenAddStockDialog(product)}
-                                  title="Add Stock"
+                                  title={tr("addStock")}
                                 >
                                   <PackagePlus className="w-4 h-4" />
                                 </Button>
@@ -458,7 +481,7 @@ export default function Inventory() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => setProductToDelete(product.id)}
-                                  title="Delete"
+                                  title={tr("delete")}
                                   className="text-destructive hover:text-destructive"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -480,30 +503,30 @@ export default function Inventory() {
         <TabsContent value="movements">
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Movements</CardTitle>
-              <CardDescription>History of all inventory changes across products</CardDescription>
+              <CardTitle>{tr("inventoryMovements")}</CardTitle>
+              <CardDescription>{tr("historyOfAllInventoryChangesAcross")}</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingMovements ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
+                  {t.loading || tr("loading")}
                 </div>
               ) : movementsList.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No inventory movements yet. Add stock to a product to get started.
+                  {tr("noInventoryMovementsYetAddStock")}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{t.date || "Date"}</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead>{t.type || "Type"}</TableHead>
-                        <TableHead className="text-right">{t.quantity || "Quantity"}</TableHead>
-                        <TableHead className="text-right">Unit Cost</TableHead>
-                        <TableHead>{t.reference || "Reference"}</TableHead>
-                        <TableHead>Notes</TableHead>
+                        <TableHead>{t.date || tr("date")}</TableHead>
+                        <TableHead>{tr("product")}</TableHead>
+                        <TableHead>{t.type || tr("type")}</TableHead>
+                        <TableHead className="text-end">{t.quantity || tr("quantity")}</TableHead>
+                        <TableHead className="text-end">{tr("unitCost")}</TableHead>
+                        <TableHead>{t.reference || tr("reference")}</TableHead>
+                        <TableHead>{tr("notes")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -518,11 +541,11 @@ export default function Inventory() {
                             {getProductName(movement.productId)}
                           </TableCell>
                           <TableCell>{getMovementTypeBadge(movement.type)}</TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-end font-mono">
                             {movement.type === "sale" ? "-" : "+"}
                             {Math.abs(movement.quantity)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {movement.unitCost != null
                               ? formatCurrency(movement.unitCost, "AED", locale)
                               : "-"}
@@ -548,9 +571,9 @@ export default function Inventory() {
       <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
+            <DialogTitle>{editingProduct ? tr("editProduct") : tr("addProduct")}</DialogTitle>
             <DialogDescription>
-              {editingProduct ? "Update product details." : "Add a new product to your inventory."}
+              {editingProduct ? tr("updateProductDetails") : tr("addANewProductToYour")}
             </DialogDescription>
           </DialogHeader>
 
@@ -561,9 +584,9 @@ export default function Inventory() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name *</FormLabel>
+                    <FormLabel>{tr("name2")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Product name" {...field} />
+                      <Input placeholder={tr("productName")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -575,7 +598,7 @@ export default function Inventory() {
                 name="nameAr"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name (Arabic)</FormLabel>
+                    <FormLabel>{tr("nameArabic")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="اسم المنتج"
@@ -609,19 +632,19 @@ export default function Inventory() {
                   name="unit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Unit *</FormLabel>
+                      <FormLabel>{tr("unit2")}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select unit" />
+                            <SelectValue placeholder={tr("selectUnit")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="pcs">Pieces (pcs)</SelectItem>
-                          <SelectItem value="kg">Kilograms (kg)</SelectItem>
-                          <SelectItem value="m">Meters (m)</SelectItem>
-                          <SelectItem value="hr">Hours (hr)</SelectItem>
-                          <SelectItem value="box">Box</SelectItem>
+                          <SelectItem value="pcs">{tr("piecesPcs")}</SelectItem>
+                          <SelectItem value="kg">{tr("kilogramsKg")}</SelectItem>
+                          <SelectItem value="m">{tr("metersM")}</SelectItem>
+                          <SelectItem value="hr">{tr("hoursHr")}</SelectItem>
+                          <SelectItem value="box">{tr("box")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -635,10 +658,10 @@ export default function Inventory() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.description || "Description"}</FormLabel>
+                    <FormLabel>{t.description || tr("description")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Product description (optional)"
+                        placeholder={tr("productDescriptionOptional")}
                         {...field}
                         value={field.value || ""}
                       />
@@ -654,7 +677,7 @@ export default function Inventory() {
                   name="unitPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t.unitPrice || "Unit Price"} *</FormLabel>
+                      <FormLabel>{t.unitPrice || tr("unitPrice")} *</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -668,7 +691,7 @@ export default function Inventory() {
                   name="costPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Cost Price</FormLabel>
+                      <FormLabel>{tr("costPrice")}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -690,19 +713,19 @@ export default function Inventory() {
                   name="vatRate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>VAT Rate</FormLabel>
+                      <FormLabel>{tr("vatRate")}</FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseFloat(v))}
                         value={String(field.value)}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select VAT rate" />
+                            <SelectValue placeholder={tr("selectVatRate")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="0">0% (Exempt)</SelectItem>
-                          <SelectItem value="0.05">5% (Standard)</SelectItem>
+                          <SelectItem value="0">{tr("n0Exempt")}</SelectItem>
+                          <SelectItem value="0.05">{tr("n5Standard")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -715,7 +738,7 @@ export default function Inventory() {
                   name="lowStockThreshold"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Low Stock Threshold</FormLabel>
+                      <FormLabel>{tr("lowStockThreshold")}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -733,17 +756,17 @@ export default function Inventory() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createProductMutation.isPending || updateProductMutation.isPending}
                 >
                   {createProductMutation.isPending || updateProductMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading || tr("loading")
                     : editingProduct
-                      ? t.save || "Save"
-                      : "Add Product"}
+                      ? t.save || tr("save")
+                      : tr("addProduct")}
                 </Button>
               </div>
             </form>
@@ -755,11 +778,11 @@ export default function Inventory() {
       <Dialog open={addStockDialogOpen} onOpenChange={setAddStockDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Stock</DialogTitle>
+            <DialogTitle>{tr("addStock")}</DialogTitle>
             <DialogDescription>
               {stockProduct
-                ? `Record inventory movement for "${stockProduct.name}"`
-                : "Record inventory movement"}
+                ? tr("recordInventoryMovementFor", { name: stockProduct.name })
+                : tr("recordInventoryMovement")}
             </DialogDescription>
           </DialogHeader>
 
@@ -770,17 +793,17 @@ export default function Inventory() {
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.type || "Type"} *</FormLabel>
+                    <FormLabel>{t.type || tr("type")} *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder={tr("selectType")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="purchase">Purchase</SelectItem>
-                        <SelectItem value="adjustment">Adjustment</SelectItem>
-                        <SelectItem value="return">Return</SelectItem>
+                        <SelectItem value="purchase">{tr("purchase")}</SelectItem>
+                        <SelectItem value="adjustment">{tr("adjustment")}</SelectItem>
+                        <SelectItem value="return">{tr("return")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -793,7 +816,7 @@ export default function Inventory() {
                 name="quantity"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.quantity || "Quantity"} *</FormLabel>
+                    <FormLabel>{t.quantity || tr("quantity")} *</FormLabel>
                     <FormControl>
                       <Input type="number" min="1" step="1" {...field} />
                     </FormControl>
@@ -807,7 +830,7 @@ export default function Inventory() {
                 name="unitCost"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unit Cost</FormLabel>
+                    <FormLabel>{tr("unitCost")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -827,9 +850,13 @@ export default function Inventory() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{tr("notes")}</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
+                      <Textarea
+                        placeholder={tr("optionalNotes")}
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -842,10 +869,12 @@ export default function Inventory() {
                   variant="outline"
                   onClick={() => setAddStockDialogOpen(false)}
                 >
-                  {t.cancel || "Cancel"}
+                  {t.cancel || tr("cancel")}
                 </Button>
                 <Button type="submit" disabled={addMovementMutation.isPending}>
-                  {addMovementMutation.isPending ? t.loading || "Loading..." : "Record Movement"}
+                  {addMovementMutation.isPending
+                    ? t.loading || tr("loading")
+                    : tr("recordMovement")}
                 </Button>
               </div>
             </form>
@@ -861,14 +890,13 @@ export default function Inventory() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteProduct")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this product from inventory. This action cannot be
-              undone.
+              {tr("thisWillPermanentlyDeleteThisProduct")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (productToDelete) {
@@ -878,7 +906,7 @@ export default function Inventory() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

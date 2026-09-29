@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { useI18n } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { establishAuthenticatedSession } from "@/lib/authSession";
+import { messages as pageMessages } from "./AcceptInvite.i18n";
 
 interface InvitationInfo {
   email: string;
@@ -19,6 +21,8 @@ const PASSWORD_RULE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 /** Public page opened from the emailed invitation link (client-portal invites). */
 export default function AcceptInvite() {
+  const tr = pageMessages.useT();
+
   const { token } = useParams<{ token: string }>();
   const [, setLocation] = useLocation();
   const { locale } = useI18n();
@@ -38,16 +42,13 @@ export default function AcceptInvite() {
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok) {
-          setLoadError(
-            body?.message ||
-              (en ? "This invitation is not valid." : "هذه الدعوة غير صالحة.")
-          );
+          setLoadError(body?.message || tr("thisInvitationIsNotValid"));
           return;
         }
         setInfo(body);
       })
       .catch(() => {
-        if (!cancelled) setLoadError(en ? "Could not load the invitation." : "تعذر تحميل الدعوة.");
+        if (!cancelled) setLoadError(tr("couldNotLoadTheInvitation"));
       });
     return () => {
       cancelled = true;
@@ -58,31 +59,33 @@ export default function AcceptInvite() {
     e.preventDefault();
     setFormError(null);
     if (!name.trim()) {
-      setFormError(en ? "Please enter your name." : "يرجى إدخال اسمك.");
+      setFormError(tr("pleaseEnterYourName"));
       return;
     }
     if (!PASSWORD_RULE.test(password)) {
-      setFormError(
-        en
-          ? "Use at least 8 characters with an uppercase letter, a lowercase letter and a number."
-          : "استخدم 8 أحرف على الأقل مع حرف كبير وحرف صغير ورقم."
-      );
+      setFormError(tr("useAtLeast8CharactersWith"));
       return;
     }
     if (password !== confirm) {
-      setFormError(en ? "Passwords do not match." : "كلمتا المرور غير متطابقتين.");
+      setFormError(tr("passwordsDoNotMatch"));
       return;
     }
     setSubmitting(true);
     try {
-      const result = await apiRequest("POST", `/api/invitations/accept/${encodeURIComponent(token ?? "")}`, {
-        name: name.trim(),
-        password,
-      });
+      const result = await apiRequest(
+        "POST",
+        `/api/invitations/accept/${encodeURIComponent(token ?? "")}`,
+        {
+          name: name.trim(),
+          password,
+        }
+      );
       await establishAuthenticatedSession(result.user);
-      setLocation(result.user?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard");
+      setLocation(
+        result.user?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
+      );
     } catch (err: any) {
-      setFormError(err?.message || (en ? "Could not accept the invitation." : "تعذر قبول الدعوة."));
+      setFormError(err?.message || tr("couldNotAcceptTheInvitation"));
     } finally {
       setSubmitting(false);
     }
@@ -93,37 +96,31 @@ export default function AcceptInvite() {
       className="min-h-screen flex items-center justify-center bg-background p-4"
       dir={en ? "ltr" : "rtl"}
     >
+      <LanguageToggle floating />
       <Card className="w-full max-w-md" data-testid="accept-invite-card">
         <CardHeader>
-          <CardTitle className="text-2xl">
-            {en ? "Join your client portal" : "انضم إلى بوابة العميل"}
-          </CardTitle>
+          <CardTitle className="text-2xl">{tr("joinYourClientPortal")}</CardTitle>
           <CardDescription>
             {info
               ? en
                 ? `You have been invited to ${info.company?.name ?? "the client portal"}.`
                 : `تمت دعوتك إلى ${info.company?.name ?? "بوابة العميل"}.`
-              : en
-                ? "Checking your invitation…"
-                : "جارٍ التحقق من دعوتك…"}
+              : tr("checkingYourInvitation")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loadError ? (
             <p className="text-sm text-destructive" role="alert" data-testid="accept-invite-error">
-              {loadError}{" "}
-              {en
-                ? "Ask your accountant to send a new invitation."
-                : "اطلب من محاسبك إرسال دعوة جديدة."}
+              {loadError} {tr("askYourAccountantToSendA")}
             </p>
           ) : info ? (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="invite-email">{en ? "Email" : "البريد الإلكتروني"}</Label>
+                <Label htmlFor="invite-email">{tr("email")}</Label>
                 <Input id="invite-email" value={info.email} readOnly disabled />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="invite-name">{en ? "Your name" : "اسمك"}</Label>
+                <Label htmlFor="invite-name">{tr("yourName")}</Label>
                 <Input
                   id="invite-name"
                   value={name}
@@ -133,7 +130,7 @@ export default function AcceptInvite() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="invite-password">{en ? "Password" : "كلمة المرور"}</Label>
+                <Label htmlFor="invite-password">{tr("password")}</Label>
                 <Input
                   id="invite-password"
                   type="password"
@@ -144,9 +141,7 @@ export default function AcceptInvite() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="invite-confirm">
-                  {en ? "Confirm password" : "تأكيد كلمة المرور"}
-                </Label>
+                <Label htmlFor="invite-confirm">{tr("confirmPassword")}</Label>
                 <Input
                   id="invite-confirm"
                   type="password"
@@ -157,24 +152,25 @@ export default function AcceptInvite() {
                 />
               </div>
               {formError && (
-                <p className="text-sm text-destructive" role="alert" data-testid="accept-invite-form-error">
+                <p
+                  className="text-sm text-destructive"
+                  role="alert"
+                  data-testid="accept-invite-form-error"
+                >
                   {formError}
                 </p>
               )}
-              <Button type="submit" className="w-full" disabled={submitting} data-testid="button-accept-invite">
-                {submitting
-                  ? en
-                    ? "Creating your account…"
-                    : "جارٍ إنشاء حسابك…"
-                  : en
-                    ? "Accept invitation"
-                    : "قبول الدعوة"}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={submitting}
+                data-testid="button-accept-invite"
+              >
+                {submitting ? tr("creatingYourAccount") : tr("acceptInvitation")}
               </Button>
             </form>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              {en ? "One moment…" : "لحظة من فضلك…"}
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("oneMoment")}</p>
           )}
         </CardContent>
       </Card>

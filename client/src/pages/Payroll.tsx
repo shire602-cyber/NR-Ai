@@ -70,6 +70,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./Payroll.i18n";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ interface GratuityResult {
 
 const employeeFormSchema = z.object({
   employeeNumber: z.string().optional(),
-  fullName: z.string().min(1, "Full name is required"),
+  fullName: z.string().min(1, pageMessages.marker("fullNameIsRequired")),
   fullNameAr: z.string().optional(),
   nationality: z.string().optional(),
   passportNumber: z.string().optional(),
@@ -175,7 +176,7 @@ const employeeFormSchema = z.object({
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
-  basicSalary: z.coerce.number().positive("Basic salary must be greater than 0"),
+  basicSalary: z.coerce.number().positive(pageMessages.marker("basicSalaryMustBeGreaterThan")),
   housingAllowance: z.coerce.number().min(0).default(0),
   transportAllowance: z.coerce.number().min(0).default(0),
   otherAllowance: z.coerce.number().min(0).default(0),
@@ -201,24 +202,26 @@ type PayrollItemEditData = z.infer<typeof payrollItemEditSchema>;
 
 // ─── Month names ─────────────────────────────────────────
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+const getMonths = () => [
+  pageMessages.t("january"),
+  pageMessages.t("february"),
+  pageMessages.t("march"),
+  pageMessages.t("april"),
+  pageMessages.t("may"),
+  pageMessages.t("june"),
+  pageMessages.t("july"),
+  pageMessages.t("august"),
+  pageMessages.t("september"),
+  pageMessages.t("october"),
+  pageMessages.t("november"),
+  pageMessages.t("december"),
 ];
 
 // ─── Component ───────────────────────────────────────────
 
 export default function Payroll() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -311,14 +314,14 @@ export default function Payroll() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
       toast({
-        title: "Employee Created",
-        description: "The employee has been added successfully.",
+        title: tr("employeeCreated"),
+        description: tr("theEmployeeHasBeenAddedSuccessfully"),
       });
       setEmployeeDialogOpen(false);
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -328,15 +331,15 @@ export default function Payroll() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
       toast({
-        title: "Employee Updated",
-        description: "The employee has been updated successfully.",
+        title: tr("employeeUpdated"),
+        description: tr("theEmployeeHasBeenUpdatedSuccessfully"),
       });
       setEmployeeDialogOpen(false);
       setEditingEmployee(null);
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -344,10 +347,10 @@ export default function Payroll() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/employees/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
-      toast({ title: "Employee Deleted", description: "The employee has been removed." });
+      toast({ title: tr("employeeDeleted"), description: tr("theEmployeeHasBeenRemoved") });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -357,14 +360,14 @@ export default function Payroll() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
       toast({
-        title: "Payroll Run Created",
-        description: "The payroll run has been created as draft.",
+        title: tr("payrollRunCreated"),
+        description: tr("thePayrollRunHasBeenCreated"),
       });
       setPayrollRunDialogOpen(false);
       payrollRunForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -377,15 +380,13 @@ export default function Payroll() {
       }
       const warnings: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
       toast({
-        title: "Payroll Calculated",
+        title: tr("payrollCalculated"),
         description:
-          warnings.length > 0
-            ? warnings.join(" ")
-            : "Payroll items have been generated from active employees.",
+          warnings.length > 0 ? warnings.join(" ") : tr("payrollItemsHaveBeenGeneratedFrom"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -407,15 +408,15 @@ export default function Payroll() {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
       toast({
-        title: "Payroll Approved",
-        description: "The payroll run has been approved and items marked as paid.",
+        title: tr("payrollApproved"),
+        description: tr("thePayrollRunHasBeenApproved"),
       });
     },
     onError: (error: Error, _runId, context: any) => {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
@@ -430,12 +431,12 @@ export default function Payroll() {
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
-      toast({ title: "Item Updated", description: "Payroll item has been updated." });
+      toast({ title: tr("itemUpdated"), description: tr("payrollItemHasBeenUpdated") });
       setEditItemDialogOpen(false);
       setEditingItemId(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -446,7 +447,7 @@ export default function Payroll() {
       setGratuityResult(data);
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -554,15 +555,19 @@ export default function Payroll() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      toast({ title: "SIF Downloaded", description: "WPS SIF file has been downloaded." });
+      toast({ title: tr("sifDownloaded"), description: tr("wpsSifFileHasBeenDownloaded") });
     } catch (err: any) {
-      toast({ title: "Error", description: err?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: err?.message, variant: "destructive" });
     }
   };
 
   const handleCalculateGratuity = () => {
     if (!gratuityEmployeeId) {
-      toast({ title: "Error", description: "Please select an employee.", variant: "destructive" });
+      toast({
+        title: tr("error"),
+        description: tr("pleaseSelectAnEmployee"),
+        variant: "destructive",
+      });
       return;
     }
     calculateGratuityMutation.mutate({
@@ -576,19 +581,35 @@ export default function Payroll() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Active</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            {tr("active")}
+          </Badge>
+        );
       case "inactive":
-        return <Badge variant="secondary">Inactive</Badge>;
+        return <Badge variant="secondary">{tr("inactive")}</Badge>;
       case "draft":
-        return <Badge variant="outline">Draft</Badge>;
+        return <Badge variant="outline">{tr("draft")}</Badge>;
       case "calculated":
-        return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Calculated</Badge>;
+        return (
+          <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">
+            {tr("calculated")}
+          </Badge>
+        );
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            {tr("approved")}
+          </Badge>
+        );
       case "pending":
-        return <Badge variant="outline">Pending</Badge>;
+        return <Badge variant="outline">{tr("pending")}</Badge>;
       case "paid":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Paid</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            {tr("paid")}
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -610,7 +631,7 @@ export default function Payroll() {
   if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
+        <div className="text-muted-foreground">{t.loading || tr("loading")}</div>
       </div>
     );
   }
@@ -618,7 +639,7 @@ export default function Payroll() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <div className="text-muted-foreground">{tr("pleaseCreateACompanyFirst")}</div>
       </div>
     );
   }
@@ -630,8 +651,8 @@ export default function Payroll() {
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => setViewingRunId(null)}>
-            <ChevronLeft className="w-4 h-4 mr-1" />
-            Back to Payroll Runs
+            <ChevronLeft className="w-4 h-4 me-1" />
+            {tr("backToPayrollRuns")}
           </Button>
         </div>
 
@@ -640,12 +661,21 @@ export default function Payroll() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>
-                  Payroll Run: {MONTHS[(viewingRun.period_month || 1) - 1]} {viewingRun.period_year}
+                  {tr("payrollRun", {
+                    value: getMonths()[(viewingRun.period_month || 1) - 1],
+                    period_year: viewingRun.period_year,
+                  })}
                 </CardTitle>
                 <CardDescription className="mt-1 space-x-4">
-                  <span>{viewingRun.employee_count} employees</span>
+                  <span>{tr("employees", { employee_count: viewingRun.employee_count })}</span>
                   <span>
-                    Net: {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
+                    {tr("net", {
+                      formatCurrency: formatCurrency(
+                        parseFloat(viewingRun.total_net) || 0,
+                        "AED",
+                        locale
+                      ),
+                    })}
                   </span>
                   <span>{getStatusBadge(viewingRun.status)}</span>
                 </CardDescription>
@@ -658,7 +688,7 @@ export default function Payroll() {
                     className="flex items-center gap-2"
                   >
                     <Calculator className="w-4 h-4" />
-                    {calculatePayrollMutation.isPending ? "Calculating..." : "Calculate"}
+                    {calculatePayrollMutation.isPending ? tr("calculating") : tr("calculate")}
                   </Button>
                 )}
                 {viewingRun.status === "calculated" && (
@@ -670,7 +700,7 @@ export default function Payroll() {
                       className="flex items-center gap-2"
                     >
                       <Calculator className="w-4 h-4" />
-                      Recalculate
+                      {tr("recalculate")}
                     </Button>
                     <Button
                       onClick={() => approvePayrollMutation.mutate(viewingRunId)}
@@ -678,7 +708,7 @@ export default function Payroll() {
                       className="flex items-center gap-2 bg-success hover:bg-success"
                     >
                       <CheckCircle className="w-4 h-4" />
-                      {approvePayrollMutation.isPending ? "Approving..." : "Approve"}
+                      {approvePayrollMutation.isPending ? tr("approving") : tr("approve")}
                     </Button>
                   </>
                 )}
@@ -689,7 +719,7 @@ export default function Payroll() {
                     className="flex items-center gap-2"
                   >
                     <Download className="w-4 h-4" />
-                    Download SIF
+                    {tr("downloadSif")}
                   </Button>
                 )}
               </div>
@@ -700,25 +730,25 @@ export default function Payroll() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Basic</div>
+                <div className="text-sm text-muted-foreground">{tr("totalBasic")}</div>
                 <div className="text-lg font-semibold">
                   {formatCurrency(parseFloat(viewingRun.total_basic) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Allowances</div>
+                <div className="text-sm text-muted-foreground">{tr("totalAllowances")}</div>
                 <div className="text-lg font-semibold">
                   {formatCurrency(parseFloat(viewingRun.total_allowances) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Deductions</div>
+                <div className="text-sm text-muted-foreground">{tr("totalDeductions")}</div>
                 <div className="text-lg font-semibold text-destructive">
                   {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="text-sm text-muted-foreground">Total Net Pay</div>
+                <div className="text-sm text-muted-foreground">{tr("totalNetPay")}</div>
                 <div className="text-lg font-semibold text-success">
                   {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
                 </div>
@@ -729,25 +759,27 @@ export default function Payroll() {
 
             {/* Payroll items table */}
             {isLoadingItems ? (
-              <div className="text-center py-8 text-muted-foreground">Loading payroll items...</div>
+              <div className="text-center py-8 text-muted-foreground">
+                {tr("loadingPayrollItems")}
+              </div>
             ) : payrollItems.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No payroll items yet. Click "Calculate" to auto-populate from active employees.
+                {tr("noPayrollItemsYetClickCalculate")}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Basic</TableHead>
-                      <TableHead className="text-right">Allowances</TableHead>
-                      <TableHead className="text-right">Overtime</TableHead>
-                      <TableHead className="text-right">Deductions</TableHead>
-                      <TableHead className="text-right">Net Salary</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{tr("employee")}</TableHead>
+                      <TableHead>{tr("department")}</TableHead>
+                      <TableHead className="text-end">{tr("basic")}</TableHead>
+                      <TableHead className="text-end">{tr("allowances")}</TableHead>
+                      <TableHead className="text-end">{tr("overtime")}</TableHead>
+                      <TableHead className="text-end">{tr("deductions")}</TableHead>
+                      <TableHead className="text-end">{tr("netSalary")}</TableHead>
+                      <TableHead>{tr("status")}</TableHead>
+                      <TableHead className="text-end">{tr("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -771,29 +803,29 @@ export default function Payroll() {
                           <TableCell className="text-muted-foreground">
                             {item.department || "-"}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {formatCurrency(parseFloat(item.basic_salary) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {formatCurrency(allowances, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {formatCurrency(parseFloat(item.overtime) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right text-destructive">
+                          <TableCell className="text-end text-destructive">
                             {formatCurrency(parseFloat(item.deductions) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell className="text-end font-semibold">
                             {formatCurrency(parseFloat(item.net_salary) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             {viewingRun.status !== "approved" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleOpenEditItem(item)}
-                                title="Edit overtime/deductions"
+                                title={tr("editOvertimeDeductions")}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -813,10 +845,8 @@ export default function Payroll() {
         <Dialog open={editItemDialogOpen} onOpenChange={setEditItemDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Edit Payroll Item</DialogTitle>
-              <DialogDescription>
-                Adjust overtime and deductions for this employee.
-              </DialogDescription>
+              <DialogTitle>{tr("editPayrollItem")}</DialogTitle>
+              <DialogDescription>{tr("adjustOvertimeAndDeductionsForThis")}</DialogDescription>
             </DialogHeader>
 
             <Form {...payrollItemForm}>
@@ -829,7 +859,7 @@ export default function Payroll() {
                   name="overtime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Overtime (AED)</FormLabel>
+                      <FormLabel>{tr("overtimeAed")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -843,7 +873,7 @@ export default function Payroll() {
                   name="deductions"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Deductions (AED)</FormLabel>
+                      <FormLabel>{tr("deductionsAed")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -857,10 +887,10 @@ export default function Payroll() {
                   name="deductionNotes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Deduction Notes</FormLabel>
+                      <FormLabel>{tr("deductionNotes")}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Reason for deduction"
+                          placeholder={tr("reasonForDeduction")}
                           {...field}
                           value={field.value || ""}
                         />
@@ -876,10 +906,10 @@ export default function Payroll() {
                     variant="outline"
                     onClick={() => setEditItemDialogOpen(false)}
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button type="submit" disabled={updatePayrollItemMutation.isPending}>
-                    {updatePayrollItemMutation.isPending ? "Saving..." : "Save"}
+                    {updatePayrollItemMutation.isPending ? tr("saving") : tr("save")}
                   </Button>
                 </div>
               </form>
@@ -898,10 +928,10 @@ export default function Payroll() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Banknote className="w-8 h-8" />
-            Payroll & WPS
+            {tr("payrollWps")}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage employee payroll, WPS compliance, and end-of-service gratuity
+            {tr("manageEmployeePayrollWpsComplianceAnd")}
           </p>
         </div>
       </div>
@@ -910,15 +940,15 @@ export default function Payroll() {
         <TabsList>
           <TabsTrigger value="employees" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
-            Employees
+            {tr("employees2")}
           </TabsTrigger>
           <TabsTrigger value="payroll-runs" className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
-            Payroll Runs
+            {tr("payrollRuns")}
           </TabsTrigger>
           <TabsTrigger value="gratuity" className="flex items-center gap-2">
             <Calculator className="w-4 h-4" />
-            Gratuity Calculator
+            {tr("gratuityCalculator")}
           </TabsTrigger>
         </TabsList>
 
@@ -928,19 +958,19 @@ export default function Payroll() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Employees</CardTitle>
+                  <CardTitle>{tr("employees2")}</CardTitle>
                   <CardDescription>
-                    {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
+                    {tr.plural("employeesRegistered", employees.length)}
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  Add Employee
+                  {tr("addEmployee")}
                 </Button>
               </div>
               <div className="mt-4">
                 <Input
-                  placeholder="Search employees by name, number, or department..."
+                  placeholder={tr("searchEmployeesByNameNumberOr")}
                   value={employeeSearch}
                   onChange={(e) => setEmployeeSearch(e.target.value)}
                   className="max-w-sm"
@@ -949,25 +979,27 @@ export default function Payroll() {
             </CardHeader>
             <CardContent>
               {isLoadingEmployees ? (
-                <div className="text-center py-8 text-muted-foreground">Loading employees...</div>
+                <div className="text-center py-8 text-muted-foreground">
+                  {tr("loadingEmployees")}
+                </div>
               ) : filteredEmployees.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {employeeSearch
-                    ? "No employees match your search."
-                    : "No employees yet. Add your first employee to get started."}
+                    ? tr("noEmployeesMatchYourSearch")
+                    : tr("noEmployeesYetAddYourFirst")}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Employee #</TableHead>
-                        <TableHead>Department</TableHead>
-                        <TableHead>Designation</TableHead>
-                        <TableHead className="text-right">Total Salary</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{tr("name")}</TableHead>
+                        <TableHead>{tr("employee2")}</TableHead>
+                        <TableHead>{tr("department")}</TableHead>
+                        <TableHead>{tr("designation")}</TableHead>
+                        <TableHead className="text-end">{tr("totalSalary")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
+                        <TableHead className="text-end">{tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -988,17 +1020,17 @@ export default function Payroll() {
                           </TableCell>
                           <TableCell>{emp.department || "-"}</TableCell>
                           <TableCell>{emp.designation || "-"}</TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-end font-mono">
                             {formatCurrency(parseFloat(emp.total_salary) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(emp.status)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleOpenEditEmployee(emp)}
-                                title="Edit"
+                                title={tr("edit")}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -1006,7 +1038,7 @@ export default function Payroll() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setEmployeeToDelete(emp.id)}
-                                title="Delete"
+                                title={tr("delete")}
                                 className="text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1029,9 +1061,9 @@ export default function Payroll() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Payroll Runs</CardTitle>
+                  <CardTitle>{tr("payrollRuns")}</CardTitle>
                   <CardDescription>
-                    {payrollRuns.length} payroll run{payrollRuns.length !== 1 ? "s" : ""}
+                    {tr.plural("payrollRunsCount", payrollRuns.length)}
                   </CardDescription>
                 </div>
                 <Button
@@ -1039,40 +1071,40 @@ export default function Payroll() {
                   className="flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  New Payroll Run
+                  {tr("newPayrollRun")}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {isLoadingRuns ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Loading payroll runs...
+                  {tr("loadingPayrollRuns")}
                 </div>
               ) : payrollRuns.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No payroll runs yet. Create your first payroll run to get started.
+                  {tr("noPayrollRunsYetCreateYour")}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Period</TableHead>
-                        <TableHead className="text-right">Employees</TableHead>
-                        <TableHead className="text-right">Total Net</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{tr("period")}</TableHead>
+                        <TableHead className="text-end">{tr("employees2")}</TableHead>
+                        <TableHead className="text-end">{tr("totalNet")}</TableHead>
+                        <TableHead>{tr("status")}</TableHead>
+                        <TableHead>{tr("created")}</TableHead>
+                        <TableHead className="text-end">{tr("actions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {payrollRuns.map((run) => (
                         <TableRow key={run.id}>
                           <TableCell className="font-medium">
-                            {MONTHS[(run.period_month || 1) - 1]} {run.period_year}
+                            {getMonths()[(run.period_month || 1) - 1]} {run.period_year}
                           </TableCell>
-                          <TableCell className="text-right">{run.employee_count}</TableCell>
-                          <TableCell className="text-right font-mono">
+                          <TableCell className="text-end">{run.employee_count}</TableCell>
+                          <TableCell className="text-end font-mono">
                             {formatCurrency(parseFloat(run.total_net) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(run.status)}</TableCell>
@@ -1081,13 +1113,13 @@ export default function Payroll() {
                               ? format(new Date(run.created_at), "MMM dd, yyyy")
                               : "-"}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setViewingRunId(run.id)}
-                                title="View Details"
+                                title={tr("viewDetails")}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -1097,7 +1129,7 @@ export default function Payroll() {
                                   size="sm"
                                   onClick={() => calculatePayrollMutation.mutate(run.id)}
                                   disabled={calculatePayrollMutation.isPending}
-                                  title="Calculate"
+                                  title={tr("calculate")}
                                 >
                                   <Calculator className="w-4 h-4" />
                                 </Button>
@@ -1108,7 +1140,7 @@ export default function Payroll() {
                                   size="sm"
                                   onClick={() => approvePayrollMutation.mutate(run.id)}
                                   disabled={approvePayrollMutation.isPending}
-                                  title="Approve"
+                                  title={tr("approve")}
                                   className="text-success hover:text-success"
                                 >
                                   <CheckCircle className="w-4 h-4" />
@@ -1119,7 +1151,7 @@ export default function Payroll() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleDownloadSIF(run.id)}
-                                  title="Download SIF"
+                                  title={tr("downloadSif")}
                                 >
                                   <Download className="w-4 h-4" />
                                 </Button>
@@ -1143,16 +1175,13 @@ export default function Payroll() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calculator className="w-5 h-5" />
-                  End-of-Service Gratuity
+                  {tr("endOfServiceGratuity")}
                 </CardTitle>
-                <CardDescription>
-                  Calculate gratuity per UAE labor law. 21 days per year for the first 5 years, 30
-                  days per year thereafter. Maximum 2 years total salary.
-                </CardDescription>
+                <CardDescription>{tr("calculateGratuityPerUaeLaborLaw")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Select Employee</label>
+                  <label className="text-sm font-medium">{tr("selectEmployee")}</label>
                   <Select
                     value={gratuityEmployeeId}
                     onValueChange={(v) => {
@@ -1161,7 +1190,7 @@ export default function Payroll() {
                     }}
                   >
                     <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Choose an employee" />
+                      <SelectValue placeholder={tr("chooseAnEmployee")} />
                     </SelectTrigger>
                     <SelectContent>
                       {employees.map((emp) => (
@@ -1174,7 +1203,7 @@ export default function Payroll() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Termination Date (optional)</label>
+                  <label className="text-sm font-medium">{tr("terminationDateOptional")}</label>
                   <Input
                     type="date"
                     value={gratuityTerminationDate}
@@ -1182,7 +1211,7 @@ export default function Payroll() {
                     className="mt-1"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty to calculate as of today.
+                    {tr("leaveEmptyToCalculateAsOf")}
                   </p>
                 </div>
 
@@ -1192,7 +1221,9 @@ export default function Payroll() {
                   className="w-full flex items-center gap-2"
                 >
                   <Calculator className="w-4 h-4" />
-                  {calculateGratuityMutation.isPending ? "Calculating..." : "Calculate Gratuity"}
+                  {calculateGratuityMutation.isPending
+                    ? tr("calculating")
+                    : tr("calculateGratuity")}
                 </Button>
               </CardContent>
             </Card>
@@ -1200,8 +1231,10 @@ export default function Payroll() {
             {gratuityResult && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Gratuity Breakdown</CardTitle>
-                  <CardDescription>For {gratuityResult.employeeName}</CardDescription>
+                  <CardTitle>{tr("gratuityBreakdown")}</CardTitle>
+                  <CardDescription>
+                    {tr("for", { employeeName: gratuityResult.employeeName })}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {gratuityResult.note ? (
@@ -1211,27 +1244,29 @@ export default function Payroll() {
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="text-muted-foreground">Join Date</div>
+                        <div className="text-muted-foreground">{tr("joinDate")}</div>
                         <div className="font-medium">
                           {gratuityResult.joinDate
                             ? format(new Date(gratuityResult.joinDate), "MMM dd, yyyy")
                             : "-"}
                         </div>
 
-                        <div className="text-muted-foreground">Termination Date</div>
+                        <div className="text-muted-foreground">{tr("terminationDate")}</div>
                         <div className="font-medium">
                           {format(new Date(gratuityResult.terminationDate), "MMM dd, yyyy")}
                         </div>
 
-                        <div className="text-muted-foreground">Years of Service</div>
-                        <div className="font-medium">{gratuityResult.yearsOfService} years</div>
+                        <div className="text-muted-foreground">{tr("yearsOfService")}</div>
+                        <div className="font-medium">
+                          {tr("years", { yearsOfService: gratuityResult.yearsOfService })}
+                        </div>
 
-                        <div className="text-muted-foreground">Basic Salary</div>
+                        <div className="text-muted-foreground">{tr("basicSalary")}</div>
                         <div className="font-medium">
                           {formatCurrency(gratuityResult.basicSalary, "AED", locale)}
                         </div>
 
-                        <div className="text-muted-foreground">Daily Wage (Basic / 30)</div>
+                        <div className="text-muted-foreground">{tr("dailyWageBasic30")}</div>
                         <div className="font-medium">
                           {formatCurrency(gratuityResult.dailyWage, "AED", locale)}
                         </div>
@@ -1241,14 +1276,18 @@ export default function Payroll() {
 
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="text-muted-foreground">
-                          First 5 years ({gratuityResult.firstFiveYears} yrs x 21 days)
+                          {tr("first5YearsYrsX21", {
+                            firstFiveYears: gratuityResult.firstFiveYears,
+                          })}
                         </div>
                         <div className="font-medium">
                           {formatCurrency(gratuityResult.firstFiveYearsGratuity, "AED", locale)}
                         </div>
 
                         <div className="text-muted-foreground">
-                          After 5 years ({gratuityResult.remainingYears} yrs x 30 days)
+                          {tr("after5YearsYrsX30", {
+                            remainingYears: gratuityResult.remainingYears,
+                          })}
                         </div>
                         <div className="font-medium">
                           {formatCurrency(gratuityResult.remainingYearsGratuity, "AED", locale)}
@@ -1258,7 +1297,7 @@ export default function Payroll() {
                       <Separator />
 
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="text-lg font-semibold">Total Gratuity</div>
+                        <div className="text-lg font-semibold">{tr("totalGratuity")}</div>
                         <div className="text-lg font-bold text-success">
                           {formatCurrency(gratuityResult.totalGratuity, "AED", locale)}
                         </div>
@@ -1266,10 +1305,18 @@ export default function Payroll() {
 
                       {gratuityResult.isCapped && (
                         <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-xs text-warning-subtle-foreground">
-                          Gratuity capped at 2 years total salary (
-                          {formatCurrency(gratuityResult.maxGratuity || 0, "AED", locale)}).
-                          Uncapped amount:{" "}
-                          {formatCurrency(gratuityResult.uncappedGratuity || 0, "AED", locale)}.
+                          {tr("gratuityCappedAt2YearsTotal", {
+                            formatCurrency: formatCurrency(
+                              gratuityResult.maxGratuity || 0,
+                              "AED",
+                              locale
+                            ),
+                            formatCurrency2: formatCurrency(
+                              gratuityResult.uncappedGratuity || 0,
+                              "AED",
+                              locale
+                            ),
+                          })}
                         </div>
                       )}
                     </>
@@ -1285,9 +1332,9 @@ export default function Payroll() {
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEmployee ? "Edit Employee" : "Add Employee"}</DialogTitle>
+            <DialogTitle>{editingEmployee ? tr("editEmployee") : tr("addEmployee")}</DialogTitle>
             <DialogDescription>
-              {editingEmployee ? "Update employee details." : "Add a new employee to payroll."}
+              {editingEmployee ? tr("updateEmployeeDetails") : tr("addANewEmployeeToPayroll")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1295,7 +1342,7 @@ export default function Payroll() {
             <form onSubmit={employeeForm.handleSubmit(handleEmployeeSubmit)} className="space-y-4">
               {/* Personal Information */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Personal Information
+                {tr("personalInformation")}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1303,9 +1350,9 @@ export default function Payroll() {
                   name="fullName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Full Name *</FormLabel>
+                      <FormLabel>{tr("fullName")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Full name" {...field} />
+                        <Input placeholder={tr("fullName2")} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1316,7 +1363,7 @@ export default function Payroll() {
                   name="fullNameAr"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Full Name (Arabic)</FormLabel>
+                      <FormLabel>{tr("fullNameArabic")}</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="الاسم الكامل"
@@ -1337,7 +1384,7 @@ export default function Payroll() {
                   name="employeeNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Employee Number</FormLabel>
+                      <FormLabel>{tr("employeeNumber")}</FormLabel>
                       <FormControl>
                         <Input placeholder="EMP-001" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1350,7 +1397,7 @@ export default function Payroll() {
                   name="nationality"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nationality</FormLabel>
+                      <FormLabel>{tr("nationality")}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., UAE" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1363,7 +1410,7 @@ export default function Payroll() {
                   name="joinDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Join Date</FormLabel>
+                      <FormLabel>{tr("joinDate")}</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1375,7 +1422,7 @@ export default function Payroll() {
 
               {/* Work Information */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Work Information
+                {tr("workInformation")}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1383,9 +1430,9 @@ export default function Payroll() {
                   name="department"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Department</FormLabel>
+                      <FormLabel>{tr("department")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Finance" {...field} value={field.value || ""} />
+                        <Input placeholder={tr("eGFinance")} {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1396,10 +1443,10 @@ export default function Payroll() {
                   name="designation"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Designation</FormLabel>
+                      <FormLabel>{tr("designation")}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="e.g., Accountant"
+                          placeholder={tr("eGAccountant")}
                           {...field}
                           value={field.value || ""}
                         />
@@ -1412,7 +1459,7 @@ export default function Payroll() {
 
               {/* Identity Documents */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Identity & Documents
+                {tr("identityDocuments")}
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <FormField
@@ -1420,9 +1467,9 @@ export default function Payroll() {
                   name="passportNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Passport Number</FormLabel>
+                      <FormLabel>{tr("passportNumber")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Passport #" {...field} value={field.value || ""} />
+                        <Input placeholder={tr("passport")} {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1433,7 +1480,7 @@ export default function Payroll() {
                   name="visaNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Visa Number</FormLabel>
+                      <FormLabel>{tr("visaNumber")}</FormLabel>
                       <FormControl>
                         <Input placeholder="Visa #" {...field} value={field.value || ""} />
                       </FormControl>
@@ -1446,9 +1493,9 @@ export default function Payroll() {
                   name="laborCardNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Labor Card Number</FormLabel>
+                      <FormLabel>{tr("laborCardNumber")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Labor Card #" {...field} value={field.value || ""} />
+                        <Input placeholder={tr("laborCard")} {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1458,7 +1505,7 @@ export default function Payroll() {
 
               {/* Banking Details */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Banking Details
+                {tr("bankingDetails")}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1466,10 +1513,10 @@ export default function Payroll() {
                   name="bankName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bank Name</FormLabel>
+                      <FormLabel>{tr("bankName")}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="e.g., Emirates NBD"
+                          placeholder={tr("eGEmiratesNbd")}
                           {...field}
                           value={field.value || ""}
                         />
@@ -1483,9 +1530,9 @@ export default function Payroll() {
                   name="bankAccountNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Account Number</FormLabel>
+                      <FormLabel>{tr("accountNumber")}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Account #" {...field} value={field.value || ""} />
+                        <Input placeholder={tr("account")} {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1511,10 +1558,10 @@ export default function Payroll() {
                   name="routingCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Routing Code</FormLabel>
+                      <FormLabel>{tr("routingCode")}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Bank routing code"
+                          placeholder={tr("bankRoutingCode")}
                           {...field}
                           value={field.value || ""}
                         />
@@ -1527,7 +1574,7 @@ export default function Payroll() {
 
               {/* Salary */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
-                Salary Details (AED)
+                {tr("salaryDetailsAed")}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1535,7 +1582,7 @@ export default function Payroll() {
                   name="basicSalary"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Basic Salary *</FormLabel>
+                      <FormLabel>{tr("basicSalary2")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1548,7 +1595,7 @@ export default function Payroll() {
                   name="housingAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Housing Allowance</FormLabel>
+                      <FormLabel>{tr("housingAllowance")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1563,7 +1610,7 @@ export default function Payroll() {
                   name="transportAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Transport Allowance</FormLabel>
+                      <FormLabel>{tr("transportAllowance")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1576,7 +1623,7 @@ export default function Payroll() {
                   name="otherAllowance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Other Allowance</FormLabel>
+                      <FormLabel>{tr("otherAllowance")}</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -1592,16 +1639,16 @@ export default function Payroll() {
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Status</FormLabel>
+                    <FormLabel>{tr("status")}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
+                          <SelectValue placeholder={tr("selectStatus")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="active">{tr("active")}</SelectItem>
+                        <SelectItem value="inactive">{tr("inactive")}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1615,17 +1662,17 @@ export default function Payroll() {
                   variant="outline"
                   onClick={() => setEmployeeDialogOpen(false)}
                 >
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createEmployeeMutation.isPending || updateEmployeeMutation.isPending}
                 >
                   {createEmployeeMutation.isPending || updateEmployeeMutation.isPending
-                    ? "Saving..."
+                    ? tr("saving")
                     : editingEmployee
-                      ? "Save Changes"
-                      : "Add Employee"}
+                      ? tr("saveChanges")
+                      : tr("addEmployee")}
                 </Button>
               </div>
             </form>
@@ -1637,10 +1684,8 @@ export default function Payroll() {
       <Dialog open={payrollRunDialogOpen} onOpenChange={setPayrollRunDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New Payroll Run</DialogTitle>
-            <DialogDescription>
-              Create a new payroll run for a specific month and year.
-            </DialogDescription>
+            <DialogTitle>{tr("newPayrollRun")}</DialogTitle>
+            <DialogDescription>{tr("createANewPayrollRunFor")}</DialogDescription>
           </DialogHeader>
 
           <Form {...payrollRunForm}>
@@ -1653,18 +1698,18 @@ export default function Payroll() {
                 name="periodMonth"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Month *</FormLabel>
+                    <FormLabel>{tr("month")}</FormLabel>
                     <Select
                       onValueChange={(v) => field.onChange(parseInt(v))}
                       value={String(field.value)}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select month" />
+                          <SelectValue placeholder={tr("selectMonth")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {MONTHS.map((month, index) => (
+                        {getMonths().map((month, index) => (
                           <SelectItem key={index + 1} value={String(index + 1)}>
                             {month}
                           </SelectItem>
@@ -1681,7 +1726,7 @@ export default function Payroll() {
                 name="periodYear"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Year *</FormLabel>
+                    <FormLabel>{tr("year")}</FormLabel>
                     <FormControl>
                       <Input type="number" min="2020" max="2099" {...field} />
                     </FormControl>
@@ -1696,10 +1741,10 @@ export default function Payroll() {
                   variant="outline"
                   onClick={() => setPayrollRunDialogOpen(false)}
                 >
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button type="submit" disabled={createPayrollRunMutation.isPending}>
-                  {createPayrollRunMutation.isPending ? "Creating..." : "Create Run"}
+                  {createPayrollRunMutation.isPending ? tr("creating") : tr("createRun")}
                 </Button>
               </div>
             </form>
@@ -1715,13 +1760,13 @@ export default function Payroll() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Employee?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteEmployee")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove this employee record. This action cannot be undone.
+              {tr("thisWillPermanentlyRemoveThisEmployee")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (employeeToDelete) {
@@ -1731,7 +1776,7 @@ export default function Payroll() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tr("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

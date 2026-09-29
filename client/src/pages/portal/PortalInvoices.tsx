@@ -7,6 +7,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { messages as pageMessages } from "./PortalInvoices.i18n";
 
 function formatAed(n: number) {
   return new Intl.NumberFormat("en-AE", {
@@ -40,6 +41,8 @@ async function downloadPdf(invoiceId: string, invoiceNumber: string) {
 }
 
 export default function PortalInvoices() {
+  const tr = pageMessages.useT();
+
   const { data: invoices = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-invoices"],
     queryFn: () => apiRequest("GET", "/api/client-portal/invoices"),
@@ -48,9 +51,9 @@ export default function PortalInvoices() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Invoices</h2>
+        <h2 className="text-xl font-semibold text-foreground">{tr("invoices")}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          View and download invoices issued by NR Accounting.
+          {tr("viewAndDownloadInvoicesIssuedBy")}
         </p>
       </div>
 
@@ -61,17 +64,29 @@ export default function PortalInvoices() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : invoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 text-center py-10">No invoices found.</p>
+            <p className="text-sm text-muted-foreground/70 text-center py-10">
+              {tr("noInvoicesFound")}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Invoice #</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Due Date</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                      {tr("invoice")}
+                    </th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                      {tr("date")}
+                    </th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                      {tr("dueDate")}
+                    </th>
+                    <th className="text-end px-4 py-3 font-medium text-muted-foreground">
+                      {tr("amount")}
+                    </th>
+                    <th className="text-start px-4 py-3 font-medium text-muted-foreground">
+                      {tr("status")}
+                    </th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -85,25 +100,27 @@ export default function PortalInvoices() {
                       <td className="px-4 py-3 text-muted-foreground">
                         {inv.dueDate ? format(new Date(inv.dueDate), "MMM d, yyyy") : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-foreground">
+                      <td className="px-4 py-3 text-end font-semibold text-foreground">
                         {formatAed(Number(inv.total) || 0)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
                           variant="outline"
-                          className={STATUS_STYLES[inv.status] ?? "border-border text-muted-foreground"}
+                          className={
+                            STATUS_STYLES[inv.status] ?? "border-border text-muted-foreground"
+                          }
                         >
                           {inv.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-end">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 text-info hover:text-info hover:bg-info-subtle"
                           onClick={() => downloadPdf(inv.id, inv.number)}
                         >
-                          <FileDown className="w-3.5 h-3.5 mr-1.5" />
+                          <FileDown className="w-3.5 h-3.5 me-1.5" />
                           PDF
                         </Button>
                       </td>

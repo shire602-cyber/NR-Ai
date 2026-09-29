@@ -27,6 +27,7 @@ import {
   Globe,
   RefreshCw,
 } from "lucide-react";
+import { messages as pageMessages } from "./UAENewsFeed.i18n";
 
 interface NewsItem {
   id: string;
@@ -49,22 +50,21 @@ const NEWS_CATEGORIES = [
   { value: "economy", labelEn: "Economy", labelAr: "الاقتصاد", icon: TrendingUp },
 ];
 
-const SOURCE_LABELS: Record<string, { en: string; ar: string }> = {
-  fta: { en: "Federal Tax Authority", ar: "الهيئة الاتحادية للضرائب" },
-  gulf_news: { en: "Gulf News", ar: "جلف نيوز" },
-  khaleej_times: { en: "Khaleej Times", ar: "خليج تايمز" },
-  mof: { en: "Ministry of Finance", ar: "وزارة المالية" },
-  other: { en: "Other", ar: "أخرى" },
-};
+const getSourceLabels = (): Record<string, { en: string; ar: string }> => ({
+  fta: { en: pageMessages.t("federalTaxAuthority"), ar: "الهيئة الاتحادية للضرائب" },
+  gulf_news: { en: pageMessages.t("gulfNews"), ar: "جلف نيوز" },
+  khaleej_times: { en: pageMessages.t("khaleejTimes"), ar: "خليج تايمز" },
+  mof: { en: pageMessages.t("ministryOfFinance"), ar: "وزارة المالية" },
+  other: { en: pageMessages.t("other"), ar: "أخرى" },
+});
 
-const SAMPLE_NEWS: NewsItem[] = [
+const getSampleNews = (): NewsItem[] => [
   {
     id: "1",
-    title: "FTA Announces Updated VAT Return Filing Deadlines for 2025",
+    title: pageMessages.t("ftaAnnouncesUpdatedVatReturnFiling"),
     titleAr:
       "الهيئة الاتحادية للضرائب تعلن عن مواعيد جديدة لتقديم إقرارات ضريبة القيمة المضافة لعام 2025",
-    summary:
-      "The Federal Tax Authority has released updated guidelines for VAT return submission deadlines, with changes taking effect from Q1 2025.",
+    summary: pageMessages.t("theFederalTaxAuthorityHasReleased"),
     summaryAr:
       "أصدرت الهيئة الاتحادية للضرائب إرشادات محدثة لمواعيد تقديم إقرارات ضريبة القيمة المضافة، مع دخول التغييرات حيز التنفيذ اعتباراً من الربع الأول 2025.",
     source: "fta",
@@ -75,10 +75,9 @@ const SAMPLE_NEWS: NewsItem[] = [
   },
   {
     id: "2",
-    title: "Corporate Tax: Small Business Relief Extended to 2026",
+    title: pageMessages.t("corporateTaxSmallBusinessReliefExtended"),
     titleAr: "ضريبة الشركات: تمديد إعفاء الشركات الصغيرة حتى 2026",
-    summary:
-      "The Ministry of Finance confirms that small business relief provisions under the Corporate Tax law will be extended, benefiting thousands of UAE businesses.",
+    summary: pageMessages.t("theMinistryOfFinanceConfirmsThat"),
     summaryAr:
       "تؤكد وزارة المالية أن أحكام إعفاء الشركات الصغيرة بموجب قانون ضريبة الشركات ستُمدد، مما يعود بالنفع على آلاف الشركات الإماراتية.",
     source: "mof",
@@ -89,10 +88,9 @@ const SAMPLE_NEWS: NewsItem[] = [
   },
   {
     id: "3",
-    title: "UAE E-Invoicing Mandate: What Businesses Need to Know",
+    title: pageMessages.t("uaeEInvoicingMandateWhatBusinesses"),
     titleAr: "الفوترة الإلكترونية في الإمارات: ما تحتاج الشركات معرفته",
-    summary:
-      "With e-invoicing becoming mandatory for B2B transactions by 2027, businesses should start preparing their systems for compliance.",
+    summary: pageMessages.t("withEInvoicingBecomingMandatoryFor"),
     summaryAr:
       "مع إلزامية الفوترة الإلكترونية للمعاملات بين الشركات بحلول 2027، يجب على الشركات البدء في إعداد أنظمتها للامتثال.",
     source: "gulf_news",
@@ -103,10 +101,9 @@ const SAMPLE_NEWS: NewsItem[] = [
   },
   {
     id: "4",
-    title: "UAE Economy Shows Strong Growth in Q3 2024",
+    title: pageMessages.t("uaeEconomyShowsStrongGrowthIn"),
     titleAr: "الاقتصاد الإماراتي يُظهر نمواً قوياً في الربع الثالث 2024",
-    summary:
-      "Non-oil sectors continue to drive economic expansion, with tourism and trade leading the growth indicators.",
+    summary: pageMessages.t("nonOilSectorsContinueToDrive"),
     summaryAr:
       "تواصل القطاعات غير النفطية دفع التوسع الاقتصادي، حيث تقود السياحة والتجارة مؤشرات النمو.",
     source: "khaleej_times",
@@ -118,6 +115,8 @@ const SAMPLE_NEWS: NewsItem[] = [
 ];
 
 export default function UAENewsFeed() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const [selectedCategory, setSelectedCategory] = useState("all");
 
@@ -127,7 +126,7 @@ export default function UAENewsFeed() {
     refetch,
   } = useQuery<NewsItem[]>({
     queryKey: ["/api/news"],
-    initialData: SAMPLE_NEWS,
+    initialData: getSampleNews(),
   });
 
   const filteredNews =
@@ -158,17 +157,13 @@ export default function UAENewsFeed() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Insights"
-        title={locale === "ar" ? "أخبار الضرائب والاقتصاد الإماراتي" : "UAE Tax & Finance News"}
-        description={
-          locale === "ar"
-            ? "آخر التحديثات من الهيئة الاتحادية للضرائب والمصادر الموثوقة"
-            : "Latest updates from FTA and trusted sources"
-        }
+        eyebrow={tr("insights")}
+        title={tr("uaeTaxFinanceNews")}
+        description={tr("latestUpdatesFromFtaAndTrusted")}
         actions={
           <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-news">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "تحديث" : "Refresh"}
+            <RefreshCw className="w-4 h-4 me-2" />
+            {tr("refresh")}
           </Button>
         }
       />
@@ -186,7 +181,7 @@ export default function UAENewsFeed() {
                     className="text-xs"
                     data-testid={`tab-${cat.value}`}
                   >
-                    <Icon className="w-3 h-3 mr-1" />
+                    <Icon className="w-3 h-3 me-1" />
                     <span className="hidden sm:inline">
                       {locale === "ar" ? cat.labelAr : cat.labelEn}
                     </span>
@@ -200,14 +195,14 @@ export default function UAENewsFeed() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <Newspaper className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>{locale === "ar" ? "لا توجد أخبار حالياً" : "No news available"}</p>
+                <p>{tr("noNewsAvailable")}</p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-4">
               {filteredNews.map((item) => {
                 const Icon = getCategoryIcon(item.category);
-                const sourceLabel = SOURCE_LABELS[item.source] || SOURCE_LABELS.other;
+                const sourceLabel = getSourceLabels()[item.source] || getSourceLabels().other;
 
                 return (
                   <Card key={item.id} className="hover-elevate" data-testid={`news-${item.id}`}>
@@ -216,7 +211,7 @@ export default function UAENewsFeed() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <Badge variant="outline" className="text-xs">
-                              <Icon className="w-3 h-3 mr-1" />
+                              <Icon className="w-3 h-3 me-1" />
                               {locale === "ar"
                                 ? NEWS_CATEGORIES.find((c) => c.value === item.category)?.labelAr
                                 : NEWS_CATEGORIES.find((c) => c.value === item.category)?.labelEn}
@@ -262,12 +257,12 @@ export default function UAENewsFeed() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                {locale === "ar" ? "مصادر الأخبار" : "News Sources"}
+                {tr("newsSources")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {Object.entries(SOURCE_LABELS).map(([key, labels]) => (
+                {Object.entries(getSourceLabels()).map(([key, labels]) => (
                   <div
                     key={key}
                     className="flex items-center justify-between p-2 rounded-md border"
@@ -284,9 +279,7 @@ export default function UAENewsFeed() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">
-                {locale === "ar" ? "روابط مفيدة" : "Useful Links"}
-              </CardTitle>
+              <CardTitle className="text-sm">{tr("usefulLinks")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -295,24 +288,24 @@ export default function UAENewsFeed() {
                   className="w-full justify-start"
                   onClick={() => window.open("https://tax.gov.ae", "_blank")}
                 >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  {locale === "ar" ? "الهيئة الاتحادية للضرائب" : "Federal Tax Authority"}
+                  <Building2 className="w-4 h-4 me-2" />
+                  {tr("federalTaxAuthority")}
                 </Button>
                 <Button
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() => window.open("https://mof.gov.ae", "_blank")}
                 >
-                  <Scale className="w-4 h-4 mr-2" />
-                  {locale === "ar" ? "وزارة المالية" : "Ministry of Finance"}
+                  <Scale className="w-4 h-4 me-2" />
+                  {tr("ministryOfFinance")}
                 </Button>
                 <Button
                   variant="outline"
                   className="w-full justify-start"
                   onClick={() => window.open("https://emaratax.tax.gov.ae", "_blank")}
                 >
-                  <Receipt className="w-4 h-4 mr-2" />
-                  EmaraTax
+                  <Receipt className="w-4 h-4 me-2" />
+                  {tr("emaratax")}
                 </Button>
               </div>
             </CardContent>
@@ -320,16 +313,10 @@ export default function UAENewsFeed() {
 
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader>
-              <CardTitle className="text-sm">
-                {locale === "ar" ? "نصيحة اليوم" : "Tip of the Day"}
-              </CardTitle>
+              <CardTitle className="text-sm">{tr("tipOfTheDay")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {locale === "ar"
-                  ? "تذكر أن تحتفظ بجميع الفواتير والإيصالات لمدة 5 سنوات على الأقل للامتثال لمتطلبات الهيئة الاتحادية للضرائب."
-                  : "Remember to keep all invoices and receipts for at least 5 years to comply with FTA requirements."}
-              </p>
+              <p className="text-sm text-muted-foreground">{tr("rememberToKeepAllInvoicesAnd")}</p>
             </CardContent>
           </Card>
         </div>

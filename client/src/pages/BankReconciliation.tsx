@@ -64,6 +64,7 @@ import {
   BarChart3,
   ChevronRight,
 } from "lucide-react";
+import { messages as pageMessages } from "./BankReconciliation.i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -147,26 +148,26 @@ interface ReportData {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-const matchTypeConfig = {
+const getMatchTypeConfig = () => ({
   journal_entry: {
     icon: BookOpen,
-    label: "Journal Entry",
+    label: pageMessages.t("journalEntry"),
     color: "text-[hsl(var(--chart-3))]",
     bg: "bg-[hsl(var(--chart-3)/0.10)]",
   },
   invoice: {
     icon: FileText,
-    label: "Invoice",
+    label: pageMessages.t("invoice"),
     color: "text-[hsl(var(--chart-1))]",
     bg: "bg-[hsl(var(--chart-1)/0.10)]",
   },
   receipt: {
     icon: Receipt,
-    label: "Receipt",
+    label: pageMessages.t("receipt"),
     color: "text-[hsl(var(--chart-5))]",
     bg: "bg-[hsl(var(--chart-5)/0.10)]",
   },
-};
+});
 
 const SAMPLE_BANK_CSV = `Date,Description,Debit,Credit,Balance,Reference
 2026-06-13,ADCB BANK CHARGE,42.00,0,58218.00,FEE-0613
@@ -177,17 +178,17 @@ const SAMPLE_BANK_CSV = `Date,Description,Debit,Credit,Balance,Reference
 function confidenceLabel(score: number): { label: string; color: string; bg: string } {
   if (score >= 80)
     return {
-      label: "High",
+      label: pageMessages.t("high"),
       color: "text-[hsl(var(--chart-5))]",
       bg: "bg-[hsl(var(--chart-5)/0.15)]",
     };
   if (score >= 60)
     return {
-      label: "Medium",
+      label: pageMessages.t("medium"),
       color: "text-[hsl(var(--chart-4))]",
       bg: "bg-[hsl(var(--chart-4)/0.15)]",
     };
-  return { label: "Low", color: "text-destructive", bg: "bg-destructive/15" };
+  return { label: pageMessages.t("low"), color: "text-destructive", bg: "bg-destructive/15" };
 }
 
 function formatDate(dateStr: string) {
@@ -213,6 +214,8 @@ function downloadSampleBankCsv() {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -312,11 +315,14 @@ export default function BankReconciliation() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
-        title: "Import Successful",
+        title: tr("importSuccessful"),
         description:
           data.skippedDuplicates > 0
-            ? `Imported ${data.imported ?? 0} new transaction(s); skipped ${data.skippedDuplicates} duplicate(s).`
-            : `Imported ${data.imported ?? 0} transaction(s). Matching suggestions are being prepared.`,
+            ? tr("importedNewTransactionSSkippedDuplicate", {
+                value: data.imported ?? 0,
+                skippedDuplicates: data.skippedDuplicates,
+              })
+            : tr("importedTransactionSMatchingSuggestionsAre", { value: data.imported ?? 0 }),
       });
       setImportDialogOpen(false);
       setImportFile(null);
@@ -324,7 +330,7 @@ export default function BankReconciliation() {
       setProcessingStatus("");
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("importFailed"), description: error?.message });
     },
   });
 
@@ -364,8 +370,8 @@ export default function BankReconciliation() {
     },
     onSuccess: () => {
       toast({
-        title: "Transaction Reconciled",
-        description: "Bank transaction matched successfully.",
+        title: tr("transactionReconciled"),
+        description: tr("bankTransactionMatchedSuccessfully"),
       });
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
@@ -376,7 +382,7 @@ export default function BankReconciliation() {
       }
       toast({
         variant: "destructive",
-        title: "Reconciliation Failed",
+        title: tr("reconciliationFailed"),
         description: error?.message,
       });
     },
@@ -404,13 +410,13 @@ export default function BankReconciliation() {
       return { previous, queryKey };
     },
     onSuccess: () => {
-      toast({ title: "Match Removed", description: "Transaction reset to unmatched." });
+      toast({ title: tr("matchRemoved"), description: tr("transactionResetToUnmatched") });
     },
     onError: (error: any, _id, context: any) => {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ variant: "destructive", title: "Error", description: error?.message });
+      toast({ variant: "destructive", title: tr("error"), description: error?.message });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
@@ -422,14 +428,14 @@ export default function BankReconciliation() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
-        title: "Auto-Reconciliation Complete",
-        description: `Found ${data.matches?.length ?? 0} potential matches`,
+        title: tr("autoReconciliationComplete"),
+        description: tr("foundPotentialMatches", { value: data.matches?.length ?? 0 }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Auto-Reconciliation Failed",
+        title: tr("autoReconciliationFailed"),
         description: error?.message,
       });
     },
@@ -470,8 +476,8 @@ export default function BankReconciliation() {
     if (!importFile || !selectedBankAccount) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Select a bank account and upload a file",
+        title: tr("missingInformation"),
+        description: tr("selectABankAccountAndUpload"),
       });
       return;
     }
@@ -512,8 +518,8 @@ export default function BankReconciliation() {
         if (txns.length === 0) {
           toast({
             variant: "destructive",
-            title: "No transactions found",
-            description: "Try a different format.",
+            title: tr("noTransactionsFound"),
+            description: tr("tryADifferentFormat"),
           });
           return;
         }
@@ -526,7 +532,10 @@ export default function BankReconciliation() {
         queryClient.invalidateQueries({
           queryKey: ["/api/companies", companyId, "bank-statements"],
         });
-        toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
+        toast({
+          title: tr("importSuccessful"),
+          description: tr("importedTransactions", { txnsCount: txns.length }),
+        });
         setImportDialogOpen(false);
         setImportFile(null);
       } else {
@@ -535,7 +544,7 @@ export default function BankReconciliation() {
         await importMutation.mutateAsync({ bankAccountId: selectedBankAccount, csvContent });
       }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("importFailed"), description: error?.message });
     } finally {
       setIsImporting(false);
       setProcessingStatus("");
@@ -579,14 +588,14 @@ export default function BankReconciliation() {
     <div className="space-y-6">
       {/* ── Header ── */}
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={tr("accounting")}
         title={t.bankReconciliation}
         description={t.bankReconciliationDescription}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)}>
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Report
+              <BarChart3 className="w-4 h-4 me-2" />
+              {tr("report")}
             </Button>
             <Button
               variant="outline"
@@ -596,9 +605,9 @@ export default function BankReconciliation() {
               data-testid="button-auto-reconcile"
             >
               {autoReconcileMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Sparkles className="w-4 h-4 me-2" />
               )}
               {t.autoMatch}
             </Button>
@@ -607,7 +616,7 @@ export default function BankReconciliation() {
               size="sm"
               data-testid="button-import-transactions"
             >
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 me-2" />
               {t.importCsv}
             </Button>
           </>
@@ -619,7 +628,7 @@ export default function BankReconciliation() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Total
+              {tr("total")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -630,7 +639,7 @@ export default function BankReconciliation() {
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-[hsl(var(--chart-5))]" />
-              Reconciled
+              {tr("reconciled")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -644,18 +653,18 @@ export default function BankReconciliation() {
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-[hsl(var(--chart-4))]" />
-              Suggested
+              {tr("suggested")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">{stats.suggested}</div>
-            <p className="text-xs text-muted-foreground mt-1">Pending review</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("pendingReview")}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Net Amount
+              {tr("netAmount")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -681,7 +690,7 @@ export default function BankReconciliation() {
                   onCheckedChange={(c) => setShowReconciled(c as boolean)}
                 />
                 <Label htmlFor="show-reconciled" className="text-sm cursor-pointer">
-                  Show reconciled
+                  {tr("showReconciled")}
                 </Label>
               </div>
               <Select
@@ -689,10 +698,10 @@ export default function BankReconciliation() {
                 onValueChange={(v) => setSelectedBankAccount(v === "all" ? "" : v)}
               >
                 <SelectTrigger className="w-44" data-testid="select-bank-account">
-                  <SelectValue placeholder="All accounts" />
+                  <SelectValue placeholder={tr("allAccounts")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All accounts</SelectItem>
+                  <SelectItem value="all">{tr("allAccounts")}</SelectItem>
                   {bankAccounts?.map((acct) => (
                     <SelectItem key={acct.id} value={acct.id}>
                       {acct.nameEn}
@@ -701,12 +710,12 @@ export default function BankReconciliation() {
                 </SelectContent>
               </Select>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search..."
+                  placeholder={tr("search")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-56"
+                  className="ps-9 w-56"
                   data-testid="input-search"
                 />
               </div>
@@ -719,13 +728,10 @@ export default function BankReconciliation() {
           ) : filteredTransactions.length === 0 ? (
             <EmptyState
               icon={Building2}
-              title="No bank transactions"
-              description={
-                t.noTransactionsFound ||
-                "Import a bank statement (CSV or PDF) to start matching transactions to journal entries."
-              }
+              title={tr("noBankTransactions")}
+              description={t.noTransactionsFound || tr("importABankStatementCsvOr")}
               action={{
-                label: "Import bank statement",
+                label: tr("importBankStatement"),
                 icon: Upload,
                 variant: "outline",
                 onClick: () => setImportDialogOpen(true),
@@ -754,10 +760,11 @@ export default function BankReconciliation() {
                             </p>
                             <p className="font-medium truncate">{tx.description}</p>
                             <p className="text-xs text-muted-foreground">
-                              {tx.reference || "No reference"}
+                              {tx.reference || tr("noReference")}
                             </p>
                           </div>
                           <p
+                            dir="ltr"
                             className={`font-mono text-sm font-semibold shrink-0 ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
                           >
                             {formatCurrency(tx.amount)}
@@ -767,15 +774,15 @@ export default function BankReconciliation() {
                           <div className="flex flex-col gap-1">
                             {tx.isReconciled ? (
                               <StatusBadge tone="success" className="w-fit">
-                                Reconciled
+                                {tr("reconciled")}
                               </StatusBadge>
                             ) : tx.matchStatus === "suggested" ? (
                               <StatusBadge tone="warning" className="w-fit">
-                                Suggested
+                                {tr("suggested")}
                               </StatusBadge>
                             ) : (
                               <StatusBadge tone="neutral" className="w-fit">
-                                Unmatched
+                                {tr("unmatched")}
                               </StatusBadge>
                             )}
                             {confMeta && !tx.isReconciled && (
@@ -791,8 +798,8 @@ export default function BankReconciliation() {
                               onClick={() => unmatchMutation.mutate(tx.id)}
                               disabled={unmatchMutation.isPending}
                             >
-                              <Unlink className="w-3.5 h-3.5 mr-1" />
-                              Unmatch
+                              <Unlink className="w-3.5 h-3.5 me-1" />
+                              {tr("unmatch")}
                             </Button>
                           ) : tx.matchStatus === "suggested" ? (
                             <div className="flex gap-2">
@@ -801,15 +808,15 @@ export default function BankReconciliation() {
                                 onClick={() => handleAcceptSuggestion(tx)}
                                 disabled={matchMutation.isPending}
                               >
-                                <Check className="w-3.5 h-3.5 mr-1" />
-                                Accept
+                                <Check className="w-3.5 h-3.5 me-1" />
+                                {tr("accept")}
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleOpenMatch(tx)}
                               >
-                                Review
+                                {tr("review")}
                               </Button>
                             </div>
                           ) : (
@@ -819,8 +826,8 @@ export default function BankReconciliation() {
                               onClick={() => handleOpenMatch(tx)}
                               data-testid={`mobile-button-match-${tx.id}`}
                             >
-                              <Link2 className="w-3.5 h-3.5 mr-1" />
-                              Match
+                              <Link2 className="w-3.5 h-3.5 me-1" />
+                              {tr("match")}
                             </Button>
                           )}
                         </div>
@@ -833,12 +840,12 @@ export default function BankReconciliation() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-28">Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-28">Reference</TableHead>
-                      <TableHead className="text-right w-32">Amount</TableHead>
-                      <TableHead className="w-40">Status</TableHead>
-                      <TableHead className="text-right w-36">Actions</TableHead>
+                      <TableHead className="w-28">{tr("date")}</TableHead>
+                      <TableHead>{tr("description")}</TableHead>
+                      <TableHead className="w-28">{tr("reference")}</TableHead>
+                      <TableHead className="text-end w-32">{tr("amount")}</TableHead>
+                      <TableHead className="w-40">{tr("status")}</TableHead>
+                      <TableHead className="text-end w-36">{tr("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -864,7 +871,7 @@ export default function BankReconciliation() {
                             {tx.reference || "—"}
                           </TableCell>
                           <TableCell
-                            className={`text-right font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+                            className={`text-end font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
                           >
                             {formatCurrency(tx.amount)}
                           </TableCell>
@@ -872,18 +879,18 @@ export default function BankReconciliation() {
                             <div className="flex flex-col gap-1">
                               {tx.isReconciled ? (
                                 <StatusBadge tone="success" className="w-fit">
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Reconciled
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
+                                  {tr("reconciled")}
                                 </StatusBadge>
                               ) : tx.matchStatus === "suggested" ? (
                                 <StatusBadge tone="warning" className="w-fit">
-                                  <Sparkles className="w-3 h-3 mr-1" />
-                                  Suggested
+                                  <Sparkles className="w-3 h-3 me-1" />
+                                  {tr("suggested")}
                                 </StatusBadge>
                               ) : (
                                 <StatusBadge tone="neutral" className="w-fit">
-                                  <XCircle className="w-3 h-3 mr-1" />
-                                  Unmatched
+                                  <XCircle className="w-3 h-3 me-1" />
+                                  {tr("unmatched")}
                                 </StatusBadge>
                               )}
                               {confMeta && !tx.isReconciled && (
@@ -893,7 +900,7 @@ export default function BankReconciliation() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-end">
                             <div className="flex items-center justify-end gap-1">
                               {tx.isReconciled ? (
                                 <Button
@@ -902,7 +909,7 @@ export default function BankReconciliation() {
                                   className="text-muted-foreground h-7 px-2"
                                   onClick={() => unmatchMutation.mutate(tx.id)}
                                   disabled={unmatchMutation.isPending}
-                                  title="Unmatch"
+                                  title={tr("unmatch")}
                                 >
                                   <Unlink className="w-3.5 h-3.5" />
                                 </Button>
@@ -913,17 +920,17 @@ export default function BankReconciliation() {
                                     className="h-7 px-2 bg-[hsl(var(--chart-5))] hover:bg-[hsl(var(--chart-5)/0.85)] text-primary-foreground"
                                     onClick={() => handleAcceptSuggestion(tx)}
                                     disabled={matchMutation.isPending}
-                                    title="Accept suggested match"
+                                    title={tr("acceptSuggestedMatch")}
                                   >
-                                    <Check className="w-3.5 h-3.5 mr-1" />
-                                    Accept
+                                    <Check className="w-3.5 h-3.5 me-1" />
+                                    {tr("accept")}
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="h-7 px-2"
                                     onClick={() => handleOpenMatch(tx)}
-                                    title="Review or change match"
+                                    title={tr("reviewOrChangeMatch")}
                                   >
                                     <ChevronRight className="w-3.5 h-3.5" />
                                   </Button>
@@ -936,8 +943,8 @@ export default function BankReconciliation() {
                                   onClick={() => handleOpenMatch(tx)}
                                   data-testid={`button-match-${tx.id}`}
                                 >
-                                  <Link2 className="w-3.5 h-3.5 mr-1" />
-                                  Match
+                                  <Link2 className="w-3.5 h-3.5 me-1" />
+                                  {tr("match")}
                                 </Button>
                               )}
                             </div>
@@ -963,13 +970,15 @@ export default function BankReconciliation() {
       >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Match Transaction</DialogTitle>
+            <DialogTitle>{tr("matchTransaction")}</DialogTitle>
             <DialogDescription>
               {selectedTransaction && (
                 <span>
-                  {selectedTransaction.description} &mdash;{" "}
-                  {formatCurrency(selectedTransaction.amount)} on{" "}
-                  {formatDate(selectedTransaction.transactionDate)}
+                  {tr("on", {
+                    description: selectedTransaction.description,
+                    formatCurrency: formatCurrency(selectedTransaction.amount),
+                    formatDate: formatDate(selectedTransaction.transactionDate),
+                  })}
                 </span>
               )}
             </DialogDescription>
@@ -980,26 +989,28 @@ export default function BankReconciliation() {
             {/* Left: Bank transaction */}
             <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Bank Transaction
+                {tr("bankTransaction")}
               </p>
               {selectedTransaction && (
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Date</p>
+                    <p className="text-xs text-muted-foreground">{tr("date")}</p>
                     <p className="font-medium">{formatDate(selectedTransaction.transactionDate)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Description</p>
+                    <p className="text-xs text-muted-foreground">{tr("description")}</p>
                     <p className="font-medium text-sm">{selectedTransaction.description}</p>
                   </div>
                   {selectedTransaction.reference && (
                     <div>
-                      <p className="text-xs text-muted-foreground">Reference</p>
-                      <p className="font-mono text-sm">{selectedTransaction.reference}</p>
+                      <p className="text-xs text-muted-foreground">{tr("reference")}</p>
+                      <p dir="ltr" className="font-mono text-sm">
+                        {selectedTransaction.reference}
+                      </p>
                     </div>
                   )}
                   <div>
-                    <p className="text-xs text-muted-foreground">Amount</p>
+                    <p className="text-xs text-muted-foreground">{tr("amount")}</p>
                     <p
                       className={`text-xl font-bold ${selectedTransaction.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
                     >
@@ -1007,9 +1018,9 @@ export default function BankReconciliation() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Direction</p>
+                    <p className="text-xs text-muted-foreground">{tr("direction")}</p>
                     <Badge variant="outline" className="text-xs">
-                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / Outflow"}
+                      {selectedTransaction.amount >= 0 ? tr("creditInflow") : tr("debitOutflow")}
                     </Badge>
                   </div>
                 </div>
@@ -1019,7 +1030,7 @@ export default function BankReconciliation() {
             {/* Right: Match suggestions */}
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Suggested Matches
+                {tr("suggestedMatches")}
               </p>
               {isLoadingMatches ? (
                 <div className="space-y-2">
@@ -1028,9 +1039,9 @@ export default function BankReconciliation() {
                   ))}
                 </div>
               ) : matchSuggestions && matchSuggestions.length > 0 ? (
-                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
                   {matchSuggestions.map((s) => {
-                    const typeCfg = matchTypeConfig[s.matchedType];
+                    const typeCfg = getMatchTypeConfig()[s.matchedType];
                     const TypeIcon = typeCfg.icon;
                     const confMeta = confidenceLabel(s.confidence);
                     return (
@@ -1059,8 +1070,8 @@ export default function BankReconciliation() {
                               </p>
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-mono font-semibold text-sm">
+                          <div className="text-end shrink-0">
+                            <p dir="ltr" className="font-mono font-semibold text-sm">
                               {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
                             </p>
                             <span className={`text-xs font-medium ${confMeta.color}`}>
@@ -1083,7 +1094,7 @@ export default function BankReconciliation() {
                         )}
                         <div className="mt-2 flex justify-end">
                           <Badge variant="outline" className="text-xs">
-                            Click to match
+                            {tr("clickToMatch")}
                           </Badge>
                         </div>
                       </div>
@@ -1093,8 +1104,8 @@ export default function BankReconciliation() {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">No matches found</p>
-                  <p className="text-xs mt-1">Try reconciling manually via journal entries</p>
+                  <p className="text-sm">{tr("noMatchesFound")}</p>
+                  <p className="text-xs mt-1">{tr("tryReconcilingManuallyViaJournalEntries")}</p>
                 </div>
               )}
             </div>
@@ -1102,7 +1113,7 @@ export default function BankReconciliation() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setMatchDialogOpen(false)}>
-              Close
+              {tr("close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1117,10 +1128,10 @@ export default function BankReconciliation() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Bank Account</Label>
+              <Label>{tr("bankAccount")}</Label>
               <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
                 <SelectTrigger data-testid="select-import-bank-account">
-                  <SelectValue placeholder="Select account..." />
+                  <SelectValue placeholder={tr("selectAccount")} />
                 </SelectTrigger>
                 <SelectContent>
                   {bankAccounts?.map((acct) => (
@@ -1132,12 +1143,12 @@ export default function BankReconciliation() {
               </Select>
               {(!bankAccounts || bankAccounts.length === 0) && (
                 <p className="text-xs text-[hsl(var(--chart-4))]">
-                  No bank accounts configured. Create one under Settings → Bank Accounts.
+                  {tr("noBankAccountsConfiguredCreateOne")}
                 </p>
               )}
             </div>
             <div className="space-y-2">
-              <Label>Statement File</Label>
+              <Label>{tr("statementFile")}</Label>
               <Input
                 type="file"
                 accept=".csv,.pdf,application/pdf"
@@ -1167,26 +1178,27 @@ export default function BankReconciliation() {
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
-                  <p className="font-medium text-xs uppercase tracking-wide">Supported formats</p>
+                  <p className="font-medium text-xs uppercase tracking-wide">
+                    {tr("supportedFormats")}
+                  </p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
-                    <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, Arabic/English generic</span>
+                    <span>{tr("csvEmiratesNbdAdcbFabMashreq")}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
-                    <span>Comma, semicolon, and tab-delimited Excel exports are supported</span>
+                    <span>{tr("commaSemicolonAndTabDelimitedExcel")}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
-                    <span>Amount + Dr/Cr type columns are supported</span>
+                    <span>{tr("amountDrCrTypeColumnsAre")}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <FileText className="w-3.5 h-3.5 text-destructive" />
-                    <span>PDF — text extraction with OCR fallback</span>
+                    <span>{tr("pdfTextExtractionWithOcrFallback")}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Live bank feeds are not required. Upload a statement, review suggestions, then
-                    post matches.
+                    {tr("liveBankFeedsAreNotRequired")}
                   </p>
                 </div>
                 <Button
@@ -1197,7 +1209,7 @@ export default function BankReconciliation() {
                   onClick={downloadSampleBankCsv}
                   data-testid="button-download-sample-bank-csv"
                 >
-                  Sample CSV
+                  {tr("sampleCsv")}
                 </Button>
               </div>
             </div>
@@ -1208,15 +1220,15 @@ export default function BankReconciliation() {
               onClick={() => setImportDialogOpen(false)}
               disabled={isImporting}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleImport}
               disabled={isImporting || !importFile || !selectedBankAccount}
               data-testid="button-confirm-import"
             >
-              {isImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Import
+              {isImporting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {tr("import")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1228,13 +1240,15 @@ export default function BankReconciliation() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5" />
-              Reconciliation Report
+              {tr("reconciliationReport")}
             </DialogTitle>
             <DialogDescription>
-              Summary of matched and unmatched transactions
+              {tr("summaryOfMatchedAndUnmatchedTransactions")}
               {selectedBankAccount && bankAccounts?.find((a) => a.id === selectedBankAccount)
-                ? ` for ${bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn}`
-                : " across all accounts"}
+                ? tr("for", {
+                    nameEn: bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn,
+                  })
+                : tr("acrossAllAccounts")}
             </DialogDescription>
           </DialogHeader>
           {isLoadingReport ? (
@@ -1248,30 +1262,30 @@ export default function BankReconciliation() {
               {/* Status breakdown */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  Status
+                  {tr("status")}
                 </p>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-lg border p-3 text-center">
                     <div className="text-2xl font-bold">{reportData.summary.totalTransactions}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Total</div>
+                    <div className="text-xs text-muted-foreground mt-1">{tr("total")}</div>
                   </div>
                   <div className="rounded-lg border border-[hsl(var(--chart-5)/0.30)] bg-[hsl(var(--chart-5)/0.10)] p-3 text-center">
                     <div className="text-2xl font-bold text-[hsl(var(--chart-5))]">
                       {reportData.summary.reconciledCount}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Reconciled</div>
+                    <div className="text-xs text-muted-foreground mt-1">{tr("reconciled")}</div>
                   </div>
                   <div className="rounded-lg border border-[hsl(var(--chart-4)/0.30)] bg-[hsl(var(--chart-4)/0.10)] p-3 text-center">
                     <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">
                       {reportData.summary.unreconciledCount}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Unreconciled</div>
+                    <div className="text-xs text-muted-foreground mt-1">{tr("unreconciled")}</div>
                   </div>
                 </div>
                 {reportData.summary.totalTransactions > 0 && (
                   <div className="mt-3">
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">Completion</span>
+                      <span className="text-muted-foreground">{tr("completion")}</span>
                       <span className="font-medium">{reportData.summary.reconciledPct}%</span>
                     </div>
                     <Progress value={reportData.summary.reconciledPct} className="h-2" />
@@ -1284,44 +1298,44 @@ export default function BankReconciliation() {
               {/* Amount breakdown */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  Amounts
+                  {tr("amounts")}
                 </p>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Total Credits</span>
-                    <span className="font-mono font-medium text-[hsl(var(--chart-5))]">
+                    <span className="text-muted-foreground">{tr("totalCredits")}</span>
+                    <span dir="ltr" className="font-mono font-medium text-[hsl(var(--chart-5))]">
                       {formatCurrency(reportData.amounts.totalCredits)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Total Debits</span>
-                    <span className="font-mono font-medium text-destructive">
+                    <span className="text-muted-foreground">{tr("totalDebits")}</span>
+                    <span dir="ltr" className="font-mono font-medium text-destructive">
                       {formatCurrency(reportData.amounts.totalDebits)}
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Reconciled Credits</span>
-                    <span className="font-mono text-[hsl(var(--chart-5))]">
+                    <span className="text-muted-foreground">{tr("reconciledCredits")}</span>
+                    <span dir="ltr" className="font-mono text-[hsl(var(--chart-5))]">
                       {formatCurrency(reportData.amounts.reconciledCredits)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Reconciled Debits</span>
-                    <span className="font-mono text-destructive">
+                    <span className="text-muted-foreground">{tr("reconciledDebits")}</span>
+                    <span dir="ltr" className="font-mono text-destructive">
                       {formatCurrency(reportData.amounts.reconciledDebits)}
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm font-semibold">
-                    <span>Unreconciled Credits</span>
-                    <span className="font-mono text-[hsl(var(--chart-4))]">
+                    <span>{tr("unreconciledCredits")}</span>
+                    <span dir="ltr" className="font-mono text-[hsl(var(--chart-4))]">
                       {formatCurrency(reportData.amounts.unreconciledCredits)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm font-semibold">
-                    <span>Unreconciled Debits</span>
-                    <span className="font-mono text-[hsl(var(--chart-4))]">
+                    <span>{tr("unreconciledDebits")}</span>
+                    <span dir="ltr" className="font-mono text-[hsl(var(--chart-4))]">
                       {formatCurrency(reportData.amounts.unreconciledDebits)}
                     </span>
                   </div>
@@ -1334,8 +1348,8 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 rounded-lg bg-[hsl(var(--chart-4)/0.10)] border border-[hsl(var(--chart-4)/0.30)] p-3">
                     <Sparkles className="w-4 h-4 text-[hsl(var(--chart-4))] shrink-0" />
                     <p className="text-sm text-foreground">
-                      <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have
-                      suggested matches waiting for your review.
+                      <strong>{reportData.summary.suggestedCount}</strong>{" "}
+                      {tr("transactionSHaveSuggestedMatchesWaiting")}
                     </p>
                   </div>
                 </>
@@ -1344,7 +1358,7 @@ export default function BankReconciliation() {
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
-              Close
+              {tr("close")}
             </Button>
           </DialogFooter>
         </DialogContent>

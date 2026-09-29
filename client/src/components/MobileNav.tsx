@@ -27,6 +27,7 @@ import {
   reportSuiteProfiles,
   reportWorkspaceHref,
 } from "@/lib/reportCatalog";
+import { messages as pageMessages } from "./MobileNav.i18n";
 
 interface NavItem {
   label: string;
@@ -43,12 +44,12 @@ interface MoreLink {
   description?: string;
 }
 
-const navItems: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Invoices", icon: FileText, href: "/invoices" },
-  { label: "Receipts", icon: Camera, href: "/receipts" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
-  { label: "More", icon: MoreHorizontal, href: "#", isMore: true },
+const getNavItems = (): NavItem[] => [
+  { label: pageMessages.t("dashboard"), icon: LayoutDashboard, href: "/dashboard" },
+  { label: pageMessages.t("invoices"), icon: FileText, href: "/invoices" },
+  { label: pageMessages.t("receipts"), icon: Camera, href: "/receipts" },
+  { label: pageMessages.t("reports"), icon: BarChart3, href: "/reports" },
+  { label: pageMessages.t("more"), icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
 const MOBILE_REPORTS_PER_PERSONA = 6;
@@ -132,28 +133,32 @@ const mobileComparisonPresetLinks = Array.from(
   }))
 ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
 
-const moreLinks: MoreLink[] = [
+const getMoreLinks = (): MoreLink[] => [
   ...reportPersonaWorkspaces.map((workspace) => ({
     label: workspace.navLabel,
     href: reportWorkspaceHref(workspace),
     description: workspace.focus,
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Role setup - ${workspace.title}`,
+    label: pageMessages.t("roleSetup", { title: workspace.title }),
     href: reportSectionHref(workspace, "role-setup"),
-    description: `Start ${workspace.navLabel.toLowerCase()} with reports and automations`,
+    description: pageMessages.t("startWithReportsAndAutomations", {
+      navLabel: workspace.navLabel.toLowerCase(),
+    }),
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Report suites - ${workspace.title}`,
+    label: pageMessages.t("reportSuites", { title: workspace.title }),
     href: reportSectionHref(workspace, "report-suites"),
-    description: `Role-based report suites for ${workspace.focus.toLowerCase()}`,
+    description: pageMessages.t("roleBasedReportSuitesFor", {
+      focus: workspace.focus.toLowerCase(),
+    }),
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Quick access reports - ${workspace.title}`,
+    label: pageMessages.t("quickAccessReports", { title: workspace.title }),
     href: reportSectionHref(workspace, "quick-access"),
     description:
       reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)?.outcome ??
-      `Daily reports for ${workspace.navLabel.toLowerCase()}`,
+      pageMessages.t("dailyReportsFor", { navLabel: workspace.navLabel.toLowerCase() }),
   })),
   ...reportPersonaWorkspaces.flatMap((workspace) =>
     mobileReportsForWorkspace(workspace).flatMap((report) => {
@@ -171,14 +176,16 @@ const moreLinks: MoreLink[] = [
     })
   ),
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Saved report views - ${workspace.title}`,
+    label: pageMessages.t("savedReportViews", { title: workspace.title }),
     href: reportSectionHref(workspace, "saved-views"),
-    description: `Saved comparison, basis, and export presets for ${workspace.navLabel.toLowerCase()}`,
+    description: pageMessages.t("savedComparisonBasisAndExportPresets", {
+      navLabel: workspace.navLabel.toLowerCase(),
+    }),
   })),
   ...mobileSavedViewLinks,
   ...mobileReportSuiteLinks,
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Report operations - ${workspace.title}`,
+    label: pageMessages.t("reportOperations", { title: workspace.title }),
     href: reportSectionHref(workspace, "automation-operations"),
     description: workspace.automationOutcome,
   })),
@@ -188,11 +195,12 @@ const moreLinks: MoreLink[] = [
     description: workspace.packSchedule.automation,
   })),
   ...reportPersonaWorkspaces.map((workspace) => ({
-    label: `Automation impact - ${workspace.title}`,
+    label: pageMessages.t("automationImpact", { title: workspace.title }),
     href: reportSectionHref(workspace, "automation-impact"),
     description:
       reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
-        ?.outcome ?? `Automation impact for ${workspace.navLabel.toLowerCase()}`,
+        ?.outcome ??
+      pageMessages.t("automationImpactFor", { navLabel: workspace.navLabel.toLowerCase() }),
   })),
   ...mobileDecisionShortcutLinks,
   ...mobileAutomationTriggerLinks,
@@ -200,16 +208,16 @@ const moreLinks: MoreLink[] = [
   ...mobileAutomationStarterLinks,
   ...mobilePackTemplateLinks,
   ...mobileComparisonPresetLinks,
-  { label: "Accounts", href: "/chart-of-accounts" },
-  { label: "Journal", href: "/journal" },
-  { label: "Contacts", href: "/contacts" },
-  { label: "Inventory", href: "/inventory" },
-  { label: "VAT Filing", href: "/vat-filing" },
-  { label: "Corporate Tax", href: "/corporate-tax" },
-  { label: "Bank Reconciliation", href: "/bank-reconciliation" },
-  { label: "AI CFO", href: "/ai-cfo" },
-  { label: "Document Vault", href: "/document-vault" },
-  { label: "Settings", href: "/company-profile" },
+  { label: pageMessages.t("accounts"), href: "/chart-of-accounts" },
+  { label: pageMessages.t("journal"), href: "/journal" },
+  { label: pageMessages.t("contacts"), href: "/contacts" },
+  { label: pageMessages.t("inventory"), href: "/inventory" },
+  { label: pageMessages.t("vatFiling"), href: "/vat-filing" },
+  { label: pageMessages.t("corporateTax"), href: "/corporate-tax" },
+  { label: pageMessages.t("bankReconciliation"), href: "/bank-reconciliation" },
+  { label: pageMessages.t("aiCfo"), href: "/ai-cfo" },
+  { label: pageMessages.t("documentVault"), href: "/document-vault" },
+  { label: pageMessages.t("settings"), href: "/company-profile" },
 ];
 
 /**
@@ -220,6 +228,8 @@ const moreLinks: MoreLink[] = [
  * The "More" tab opens a bottom sheet with additional navigation links.
  */
 export function MobileNav() {
+  const tr = pageMessages.useT();
+
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -272,7 +282,7 @@ export function MobileNav() {
         >
           <div className="mobile-nav-more-handle" />
           <nav className="mobile-nav-more-grid">
-            {moreLinks.map((link) => (
+            {getMoreLinks().map((link) => (
               <button
                 key={link.key ?? link.href}
                 onClick={() => handleMoreLink(link.href)}
@@ -292,8 +302,8 @@ export function MobileNav() {
       )}
 
       {/* Bottom tab bar */}
-      <nav className="mobile-nav" role="navigation" aria-label="Main navigation">
-        {navItems.map((item) => {
+      <nav className="mobile-nav" role="navigation" aria-label={tr("mainNavigation")}>
+        {getNavItems().map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
 

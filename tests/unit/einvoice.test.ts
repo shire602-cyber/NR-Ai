@@ -10,6 +10,9 @@ const company = {
   name: "Pearl Trading LLC",
   trnVatNumber: "100123456700003",
   businessAddress: "Dubai",
+  // Phase 4.5: the gate now requires the seller's city and emirate too.
+  addressCity: "Dubai",
+  emirate: "dubai",
 } as any;
 
 function makeInvoice(overrides: Record<string, unknown> = {}) {
@@ -99,7 +102,7 @@ describe("PINT AE profile + document type", () => {
     expect(taxTotals).toBe(1); // foreign invoices get a second AED tax total
   });
 
-  it("emits type 381 and a billing reference for a credit note", () => {
+  it("emits a true CreditNote root (type 381) with a billing reference to the original", () => {
     const cn = makeInvoice({
       invoiceType: "credit_note",
       originalInvoiceId: "inv-original-1",
@@ -107,7 +110,26 @@ describe("PINT AE profile + document type", () => {
       vatAmount: -50,
       total: -1350,
     });
-    const { xml } = generateEInvoiceXML(cn, lines, company);
+    const { xml } = generateEInvoiceXML(cn, lines, company, undefined, {
+      original: { number: "INV-2026-000" },
+    });
+    expect(xml).toContain("<CreditNote ");
+    expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
+    expect(xml).toContain("<cac:BillingReference>");
+    expect(xml).toContain("INV-2026-000");
+  });
+
+  it("keeps the earlier Invoice-root form (type 381) available behind the syntax option", () => {
+    const cn = makeInvoice({
+      invoiceType: "credit_note",
+      originalInvoiceId: "inv-original-1",
+      subtotal: -1300,
+      vatAmount: -50,
+      total: -1350,
+    });
+    const { xml } = generateEInvoiceXML(cn, lines, company, undefined, {
+      creditNoteSyntax: "invoice-381",
+    });
     expect(xml).toContain("<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>");
     expect(xml).toContain("<cac:BillingReference>");
     expect(xml).toContain("inv-original-1");

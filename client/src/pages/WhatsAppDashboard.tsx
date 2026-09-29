@@ -68,6 +68,7 @@ import {
   updateWhatsAppBridgeJobStatus,
   type WhatsAppBridgePing,
 } from "@/lib/whatsapp-bridge";
+import { messages as pageMessages } from "./WhatsAppDashboard.i18n";
 
 // ─── Rules ────────────────────────────────────────────────
 
@@ -184,6 +185,8 @@ interface WhatsAppDispatchOptions {
 // ─── Component ────────────────────────────────────────────
 
 export default function WhatsAppDashboard() {
+  const tr = pageMessages.useT();
+
   const { locale } = useI18n();
   const { toast } = useToast();
   const { company: currentCompany } = useDefaultCompany();
@@ -247,18 +250,14 @@ export default function WhatsAppDashboard() {
         await refetchBridgeStatus();
         if (showToast) {
           toast({
-            title: en ? "WhatsApp Bridge detected" : "تم العثور على جسر واتساب",
-            description: en
-              ? "Messages can be drafted in WhatsApp Web for staff review."
-              : "يمكن تجهيز الرسائل في واتساب ويب للمراجعة.",
+            title: tr("whatsappBridgeDetected"),
+            description: tr("messagesCanBeDraftedInWhatsapp"),
           });
         }
       } else if (showToast) {
         toast({
-          title: en ? "Bridge extension not detected" : "لم يتم العثور على الإضافة",
-          description: en
-            ? "We will use the safe WhatsApp Desktop/Web handoff instead."
-            : "سنستخدم فتح واتساب الآمن بدلاً من ذلك.",
+          title: tr("bridgeExtensionNotDetected"),
+          description: tr("weWillUseTheSafeWhatsapp"),
         });
       }
     } finally {
@@ -301,7 +300,7 @@ export default function WhatsAppDashboard() {
     msg: WhatsappMessage
   ): { label: string; variant: WhatsAppBadgeVariant } => {
     if (msg.direction !== "outbound") {
-      return { label: en ? "Received" : "مستلم", variant: "secondary" };
+      return { label: tr("received"), variant: "secondary" };
     }
 
     const status = (msg.status || "").toLowerCase();
@@ -311,30 +310,30 @@ export default function WhatsAppDashboard() {
       msg.waMessageId?.startsWith("chase_");
 
     if (isPersonalLink || status === "logged") {
-      return { label: en ? "Logged" : "مسجل", variant: "neutral" };
+      return { label: tr("logged"), variant: "neutral" };
     }
 
     if (status === "queued") {
-      return { label: en ? "Queued" : "في الانتظار", variant: "secondary" };
+      return { label: tr("queued"), variant: "secondary" };
     }
 
     if (status === "drafted") {
-      return { label: en ? "Drafted" : "مسودة", variant: "info" };
+      return { label: tr("drafted"), variant: "info" };
     }
 
     if (status === "sent_unverified") {
-      return { label: en ? "Sent, unverified" : "مرسل غير مؤكد", variant: "warning" };
+      return { label: tr("sentUnverified"), variant: "warning" };
     }
 
     if (status === "failed") {
-      return { label: en ? "Failed" : "فشل", variant: "danger" };
+      return { label: tr("failed"), variant: "danger" };
     }
 
     if (status === "delivered" || status === "processed") {
-      return { label: en ? "Delivered" : "تم التسليم", variant: "success" };
+      return { label: tr("delivered"), variant: "success" };
     }
 
-    return { label: en ? "Sent" : "مرسل", variant: "info" };
+    return { label: tr("sent"), variant: "info" };
   };
 
   const logAndOpen = async (
@@ -345,7 +344,7 @@ export default function WhatsAppDashboard() {
     const normalized = formatPhoneForWhatsApp(phone);
     if (!normalized) {
       toast({
-        title: en ? "Invalid WhatsApp number" : "رقم واتساب غير صالح",
+        title: tr("invalidWhatsappNumber"),
         variant: "destructive",
       });
       return;
@@ -386,18 +385,14 @@ export default function WhatsAppDashboard() {
           version: draft.version || bridgePing.version,
         });
         toast({
-          title: en ? "Draft opened in WhatsApp Web" : "تم فتح المسودة في واتساب ويب",
-          description: en
-            ? "Review the message in WhatsApp Web, then press send there."
-            : "راجع الرسالة في واتساب ويب ثم أرسلها من هناك.",
+          title: tr("draftOpenedInWhatsappWeb"),
+          description: tr("reviewTheMessageInWhatsappWeb"),
         });
       } else {
         await openWhatsAppWithLoggedFallback(normalized, message, bridgeJobId);
         toast({
-          title: en ? "Opening WhatsApp..." : "جاري فتح واتساب...",
-          description: en
-            ? "Bridge extension was not detected; using Desktop/Web handoff."
-            : "لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.",
+          title: tr("openingWhatsapp"),
+          description: tr("bridgeExtensionWasNotDetectedUsing"),
         });
       }
     } catch (error: any) {
@@ -407,12 +402,8 @@ export default function WhatsAppDashboard() {
       }).catch(() => {});
       openWhatsApp(normalized, message);
       toast({
-        title: en ? "Opening WhatsApp..." : "جاري فتح واتساب...",
-        description: error?.message
-          ? en
-            ? "Bridge queue failed, so we used the safe handoff."
-            : "تعذر إنشاء مهمة الجسر، لذلك استخدمنا الفتح الآمن."
-          : undefined,
+        title: tr("openingWhatsapp"),
+        description: error?.message ? tr("bridgeQueueFailedSoWeUsed") : undefined,
       });
     } finally {
       setTimeout(() => {
@@ -431,16 +422,16 @@ export default function WhatsAppDashboard() {
       const wa = cust ? pickWhatsAppNumber(cust) : null;
       if (wa) phone = wa;
       else {
-        toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
+        toast({ title: tr("noPhoneNumber"), variant: "destructive" });
         return;
       }
     }
     if (!phone.trim()) {
-      toast({ title: en ? "Phone required" : "رقم الهاتف مطلوب", variant: "destructive" });
+      toast({ title: tr("phoneRequired"), variant: "destructive" });
       return;
     }
     if (!sendMessage.trim()) {
-      toast({ title: en ? "Message required" : "الرسالة مطلوبة", variant: "destructive" });
+      toast({ title: tr("messageRequired"), variant: "destructive" });
       return;
     }
 
@@ -460,7 +451,7 @@ export default function WhatsAppDashboard() {
 
   const handleSendInvoice = () => {
     if (!selectedInvoice) {
-      toast({ title: en ? "Select an invoice" : "اختر فاتورة", variant: "destructive" });
+      toast({ title: tr("selectAnInvoice"), variant: "destructive" });
       return;
     }
     const inv = invoices.find((i) => i.id === selectedInvoice);
@@ -468,7 +459,7 @@ export default function WhatsAppDashboard() {
     const cust = customers.find((c) => c.name === inv.customerName);
     const recipient = cust ? pickWhatsAppNumber(cust) : null;
     if (!recipient) {
-      toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
+      toast({ title: tr("noPhoneNumber"), variant: "destructive" });
       return;
     }
 
@@ -479,10 +470,12 @@ export default function WhatsAppDashboard() {
     const tpl = MESSAGE_TEMPLATES.find((t) => t.id === (selectedTemplate || "invoice_new"));
     const templateStr = en ? tpl?.template || "" : tpl?.templateAr || "";
     const message = fillTemplate(templateStr, {
+      // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
       customer_name: inv.customerName || "Customer",
       invoice_number: inv.number,
       amount: formatCurrency(inv.total),
       due_date: dueDate.toLocaleDateString(en ? "en-AE" : "ar-AE"),
+      // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
       company_name: currentCompany?.name || "Our Company",
     });
 
@@ -500,7 +493,7 @@ export default function WhatsAppDashboard() {
 
   const handleBroadcast = () => {
     if (!broadcastMessage.trim()) {
-      toast({ title: en ? "Message required" : "الرسالة مطلوبة", variant: "destructive" });
+      toast({ title: tr("messageRequired"), variant: "destructive" });
       return;
     }
     const recipients = customers
@@ -508,7 +501,7 @@ export default function WhatsAppDashboard() {
       .filter((r): r is { customer: CustomerContact; number: string } => !!r.number);
     if (recipients.length === 0) {
       toast({
-        title: en ? "No customers with phone numbers" : "لا يوجد عملاء بأرقام",
+        title: tr("noCustomersWithPhoneNumbers"),
         variant: "destructive",
       });
       return;
@@ -520,6 +513,7 @@ export default function WhatsAppDashboard() {
       const msg = fillTemplate(templateStr, {
         customer_name: r.customer.name,
         message: broadcastMessage,
+        // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
         company_name: currentCompany?.name || "Our Company",
       });
 
@@ -550,7 +544,7 @@ export default function WhatsAppDashboard() {
   const handleQuickMessage = (customer: CustomerContact) => {
     const wa = pickWhatsAppNumber(customer);
     if (!wa) {
-      toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
+      toast({ title: tr("noPhoneNumber"), variant: "destructive" });
       return;
     }
     setSelectedCustomer(customer.id);
@@ -584,10 +578,12 @@ export default function WhatsAppDashboard() {
 
         const templateStr = en ? tpl?.template || "" : tpl?.templateAr || "";
         const message = fillTemplate(templateStr, {
+          // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
           customer_name: inv.customerName || "Customer",
           invoice_number: inv.number,
           amount: formatCurrency(inv.total),
           due_date: dueDate.toLocaleDateString(en ? "en-AE" : "ar-AE"),
+          // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
           company_name: currentCompany?.name || "Our Company",
         });
 
@@ -599,7 +595,7 @@ export default function WhatsAppDashboard() {
         });
       } else {
         toast({
-          title: en ? "No phone number for this customer" : "لا يوجد رقم هاتف لهذا العميل",
+          title: tr("noPhoneNumberForThisCustomer"),
           variant: "destructive",
         });
       }
@@ -625,8 +621,9 @@ export default function WhatsAppDashboard() {
 
     const templateStr = en ? tpl.template : tpl.templateAr;
     const msg = fillTemplate(templateStr, {
-      customer_name: custName || (en ? "[Customer Name]" : "[اسم العميل]"),
-      message: en ? "[Your message here]" : "[رسالتك هنا]",
+      customer_name: custName || tr("customerName"),
+      message: tr("yourMessageHere"),
+      // i18n-ignore: WhatsApp template variable fallback sent to the customer, not UI text
       company_name: currentCompany?.name || "Our Company",
       invoice_number: "[INV-XXX]",
       amount: "[AED X,XXX.XX]",
@@ -659,11 +656,9 @@ export default function WhatsAppDashboard() {
             <SiWhatsapp className="w-6 h-6 text-success" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">{en ? "WhatsApp" : "واتساب"}</h1>
+            <h1 className="text-2xl font-bold">{tr("whatsapp")}</h1>
             <p className="text-sm text-muted-foreground">
-              {en
-                ? "Prepare messages, invoice reminders, and broadcasts for WhatsApp Desktop/Web. Sending is confirmed inside WhatsApp."
-                : "جهّز الرسائل وتذكيرات الفواتير والبث لواتساب. يتم تأكيد الإرسال داخل واتساب."}
+              {tr("prepareMessagesInvoiceRemindersAndBroadcasts")}
             </p>
           </div>
         </div>
@@ -673,13 +668,13 @@ export default function WhatsAppDashboard() {
           <Dialog open={showBroadcastDialog} onOpenChange={setShowBroadcastDialog}>
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="button-broadcast">
-                <Megaphone className="w-4 h-4 mr-2" />
-                {en ? "Broadcast News" : "بث أخبار"}
+                <Megaphone className="w-4 h-4 me-2" />
+                {tr("broadcastNews")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? "Broadcast to All Clients" : "بث لجميع العملاء"}</DialogTitle>
+                <DialogTitle>{tr("broadcastToAllClients")}</DialogTitle>
                 <DialogDescription>
                   {en
                     ? `Prepare a news or announcement message for ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
@@ -688,23 +683,19 @@ export default function WhatsAppDashboard() {
               </DialogHeader>
               <div className="space-y-4">
                 <Textarea
-                  placeholder={en ? "Type your announcement..." : "اكتب إعلانك..."}
+                  placeholder={tr("typeYourAnnouncement")}
                   value={broadcastMessage}
                   onChange={(e) => setBroadcastMessage(e.target.value)}
                   rows={5}
                   data-testid="input-broadcast"
                 />
-                <p className="text-xs text-muted-foreground">
-                  {en
-                    ? "This will open WhatsApp for each customer. Your browser may ask to allow popups."
-                    : "سيتم فتح واتساب لكل عميل. قد يطلب المتصفح السماح بالنوافذ المنبثقة."}
-                </p>
+                <p className="text-xs text-muted-foreground">{tr("thisWillOpenWhatsappForEach")}</p>
                 <Button
                   onClick={handleBroadcast}
                   className="w-full bg-success hover:bg-success"
                   data-testid="button-send-broadcast"
                 >
-                  <Megaphone className="w-4 h-4 mr-2" />
+                  <Megaphone className="w-4 h-4 me-2" />
                   {en
                     ? `Open ${customers.filter((c) => pickWhatsAppNumber(c)).length} WhatsApp chat(s)`
                     : `فتح ${customers.filter((c) => pickWhatsAppNumber(c)).length} محادثة واتساب`}
@@ -722,33 +713,29 @@ export default function WhatsAppDashboard() {
             }}
             data-testid="button-document-request-whatsapp"
           >
-            <FileText className="w-4 h-4 mr-2" />
-            {en ? "Document Request" : "طلب مستندات"}
+            <FileText className="w-4 h-4 me-2" />
+            {tr("documentRequest")}
           </Button>
 
           {/* Invoice Reminder */}
           <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="button-send-invoice">
-                <Receipt className="w-4 h-4 mr-2" />
-                {en ? "Invoice Reminder" : "تذكير فاتورة"}
+                <Receipt className="w-4 h-4 me-2" />
+                {tr("invoiceReminder")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? "Prepare Invoice Reminder" : "تجهيز تذكير فاتورة"}</DialogTitle>
-                <DialogDescription>
-                  {en
-                    ? "Select an invoice and template, then open WhatsApp to confirm the send."
-                    : "اختر فاتورة وقالباً ثم افتح واتساب لتأكيد الإرسال."}
-                </DialogDescription>
+                <DialogTitle>{tr("prepareInvoiceReminder")}</DialogTitle>
+                <DialogDescription>{tr("selectAnInvoiceAndTemplateThen")}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label className="mb-1.5 block">{en ? "Invoice" : "الفاتورة"}</Label>
+                  <Label className="mb-1.5 block">{tr("invoice")}</Label>
                   <Select value={selectedInvoice} onValueChange={setSelectedInvoice}>
                     <SelectTrigger data-testid="select-invoice">
-                      <SelectValue placeholder={en ? "Select an invoice" : "اختر فاتورة"} />
+                      <SelectValue placeholder={tr("selectAnInvoice")} />
                     </SelectTrigger>
                     <SelectContent>
                       {invoices
@@ -763,7 +750,7 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? "Template" : "القالب"}</Label>
+                  <Label className="mb-1.5 block">{tr("template")}</Label>
                   <Select
                     value={selectedTemplate || "invoice_new"}
                     onValueChange={setSelectedTemplate}
@@ -786,23 +773,16 @@ export default function WhatsAppDashboard() {
                 {selectedInvoiceRecord ? (
                   <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
                     <p>
-                      <strong>{en ? "Customer" : "العميل"}:</strong>{" "}
-                      {selectedInvoiceRecord.customerName}
+                      <strong>{tr("customer")}:</strong> {selectedInvoiceRecord.customerName}
                     </p>
                     <p>
-                      <strong>{en ? "Amount" : "المبلغ"}:</strong>{" "}
-                      {formatCurrency(selectedInvoiceRecord.total)}
+                      <strong>{tr("amount")}:</strong> {formatCurrency(selectedInvoiceRecord.total)}
                     </p>
                     <p>
-                      <strong>{en ? "Phone" : "الهاتف"}:</strong>{" "}
-                      {selectedInvoicePhone || (en ? "No phone" : "لا يوجد رقم")}
+                      <strong>{tr("phone")}:</strong> {selectedInvoicePhone || tr("noPhone")}
                     </p>
                     {!selectedInvoicePhone ? (
-                      <p className="text-xs text-destructive">
-                        {en
-                          ? "Add a WhatsApp number to this customer before opening an invoice reminder."
-                          : "أضف رقم واتساب لهذا العميل قبل فتح تذكير الفاتورة."}
-                      </p>
+                      <p className="text-xs text-destructive">{tr("addAWhatsappNumberToThis")}</p>
                     ) : null}
                   </div>
                 ) : null}
@@ -813,8 +793,8 @@ export default function WhatsAppDashboard() {
                   className="w-full bg-success hover:bg-success"
                   data-testid="button-open-whatsapp-invoice"
                 >
-                  <SiWhatsapp className="w-4 h-4 mr-2" />
-                  {en ? "Open in WhatsApp" : "فتح في واتساب"}
+                  <SiWhatsapp className="w-4 h-4 me-2" />
+                  {tr("openInWhatsapp")}
                 </Button>
               </div>
             </DialogContent>
@@ -824,22 +804,18 @@ export default function WhatsAppDashboard() {
           <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
             <DialogTrigger asChild>
               <Button className="bg-success hover:bg-success" data-testid="button-send-message">
-                <Send className="w-4 h-4 mr-2" />
-                {en ? "Prepare Message" : "تجهيز رسالة"}
+                <Send className="w-4 h-4 me-2" />
+                {tr("prepareMessage")}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>{en ? "Prepare WhatsApp Message" : "تجهيز رسالة واتساب"}</DialogTitle>
-                <DialogDescription>
-                  {en
-                    ? "Compose a message. It will open in WhatsApp Desktop/Web and be logged here; delivery is not verified by Muhasib."
-                    : "اكتب الرسالة. ستفتح في واتساب ويتم تسجيلها هنا؛ لا يتحقق محاسب من التسليم."}
-                </DialogDescription>
+                <DialogTitle>{tr("prepareWhatsappMessage")}</DialogTitle>
+                <DialogDescription>{tr("composeAMessageItWillOpen")}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label className="mb-1.5 block">{en ? "Customer" : "العميل"}</Label>
+                  <Label className="mb-1.5 block">{tr("customer")}</Label>
                   <Select
                     value={selectedCustomer}
                     onValueChange={(val) => {
@@ -850,7 +826,7 @@ export default function WhatsAppDashboard() {
                     }}
                   >
                     <SelectTrigger data-testid="select-customer">
-                      <SelectValue placeholder={en ? "Select a customer" : "اختر عميل"} />
+                      <SelectValue placeholder={tr("selectACustomer")} />
                     </SelectTrigger>
                     <SelectContent>
                       {customers
@@ -865,11 +841,9 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">
-                    {en ? "Or enter phone number" : "أو أدخل رقم الهاتف"}
-                  </Label>
+                  <Label className="mb-1.5 block">{tr("orEnterPhoneNumber")}</Label>
                   <Input
-                    placeholder={en ? "e.g. 971501234567" : "مثال: 971501234567"}
+                    placeholder={tr("eG971501234567")}
                     value={sendTo}
                     onChange={(e) => {
                       setSendTo(e.target.value);
@@ -880,9 +854,7 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">
-                    {en ? "Template (optional)" : "قالب (اختياري)"}
-                  </Label>
+                  <Label className="mb-1.5 block">{tr("templateOptional")}</Label>
                   <Select
                     value={selectedTemplate}
                     onValueChange={(val) => {
@@ -891,7 +863,7 @@ export default function WhatsAppDashboard() {
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={en ? "Choose a template..." : "اختر قالب..."} />
+                      <SelectValue placeholder={tr("chooseATemplate")} />
                     </SelectTrigger>
                     <SelectContent>
                       {MESSAGE_TEMPLATES.map((tpl) => (
@@ -904,9 +876,9 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? "Message" : "الرسالة"}</Label>
+                  <Label className="mb-1.5 block">{tr("message")}</Label>
                   <Textarea
-                    placeholder={en ? "Type your message..." : "اكتب رسالتك..."}
+                    placeholder={tr("typeYourMessage")}
                     value={sendMessage}
                     onChange={(e) => setSendMessage(e.target.value)}
                     rows={6}
@@ -919,8 +891,8 @@ export default function WhatsAppDashboard() {
                   className="w-full bg-success hover:bg-success"
                   data-testid="button-open-whatsapp"
                 >
-                  <SiWhatsapp className="w-4 h-4 mr-2" />
-                  {en ? "Open in WhatsApp" : "فتح في واتساب"}
+                  <SiWhatsapp className="w-4 h-4 me-2" />
+                  {tr("openInWhatsapp")}
                 </Button>
               </div>
             </DialogContent>
@@ -934,17 +906,9 @@ export default function WhatsAppDashboard() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={bridgeDetected ? "success" : "warning"} dot>
-                  {bridgeDetected
-                    ? en
-                      ? "Bridge ready"
-                      : "الجسر جاهز"
-                    : en
-                      ? "Bridge not detected"
-                      : "لم يتم العثور على الجسر"}
+                  {bridgeDetected ? tr("bridgeReady") : tr("bridgeNotDetected")}
                 </Badge>
-                <Badge variant="neutral">
-                  {en ? "Human-confirmed send" : "إرسال بمراجعة الموظف"}
-                </Badge>
+                <Badge variant="neutral">{tr("humanConfirmedSend")}</Badge>
                 {bridgePing.version || bridgeStatus?.activeSession?.extensionVersion ? (
                   <Badge variant="outline">
                     v{bridgePing.version || bridgeStatus?.activeSession?.extensionVersion}
@@ -952,13 +916,11 @@ export default function WhatsAppDashboard() {
                 ) : null}
               </div>
               <p className="text-sm text-muted-foreground max-w-3xl">
-                {en
-                  ? "NR queues an audited WhatsApp job and opens a reviewed draft in WhatsApp Web. If the Chrome bridge is missing or outdated, the browser handoff still opens WhatsApp Web directly and staff confirm send status after pressing Send."
-                  : "ينشئ NR مهمة واتساب مسجلة ويفتح مسودة للمراجعة في واتساب ويب. إذا كانت إضافة كروم غير موجودة أو قديمة، يتم فتح واتساب ويب مباشرة ويؤكد الموظف حالة الإرسال بعد الضغط على إرسال."}
+                {tr("nrQueuesAnAuditedWhatsappJob")}
               </p>
               {recentBridgeJobs.length > 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {en ? "Latest bridge job" : "آخر مهمة"}: {recentBridgeJobs[0].kind} ·{" "}
+                  {tr("latestBridgeJob")}: {recentBridgeJobs[0].kind} ·{" "}
                   {recentBridgeJobs[0].deliveryStatus}
                 </p>
               ) : null}
@@ -970,14 +932,8 @@ export default function WhatsAppDashboard() {
                 disabled={bridgeChecking}
                 data-testid="button-check-whatsapp-bridge"
               >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                {bridgeChecking
-                  ? en
-                    ? "Checking..."
-                    : "جاري الفحص..."
-                  : en
-                    ? "Check Bridge"
-                    : "فحص الجسر"}
+                <CheckCircle2 className="h-4 w-4 me-2" />
+                {bridgeChecking ? tr("checking") : tr("checkBridge")}
               </Button>
               <Button
                 variant="outline"
@@ -986,8 +942,8 @@ export default function WhatsAppDashboard() {
                 }
                 data-testid="button-open-whatsapp-web"
               >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                {en ? "Open WhatsApp Web" : "فتح واتساب ويب"}
+                <ExternalLink className="h-4 w-4 me-2" />
+                {tr("openWhatsappWeb")}
               </Button>
             </div>
           </div>
@@ -998,32 +954,32 @@ export default function WhatsAppDashboard() {
       <Tabs defaultValue="messages" className="w-full">
         <TabsList>
           <TabsTrigger value="messages">
-            <MessageCircle className="w-4 h-4 mr-1.5" />
-            {en ? "Messages" : "الرسائل"}
+            <MessageCircle className="w-4 h-4 me-1.5" />
+            {tr("messages")}
           </TabsTrigger>
           <TabsTrigger value="customers">
-            <Users className="w-4 h-4 mr-1.5" />
-            {en ? "Customers" : "العملاء"}
+            <Users className="w-4 h-4 me-1.5" />
+            {tr("customers")}
           </TabsTrigger>
           <TabsTrigger value="rules">
-            <Settings2 className="w-4 h-4 mr-1.5" />
-            {en ? "Rules" : "القواعد"}
+            <Settings2 className="w-4 h-4 me-1.5" />
+            {tr("rules")}
           </TabsTrigger>
           <TabsTrigger value="templates">
-            <FileText className="w-4 h-4 mr-1.5" />
-            {en ? "Templates" : "القوالب"}
+            <FileText className="w-4 h-4 me-1.5" />
+            {tr("templates")}
           </TabsTrigger>
         </TabsList>
 
         {/* ─── Messages Tab ─────────────────────────────── */}
         <TabsContent value="messages" className="space-y-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder={en ? "Search messages..." : "بحث في الرسائل..."}
+              placeholder={tr("searchMessages")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="ps-9"
               data-testid="input-search"
             />
           </div>
@@ -1038,20 +994,16 @@ export default function WhatsAppDashboard() {
                 <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mb-4">
                   <SiWhatsapp className="w-8 h-8 text-success" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">
-                  {en ? "No messages yet" : "لا توجد رسائل بعد"}
-                </h3>
+                <h3 className="text-lg font-semibold mb-2">{tr("noMessagesYet")}</h3>
                 <p className="text-muted-foreground mb-6 max-w-md">
-                  {en
-                    ? "Start by preparing a message, invoice reminder, or broadcast for your clients"
-                    : "ابدأ بتجهيز رسالة أو تذكير فاتورة أو بث لعملائك"}
+                  {tr("startByPreparingAMessageInvoice")}
                 </p>
                 <Button
                   onClick={() => setShowSendDialog(true)}
                   className="bg-success hover:bg-success"
                 >
-                  <Send className="w-4 h-4 mr-2" />
-                  {en ? "Prepare Message" : "تجهيز رسالة"}
+                  <Send className="w-4 h-4 me-2" />
+                  {tr("prepareMessage")}
                 </Button>
               </CardContent>
             </Card>
@@ -1136,9 +1088,7 @@ export default function WhatsAppDashboard() {
                             {wa}
                           </p>
                         ) : (
-                          <p className="text-sm text-muted-foreground italic">
-                            {en ? "No phone" : "لا يوجد رقم"}
-                          </p>
+                          <p className="text-sm text-muted-foreground italic">{tr("noPhone")}</p>
                         )}
                       </div>
                       {wa && (
@@ -1160,13 +1110,9 @@ export default function WhatsAppDashboard() {
               <Card className="col-span-full border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Users className="w-12 h-12 text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">
-                    {en
-                      ? "No customers yet. Add contacts to message them via WhatsApp."
-                      : "لا يوجد عملاء بعد. أضف جهات اتصال لمراسلتهم عبر واتساب."}
-                  </p>
+                  <p className="text-muted-foreground">{tr("noCustomersYetAddContactsTo")}</p>
                   <Button asChild className="mt-4" variant="outline">
-                    <a href="/contacts">{en ? "Add contacts" : "أضف جهات اتصال"}</a>
+                    <a href="/contacts">{tr("addContacts")}</a>
                   </Button>
                 </CardContent>
               </Card>
@@ -1188,11 +1134,7 @@ export default function WhatsAppDashboard() {
                       : `إجراءات معلقة (${pendingActions.length})`}
                   </CardTitle>
                 </div>
-                <CardDescription>
-                  {en
-                    ? "These notifications were created by the scheduler. Open a pre-filled WhatsApp message, review it, then confirm the send in WhatsApp."
-                    : "تم إنشاء هذه الإشعارات بواسطة المجدول. افتح رسالة واتساب جاهزة وراجعها ثم أكد الإرسال داخل واتساب."}
-                </CardDescription>
+                <CardDescription>{tr("theseNotificationsWereCreatedByThe")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {pendingActions.slice(0, 10).map((notification) => {
@@ -1247,8 +1189,8 @@ export default function WhatsAppDashboard() {
                             className="bg-success hover:bg-success text-xs h-8"
                             onClick={() => handleActionNotification(notification)}
                           >
-                            <SiWhatsapp className="w-3.5 h-3.5 mr-1" />
-                            {en ? "Open" : "فتح"}
+                            <SiWhatsapp className="w-3.5 h-3.5 me-1" />
+                            {tr("open")}
                           </Button>
                         )}
                         <Button
@@ -1256,7 +1198,7 @@ export default function WhatsAppDashboard() {
                           size="sm"
                           className="text-muted-foreground h-8 w-8 p-0"
                           onClick={() => dismissNotification(notification.id)}
-                          title={en ? "Dismiss" : "تجاهل"}
+                          title={tr("dismiss")}
                         >
                           <CheckCircle2 className="w-4 h-4" />
                         </Button>
@@ -1278,12 +1220,8 @@ export default function WhatsAppDashboard() {
           {/* Reminder Rules */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">{en ? "Reminder Rules" : "قواعد التذكيرات"}</CardTitle>
-              <CardDescription>
-                {en
-                  ? "Configure when WhatsApp reminders should be triggered. When a rule matches, you'll be prompted to send via WhatsApp."
-                  : "حدد متى يجب تفعيل تذكيرات واتساب. عند تطابق قاعدة، سيتم إعلامك للإرسال عبر واتساب."}
-              </CardDescription>
+              <CardTitle className="text-lg">{tr("reminderRules")}</CardTitle>
+              <CardDescription>{tr("configureWhenWhatsappRemindersShouldBe")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {rules.map((rule) => {
@@ -1305,17 +1243,14 @@ export default function WhatsAppDashboard() {
                       <div>
                         <p className="font-medium text-sm">{rule.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {en ? "Template" : "القالب"}: {en ? tpl?.name : tpl?.nameAr}
+                          {tr("template")}: {en ? tpl?.name : tpl?.nameAr}
                           {rule.type === "before_due" &&
-                            ` • ${Math.abs(rule.daysOffset)} ${en ? "days before due" : "أيام قبل الاستحقاق"}`}
-                          {rule.type === "on_due" &&
-                            ` • ${en ? "On due date" : "في تاريخ الاستحقاق"}`}
+                            ` • ${Math.abs(rule.daysOffset)} ${tr("daysBeforeDue")}`}
+                          {rule.type === "on_due" && ` • ${tr("onDueDate")}`}
                           {rule.type === "after_due" &&
-                            ` • ${rule.daysOffset} ${en ? "days after due" : "أيام بعد الاستحقاق"}`}
-                          {rule.type === "on_invoice" &&
-                            ` • ${en ? "When invoice is created" : "عند إنشاء الفاتورة"}`}
-                          {rule.type === "on_event" &&
-                            ` • ${en ? "When event occurs" : "عند حدوث الحدث"}`}
+                            ` • ${rule.daysOffset} ${tr("daysAfterDue")}`}
+                          {rule.type === "on_invoice" && ` • ${tr("whenInvoiceIsCreated")}`}
+                          {rule.type === "on_event" && ` • ${tr("whenEventOccurs")}`}
                         </p>
                       </div>
                     </div>
@@ -1329,11 +1264,7 @@ export default function WhatsAppDashboard() {
               })}
 
               <div className="pt-2">
-                <p className="text-xs text-muted-foreground">
-                  {en
-                    ? "* Rules will prompt you to send messages — they open WhatsApp on your device. No messages are sent automatically."
-                    : "* القواعد ستطلب منك إرسال الرسائل — تفتح واتساب على جهازك. لا يتم إرسال رسائل تلقائياً."}
-                </p>
+                <p className="text-xs text-muted-foreground">{tr("rulesWillPromptYouToSend")}</p>
               </div>
             </CardContent>
           </Card>
@@ -1355,32 +1286,18 @@ export default function WhatsAppDashboard() {
                         <CardTitle className="text-base">{en ? tpl.name : tpl.nameAr}</CardTitle>
                         <Badge variant="outline" className="text-xs mt-1">
                           {tpl.category === "invoice"
-                            ? en
-                              ? "Invoice"
-                              : "فاتورة"
+                            ? tr("invoice")
                             : tpl.category === "payment"
-                              ? en
-                                ? "Payment"
-                                : "دفع"
+                              ? tr("payment")
                               : tpl.category === "onboarding"
-                                ? en
-                                  ? "Onboarding"
-                                  : "تسجيل"
+                                ? tr("onboarding")
                                 : tpl.category === "service"
-                                  ? en
-                                    ? "Service"
-                                    : "خدمة"
+                                  ? tr("service")
                                   : tpl.category === "alert"
-                                    ? en
-                                      ? "Alert"
-                                      : "تنبيه"
+                                    ? tr("alert")
                                     : tpl.category === "engagement"
-                                      ? en
-                                        ? "Engagement"
-                                        : "تواصل"
-                                      : en
-                                        ? "Other"
-                                        : "أخرى"}
+                                      ? tr("engagement")
+                                      : tr("other")}
                         </Badge>
                       </div>
                     </div>
@@ -1399,8 +1316,8 @@ export default function WhatsAppDashboard() {
                         setShowSendDialog(true);
                       }}
                     >
-                      <Send className="w-3 h-3 mr-1.5" />
-                      {en ? "Use Template" : "استخدم القالب"}
+                      <Send className="w-3 h-3 me-1.5" />
+                      {tr("useTemplate")}
                     </Button>
                   </CardContent>
                 </Card>

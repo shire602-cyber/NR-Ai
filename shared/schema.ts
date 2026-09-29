@@ -12,6 +12,7 @@ import {
   index,
   customType,
   jsonb,
+  date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1037,6 +1038,9 @@ export const invoices = pgTable(
     legacyCreditNoteId: uuid("legacy_credit_note_id").references((): any => creditNotes.id, {
       onDelete: "set null",
     }),
+    // Pre-go-live receivable entered through the opening-balance flow: already in
+    // the opening balances, so it posts no revenue/VAT and is left out of VAT returns.
+    isOpeningBalance: boolean("is_opening_balance").notNull().default(false),
     isRecurring: boolean("is_recurring").notNull().default(false),
     recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
     nextRecurringDate: timestamp("next_recurring_date"),
@@ -3261,6 +3265,18 @@ export const vatReturns = pgTable(
     paymentDate: timestamp("payment_date"),
     notes: text("notes"),
 
+    // Amendment (voluntary disclosure): a NEW row linked to the original return.
+    amendsReturnId: uuid("amends_return_id"),
+    isAmendment: boolean("is_amendment").notNull().default(false),
+
+    // Boxes changed by hand on the draft: { boxes: { <box>: { from, to } }, at, by }.
+    // Server-owned: recorded by PATCH, read by filing (which will not silently discard them).
+    manualEdits: jsonb("manual_edits"),
+
+    // The manual VAT journals behind the adjustment columns (entry number, description, box, amount).
+    // Server-owned: written when the return is generated / re-computed at filing.
+    vatAdjustments: jsonb("vat_adjustments"),
+
     // Declaration
     declarantName: text("declarant_name"),
     declarantPosition: text("declarant_position"),
@@ -3537,6 +3553,8 @@ export const corporateTaxReturns = pgTable(
     filedAt: timestamp("filed_at"),
     workpaper: jsonb("workpaper"),
     notes: text("notes"),
+    amendsReturnId: uuid("amends_return_id"),
+    isAmendment: boolean("is_amendment").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -4903,3 +4921,166 @@ export const insertEmailIntakeDocumentSchema = createInsertSchema(emailIntakeDoc
 });
 export type InsertEmailIntakeDocument = z.infer<typeof insertEmailIntakeDocumentSchema>;
 export type EmailIntakeDocument = typeof emailIntakeDocuments.$inferSelect;
+
+
+// ===========================
+// Installation-wide key/value settings (migration 0097). First key:
+// `vat_date_based_voids_from`, the moment the date-based VAT void rule took effect.
+// ===========================
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ===========================
+// Tax filing evidence (Phase 4.1 / 4.2)
+// One filing record per filed VAT / corporate tax return: an immutable snapshot
+// of the figures at the moment of filing (+ SHA-256), evidence files and the
+// payments that settle it. `kind` = vat | corporate_tax; `returnId` points at
+// vat_returns.id or corporate_tax_returns.id (no FK: polymorphic).
+// ===========================
+export const taxFilings = pgTable(
+  "tax_filings",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    returnId: uuid("return_id").notNull(),
+    referenceNumber: text("reference_number").notNull(),
+    filedAt: date("filed_at", { mode: "string" }).notNull(),
+    notes: text("notes"),
+    snapshot: jsonb("snapshot").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    /** Amendment: the filing this one amends (the settlement is the difference). */
+    baseFilingId: uuid("base_filing_id"),
+    settlementOutput: money("settlement_output").notNull().default(0),
+    settlementInput: money("settlement_input").notNull().default(0),
+    /** >0 payable to the FTA, <0 refundable, 0 nothing to settle. */
+    settlementNet: money("settlement_net").notNull().default(0),
+    clearingEntryId: uuid("clearing_entry_id"),
+    filedBy: uuid("filed_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    kindReturnUnique: uniqueIndex("uq_tax_filings_kind_return").on(table.kind, table.returnId),
+    companyIdx: index("idx_tax_filings_company").on(table.companyId),
+  })
+);
+export type TaxFiling = typeof taxFilings.$inferSelect;
+
+export const taxFilingEvidence = pgTable(
+  "tax_filing_evidence",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    filingId: uuid("filing_id")
+      .notNull()
+      .references(() => taxFilings.id, { onDelete: "cascade" }),
+    storageKey: text("storage_key").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    removedAt: timestamp("removed_at"),
+    removedBy: uuid("removed_by").references(() => users.id, { onDelete: "set null" }),
+    removedReason: text("removed_reason"),
+  },
+  (table) => ({
+    filingIdx: index("idx_tax_filing_evidence_filing").on(table.filingId),
+  })
+);
+export type TaxFilingEvidence = typeof taxFilingEvidence.$inferSelect;
+
+export const taxFilingPayments = pgTable(
+  "tax_filing_payments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    filingId: uuid("filing_id")
+      .notNull()
+      .references(() => taxFilings.id, { onDelete: "cascade" }),
+    amount: money("amount").notNull(),
+    paidAt: date("paid_at", { mode: "string" }).notNull(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id),
+    reference: text("reference"),
+    journalEntryId: uuid("journal_entry_id"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    filingIdx: index("idx_tax_filing_payments_filing").on(table.filingId),
+  })
+);
+export type TaxFilingPayment = typeof taxFilingPayments.$inferSelect;
+
+// ===========================
+// Opening balances and financial-year close (Phase 4.4)
+// ===========================
+export const openingBalances = pgTable(
+  "opening_balances",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    asOfDate: date("as_of_date", { mode: "string" }).notNull(),
+    journalEntryId: uuid("journal_entry_id"),
+    status: text("status").notNull().default("active"), // active | reversed
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    reversedBy: uuid("reversed_by").references(() => users.id, { onDelete: "set null" }),
+    reversedAt: timestamp("reversed_at"),
+    reversalReason: text("reversal_reason"),
+  },
+  (table) => ({
+    activeUnique: uniqueIndex("uq_opening_balances_active")
+      .on(table.companyId)
+      .where(sql`status = 'active'`),
+  })
+);
+export type OpeningBalance = typeof openingBalances.$inferSelect;
+
+export const yearEndCloses = pgTable(
+  "year_end_closes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    yearStart: date("year_start", { mode: "string" }).notNull(),
+    yearEnd: date("year_end", { mode: "string" }).notNull(),
+    closingEntryId: uuid("closing_entry_id"),
+    status: text("status").notNull().default("closed"), // closed | reopened
+    closedBy: uuid("closed_by").references(() => users.id, { onDelete: "set null" }),
+    closedAt: timestamp("closed_at").defaultNow().notNull(),
+    reopenedBy: uuid("reopened_by").references(() => users.id, { onDelete: "set null" }),
+    reopenedAt: timestamp("reopened_at"),
+    reopenReason: text("reopen_reason"),
+  },
+  (table) => ({
+    activeUnique: uniqueIndex("uq_year_end_closes_active")
+      .on(table.companyId, table.yearEnd)
+      .where(sql`status = 'closed'`),
+  })
+);
+export type YearEndClose = typeof yearEndCloses.$inferSelect;

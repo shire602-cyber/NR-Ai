@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { readSourceWithMessages } from "../helpers/read-source";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(join(process.cwd(), "client/src/pages/BankReconciliation.tsx"), "utf8");
+const source = readSourceWithMessages(process.cwd(), "client/src/pages/BankReconciliation.tsx");
 
 describe("Bank import launch UX", () => {
   it("keeps a sample CSV path for buyers without live bank feeds", () => {

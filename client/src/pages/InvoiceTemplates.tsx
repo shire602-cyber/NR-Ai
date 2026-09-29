@@ -41,9 +41,10 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Layout, Loader2, Check, Trash2, Edit, Star } from "lucide-react";
+import { messages as pageMessages } from "./InvoiceTemplates.i18n";
 
 const templateSchema = z.object({
-  name: z.string().min(1, "Template name is required"),
+  name: z.string().min(1, pageMessages.marker("templateNameIsRequired")),
   primaryColor: z.string().default("#1a56db"),
   accentColor: z.string().default("#e5edff"),
   layout: z.enum(["standard", "modern", "minimal"]).default("standard"),
@@ -70,6 +71,8 @@ interface InvoiceTemplate {
 }
 
 export default function InvoiceTemplates() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
@@ -103,8 +106,8 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Template created",
-        description: "Your invoice template has been created successfully.",
+        title: tr("templateCreated"),
+        description: tr("yourInvoiceTemplateHasBeenCreated"),
       });
       setDialogOpen(false);
       setEditingTemplate(null);
@@ -113,8 +116,8 @@ export default function InvoiceTemplates() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create template",
-        description: error?.message || "Please try again.",
+        title: tr("failedToCreateTemplate"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -127,8 +130,8 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Template updated",
-        description: "Your invoice template has been updated successfully.",
+        title: tr("templateUpdated"),
+        description: tr("yourInvoiceTemplateHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingTemplate(null);
@@ -137,8 +140,8 @@ export default function InvoiceTemplates() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update template",
-        description: error?.message || "Please try again.",
+        title: tr("failedToUpdateTemplate"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -149,13 +152,13 @@ export default function InvoiceTemplates() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
-      toast({ title: "Template deleted", description: "The template has been deleted." });
+      toast({ title: tr("templateDeleted"), description: tr("theTemplateHasBeenDeleted") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete template",
-        description: error?.message || "Please try again.",
+        title: tr("failedToDeleteTemplate"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -167,15 +170,15 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Default template set",
-        description: "This template will be used for new invoices.",
+        title: tr("defaultTemplateSet"),
+        description: tr("thisTemplateWillBeUsedFor"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to set default",
-        description: error?.message || "Please try again.",
+        title: tr("failedToSetDefault"),
+        description: error?.message || tr("pleaseTryAgain"),
       });
     },
   });
@@ -220,11 +223,11 @@ export default function InvoiceTemplates() {
   const getLayoutLabel = (layout: string) => {
     switch (layout) {
       case "standard":
-        return "Standard";
+        return tr("standard");
       case "modern":
-        return "Modern";
+        return tr("modern");
       case "minimal":
-        return "Minimal";
+        return tr("minimal");
       default:
         return layout;
     }
@@ -244,7 +247,7 @@ export default function InvoiceTemplates() {
         <UpgradePrompt
           feature="invoiceTemplates"
           requiredTier={getRequiredTier("invoiceTemplates")}
-          description="Customize your invoice appearance with professional templates. Add your branding, colors, and layout preferences."
+          description={tr("customizeYourInvoiceAppearanceWithProfessional")}
         />
       </div>
     );
@@ -253,9 +256,9 @@ export default function InvoiceTemplates() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
-        title="Invoice Templates"
-        description="Customize the look and feel of your invoices"
+        eyebrow={tr("sales")}
+        title={tr("invoiceTemplates")}
+        description={tr("customizeTheLookAndFeelOf")}
       />
 
       <div className="flex items-center justify-end flex-wrap gap-4">
@@ -268,17 +271,19 @@ export default function InvoiceTemplates() {
         >
           <DialogTrigger asChild>
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Create Template
+              <Plus className="w-4 h-4 me-2" />
+              {tr("createTemplate")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingTemplate ? "Edit Template" : "Create Template"}</DialogTitle>
+              <DialogTitle>
+                {editingTemplate ? tr("editTemplate") : tr("createTemplate")}
+              </DialogTitle>
               <DialogDescription>
                 {editingTemplate
-                  ? "Update your invoice template settings"
-                  : "Design a new invoice template with custom branding"}
+                  ? tr("updateYourInvoiceTemplateSettings")
+                  : tr("designANewInvoiceTemplateWith")}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -288,9 +293,9 @@ export default function InvoiceTemplates() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Template Name</FormLabel>
+                      <FormLabel>{tr("templateName")}</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="e.g., Professional Blue" />
+                        <Input {...field} placeholder={tr("eGProfessionalBlue")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -303,7 +308,7 @@ export default function InvoiceTemplates() {
                     name="primaryColor"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Primary Color</FormLabel>
+                        <FormLabel>{tr("primaryColor")}</FormLabel>
                         <FormControl>
                           <div className="flex gap-2">
                             <Input
@@ -327,7 +332,7 @@ export default function InvoiceTemplates() {
                     name="accentColor"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Accent Color</FormLabel>
+                        <FormLabel>{tr("accentColor")}</FormLabel>
                         <FormControl>
                           <div className="flex gap-2">
                             <Input
@@ -353,22 +358,22 @@ export default function InvoiceTemplates() {
                   name="layout"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Layout</FormLabel>
+                      <FormLabel>{tr("layout")}</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a layout" />
+                            <SelectValue placeholder={tr("selectALayout")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="standard">
-                            Standard - Clean, traditional layout
+                            {tr("standardCleanTraditionalLayout")}
                           </SelectItem>
                           <SelectItem value="modern">
-                            Modern - Sleek design with accent colors
+                            {tr("modernSleekDesignWithAccentColors")}
                           </SelectItem>
                           <SelectItem value="minimal">
-                            Minimal - Simple and distraction-free
+                            {tr("minimalSimpleAndDistractionFree")}
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -382,12 +387,9 @@ export default function InvoiceTemplates() {
                   name="headerText"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Header Text</FormLabel>
+                      <FormLabel>{tr("headerText")}</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="Optional custom header (e.g., Tax Invoice)"
-                        />
+                        <Input {...field} placeholder={tr("optionalCustomHeaderEGTax")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -399,11 +401,11 @@ export default function InvoiceTemplates() {
                   name="footerText"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Footer Text</FormLabel>
+                      <FormLabel>{tr("footerText")}</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
-                          placeholder="Optional footer note (e.g., payment terms, thank you message)"
+                          placeholder={tr("optionalFooterNoteEGPayment")}
                           rows={3}
                         />
                       </FormControl>
@@ -418,8 +420,8 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Show Company Logo</FormLabel>
-                        <FormDescription>Display your company logo on the invoice</FormDescription>
+                        <FormLabel className="text-base">{tr("showCompanyLogo")}</FormLabel>
+                        <FormDescription>{tr("displayYourCompanyLogoOnThe")}</FormDescription>
                       </div>
                       <FormControl>
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -434,10 +436,8 @@ export default function InvoiceTemplates() {
                   render={({ field }) => (
                     <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Show Company Stamp</FormLabel>
-                        <FormDescription>
-                          Display a company stamp or seal on the invoice
-                        </FormDescription>
+                        <FormLabel className="text-base">{tr("showCompanyStamp")}</FormLabel>
+                        <FormDescription>{tr("displayACompanyStampOrSeal")}</FormDescription>
                       </div>
                       <FormControl>
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -453,14 +453,14 @@ export default function InvoiceTemplates() {
                     onClick={() => setDialogOpen(false)}
                     className="flex-1"
                   >
-                    Cancel
+                    {tr("cancel")}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createMutation.isPending || editMutation.isPending}
                     className="flex-1"
                   >
-                    {createMutation.isPending || editMutation.isPending ? "Saving..." : "Save"}
+                    {createMutation.isPending || editMutation.isPending ? tr("saving") : tr("save")}
                   </Button>
                 </div>
               </form>
@@ -482,10 +482,10 @@ export default function InvoiceTemplates() {
                 }`}
               >
                 {template.isDefault && (
-                  <div className="absolute top-2 right-2">
+                  <div className="absolute top-2 end-2">
                     <Badge className="bg-primary">
-                      <Check className="w-3 h-3 mr-1" />
-                      Default
+                      <Check className="w-3 h-3 me-1" />
+                      {tr("default")}
                     </Badge>
                   </div>
                 )}
@@ -495,23 +495,21 @@ export default function InvoiceTemplates() {
                     style={{ backgroundColor: template.accentColor || "#e5edff" }}
                   >
                     <div
-                      className="absolute top-0 left-0 w-full h-2"
+                      className="absolute top-0 start-0 w-full h-2"
                       style={{ backgroundColor: template.primaryColor || "#1a56db" }}
                     />
                     <Layout
                       className="w-12 h-12"
                       style={{ color: template.primaryColor || "#1a56db" }}
                     />
-                    <Badge
-                      variant="outline"
-                      className="absolute bottom-2 right-2 text-xs capitalize"
-                    >
+                    <Badge variant="outline" className="absolute bottom-2 end-2 text-xs capitalize">
                       {getLayoutLabel(template.layout)}
                     </Badge>
                   </div>
                   <CardTitle className="text-base">{template.name}</CardTitle>
                   <CardDescription className="text-xs">
-                    {template.headerText || `${getLayoutLabel(template.layout)} layout template`}
+                    {template.headerText ||
+                      tr("layoutTemplate", { getLayoutLabel: getLayoutLabel(template.layout) })}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -524,8 +522,8 @@ export default function InvoiceTemplates() {
                         onClick={() => setDefaultMutation.mutate(template.id)}
                         disabled={setDefaultMutation.isPending}
                       >
-                        <Star className="w-3 h-3 mr-1" />
-                        Set Default
+                        <Star className="w-3 h-3 me-1" />
+                        {tr("setDefault")}
                       </Button>
                     )}
                     <Button
@@ -539,7 +537,7 @@ export default function InvoiceTemplates() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (window.confirm("Are you sure you want to delete this template?")) {
+                        if (window.confirm(tr("areYouSureYouWantTo"))) {
                           deleteMutation.mutate(template.id);
                         }
                       }}
@@ -555,7 +553,7 @@ export default function InvoiceTemplates() {
             <Card className="col-span-full">
               <CardContent className="text-center py-12 text-muted-foreground">
                 <Layout className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No templates yet. Create your first template to customize your invoices.</p>
+                <p>{tr("noTemplatesYetCreateYourFirst")}</p>
               </CardContent>
             </Card>
           )}

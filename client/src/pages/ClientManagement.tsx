@@ -63,6 +63,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./ClientManagement.i18n";
 
 interface ClientWithStats extends Company {
   userCount: number;
@@ -71,6 +72,8 @@ interface ClientWithStats extends Company {
 }
 
 export default function ClientManagement() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
@@ -118,14 +121,14 @@ export default function ClientManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
-      toast({ title: "Client created successfully" });
+      toast({ title: tr("clientCreatedSuccessfully") });
       setAddClientOpen(false);
       resetForm();
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create client",
+        title: tr("failedToCreateClient"),
         description: error?.message,
       });
     },
@@ -137,13 +140,13 @@ export default function ClientManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
-      toast({ title: "Client updated successfully" });
+      toast({ title: tr("clientUpdatedSuccessfully") });
       setEditingClient(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update client",
+        title: tr("failedToUpdateClient"),
         description: error?.message,
       });
     },
@@ -155,12 +158,12 @@ export default function ClientManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
-      toast({ title: "Client deleted successfully" });
+      toast({ title: tr("clientDeletedSuccessfully") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete client",
+        title: tr("failedToDeleteClient"),
         description: error?.message,
       });
     },
@@ -180,7 +183,7 @@ export default function ClientManagement() {
   const handleCreateClient = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      toast({ variant: "destructive", title: "Company name is required" });
+      toast({ variant: "destructive", title: tr("companyNameIsRequired") });
       return;
     }
     const data = {
@@ -228,21 +231,21 @@ export default function ClientManagement() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="Client Management"
+        eyebrow={tr("admin")}
+        title={tr("clientManagement")}
         testId="text-clients-title"
-        description="Manage all your accounting firm's clients"
+        description={tr("manageAllYourAccountingFirmS")}
         actions={
           <>
             <Link href="/admin/import">
               <Button variant="outline" data-testid="button-import-clients">
-                <Upload className="w-4 h-4 mr-2" />
-                Import from Excel
+                <Upload className="w-4 h-4 me-2" />
+                {tr("importFromExcel")}
               </Button>
             </Link>
             <Button onClick={() => setAddClientOpen(true)} data-testid="button-add-client">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Client
+              <Plus className="w-4 h-4 me-2" />
+              {tr("addClient")}
             </Button>
           </>
         }
@@ -256,15 +259,13 @@ export default function ClientManagement() {
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Client</DialogTitle>
-            <DialogDescription>
-              Create a new client company for your accounting services
-            </DialogDescription>
+            <DialogTitle>{tr("addNewClient")}</DialogTitle>
+            <DialogDescription>{tr("createANewClientCompanyFor")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateClient} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Company Name *</Label>
+                <Label htmlFor="name">{tr("companyName")}</Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -274,30 +275,30 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="industry">Industry</Label>
+                <Label htmlFor="industry">{tr("industry")}</Label>
                 <Select
                   value={formData.industry}
                   onValueChange={(value) => setFormData((prev) => ({ ...prev, industry: value }))}
                 >
                   <SelectTrigger data-testid="select-industry">
-                    <SelectValue placeholder="Select industry" />
+                    <SelectValue placeholder={tr("selectIndustry")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="retail">Retail</SelectItem>
-                    <SelectItem value="services">Services</SelectItem>
-                    <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                    <SelectItem value="technology">Technology</SelectItem>
-                    <SelectItem value="construction">Construction</SelectItem>
-                    <SelectItem value="hospitality">Hospitality</SelectItem>
-                    <SelectItem value="healthcare">Healthcare</SelectItem>
-                    <SelectItem value="real_estate">Real Estate</SelectItem>
-                    <SelectItem value="trading">Trading</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="retail">{tr("retail")}</SelectItem>
+                    <SelectItem value="services">{tr("services")}</SelectItem>
+                    <SelectItem value="manufacturing">{tr("manufacturing")}</SelectItem>
+                    <SelectItem value="technology">{tr("technology")}</SelectItem>
+                    <SelectItem value="construction">{tr("construction")}</SelectItem>
+                    <SelectItem value="hospitality">{tr("hospitality")}</SelectItem>
+                    <SelectItem value="healthcare">{tr("healthcare")}</SelectItem>
+                    <SelectItem value="real_estate">{tr("realEstate")}</SelectItem>
+                    <SelectItem value="trading">{tr("trading")}</SelectItem>
+                    <SelectItem value="other">{tr("other")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="legalStructure">Legal Structure</Label>
+                <Label htmlFor="legalStructure">{tr("legalStructure")}</Label>
                 <Select
                   value={formData.legalStructure}
                   onValueChange={(value) =>
@@ -305,19 +306,19 @@ export default function ClientManagement() {
                   }
                 >
                   <SelectTrigger data-testid="select-legal-structure">
-                    <SelectValue placeholder="Select structure" />
+                    <SelectValue placeholder={tr("selectStructure")} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="llc">LLC</SelectItem>
-                    <SelectItem value="sole_proprietorship">Sole Proprietorship</SelectItem>
-                    <SelectItem value="partnership">Partnership</SelectItem>
-                    <SelectItem value="corporation">Corporation</SelectItem>
-                    <SelectItem value="free_zone">Free Zone Company</SelectItem>
+                    <SelectItem value="sole_proprietorship">{tr("soleProprietorship")}</SelectItem>
+                    <SelectItem value="partnership">{tr("partnership")}</SelectItem>
+                    <SelectItem value="corporation">{tr("corporation")}</SelectItem>
+                    <SelectItem value="free_zone">{tr("freeZoneCompany")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="registrationNumber">Registration Number</Label>
+                <Label htmlFor="registrationNumber">{tr("registrationNumber")}</Label>
                 <Input
                   id="registrationNumber"
                   value={formData.registrationNumber}
@@ -328,7 +329,7 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="trnVatNumber">TRN / VAT Number</Label>
+                <Label htmlFor="trnVatNumber">{tr("trnVatNumber")}</Label>
                 <Input
                   id="trnVatNumber"
                   value={formData.trnVatNumber}
@@ -339,7 +340,7 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="taxRegistrationType">Tax Registration Type</Label>
+                <Label htmlFor="taxRegistrationType">{tr("taxRegistrationType")}</Label>
                 <Select
                   value={formData.taxRegistrationType}
                   onValueChange={(value) =>
@@ -347,17 +348,17 @@ export default function ClientManagement() {
                   }
                 >
                   <SelectTrigger data-testid="select-tax-type">
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder={tr("selectType")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="standard">Standard</SelectItem>
-                    <SelectItem value="flat_rate">Flat Rate</SelectItem>
-                    <SelectItem value="non_registered">Non-registered</SelectItem>
+                    <SelectItem value="standard">{tr("standard")}</SelectItem>
+                    <SelectItem value="flat_rate">{tr("flatRate")}</SelectItem>
+                    <SelectItem value="non_registered">{tr("nonRegistered")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vatFilingFrequency">VAT Filing Frequency</Label>
+                <Label htmlFor="vatFilingFrequency">{tr("vatFilingFrequency")}</Label>
                 <Select
                   value={formData.vatFilingFrequency}
                   onValueChange={(value) =>
@@ -365,17 +366,17 @@ export default function ClientManagement() {
                   }
                 >
                   <SelectTrigger data-testid="select-vat-frequency">
-                    <SelectValue placeholder="Select frequency" />
+                    <SelectValue placeholder={tr("selectFrequency")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="annually">Annually</SelectItem>
+                    <SelectItem value="monthly">{tr("monthly")}</SelectItem>
+                    <SelectItem value="quarterly">{tr("quarterly")}</SelectItem>
+                    <SelectItem value="annually">{tr("annually")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contactEmail">Contact Email</Label>
+                <Label htmlFor="contactEmail">{tr("contactEmail")}</Label>
                 <Input
                   id="contactEmail"
                   type="email"
@@ -387,7 +388,7 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contactPhone">Contact Phone</Label>
+                <Label htmlFor="contactPhone">{tr("contactPhone")}</Label>
                 <Input
                   id="contactPhone"
                   value={formData.contactPhone}
@@ -398,7 +399,7 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="websiteUrl">Website</Label>
+                <Label htmlFor="websiteUrl">{tr("website")}</Label>
                 <Input
                   id="websiteUrl"
                   value={formData.websiteUrl}
@@ -407,7 +408,7 @@ export default function ClientManagement() {
                 />
               </div>
               <div className="col-span-2 space-y-2">
-                <Label htmlFor="businessAddress">Business Address</Label>
+                <Label htmlFor="businessAddress">{tr("businessAddress")}</Label>
                 <Textarea
                   id="businessAddress"
                   value={formData.businessAddress}
@@ -420,14 +421,14 @@ export default function ClientManagement() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setAddClientOpen(false)}>
-                Cancel
+                {tr("cancel")}
               </Button>
               <Button
                 type="submit"
                 disabled={createClientMutation.isPending}
                 data-testid="button-submit-client"
               >
-                {createClientMutation.isPending ? "Creating..." : "Create Client"}
+                {createClientMutation.isPending ? tr("creating") : tr("createClient")}
               </Button>
             </DialogFooter>
           </form>
@@ -439,22 +440,22 @@ export default function ClientManagement() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search clients by name, email, or TRN..."
+                  placeholder={tr("searchClientsByNameEmailOr")}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-clients"
                 />
               </div>
               <Select value={industryFilter} onValueChange={setIndustryFilter}>
                 <SelectTrigger className="w-48" data-testid="select-filter-industry">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Filter by industry" />
+                  <Filter className="w-4 h-4 me-2" />
+                  <SelectValue placeholder={tr("filterByIndustry")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Industries</SelectItem>
+                  <SelectItem value="all">{tr("allIndustries")}</SelectItem>
                   {industries.map((industry) => (
                     <SelectItem key={industry} value={industry!}>
                       {industry}
@@ -464,7 +465,10 @@ export default function ClientManagement() {
               </Select>
             </div>
             <Badge variant="secondary" data-testid="text-client-count">
-              {filteredClients.length} of {clients.length} clients
+              {tr("ofClients", {
+                filteredClientsCount: filteredClients.length,
+                clientsCount: clients.length,
+              })}
             </Badge>
           </div>
         </CardHeader>
@@ -473,14 +477,14 @@ export default function ClientManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Industry</TableHead>
-                  <TableHead>TRN</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead className="text-center">Users</TableHead>
-                  <TableHead className="text-center">Docs</TableHead>
-                  <TableHead className="text-center">Invoices</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{tr("company")}</TableHead>
+                  <TableHead>{tr("industry")}</TableHead>
+                  <TableHead>{tr("trn")}</TableHead>
+                  <TableHead>{tr("contact")}</TableHead>
+                  <TableHead className="text-center">{tr("users")}</TableHead>
+                  <TableHead className="text-center">{tr("docs")}</TableHead>
+                  <TableHead className="text-center">{tr("invoices")}</TableHead>
+                  <TableHead className="text-end">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -529,7 +533,7 @@ export default function ClientManagement() {
                     <TableCell className="text-center">
                       <Badge variant="secondary">{client.invoiceCount}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -543,46 +547,42 @@ export default function ClientManagement() {
                         <DropdownMenuContent align="end">
                           <Link href={`/admin/clients/${client.id}`}>
                             <DropdownMenuItem data-testid={`menu-view-${client.id}`}>
-                              <Eye className="w-4 h-4 mr-2" />
-                              View Details
+                              <Eye className="w-4 h-4 me-2" />
+                              {tr("viewDetails")}
                             </DropdownMenuItem>
                           </Link>
                           <DropdownMenuItem
                             onClick={() => setEditingClient(client)}
                             data-testid={`menu-edit-${client.id}`}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            <Edit className="w-4 h-4 me-2" />
+                            {tr("edit")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <Link href={`/admin/clients/${client.id}/documents`}>
                             <DropdownMenuItem>
-                              <FileText className="w-4 h-4 mr-2" />
-                              Manage Documents
+                              <FileText className="w-4 h-4 me-2" />
+                              {tr("manageDocuments")}
                             </DropdownMenuItem>
                           </Link>
                           <Link href={`/admin/clients/${client.id}/tasks`}>
                             <DropdownMenuItem>
-                              <Calendar className="w-4 h-4 mr-2" />
-                              Compliance Tasks
+                              <Calendar className="w-4 h-4 me-2" />
+                              {tr("complianceTasks")}
                             </DropdownMenuItem>
                           </Link>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => {
-                              if (
-                                confirm(
-                                  "Are you sure you want to delete this client? This action cannot be undone."
-                                )
-                              ) {
+                              if (confirm(tr("areYouSureYouWantTo"))) {
                                 deleteClientMutation.mutate(client.id);
                               }
                             }}
                             data-testid={`menu-delete-${client.id}`}
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
+                            <Trash2 className="w-4 h-4 me-2" />
+                            {tr("delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -593,8 +593,8 @@ export default function ClientManagement() {
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       {searchTerm || industryFilter !== "all"
-                        ? "No clients match your filters"
-                        : "No clients yet. Add your first client to get started."}
+                        ? tr("noClientsMatchYourFilters")
+                        : tr("noClientsYetAddYourFirst")}
                     </TableCell>
                   </TableRow>
                 )}
@@ -607,14 +607,14 @@ export default function ClientManagement() {
       <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Client</DialogTitle>
-            <DialogDescription>Update client information</DialogDescription>
+            <DialogTitle>{tr("editClient")}</DialogTitle>
+            <DialogDescription>{tr("updateClientInformation")}</DialogDescription>
           </DialogHeader>
           {editingClient && (
             <form onSubmit={handleUpdateClient} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-name">Company Name *</Label>
+                  <Label htmlFor="edit-name">{tr("companyName")}</Label>
                   <Input
                     id="edit-name"
                     name="name"
@@ -624,27 +624,27 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-industry">Industry</Label>
+                  <Label htmlFor="edit-industry">{tr("industry")}</Label>
                   <Select name="industry" defaultValue={editingClient.industry || ""}>
                     <SelectTrigger data-testid="select-edit-industry">
-                      <SelectValue placeholder="Select industry" />
+                      <SelectValue placeholder={tr("selectIndustry")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="retail">Retail</SelectItem>
-                      <SelectItem value="services">Services</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      <SelectItem value="technology">Technology</SelectItem>
-                      <SelectItem value="construction">Construction</SelectItem>
-                      <SelectItem value="hospitality">Hospitality</SelectItem>
-                      <SelectItem value="healthcare">Healthcare</SelectItem>
-                      <SelectItem value="real_estate">Real Estate</SelectItem>
-                      <SelectItem value="trading">Trading</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="retail">{tr("retail")}</SelectItem>
+                      <SelectItem value="services">{tr("services")}</SelectItem>
+                      <SelectItem value="manufacturing">{tr("manufacturing")}</SelectItem>
+                      <SelectItem value="technology">{tr("technology")}</SelectItem>
+                      <SelectItem value="construction">{tr("construction")}</SelectItem>
+                      <SelectItem value="hospitality">{tr("hospitality")}</SelectItem>
+                      <SelectItem value="healthcare">{tr("healthcare")}</SelectItem>
+                      <SelectItem value="real_estate">{tr("realEstate")}</SelectItem>
+                      <SelectItem value="trading">{tr("trading")}</SelectItem>
+                      <SelectItem value="other">{tr("other")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-trnVatNumber">TRN / VAT Number</Label>
+                  <Label htmlFor="edit-trnVatNumber">{tr("trnVatNumber")}</Label>
                   <Input
                     id="edit-trnVatNumber"
                     name="trnVatNumber"
@@ -653,7 +653,7 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-registrationNumber">Registration Number</Label>
+                  <Label htmlFor="edit-registrationNumber">{tr("registrationNumber")}</Label>
                   <Input
                     id="edit-registrationNumber"
                     name="registrationNumber"
@@ -662,7 +662,7 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-contactEmail">Contact Email</Label>
+                  <Label htmlFor="edit-contactEmail">{tr("contactEmail")}</Label>
                   <Input
                     id="edit-contactEmail"
                     name="contactEmail"
@@ -672,7 +672,7 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-contactPhone">Contact Phone</Label>
+                  <Label htmlFor="edit-contactPhone">{tr("contactPhone")}</Label>
                   <Input
                     id="edit-contactPhone"
                     name="contactPhone"
@@ -681,7 +681,7 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-websiteUrl">Website</Label>
+                  <Label htmlFor="edit-websiteUrl">{tr("website")}</Label>
                   <Input
                     id="edit-websiteUrl"
                     name="websiteUrl"
@@ -690,7 +690,7 @@ export default function ClientManagement() {
                   />
                 </div>
                 <div className="col-span-2 space-y-2">
-                  <Label htmlFor="edit-businessAddress">Business Address</Label>
+                  <Label htmlFor="edit-businessAddress">{tr("businessAddress")}</Label>
                   <Textarea
                     id="edit-businessAddress"
                     name="businessAddress"
@@ -701,14 +701,14 @@ export default function ClientManagement() {
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditingClient(null)}>
-                  Cancel
+                  {tr("cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={updateClientMutation.isPending}
                   data-testid="button-update-client"
                 >
-                  {updateClientMutation.isPending ? "Updating..." : "Update Client"}
+                  {updateClientMutation.isPending ? tr("updating") : tr("updateClient")}
                 </Button>
               </DialogFooter>
             </form>

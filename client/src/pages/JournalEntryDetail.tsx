@@ -24,6 +24,7 @@ import {
   FileText,
   RotateCcw,
 } from "lucide-react";
+import { messages as pageMessages } from "./JournalEntryDetail.i18n";
 
 interface JournalLine {
   id: string;
@@ -55,6 +56,8 @@ interface JournalEntry {
 }
 
 export default function JournalEntryDetail() {
+  const tr = pageMessages.useT();
+
   const { id } = useParams<{ id: string }>();
   const { t, locale } = useTranslation();
 
@@ -72,22 +75,22 @@ export default function JournalEntryDetail() {
       case "posted":
         return (
           <Badge className="bg-success-subtle text-success-subtle-foreground ">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            Posted
+            <CheckCircle2 className="w-3 h-3 me-1" />
+            {tr("posted")}
           </Badge>
         );
       case "draft":
         return (
           <Badge variant="secondary">
-            <Clock className="w-3 h-3 mr-1" />
-            Draft
+            <Clock className="w-3 h-3 me-1" />
+            {tr("draft")}
           </Badge>
         );
       case "reversed":
         return (
           <Badge variant="destructive">
-            <RotateCcw className="w-3 h-3 mr-1" />
-            Reversed
+            <RotateCcw className="w-3 h-3 me-1" />
+            {tr("reversed")}
           </Badge>
         );
       default:
@@ -99,16 +102,16 @@ export default function JournalEntryDetail() {
     if (!sourceType) return null;
 
     const sourceLabels: Record<string, string> = {
-      invoice: "Invoice",
-      receipt: "Receipt/Expense",
-      manual: "Manual Entry",
-      payment: "Payment",
-      adjustment: "Adjustment",
+      invoice: tr("invoice"),
+      receipt: tr("receiptExpense"),
+      manual: tr("manualEntry"),
+      payment: tr("payment"),
+      adjustment: tr("adjustment"),
     };
 
     return (
-      <Badge variant="outline" className="ml-2">
-        <FileText className="w-3 h-3 mr-1" />
+      <Badge variant="outline" className="ms-2">
+        <FileText className="w-3 h-3 me-1" />
         {sourceLabels[sourceType] || sourceType}
       </Badge>
     );
@@ -145,15 +148,15 @@ export default function JournalEntryDetail() {
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Journal Entry Not Found</h1>
+          <h1 className="text-2xl font-bold">{tr("journalEntryNotFound")}</h1>
         </div>
         <Card>
           <CardContent className="py-12 text-center">
             <XCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">The requested journal entry could not be found.</p>
+            <p className="text-muted-foreground">{tr("theRequestedJournalEntryCouldNot")}</p>
             <Link href="/journal">
               <Button className="mt-4" data-testid="button-return-to-journal">
-                Return to Journal
+                {tr("returnToJournal")}
               </Button>
             </Link>
           </CardContent>
@@ -178,7 +181,7 @@ export default function JournalEntryDetail() {
             <div className="flex items-center gap-2">
               <BookMarked className="w-6 h-6 text-primary" />
               <h1 className="text-2xl font-bold" data-testid="text-journal-entry-number">
-                Journal Entry #{entry.entryNumber}
+                {tr("journalEntry", { entryNumber: entry.entryNumber })}
               </h1>
               {getStatusBadge(entry.status)}
               {getSourceTypeBadge(entry.sourceType)}
@@ -188,7 +191,7 @@ export default function JournalEntryDetail() {
         </div>
         <Link href="/journal">
           <Button variant="outline" data-testid="button-view-all-entries">
-            View All Entries
+            {tr("viewAllEntries")}
           </Button>
         </Link>
       </div>
@@ -196,7 +199,7 @@ export default function JournalEntryDetail() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Debits</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalDebits")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-success" data-testid="text-total-debits">
@@ -207,7 +210,7 @@ export default function JournalEntryDetail() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Credits</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalCredits")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-info" data-testid="text-total-credits">
@@ -218,7 +221,7 @@ export default function JournalEntryDetail() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Balance</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("balance")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div
@@ -226,7 +229,7 @@ export default function JournalEntryDetail() {
               data-testid="text-balance"
             >
               {Math.abs(totalDebit - totalCredit) < 0.01
-                ? "Balanced"
+                ? tr("balanced")
                 : formatCurrency(Math.abs(totalDebit - totalCredit), "AED", locale)}
             </div>
           </CardContent>
@@ -236,7 +239,7 @@ export default function JournalEntryDetail() {
       {entry.memo && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Memo</CardTitle>
+            <CardTitle className="text-lg">{tr("memo")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground" data-testid="text-memo">
@@ -248,18 +251,18 @@ export default function JournalEntryDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Line Items</CardTitle>
-          <CardDescription>Double-entry transaction details</CardDescription>
+          <CardTitle className="text-lg">{tr("lineItems")}</CardTitle>
+          <CardDescription>{tr("doubleEntryTransactionDetails")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[100px]">Code</TableHead>
-                <TableHead>Account Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Debit (AED)</TableHead>
-                <TableHead className="text-right">Credit (AED)</TableHead>
+                <TableHead className="w-[100px]">{tr("code")}</TableHead>
+                <TableHead>{tr("accountName")}</TableHead>
+                <TableHead>{tr("type")}</TableHead>
+                <TableHead className="text-end">{tr("debitAed")}</TableHead>
+                <TableHead className="text-end">{tr("creditAed")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -269,19 +272,19 @@ export default function JournalEntryDetail() {
                   <TableCell>
                     {locale === "ar" && line.account?.nameAr
                       ? line.account.nameAr
-                      : line.account?.nameEn || "Unknown Account"}
+                      : line.account?.nameEn || tr("unknownAccount")}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
                       {line.account?.type || "-"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="text-end font-mono">
                     {parseFloat(line.debit) > 0
                       ? formatCurrency(parseFloat(line.debit), "AED", locale)
                       : "-"}
                   </TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="text-end font-mono">
                     {parseFloat(line.credit) > 0
                       ? formatCurrency(parseFloat(line.credit), "AED", locale)
                       : "-"}
@@ -289,13 +292,13 @@ export default function JournalEntryDetail() {
                 </TableRow>
               ))}
               <TableRow className="bg-muted/50 font-bold">
-                <TableCell colSpan={3} className="text-right">
-                  Totals
+                <TableCell colSpan={3} className="text-end">
+                  {tr("totals")}
                 </TableCell>
-                <TableCell className="text-right font-mono">
+                <TableCell className="text-end font-mono">
                   {formatCurrency(totalDebit, "AED", locale)}
                 </TableCell>
-                <TableCell className="text-right font-mono">
+                <TableCell className="text-end font-mono">
                   {formatCurrency(totalCredit, "AED", locale)}
                 </TableCell>
               </TableRow>
@@ -307,18 +310,18 @@ export default function JournalEntryDetail() {
       {entry.reversedEntryId && (
         <Card className="border-warning/30 ">
           <CardHeader>
-            <CardTitle className="text-lg text-warning">Reversal Information</CardTitle>
+            <CardTitle className="text-lg text-warning">{tr("reversalInformation")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              This entry has been reversed.{" "}
+              {tr("thisEntryHasBeenReversed")}
               <Link href={`/journal/${entry.reversedEntryId}`}>
                 <Button
                   variant="ghost"
                   className="text-primary p-0 h-auto"
                   data-testid="link-reversal-entry"
                 >
-                  View reversal entry
+                  {tr("viewReversalEntry")}
                 </Button>
               </Link>
             </p>
@@ -328,32 +331,34 @@ export default function JournalEntryDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Entry Details</CardTitle>
+          <CardTitle className="text-lg">{tr("entryDetails")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-muted-foreground">Entry ID:</span>
-              <span className="ml-2 font-mono" data-testid="text-entry-id">
+              <span className="text-muted-foreground">{tr("entryId")}</span>
+              <span dir="ltr" className="ms-2 font-mono" data-testid="text-entry-id">
                 {entry.id}
               </span>
             </div>
             <div>
-              <span className="text-muted-foreground">Created:</span>
-              <span className="ml-2" data-testid="text-created-at">
+              <span className="text-muted-foreground">{tr("created")}</span>
+              <span className="ms-2" data-testid="text-created-at">
                 {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
               </span>
             </div>
             {entry.sourceType && (
               <div>
-                <span className="text-muted-foreground">Source Type:</span>
-                <span className="ml-2 capitalize">{entry.sourceType}</span>
+                <span className="text-muted-foreground">{tr("sourceType")}</span>
+                <span className="ms-2 capitalize">{entry.sourceType}</span>
               </div>
             )}
             {entry.sourceId && (
               <div>
-                <span className="text-muted-foreground">Source ID:</span>
-                <span className="ml-2 font-mono">{entry.sourceId}</span>
+                <span className="text-muted-foreground">{tr("sourceId")}</span>
+                <span dir="ltr" className="ms-2 font-mono">
+                  {entry.sourceId}
+                </span>
               </div>
             )}
           </div>

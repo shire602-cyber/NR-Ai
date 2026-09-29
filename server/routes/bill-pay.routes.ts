@@ -390,6 +390,14 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // An opening-balance bill is inside the opening balances: editing it would break the tie to Accounts Payable.
+      if (billResult.rows[0].is_opening_balance === true) {
+        return res.status(409).json({
+          message: "This bill was entered as an opening balance and cannot be edited. Reverse the opening balances to change it.",
+          code: "OPENING_BALANCE_BILL",
+        });
+      }
+
       const {
         vendor_name,
         vendor_trn,

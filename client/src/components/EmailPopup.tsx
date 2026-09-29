@@ -13,6 +13,7 @@ import { Gift, Sparkles, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { messages as pageMessages } from "./EmailPopup.i18n";
 
 interface EmailPopupProps {
   open: boolean;
@@ -21,6 +22,8 @@ interface EmailPopupProps {
 }
 
 export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
+  const tr = pageMessages.useT();
+
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -30,11 +33,8 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
 
     if (!email || !email.includes("@")) {
       toast({
-        title: locale === "en" ? "Invalid Email" : "بريد إلكتروني غير صالح",
-        description:
-          locale === "en"
-            ? "Please enter a valid email address"
-            : "يرجى إدخال عنوان بريد إلكتروني صالح",
+        title: tr("invalidEmail"),
+        description: tr("pleaseEnterAValidEmailAddress"),
         variant: "destructive",
       });
       return;
@@ -55,21 +55,16 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
       }
 
       toast({
-        title: locale === "en" ? "Success!" : "نجح!",
-        description:
-          locale === "en"
-            ? "You're on the list! Check your email for the lifetime deal details."
-            : "أنت في القائمة! تحقق من بريدك الإلكتروني للحصول على تفاصيل العرض.",
+        title: tr("success"),
+        description: tr("youReOnTheListCheck"),
       });
 
       setEmail("");
       onClose();
     } catch (error: any) {
       toast({
-        title: locale === "en" ? "Error" : "خطأ",
-        description:
-          error?.message ||
-          (locale === "en" ? "Failed to join waitlist" : "فشل الانضمام إلى القائمة"),
+        title: tr("error"),
+        description: error?.message || tr("failedToJoinWaitlist"),
         variant: "destructive",
       });
     } finally {
@@ -82,11 +77,11 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
       <DialogContent className="sm:max-w-md">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+          className="absolute end-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
           data-testid="button-close-popup"
         >
           <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{tr("close")}</span>
         </button>
 
         <DialogHeader className="space-y-4">
@@ -94,21 +89,17 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
             <Gift className="w-8 h-8 text-primary-foreground" />
           </div>
 
-          <DialogTitle className="text-center text-2xl">
-            {locale === "en" ? "Lifetime Deal Alert!" : "عرض مدى الحياة!"}
-          </DialogTitle>
+          <DialogTitle className="text-center text-2xl">{tr("lifetimeDealAlert")}</DialogTitle>
 
           <DialogDescription className="text-center text-base">
-            {locale === "en"
-              ? "Join our exclusive waitlist for a chance to get lifetime access at a one-time payment. Limited spots available!"
-              : "انضم إلى قائمة الانتظار الحصرية للحصول على فرصة الوصول مدى الحياة بدفعة لمرة واحدة. الأماكن محدودة!"}
+            {tr("joinOurExclusiveWaitlistForA")}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm font-medium">
-              {locale === "en" ? "Email Address" : "البريد الإلكتروني"}
+              {tr("emailAddress")}
             </Label>
             <Input
               id="email"
@@ -130,19 +121,11 @@ export function EmailPopup({ open, onClose, locale = "en" }: EmailPopupProps) {
             data-testid="button-join-waitlist"
           >
             <Sparkles className="w-4 h-4" />
-            {loading
-              ? locale === "en"
-                ? "Joining..."
-                : "جاري الانضمام..."
-              : locale === "en"
-                ? "Claim My Spot"
-                : "احجز مكاني"}
+            {loading ? tr("joining") : tr("claimMySpot")}
           </Button>
 
           <p className="text-xs text-center text-muted-foreground">
-            {locale === "en"
-              ? "No spam. Ever. Just the lifetime deal details when available."
-              : "لا بريد عشوائي. أبدا. فقط تفاصيل العرض عندما تكون متاحة."}
+            {tr("noSpamEverJustTheLifetime")}
           </p>
         </form>
       </DialogContent>

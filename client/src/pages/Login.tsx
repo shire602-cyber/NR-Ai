@@ -5,6 +5,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { useToast } from "@/hooks/use-toast";
+import { messages as pageMessages } from "./Login.i18n";
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -32,6 +33,8 @@ function safeNextPath(): string {
 }
 
 export default function Login() {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -39,8 +42,8 @@ export default function Login() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("oauth_error") === "1") {
       toast({
-        title: "Login failed",
-        description: "We could not complete social login. Please try again.",
+        title: tr("loginFailed"),
+        description: tr("weCouldNotCompleteSocialLogin"),
         variant: "destructive",
       });
       window.history.replaceState({}, "", "/login");
@@ -70,14 +73,14 @@ export default function Login() {
     <AuthLayout
       headline={
         <>
-          Your books,{" "}
+          {tr("yourBooks")}
           <span className="italic" style={{ color: "#C19E50" }}>
-            beautifully
+            {tr("beautifully")}
           </span>{" "}
-          kept.
+          {tr("kept")}
         </>
       }
-      subline="Sign back in to a real-time portrait of your revenue, expenses, and filings — every number where you left it."
+      subline={tr("signBackInToAReal")}
     >
       <LoginForm onSuccess={handleSuccess} />
     </AuthLayout>

@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./StaffManagement.i18n";
 
 interface StaffMember {
   id: string;
@@ -48,6 +49,8 @@ interface ClientWithStats extends Company {
 }
 
 export default function StaffManagement() {
+  const tr = pageMessages.useT();
+
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
@@ -135,11 +138,11 @@ export default function StaffManagement() {
     queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
 
     if (failed === 0) {
-      toast({ title: `${success} assignment${success !== 1 ? "s" : ""} saved` });
+      toast({ title: tr.plural("assignmentsSaved", success) });
     } else {
       toast({
         variant: "destructive",
-        title: `${success} saved, ${failed} failed`,
+        title: tr("savedFailed", { success, failed }),
       });
     }
   };
@@ -147,7 +150,7 @@ export default function StaffManagement() {
   if (loadingStaff) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Loading staff...
+        {tr("loadingStaff")}
       </div>
     );
   }
@@ -155,20 +158,20 @@ export default function StaffManagement() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Staff Management"
-        description="Manage NRA staff assignments across client companies"
+        eyebrow={tr("firm")}
+        title={tr("staffManagement")}
+        description={tr("manageNraStaffAssignmentsAcrossClient")}
         actions={
           pendingChanges.size > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {pendingChanges.size} pending change{pendingChanges.size !== 1 ? "s" : ""}
+                {tr.plural("pendingChanges", pendingChanges.size)}
               </span>
               <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
-                Discard
+                {tr("discard")}
               </Button>
               <Button size="sm" onClick={saveChanges} disabled={saving}>
-                {saving ? "Saving..." : "Save Changes"}
+                {saving ? tr("saving") : tr("saveChanges")}
               </Button>
             </div>
           )
@@ -177,12 +180,12 @@ export default function StaffManagement() {
 
       {/* Search */}
       <div className="relative w-full sm:max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Search staff by name or email..."
+          placeholder={tr("searchStaffByNameOrEmail")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="ps-9"
         />
       </div>
 
@@ -190,19 +193,19 @@ export default function StaffManagement() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Staff</p>
+            <p className="text-xs text-muted-foreground">{tr("totalStaff")}</p>
             <p className="text-2xl font-bold mt-0.5">{staff.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Client Companies</p>
+            <p className="text-xs text-muted-foreground">{tr("clientCompanies")}</p>
             <p className="text-2xl font-bold mt-0.5">{clients.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Unassigned Clients</p>
+            <p className="text-xs text-muted-foreground">{tr("unassignedClients")}</p>
             <p className="text-2xl font-bold mt-0.5">
               {clients.filter((c) => c.assignedStaff?.length === 0).length}
             </p>
@@ -214,9 +217,9 @@ export default function StaffManagement() {
       {filteredStaff.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Users className="w-12 h-12 text-muted-foreground mb-4" />
-          <h3 className="font-semibold">No staff members found</h3>
+          <h3 className="font-semibold">{tr("noStaffMembersFound")}</h3>
           <p className="text-muted-foreground text-sm mt-1">
-            {search ? "Try adjusting your search." : "No admin users exist yet."}
+            {search ? tr("tryAdjustingYourSearch") : tr("noAdminUsersExistYet")}
           </p>
         </div>
       ) : (
@@ -255,15 +258,14 @@ export default function StaffManagement() {
                         variant="outline"
                         className="text-warning border-warning/30 bg-warning-subtle"
                       >
-                        {pendingForMember.length} pending
+                        {tr("pending", { pendingForMemberCount: pendingForMember.length })}
                       </Badge>
                     )}
-                    <div className="text-right">
+                    <div className="text-end">
                       <p className="text-sm font-medium">
-                        {member.assignedClientCount} client
-                        {member.assignedClientCount !== 1 ? "s" : ""}
+                        {tr.plural("clientsCount", member.assignedClientCount)}
                       </p>
-                      <p className="text-xs text-muted-foreground">assigned</p>
+                      <p className="text-xs text-muted-foreground">{tr("assigned")}</p>
                     </div>
                     {expanded ? (
                       <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -278,10 +280,12 @@ export default function StaffManagement() {
                   <div className="border-t bg-muted/20">
                     <div className="p-4">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                        Client Assignments
+                        {tr("clientAssignments")}
                       </p>
                       {clients.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No client companies yet.</p>
+                        <p className="text-sm text-muted-foreground">
+                          {tr("noClientCompaniesYet")}
+                        </p>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                           {clients.map((client) => {
@@ -305,7 +309,7 @@ export default function StaffManagement() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium truncate">{client.name}</p>
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {client.trnVatNumber || "No TRN"}
+                                    {client.trnVatNumber || tr("noTrn")}
                                   </p>
                                 </div>
                                 {assigned && (

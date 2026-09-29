@@ -10,7 +10,9 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     /** Machine-readable `code` from the JSON error body, when present. */
-    public readonly code?: string
+    public readonly code?: string,
+    /** Structured `details` from the JSON error body, when present (e.g. per-box differences). */
+    public readonly details?: unknown
   ) {
     super(message);
     this.name = "ApiError";
@@ -21,12 +23,14 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
     let errorCode: string | undefined;
+    let errorDetails: unknown;
     try {
       const contentType = res.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const json = await res.json();
         errorMessage = json.message || json.error || JSON.stringify(json);
         if (typeof json.code === "string") errorCode = json.code;
+        if (json.details !== undefined) errorDetails = json.details;
       } else {
         const text = await res.text();
         // If it's HTML, just use the status
@@ -39,7 +43,7 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status, errorCode);
+    throw new ApiError(errorMessage, res.status, errorCode, errorDetails);
   }
 }
 

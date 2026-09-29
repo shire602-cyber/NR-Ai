@@ -28,6 +28,7 @@ import {
   Bot,
   User,
 } from "lucide-react";
+import { messages as pageMessages } from "./SmartAssistant.i18n";
 
 interface Message {
   id: string;
@@ -63,6 +64,8 @@ interface NLGatewayResponse {
 }
 
 export default function SmartAssistant() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -120,8 +123,8 @@ export default function SmartAssistant() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to process your question",
+        title: tr("error"),
+        description: error?.message || tr("failedToProcessYourQuestion"),
       });
     },
   });
@@ -159,32 +162,32 @@ export default function SmartAssistant() {
   const quickQuestions = [
     {
       icon: DollarSign,
-      text: "What were our total sales this month?",
+      text: tr("whatWereOurTotalSalesThis"),
       color: "text-success ",
     },
     {
       icon: Receipt,
-      text: "Show me pending invoices",
+      text: tr("showMePendingInvoices"),
       color: "text-warning ",
     },
     {
       icon: TrendingUp,
-      text: "What's my profit margin?",
+      text: tr("whatSMyProfitMargin"),
       color: "text-info ",
     },
     {
       icon: TrendingDown,
-      text: "What are my biggest expenses?",
+      text: tr("whatAreMyBiggestExpenses"),
       color: "text-destructive ",
     },
     {
       icon: FileText,
-      text: "How many invoices are unpaid?",
+      text: tr("howManyInvoicesAreUnpaid"),
       color: "text-chart-5 ",
     },
     {
       icon: Lightbulb,
-      text: "Give me financial insights",
+      text: tr("giveMeFinancialInsights"),
       color: "text-warning ",
     },
   ];
@@ -238,7 +241,7 @@ export default function SmartAssistant() {
                 <TrendingUp className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.revenue}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
+              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.revenue || 0, "AED")}
               </p>
             </CardContent>
@@ -249,7 +252,7 @@ export default function SmartAssistant() {
                 <TrendingDown className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.expenses}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
+              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.expenses || 0, "AED")}
               </p>
             </CardContent>
@@ -260,7 +263,7 @@ export default function SmartAssistant() {
                 <DollarSign className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.outstanding}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
+              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.outstanding || 0, "AED")}
               </p>
             </CardContent>
@@ -271,7 +274,9 @@ export default function SmartAssistant() {
                 <FileText className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.invoices}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">{stats.totalInvoices}</p>
+              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
+                {stats.totalInvoices}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -297,14 +302,14 @@ export default function SmartAssistant() {
                   <Button
                     key={i}
                     variant="outline"
-                    className="justify-start h-auto py-3 px-4 text-left hover-elevate"
+                    className="justify-start h-auto py-3 px-4 text-start hover-elevate"
                     onClick={() => handleQuickQuestion(q.text)}
                     disabled={nlMutation.isPending}
                     data-testid={`button-quick-question-${i}`}
                   >
-                    <q.icon className={`w-4 h-4 mr-3 flex-shrink-0 ${q.color}`} />
+                    <q.icon className={`w-4 h-4 me-3 flex-shrink-0 ${q.color}`} />
                     <span className="text-sm">{q.text}</span>
-                    <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+                    <ChevronRight className="w-4 h-4 ms-auto text-muted-foreground" />
                   </Button>
                 ))}
               </div>
@@ -346,7 +351,7 @@ export default function SmartAssistant() {
                             onClick={() => handleQuickQuestion(prompt)}
                             disabled={nlMutation.isPending}
                           >
-                            <Lightbulb className="w-3 h-3 mr-2 text-warning" />
+                            <Lightbulb className="w-3 h-3 me-2 text-warning" />
                             {prompt}
                           </Button>
                         ))}

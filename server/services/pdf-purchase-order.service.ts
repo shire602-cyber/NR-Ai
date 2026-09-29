@@ -1,6 +1,6 @@
-// @ts-ignore - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
+import { createPdfDocument } from "./pdf-fonts";
 import type { PurchaseOrder, PurchaseOrderLine, Company } from "../../shared/schema";
+import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
 
 /**
@@ -14,7 +14,7 @@ export async function generatePurchaseOrderPDF(
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
+      const doc = createPdfDocument({
         size: "A4",
         margin: 50,
         info: {
@@ -37,7 +37,7 @@ export async function generatePurchaseOrderPDF(
 
       // Company Name
       doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 30, { width: contentWidth * 0.6 });
+      doc.text(company.name, margin, 30, { width: contentWidth * 0.6, align: "left" });
 
       // Purchase Order Label
       doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
@@ -45,6 +45,8 @@ export async function generatePurchaseOrderPDF(
         width: contentWidth,
         align: "right",
       });
+      doc.fontSize(11).fillColor("#DBEAFE").font("Helvetica");
+      doc.text("أمر شراء", margin, 57, { width: contentWidth, align: "right" });
 
       // --- PO Details Box ---
       let y = 120;
@@ -97,7 +99,7 @@ export async function generatePurchaseOrderPDF(
       y = 120 + detailBoxHeight + 15;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       if (company.businessAddress) {
-        doc.text(company.businessAddress, margin, y, { width: 200 });
+        doc.text(company.businessAddress, margin, y, { width: 200, align: "left" });
         y += 12;
       }
       if (company.contactPhone) {
@@ -113,12 +115,12 @@ export async function generatePurchaseOrderPDF(
 
       // --- Vendor Section ---
       doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("VENDOR:", margin, y);
+      doc.text("VENDOR / المورد", margin, y);
       y += 18;
 
       doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text(po.vendorName, margin, y);
-      y += 16;
+      doc.text(po.vendorName, margin, y, { width: contentWidth, align: "left" });
+      y += Math.max(16, doc.heightOfString(po.vendorName, { width: contentWidth }) + 2);
 
       if (po.vendorTrn) {
         doc.fontSize(9).fillColor("#6B7280").font("Helvetica");
@@ -162,10 +164,14 @@ export async function generatePurchaseOrderPDF(
         doc.fillColor("#1F2937");
         doc.text(line.description, colX.description, y + 8, { width: 230 });
         doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
-        doc.text(formatUnitPriceCurrency(line.unitPrice, po.currency), colX.price, y + 8, {
+        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, po.currency);
+        doc.fontSize(fitFontSize(doc, unitPriceText, 60, 9));
+        doc.text(unitPriceText, colX.price, y + 8, {
           width: 60,
           align: "center",
+          lineBreak: false,
         });
+        doc.fontSize(9);
         doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: "center" });
         doc.text(formatAmount(lineTotal, po.currency), colX.amount - 60, y + 8, {
           width: 60,

@@ -25,16 +25,20 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import type { DocumentVersion } from "@shared/schema";
+import { messages as pageMessages } from "./DocumentVersions.i18n";
 
-const DOCUMENT_TYPES = [
-  { value: "invoice", label: "Invoice" },
-  { value: "quote", label: "Quote" },
-  { value: "credit_note", label: "Credit Note" },
-  { value: "purchase_order", label: "Purchase Order" },
-  { value: "receipt", label: "Receipt" },
-] as const;
+const getDocumentTypes = () =>
+  [
+    { value: "invoice", label: pageMessages.t("invoice") },
+    { value: "quote", label: pageMessages.t("quote") },
+    { value: "credit_note", label: pageMessages.t("creditNote") },
+    { value: "purchase_order", label: pageMessages.t("purchaseOrder") },
+    { value: "receipt", label: pageMessages.t("receipt") },
+  ] as const;
 
 export default function DocumentVersions() {
+  const tr = pageMessages.useT();
+
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [documentType, setDocumentType] = useState<string>("");
   const [documentId, setDocumentId] = useState("");
@@ -80,7 +84,7 @@ export default function DocumentVersions() {
   };
 
   const formatSnapshotData = (data: string | null): string => {
-    if (!data) return "No snapshot data";
+    if (!data) return tr("noSnapshotData");
     try {
       return JSON.stringify(JSON.parse(data), null, 2);
     } catch {
@@ -93,10 +97,8 @@ export default function DocumentVersions() {
       <div className="flex items-center gap-3">
         <History className="h-8 w-8 text-primary" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Document Versions</h1>
-          <p className="text-muted-foreground">
-            View the full version history and audit trail for any document
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{tr("documentVersions")}</h1>
+          <p className="text-muted-foreground">{tr("viewTheFullVersionHistoryAnd")}</p>
         </div>
       </div>
 
@@ -105,16 +107,14 @@ export default function DocumentVersions() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
-            Find Document History
+            {tr("findDocumentHistory")}
           </CardTitle>
-          <CardDescription>
-            Select a document type and enter the document ID to view its version timeline
-          </CardDescription>
+          <CardDescription>{tr("selectADocumentTypeAndEnter")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="flex-1 space-y-2">
-              <Label htmlFor="documentType">Document Type</Label>
+              <Label htmlFor="documentType">{tr("documentType")}</Label>
               <Select
                 value={documentType}
                 onValueChange={(value) => {
@@ -123,10 +123,10 @@ export default function DocumentVersions() {
                 }}
               >
                 <SelectTrigger id="documentType">
-                  <SelectValue placeholder="Select type..." />
+                  <SelectValue placeholder={tr("selectType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {DOCUMENT_TYPES.map((type) => (
+                  {getDocumentTypes().map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       {type.label}
                     </SelectItem>
@@ -136,10 +136,10 @@ export default function DocumentVersions() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <Label htmlFor="documentId">Document ID</Label>
+              <Label htmlFor="documentId">{tr("documentId")}</Label>
               <Input
                 id="documentId"
-                placeholder="Enter document ID..."
+                placeholder={tr("enterDocumentId")}
                 value={documentId}
                 onChange={(e) => {
                   setDocumentId(e.target.value);
@@ -150,8 +150,8 @@ export default function DocumentVersions() {
             </div>
 
             <Button onClick={handleSearch} disabled={!canSearch}>
-              <Search className="h-4 w-4 mr-2" />
-              Search
+              <Search className="h-4 w-4 me-2" />
+              {tr("search")}
             </Button>
           </div>
         </CardContent>
@@ -163,10 +163,10 @@ export default function DocumentVersions() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Version History
+              {tr("versionHistory")}
               {versions.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {versions.length} version{versions.length !== 1 ? "s" : ""}
+                <Badge variant="secondary" className="ms-2">
+                  {tr.plural("versionsCount", versions.length)}
                 </Badge>
               )}
             </CardTitle>
@@ -178,28 +178,28 @@ export default function DocumentVersions() {
           <CardContent>
             {isLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
-                <Clock className="h-5 w-5 mr-2 animate-spin" />
-                Loading version history...
+                <Clock className="h-5 w-5 me-2 animate-spin" />
+                {tr("loadingVersionHistory")}
               </div>
             ) : isError ? (
               <div className="text-center py-12 text-destructive">
-                Failed to load version history. Please check the document ID and try again.
+                {tr("failedToLoadVersionHistoryPlease")}
               </div>
             ) : versions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                <p className="text-lg font-medium">No versions found</p>
-                <p className="text-sm">No version history exists for this document yet.</p>
+                <p className="text-lg font-medium">{tr("noVersionsFound")}</p>
+                <p className="text-sm">{tr("noVersionHistoryExistsForThis")}</p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[80px]">Version</TableHead>
-                    <TableHead>Change Description</TableHead>
-                    <TableHead className="w-[160px]">Changed By</TableHead>
-                    <TableHead className="w-[180px]">Date</TableHead>
-                    <TableHead className="w-[100px]">Snapshot</TableHead>
+                    <TableHead className="w-[80px]">{tr("version")}</TableHead>
+                    <TableHead>{tr("changeDescription")}</TableHead>
+                    <TableHead className="w-[160px]">{tr("changedBy")}</TableHead>
+                    <TableHead className="w-[180px]">{tr("date")}</TableHead>
+                    <TableHead className="w-[100px]">{tr("snapshot")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -215,14 +215,16 @@ export default function DocumentVersions() {
                           </TableCell>
                           <TableCell>
                             {version.changeDescription || (
-                              <span className="text-muted-foreground italic">No description</span>
+                              <span className="text-muted-foreground italic">
+                                {tr("noDescription")}
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
                               <User className="h-3.5 w-3.5 text-muted-foreground" />
                               <span className="text-sm truncate max-w-[120px]">
-                                {version.changedBy || "System"}
+                                {version.changedBy || tr("system")}
                               </span>
                             </div>
                           </TableCell>
@@ -238,11 +240,11 @@ export default function DocumentVersions() {
                               onClick={() => toggleExpand(version.id)}
                             >
                               {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 mr-1" />
+                                <ChevronDown className="h-4 w-4 me-1" />
                               ) : (
-                                <ChevronRight className="h-4 w-4 mr-1" />
+                                <ChevronRight className="h-4 w-4 me-1" />
                               )}
-                              View
+                              {tr("view")}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -251,9 +253,12 @@ export default function DocumentVersions() {
                             <TableCell colSpan={5} className="p-0">
                               <div className="bg-muted/30 border-t px-6 py-4">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-                                  Snapshot Data
+                                  {tr("snapshotData")}
                                 </Label>
-                                <pre className="text-xs font-mono bg-background rounded-md border p-4 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap">
+                                <pre
+                                  dir="ltr"
+                                  className="text-xs font-mono bg-background rounded-md border p-4 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap"
+                                >
                                   {formatSnapshotData(version.snapshotData)}
                                 </pre>
                               </div>

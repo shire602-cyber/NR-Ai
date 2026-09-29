@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { insertVatReturnSchema } from "../../shared/schema";
 import { classifyVatPeriod } from "./vat-period-status.service";
+import { round2 } from "./tax-filing-core";
 
 export const LEGACY_VAT_RETURN_FIELDS = [
   "box1SalesStandard",
@@ -49,10 +50,20 @@ export interface GeneratedVatReturnInput {
   totalOutputVat: number;
   totalInputAmount: number;
   totalInputVat: number;
+  /** Net effect of manual VAT journals on the output tax (box 8 adjustment); 0 when there are none. */
+  outputAdjustment?: number;
+  /** Net effect of manual VAT journals on the recoverable tax (box 9 / box 11 adjustment). */
+  inputAdjustment?: number;
+  /** The journals behind those adjustments (entry number, description, box, amount). */
+  vatAdjustments?: unknown[];
 }
 
 /** Canonical VAT 201 values for a generated (draft) return. */
 export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
+  const outputAdj = input.outputAdjustment ?? 0;
+  const inputAdj = input.inputAdjustment ?? 0;
+  const dueTax = round2(input.totalOutputVat + outputAdj);
+  const recoverableTax = round2(input.totalInputVat + inputAdj);
   return {
     companyId: input.companyId,
     periodStart: input.periodStart,
@@ -82,11 +93,11 @@ export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
     // Box 8: Total output amounts and VAT
     box8TotalAmount: input.totalOutputAmount,
     box8TotalVat: input.totalOutputVat,
-    box8TotalAdj: 0,
+    box8TotalAdj: outputAdj,
     // Box 9: Standard rated expenses (input VAT recovery)
     box9ExpensesAmount: input.totalExpenses,
     box9ExpensesVat: input.inputTax,
-    box9ExpensesAdj: 0,
+    box9ExpensesAdj: inputAdj,
     // Box 10: Reverse charge on imports (input side) — buyer claims back the
     // self-assessed VAT, reduced by partial-exemption ratio when applicable.
     box10ReverseChargeAmount: input.reverseChargeAmount,
@@ -94,11 +105,13 @@ export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
     // Box 11: Total input amounts and VAT
     box11TotalAmount: input.totalInputAmount,
     box11TotalVat: input.totalInputVat,
-    box11TotalAdj: 0,
+    box11TotalAdj: inputAdj,
     // Box 12-14: VAT calculations
-    box12TotalDueTax: input.totalOutputVat,
-    box13RecoverableTax: input.totalInputVat,
-    box14PayableTax: input.totalOutputVat - input.totalInputVat,
+    // Due tax = box 8 VAT + box 8 adjustment; recoverable tax = box 11 VAT + box 11 adjustment.
+    box12TotalDueTax: dueTax,
+    box13RecoverableTax: recoverableTax,
+    box14PayableTax: round2(dueTax - recoverableTax),
+    vatAdjustments: input.vatAdjustments ?? [],
     createdBy: input.userId,
   };
 }
@@ -132,7 +145,20 @@ const moneyOverrides = Object.fromEntries(MONEY_KEYS.map((k) => [k, moneyField.o
  */
 export const vatReturnPatchSchema = insertVatReturnSchema
   .partial()
-  .omit({ companyId: true, createdBy: true, submittedBy: true, periodStart: true, periodEnd: true })
+  .omit({
+    companyId: true,
+    createdBy: true,
+    submittedBy: true,
+    periodStart: true,
+    periodEnd: true,
+    // Amendment links are created by the amendment endpoint only.
+    amendsReturnId: true,
+    isAmendment: true,
+    // The manual-edit log is written by this endpoint, never by the client.
+    manualEdits: true,
+    // The manual VAT journals behind the adjustment columns are written by the server too.
+    vatAdjustments: true,
+  })
   .extend({
     ...moneyOverrides,
     status: z.enum(VAT_RETURN_STATUSES).optional(),
@@ -154,6 +180,13 @@ export type VatReturnPatchDecision =
   | { ok: false; status: number; code: string; message: string };
 
 const BOX_KEY = /^box\d/;
+const FILED_ONLY_ENDPOINT_FIELDS = new Set([
+  "paymentAmount",
+  "paymentStatus",
+  "paymentDate",
+  "ftaReferenceNumber",
+  "submittedAt",
+]);
 const ymdOf = (value: unknown): string | null => {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value.trim()) && !/[+-]\d{2}:?\d{2}$/.test(value.trim())) {
@@ -198,7 +231,13 @@ export function evaluateVatReturnPatch(args: {
 
   if ((LOCKED_VAT_RETURN_STATUSES as readonly string[]).includes(existing.status)) {
     const editsFigures = Object.keys(patch).some(
-      (k) => BOX_KEY.test(k) || k === "adjustmentAmount" || k === "adjustmentReason"
+      (k) =>
+        BOX_KEY.test(k) ||
+        k === "adjustmentAmount" ||
+        k === "adjustmentReason" ||
+        // Once filed, references and payments move only through the filing /
+        // payment endpoints so the filing record and the books cannot diverge.
+        (existing.status === "filed" && FILED_ONLY_ENDPOINT_FIELDS.has(k))
     );
     const reopens = patch.status === "draft" || patch.status === "pending_review";
     if (editsFigures || reopens) {
@@ -218,6 +257,16 @@ export function evaluateVatReturnPatch(args: {
       code: "PERIOD_NOT_ENDED",
       message:
         "This VAT period has not ended yet. It is a draft preview and cannot be saved, submitted or filed until the period is over.",
+    };
+  }
+
+  if (patch.status === "filed" && existing.status !== "filed") {
+    return {
+      ok: false,
+      status: 409,
+      code: "VAT_FILING_REQUIRES_RECORD",
+      message:
+        "A return is recorded as filed with POST /api/vat-returns/:id/file (FTA reference, filing date and acknowledgement), not by editing its status.",
     };
   }
 

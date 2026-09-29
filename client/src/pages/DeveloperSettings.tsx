@@ -42,6 +42,7 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { SUPPORTED_WEBHOOK_EVENTS } from "@shared/webhook-events";
 import { Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
+import { messages as pageMessages } from "./DeveloperSettings.i18n";
 
 // ===========================
 // Types
@@ -83,18 +84,20 @@ const WEBHOOK_EVENTS = SUPPORTED_WEBHOOK_EVENTS;
 // ===========================
 
 export default function DeveloperSettings() {
+  const tr = pageMessages.useT();
+
   const { companyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
 
   if (!canAccess("apiAccess")) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <PageHeader eyebrow="Settings" title="Webhooks" className="mb-6" />
+        <PageHeader eyebrow={tr("settings")} title={tr("webhooks")} className="mb-6" />
         <UpgradePrompt
           feature="apiAccess"
           requiredTier={getRequiredTier("apiAccess")}
-          title="Unlock Webhook Access"
-          description="Webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems."
+          title={tr("unlockWebhookAccess")}
+          description={tr("webhooksAreAvailableOnTheEnterprise")}
         />
       </div>
     );
@@ -103,9 +106,9 @@ export default function DeveloperSettings() {
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       <PageHeader
-        eyebrow="Settings"
-        title="Webhooks"
-        description="Send signed notifications to your own systems when invoices, payments, credit notes and bills change."
+        eyebrow={tr("settings")}
+        title={tr("webhooks")}
+        description={tr("sendSignedNotificationsToYourOwn")}
         className="mb-6"
       />
       {companyId && <WebhooksTab companyId={companyId} />}
@@ -118,6 +121,8 @@ export default function DeveloperSettings() {
 // ===========================
 
 function WebhooksTab({ companyId }: { companyId: string }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [showSecretDialog, setShowSecretDialog] = useState(false);
@@ -155,7 +160,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create webhook",
+        title: tr("failedToCreateWebhook"),
         description: error?.message,
       });
     },
@@ -166,12 +171,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       apiRequest("PUT", `/api/webhooks/${id}`, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
-      toast({ title: "Webhook updated" });
+      toast({ title: tr("webhookUpdated") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update webhook",
+        title: tr("failedToUpdateWebhook"),
         description: error?.message,
       });
     },
@@ -181,13 +186,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/webhooks/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
-      toast({ title: "Webhook deleted" });
+      toast({ title: tr("webhookDeleted") });
       setDeleteId(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete webhook",
+        title: tr("failedToDeleteWebhook"),
         description: error?.message,
       });
     },
@@ -198,19 +203,22 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
       if (result.success) {
-        toast({ title: "Test sent", description: `Received HTTP ${result.responseStatus}` });
+        toast({
+          title: tr("testSent"),
+          description: tr("receivedHttp", { responseStatus: result.responseStatus }),
+        });
       } else {
         toast({
           variant: "destructive",
-          title: "Test failed",
+          title: tr("testFailed"),
           description: result.responseStatus
-            ? `Received HTTP ${result.responseStatus}`
-            : "Could not reach endpoint",
+            ? tr("receivedHttp", { responseStatus: result.responseStatus })
+            : tr("couldNotReachEndpoint"),
         });
       }
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Test failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("testFailed"), description: error?.message });
     },
   });
 
@@ -233,33 +241,31 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Webhook Endpoints</CardTitle>
-            <CardDescription>
-              Receive notifications when events happen in your account. Each request is signed: verify the X-Webhook-Signature header (sha256 HMAC of "timestamp.body" using your endpoint secret, with the timestamp from X-Webhook-Timestamp) and reject timestamps older than 5 minutes. Failed deliveries are retried up to 3 times.
-            </CardDescription>
+            <CardTitle>{tr("webhookEndpoints")}</CardTitle>
+            <CardDescription>{tr("receiveNotificationsWhenEventsHappenIn")}</CardDescription>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            Add Endpoint
+            {tr("addEndpoint")}
           </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-muted-foreground py-8 text-center">{tr("loading")}</p>
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
-              No webhook endpoints configured. Add one to start receiving events.
+              {tr("noWebhookEndpointsConfiguredAddOne")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>URL</TableHead>
-                  <TableHead>Events</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Failures</TableHead>
-                  <TableHead>Last Triggered</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{tr("events")}</TableHead>
+                  <TableHead>{tr("status")}</TableHead>
+                  <TableHead>{tr("failures")}</TableHead>
+                  <TableHead>{tr("lastTriggered")}</TableHead>
+                  <TableHead className="text-end">{tr("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -303,14 +309,14 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <TableCell className="text-muted-foreground">
                       {wh.lastTriggeredAt
                         ? new Date(wh.lastTriggeredAt).toLocaleDateString()
-                        : "Never"}
+                        : tr("never")}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="View deliveries"
+                          title={tr("viewDeliveries")}
                           onClick={() => setDeliveriesEndpointId(wh.id)}
                         >
                           <Eye className="h-4 w-4" />
@@ -318,7 +324,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Send test event"
+                          title={tr("sendTestEvent")}
                           disabled={testMutation.isPending}
                           onClick={() => testMutation.mutate(wh.id)}
                         >
@@ -345,14 +351,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Webhook Endpoint</DialogTitle>
-            <DialogDescription>
-              We will send POST requests to this URL when selected events occur.
-            </DialogDescription>
+            <DialogTitle>{tr("addWebhookEndpoint")}</DialogTitle>
+            <DialogDescription>{tr("weWillSendPostRequestsTo")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="webhook-url">Endpoint URL</Label>
+              <Label htmlFor="webhook-url">{tr("endpointUrl")}</Label>
               <Input
                 id="webhook-url"
                 placeholder="https://example.com/webhook"
@@ -361,7 +365,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Events</Label>
+              <Label>{tr("events")}</Label>
               <div className="grid grid-cols-2 gap-2">
                 {WEBHOOK_EVENTS.map((event) => (
                   <div key={event} className="flex items-center gap-2">
@@ -380,7 +384,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() =>
@@ -391,7 +395,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               }
               disabled={!newUrl.trim() || newEvents.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : "Add Endpoint"}
+              {createMutation.isPending ? tr("creating") : tr("addEndpoint")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -410,27 +414,17 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Webhook Secret Created</DialogTitle>
-            <DialogDescription>
-              Copy this signing secret now. You will not be able to see it again. Use it to verify
-              webhook signatures.
-            </DialogDescription>
+            <DialogTitle>{tr("webhookSecretCreated")}</DialogTitle>
+            <DialogDescription>{tr("copyThisSigningSecretNowYou")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
               <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopySecret}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Each webhook delivery includes an X-Webhook-Signature header signed with HMAC-SHA256
-              using this secret.
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("eachWebhookDeliveryIncludesAnX")}</p>
           </div>
           <DialogFooter>
             <Button
@@ -440,7 +434,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                 setCopied(false);
               }}
             >
-              Done
+              {tr("done")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -453,22 +447,22 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Recent Deliveries</DialogTitle>
-            <DialogDescription>
-              Last 100 webhook delivery attempts for this endpoint.
-            </DialogDescription>
+            <DialogTitle>{tr("recentDeliveries")}</DialogTitle>
+            <DialogDescription>{tr("last100WebhookDeliveryAttemptsFor")}</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             {!deliveries?.length ? (
-              <p className="text-muted-foreground text-center py-4">No deliveries recorded yet.</p>
+              <p className="text-muted-foreground text-center py-4">
+                {tr("noDeliveriesRecordedYet")}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Response</TableHead>
-                    <TableHead>Time</TableHead>
+                    <TableHead>{tr("event")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("response")}</TableHead>
+                    <TableHead>{tr("time")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -480,16 +474,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       <TableCell>
                         {delivery.success ? (
                           <Badge className="bg-success-subtle text-success-subtle-foreground ">
-                            Success
+                            {tr("success")}
                           </Badge>
                         ) : (
-                          <Badge variant="destructive">Failed</Badge>
+                          <Badge variant="destructive">{tr("failed")}</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {delivery.responseStatus
                           ? `HTTP ${delivery.responseStatus}`
-                          : "No response"}
+                          : tr("noResponse")}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(delivery.createdAt).toLocaleString()}
@@ -507,19 +501,18 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Webhook Endpoint?</AlertDialogTitle>
+            <AlertDialogTitle>{tr("deleteWebhookEndpoint")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this endpoint and all delivery history. Events will no
-              longer be sent to this URL.
+              {tr("thisWillPermanentlyDeleteThisEndpoint")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete Endpoint
+              {tr("deleteEndpoint")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

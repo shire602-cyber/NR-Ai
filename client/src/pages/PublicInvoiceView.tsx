@@ -13,6 +13,10 @@ import {
 } from "@/components/ui/table";
 import { Download, FileText, AlertCircle, Clock } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { formatCurrency as formatMoney, intlLocale } from "@/lib/format";
+import { LanguageToggle } from "@/components/LanguageToggle";
+import { messages as pageMessages } from "./PublicInvoiceView.i18n";
 
 interface PublicInvoiceData {
   invoice: {
@@ -44,21 +48,18 @@ interface PublicInvoiceData {
   };
 }
 
+// Shared formatters keep Western digits in both languages (see lib/format). The language is
+// read at call time; the component re-renders on a language switch through its message hook.
 function formatCurrency(amount: number, currency: string = "AED"): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  return formatMoney(amount, currency, useI18n.getState().locale);
 }
 
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-AE", {
+  return new Intl.DateTimeFormat(intlLocale(useI18n.getState().locale), {
     year: "numeric",
     month: "long",
     day: "numeric",
-  });
+  }).format(new Date(date));
 }
 
 function getStatusColor(status: string): string {
@@ -77,6 +78,8 @@ function getStatusColor(status: string): string {
 }
 
 export default function PublicInvoiceView() {
+  const tr = pageMessages.useT();
+
   const { token } = useParams<{ token: string }>();
 
   const { data, isLoading, error } = useQuery<PublicInvoiceData>({
@@ -103,7 +106,7 @@ export default function PublicInvoiceView() {
       <div className="min-h-screen bg-muted flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin w-10 h-10 border-3 border-info border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading invoice...</p>
+          <p className="text-muted-foreground">{tr("loadingInvoice")}</p>
         </div>
       </div>
     );
@@ -111,11 +114,12 @@ export default function PublicInvoiceView() {
 
   // Error state
   if (error || !data) {
-    const message = error instanceof Error ? error?.message : "Invoice not found";
+    const message = error instanceof Error ? error?.message : tr("invoiceNotFound");
     const isExpired = message.includes("expired");
 
     return (
       <div className="min-h-screen bg-muted flex items-center justify-center p-4">
+        <LanguageToggle floating />
         <Card className="max-w-md w-full">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             {isExpired ? (
@@ -124,12 +128,10 @@ export default function PublicInvoiceView() {
               <AlertCircle className="w-16 h-16 text-destructive mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? "Link Expired" : "Invoice Not Found"}
+              {isExpired ? tr("linkExpired") : tr("invoiceNotFound2")}
             </h2>
             <p className="text-muted-foreground">
-              {isExpired
-                ? "This invoice link has expired. Please contact the sender for a new link."
-                : "This invoice link is invalid or has been removed."}
+              {isExpired ? tr("thisInvoiceLinkHasExpiredPlease") : tr("thisInvoiceLinkIsInvalidOr")}
             </p>
           </CardContent>
         </Card>
@@ -142,6 +144,7 @@ export default function PublicInvoiceView() {
 
   return (
     <div className="min-h-screen bg-muted py-8 px-4">
+      <LanguageToggle floating />
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header Card */}
         <Card className="overflow-hidden">
@@ -160,10 +163,14 @@ export default function PublicInvoiceView() {
                   <p className="text-info-foreground text-sm">{company.contactEmail}</p>
                 )}
               </div>
-              <div className="text-right">
-                <h2 className="text-lg font-bold">{isVATRegistered ? "TAX INVOICE" : "INVOICE"}</h2>
+              <div className="text-end">
+                <h2 className="text-lg font-bold">
+                  {isVATRegistered ? tr("taxInvoice") : tr("invoice")}
+                </h2>
                 {isVATRegistered && company.trnVatNumber && (
-                  <p className="text-info-foreground text-sm mt-1">TRN: {company.trnVatNumber}</p>
+                  <p className="text-info-foreground text-sm mt-1">
+                    {tr("trn", { trnVatNumber: company.trnVatNumber })}
+                  </p>
                 )}
               </div>
             </div>
@@ -173,15 +180,15 @@ export default function PublicInvoiceView() {
             {/* Invoice Details */}
             <div className="flex flex-wrap gap-6 justify-between bg-muted p-4 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">Invoice Number</p>
+                <p className="text-sm text-muted-foreground">{tr("invoiceNumber")}</p>
                 <p className="font-semibold text-lg">{invoice.number}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Date</p>
+                <p className="text-sm text-muted-foreground">{tr("date")}</p>
                 <p className="font-semibold">{formatDate(invoice.date)}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Status</p>
+                <p className="text-sm text-muted-foreground">{tr("status")}</p>
                 <Badge className={getStatusColor(invoice.status)}>
                   {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                 </Badge>
@@ -190,10 +197,12 @@ export default function PublicInvoiceView() {
 
             {/* Bill To */}
             <div>
-              <h3 className="text-sm font-semibold text-info uppercase mb-2">Bill To</h3>
+              <h3 className="text-sm font-semibold text-info uppercase mb-2">{tr("billTo")}</h3>
               <p className="font-semibold text-lg">{invoice.customerName}</p>
               {invoice.customerTrn && (
-                <p className="text-sm text-muted-foreground">TRN: {invoice.customerTrn}</p>
+                <p className="text-sm text-muted-foreground">
+                  {tr("trn2", { customerTrn: invoice.customerTrn })}
+                </p>
               )}
             </div>
 
@@ -202,13 +211,19 @@ export default function PublicInvoiceView() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-info hover:bg-info">
-                    <TableHead className="text-white font-semibold">Description</TableHead>
-                    <TableHead className="text-white font-semibold text-center">Qty</TableHead>
+                    <TableHead className="text-white font-semibold">{tr("description")}</TableHead>
                     <TableHead className="text-white font-semibold text-center">
-                      Unit Price
+                      {tr("qty")}
                     </TableHead>
-                    <TableHead className="text-white font-semibold text-center">VAT</TableHead>
-                    <TableHead className="text-white font-semibold text-right">Amount</TableHead>
+                    <TableHead className="text-white font-semibold text-center">
+                      {tr("unitPrice")}
+                    </TableHead>
+                    <TableHead className="text-white font-semibold text-center">
+                      {tr("vat")}
+                    </TableHead>
+                    <TableHead className="text-white font-semibold text-end">
+                      {tr("amount")}
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -223,7 +238,7 @@ export default function PublicInvoiceView() {
                           {formatCurrency(line.unitPrice, invoice.currency)}
                         </TableCell>
                         <TableCell className="text-center">{vatPercent}%</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {formatCurrency(lineTotal, invoice.currency)}
                         </TableCell>
                       </TableRow>
@@ -237,15 +252,15 @@ export default function PublicInvoiceView() {
             <div className="flex justify-end">
               <div className="w-64 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">{tr("subtotal")}</span>
                   <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">VAT</span>
+                  <span className="text-muted-foreground">{tr("vat")}</span>
                   <span>{formatCurrency(invoice.vatAmount, invoice.currency)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
-                  <span>Total</span>
+                  <span>{tr("total")}</span>
                   <span>{formatCurrency(invoice.total, invoice.currency)}</span>
                 </div>
               </div>
@@ -253,13 +268,9 @@ export default function PublicInvoiceView() {
 
             {/* Download PDF */}
             <div className="flex justify-center pt-4 border-t">
-              <Button
-                onClick={handleDownloadPDF}
-                className="bg-info hover:bg-info"
-                size="lg"
-              >
-                <Download className="w-5 h-5 mr-2" />
-                Download PDF
+              <Button onClick={handleDownloadPDF} className="bg-info hover:bg-info" size="lg">
+                <Download className="w-5 h-5 me-2" />
+                {tr("downloadPdf")}
               </Button>
             </div>
           </CardContent>
@@ -267,10 +278,8 @@ export default function PublicInvoiceView() {
 
         {/* Footer */}
         <div className="text-center text-sm text-muted-foreground/70 pb-4">
-          <p>Thank you for your business</p>
-          {isVATRegistered && (
-            <p className="mt-1">This is a tax invoice - Please keep for your records</p>
-          )}
+          <p>{tr("thankYouForYourBusiness")}</p>
+          {isVATRegistered && <p className="mt-1">{tr("thisIsATaxInvoicePlease")}</p>}
         </div>
       </div>
     </div>

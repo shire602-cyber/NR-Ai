@@ -47,6 +47,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { messages as pageMessages } from "./ClientTasks.i18n";
 
 interface ComplianceTask {
   id: string;
@@ -71,23 +72,37 @@ interface Company {
   name: string;
 }
 
-const CATEGORIES = [
-  { value: "vat_filing", label: "VAT Filing" },
-  { value: "corporate_tax", label: "Corporate Tax" },
-  { value: "document_upload", label: "Document Upload" },
-  { value: "payment", label: "Payment" },
-  { value: "review", label: "Review" },
-  { value: "other", label: "Other" },
+const getCategories = () => [
+  { value: "vat_filing", label: pageMessages.t("vatFiling") },
+  { value: "corporate_tax", label: pageMessages.t("corporateTax") },
+  { value: "document_upload", label: pageMessages.t("documentUpload") },
+  { value: "payment", label: pageMessages.t("payment") },
+  { value: "review", label: pageMessages.t("review") },
+  { value: "other", label: pageMessages.t("other") },
 ];
 
-const PRIORITIES = [
-  { value: "low", label: "Low", color: "bg-muted text-foreground" },
-  { value: "medium", label: "Medium", color: "bg-info-subtle text-info-subtle-foreground" },
-  { value: "high", label: "High", color: "bg-warning-subtle text-warning-subtle-foreground" },
-  { value: "urgent", label: "Urgent", color: "bg-danger-subtle text-danger-subtle-foreground" },
+const getPriorities = () => [
+  { value: "low", label: pageMessages.t("low"), color: "bg-muted text-foreground" },
+  {
+    value: "medium",
+    label: pageMessages.t("medium"),
+    color: "bg-info-subtle text-info-subtle-foreground",
+  },
+  {
+    value: "high",
+    label: pageMessages.t("high"),
+    color: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  {
+    value: "urgent",
+    label: pageMessages.t("urgent"),
+    color: "bg-danger-subtle text-danger-subtle-foreground",
+  },
 ];
 
 export default function ClientTasks() {
+  const tr = pageMessages.useT();
+
   const { id: clientId } = useParams<{ id: string }>();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -125,8 +140,8 @@ export default function ClientTasks() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/compliance-tasks`] });
       toast({
-        title: "Task Created",
-        description: "Task has been created successfully",
+        title: tr("taskCreated"),
+        description: tr("taskHasBeenCreatedSuccessfully"),
       });
       setAddDialogOpen(false);
       resetForm();
@@ -134,7 +149,7 @@ export default function ClientTasks() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Creation Failed",
+        title: tr("creationFailed"),
         description: error?.message,
       });
     },
@@ -145,7 +160,7 @@ export default function ClientTasks() {
       apiRequest("PATCH", `/api/compliance-tasks/${taskId}`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/compliance-tasks`] });
-      toast({ title: "Updated" });
+      toast({ title: tr("updated") });
     },
   });
 
@@ -153,7 +168,7 @@ export default function ClientTasks() {
     mutationFn: (taskId: string) => apiRequest("DELETE", `/api/compliance-tasks/${taskId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/compliance-tasks`] });
-      toast({ title: "Deleted" });
+      toast({ title: tr("deleted") });
     },
   });
 
@@ -176,8 +191,8 @@ export default function ClientTasks() {
     if (!newTask.title || !newTask.dueDate) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Please enter title and due date",
+        title: tr("missingInformation"),
+        description: tr("pleaseEnterTitleAndDueDate"),
       });
       return;
     }
@@ -252,21 +267,21 @@ export default function ClientTasks() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              Compliance Tasks - {company?.name || "Client"}
+              {tr("complianceTasks")} {company?.name || tr("client")}
             </h1>
-            <p className="text-muted-foreground">Manage compliance tasks for this client</p>
+            <p className="text-muted-foreground">{tr("manageComplianceTasksForThisClient")}</p>
           </div>
         </div>
         <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-          <Plus className="w-4 h-4 mr-2" />
-          New Task
+          <Plus className="w-4 h-4 me-2" />
+          {tr("newTask")}
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalTasks")}</CardTitle>
             <ListTodo className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -276,7 +291,7 @@ export default function ClientTasks() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("pending")}</CardTitle>
             <Clock className="w-4 h-4 text-info" />
           </CardHeader>
           <CardContent>
@@ -286,7 +301,7 @@ export default function ClientTasks() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("completed")}</CardTitle>
             <CheckCircle2 className="w-4 h-4 text-success" />
           </CardHeader>
           <CardContent>
@@ -296,7 +311,7 @@ export default function ClientTasks() {
 
         <Card className={stats.overdue > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("overdue")}</CardTitle>
             <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
@@ -309,12 +324,12 @@ export default function ClientTasks() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="Search tasks..."
+                placeholder={tr("searchTasks")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-tasks"
               />
             </div>
@@ -324,19 +339,19 @@ export default function ClientTasks() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">{tr("active")}</SelectItem>
+                  <SelectItem value="completed">{tr("completed")}</SelectItem>
+                  <SelectItem value="overdue">{tr("overdue")}</SelectItem>
+                  <SelectItem value="all">{tr("all")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="w-[160px]" data-testid="select-category-filter">
-                  <SelectValue placeholder="Category" />
+                  <SelectValue placeholder={tr("category")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {CATEGORIES.map((cat) => (
+                  <SelectItem value="all">{tr("allCategories")}</SelectItem>
+                  {getCategories().map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {cat.label}
                     </SelectItem>
@@ -350,17 +365,17 @@ export default function ClientTasks() {
           {filteredTasks.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No tasks found</p>
+              <p>{tr("noTasksFound")}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                Create first task
+                {tr("createFirstTask")}
               </Button>
             </div>
           ) : (
             <div className="space-y-2">
               {filteredTasks.map((task) => {
                 const status = getTaskStatus(task);
-                const category = CATEGORIES.find((c) => c.value === task.category);
-                const priority = PRIORITIES.find((p) => p.value === task.priority);
+                const category = getCategories().find((c) => c.value === task.category);
+                const priority = getPriorities().find((p) => p.value === task.priority);
                 const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
 
                 return (
@@ -402,7 +417,7 @@ export default function ClientTasks() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className="text-right">
+                      <div className="text-end">
                         <div className="flex items-center gap-1 text-sm">
                           <Calendar className="w-3 h-3" />
                           {format(parseISO(task.dueDate), "MMM d, yyyy")}
@@ -419,10 +434,10 @@ export default function ClientTasks() {
                             className="text-xs mt-1"
                           >
                             {status === "overdue"
-                              ? "Overdue"
+                              ? tr("overdue")
                               : daysLeft === 0
-                                ? "Today"
-                                : `${daysLeft}d left`}
+                                ? tr("today")
+                                : tr("dLeft", { daysLeft })}
                           </Badge>
                         )}
                       </div>
@@ -436,14 +451,14 @@ export default function ClientTasks() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             onClick={() => {
-                              if (confirm("Are you sure you want to delete?")) {
+                              if (confirm(tr("areYouSureYouWantTo"))) {
                                 deleteMutation.mutate(task.id);
                               }
                             }}
                             className="text-destructive"
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
+                            <Trash2 className="w-4 h-4 me-2" />
+                            {tr("delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -459,22 +474,22 @@ export default function ClientTasks() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>New Task</DialogTitle>
-            <DialogDescription>Create a new compliance task with reminder</DialogDescription>
+            <DialogTitle>{tr("newTask")}</DialogTitle>
+            <DialogDescription>{tr("createANewComplianceTaskWith")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Title (English) *</Label>
+                <Label>{tr("titleEnglish")}</Label>
                 <Input
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="File Q1 VAT Return"
+                  placeholder={tr("fileQ1VatReturn")}
                   data-testid="input-task-title"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Title (Arabic)</Label>
+                <Label>{tr("titleArabic")}</Label>
                 <Input
                   value={newTask.titleAr}
                   onChange={(e) => setNewTask({ ...newTask, titleAr: e.target.value })}
@@ -486,18 +501,18 @@ export default function ClientTasks() {
             </div>
 
             <div className="space-y-2">
-              <Label>Description</Label>
+              <Label>{tr("description")}</Label>
               <Textarea
                 value={newTask.description}
                 onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                placeholder="Task details..."
+                placeholder={tr("taskDetails")}
                 data-testid="input-task-description"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Category</Label>
+                <Label>{tr("category")}</Label>
                 <Select
                   value={newTask.category}
                   onValueChange={(val) => setNewTask({ ...newTask, category: val })}
@@ -506,7 +521,7 @@ export default function ClientTasks() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((cat) => (
+                    {getCategories().map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
                         {cat.label}
                       </SelectItem>
@@ -515,7 +530,7 @@ export default function ClientTasks() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Priority</Label>
+                <Label>{tr("priority")}</Label>
                 <Select
                   value={newTask.priority}
                   onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
@@ -524,7 +539,7 @@ export default function ClientTasks() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PRIORITIES.map((p) => (
+                    {getPriorities().map((p) => (
                       <SelectItem key={p.value} value={p.value}>
                         {p.label}
                       </SelectItem>
@@ -536,7 +551,7 @@ export default function ClientTasks() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Due Date *</Label>
+                <Label>{tr("dueDate")}</Label>
                 <Input
                   type="date"
                   value={newTask.dueDate}
@@ -545,7 +560,7 @@ export default function ClientTasks() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Reminder Date</Label>
+                <Label>{tr("reminderDate")}</Label>
                 <Input
                   type="date"
                   value={newTask.reminderDate}
@@ -556,11 +571,11 @@ export default function ClientTasks() {
             </div>
 
             <div className="space-y-2">
-              <Label>Notes</Label>
+              <Label>{tr("notes")}</Label>
               <Textarea
                 value={newTask.notes}
                 onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-                placeholder="Additional notes..."
+                placeholder={tr("additionalNotes")}
                 data-testid="input-task-notes"
               />
             </div>
@@ -573,16 +588,16 @@ export default function ClientTasks() {
                 resetForm();
               }}
             >
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button onClick={handleSubmit} disabled={isSubmitting} data-testid="button-submit-task">
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {tr("creating")}
                 </>
               ) : (
-                "Create Task"
+                tr("createTask")
               )}
             </Button>
           </DialogFooter>

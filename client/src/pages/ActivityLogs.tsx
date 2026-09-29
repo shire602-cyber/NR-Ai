@@ -41,8 +41,11 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import type { ActivityLog, User as UserType, Company } from "@shared/schema";
+import { messages as pageMessages } from "./ActivityLogs.i18n";
 
 export default function ActivityLogs() {
+  const tr = pageMessages.useT();
+
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
@@ -107,40 +110,40 @@ export default function ActivityLogs() {
   const getActionBadge = (action: string) => {
     switch (action) {
       case "create":
-        return <Badge className="bg-success/10 text-success border-success/20">Create</Badge>;
+        return (
+          <Badge className="bg-success/10 text-success border-success/20">{tr("create")}</Badge>
+        );
       case "update":
-        return <Badge className="bg-info/10 text-info border-info/20">Update</Badge>;
+        return <Badge className="bg-info/10 text-info border-info/20">{tr("update")}</Badge>;
       case "delete":
-        return <Badge variant="destructive">Delete</Badge>;
+        return <Badge variant="destructive">{tr("delete")}</Badge>;
       case "view":
-        return <Badge variant="secondary">View</Badge>;
+        return <Badge variant="secondary">{tr("view")}</Badge>;
       case "login":
         return (
-          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">Login</Badge>
+          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">{tr("login")}</Badge>
         );
       case "logout":
         return (
-          <Badge className="bg-warning/10 text-warning border-warning/20">Logout</Badge>
+          <Badge className="bg-warning/10 text-warning border-warning/20">{tr("logout")}</Badge>
         );
       case "invite":
-        return (
-          <Badge className="bg-info/10 text-info border-info/20">Invite</Badge>
-        );
+        return <Badge className="bg-info/10 text-info border-info/20">{tr("invite")}</Badge>;
       default:
         return <Badge variant="outline">{action}</Badge>;
     }
   };
 
   const getUserName = (userId: string | null) => {
-    if (!userId) return "System";
+    if (!userId) return tr("system");
     const user = users.find((u) => u.id === userId);
-    return user?.name || user?.email || "Unknown";
+    return user?.name || user?.email || tr("unknown");
   };
 
   const getCompanyName = (companyId: string | null) => {
     if (!companyId) return null;
     const company = clients.find((c) => c.id === companyId);
-    return company?.name || "Unknown";
+    return company?.name || tr("unknown");
   };
 
   if (isLoading) {
@@ -154,14 +157,14 @@ export default function ActivityLogs() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="Activity Logs"
+        eyebrow={tr("admin")}
+        title={tr("activityLogs")}
         testId="text-logs-title"
-        description="Complete audit trail of all system activities"
+        description={tr("completeAuditTrailOfAllSystem")}
         actions={
           <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
-            <Download className="w-4 h-4 mr-2" />
-            Export Logs
+            <Download className="w-4 h-4 me-2" />
+            {tr("exportLogs")}
           </Button>
         }
       />
@@ -171,12 +174,12 @@ export default function ActivityLogs() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4 flex-1 min-w-[300px]">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search activities..."
+                  placeholder={tr("searchActivities")}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-logs"
                 />
               </div>
@@ -184,34 +187,36 @@ export default function ActivityLogs() {
             <div className="flex items-center gap-2">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder="Action" />
+                  <SelectValue placeholder={tr("action")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  <SelectItem value="create">Create</SelectItem>
-                  <SelectItem value="update">Update</SelectItem>
-                  <SelectItem value="delete">Delete</SelectItem>
-                  <SelectItem value="view">View</SelectItem>
-                  <SelectItem value="login">Login</SelectItem>
-                  <SelectItem value="logout">Logout</SelectItem>
-                  <SelectItem value="invite">Invite</SelectItem>
+                  <SelectItem value="all">{tr("allActions")}</SelectItem>
+                  <SelectItem value="create">{tr("create")}</SelectItem>
+                  <SelectItem value="update">{tr("update")}</SelectItem>
+                  <SelectItem value="delete">{tr("delete")}</SelectItem>
+                  <SelectItem value="view">{tr("view")}</SelectItem>
+                  <SelectItem value="login">{tr("login")}</SelectItem>
+                  <SelectItem value="logout">{tr("logout")}</SelectItem>
+                  <SelectItem value="invite">{tr("invite")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={entityFilter} onValueChange={setEntityFilter}>
                 <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder="Entity Type" />
+                  <SelectValue placeholder={tr("entityType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Entities</SelectItem>
-                  <SelectItem value="user">Users</SelectItem>
-                  <SelectItem value="company">Companies</SelectItem>
-                  <SelectItem value="document">Documents</SelectItem>
-                  <SelectItem value="invoice">Invoices</SelectItem>
-                  <SelectItem value="journal_entry">Journal Entries</SelectItem>
-                  <SelectItem value="invitation">Invitations</SelectItem>
+                  <SelectItem value="all">{tr("allEntities")}</SelectItem>
+                  <SelectItem value="user">{tr("users")}</SelectItem>
+                  <SelectItem value="company">{tr("companies")}</SelectItem>
+                  <SelectItem value="document">{tr("documents")}</SelectItem>
+                  <SelectItem value="invoice">{tr("invoices")}</SelectItem>
+                  <SelectItem value="journal_entry">{tr("journalEntries")}</SelectItem>
+                  <SelectItem value="invitation">{tr("invitations")}</SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
+              <Badge variant="secondary">
+                {tr("entries", { filteredLogsCount: filteredLogs.length })}
+              </Badge>
             </div>
           </div>
         </CardHeader>
@@ -221,12 +226,12 @@ export default function ActivityLogs() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Date & Time</TableHead>
+                  <TableHead>{tr("description")}</TableHead>
+                  <TableHead>{tr("action")}</TableHead>
+                  <TableHead>{tr("entity")}</TableHead>
+                  <TableHead>{tr("user")}</TableHead>
+                  <TableHead>{tr("client")}</TableHead>
+                  <TableHead>{tr("dateTime")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -288,8 +293,8 @@ export default function ActivityLogs() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {searchTerm || actionFilter !== "all" || entityFilter !== "all"
-                        ? "No logs match your filters"
-                        : "No activity logs yet"}
+                        ? tr("noLogsMatchYourFilters")
+                        : tr("noActivityLogsYet")}
                     </TableCell>
                   </TableRow>
                 )}

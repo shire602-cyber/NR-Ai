@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canAccessNraCenter } from "@shared/access";
+import { messages as pageMessages } from "./CompanySwitcher.i18n";
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -27,6 +28,8 @@ import { canAccessNraCenter } from "@shared/access";
  * for the new tenant instead of showing stale data.
  */
 export function CompanySwitcher() {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { company: active } = useDefaultCompany();
@@ -51,8 +54,8 @@ export function CompanySwitcher() {
     // in the firm workspace rather than leaving the user on a client page.
     navigate("/firm/clients");
     toast({
-      title: "Firm workspace",
-      description: "Returned to the NRA firm workspace.",
+      title: tr("firmWorkspace"),
+      description: tr("returnedToTheNraFirmWorkspace"),
     });
   };
 
@@ -62,14 +65,14 @@ export function CompanySwitcher() {
       await switchActiveCompany(companyId);
       const next = companies.find((c) => c.id === companyId);
       toast({
-        title: "Company switched",
-        description: next ? `Now viewing ${next.name}.` : "Active company updated.",
+        title: tr("companySwitched"),
+        description: next ? tr("nowViewing", { name: next.name }) : tr("activeCompanyUpdated"),
       });
     } catch {
       toast({
         variant: "destructive",
-        title: "Could not switch company",
-        description: "Please try again.",
+        title: tr("couldNotSwitchCompany"),
+        description: tr("pleaseTryAgain"),
       });
     }
   };
@@ -104,7 +107,7 @@ export function CompanySwitcher() {
             >
               <span className="flex items-center gap-2 min-w-0">
                 <Briefcase className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">Firm workspace</span>
+                <span className="truncate">{tr("firmWorkspace")}</span>
               </span>
               {!isFirmContext && <Check className="w-3.5 h-3.5 text-primary" />}
             </DropdownMenuItem>
@@ -112,7 +115,7 @@ export function CompanySwitcher() {
           </>
         )}
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Switch company
+          {tr("switchCompany")}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {companies.map((c) => (

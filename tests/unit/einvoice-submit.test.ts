@@ -6,7 +6,7 @@ import {
 } from "../../server/services/einvoice-submit.service";
 import { MockEInvoiceProvider } from "../../server/services/einvoice-provider";
 
-const company = { name: "Pearl Trading LLC", trnVatNumber: "100123456700003", businessAddress: "Dubai" } as any;
+const company = { name: "Pearl Trading LLC", trnVatNumber: "100123456700003", businessAddress: "Dubai", addressCity: "Dubai", emirate: "dubai" } as any;
 const lines = [
   { description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 0.05, vatSupplyType: "standard_rated" },
 ] as any[];

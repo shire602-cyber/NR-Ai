@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/queryClient";
+import { messages as pageMessages } from "./ValueOps.i18n";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -188,27 +189,30 @@ interface ClientCfoPack {
   nextActions: string[];
 }
 
-const laneConfig: Record<ValueLane, { label: string; icon: typeof ShieldCheck }> = {
-  audit_defense: { label: "Audit defense", icon: ShieldCheck },
-  bank_close: { label: "Bank close", icon: Landmark },
-  penalty_prevention: { label: "Penalty prevention", icon: AlertTriangle },
-  cash_recovery: { label: "Cash recovery", icon: Banknote },
-  nra_profitability: { label: "NRA profitability", icon: BriefcaseBusiness },
-  compliance_risk: { label: "Compliance risk", icon: ClipboardCheck },
-  ai_review: { label: "AI review", icon: Bot },
-  whatsapp_cockpit: { label: "WhatsApp cockpit", icon: MessageCircle },
-  monthly_cfo_pack: { label: "CFO pack", icon: FileText },
-  migration_concierge: { label: "Migration concierge", icon: UploadCloud },
-};
+const getLaneConfig = (): Record<ValueLane, { label: string; icon: typeof ShieldCheck }> => ({
+  audit_defense: { label: pageMessages.t("auditDefense"), icon: ShieldCheck },
+  bank_close: { label: pageMessages.t("bankClose"), icon: Landmark },
+  penalty_prevention: { label: pageMessages.t("penaltyPrevention"), icon: AlertTriangle },
+  cash_recovery: { label: pageMessages.t("cashRecovery"), icon: Banknote },
+  nra_profitability: { label: pageMessages.t("nraProfitability"), icon: BriefcaseBusiness },
+  compliance_risk: { label: pageMessages.t("complianceRisk"), icon: ClipboardCheck },
+  ai_review: { label: pageMessages.t("aiReview"), icon: Bot },
+  whatsapp_cockpit: { label: pageMessages.t("whatsappCockpit"), icon: MessageCircle },
+  monthly_cfo_pack: { label: pageMessages.t("cfoPack"), icon: FileText },
+  migration_concierge: { label: pageMessages.t("migrationConcierge"), icon: UploadCloud },
+});
 
-const reviewKindConfig: Record<ReviewItemKind, { label: string; icon: typeof ShieldCheck }> = {
-  bank_match: { label: "Bank match", icon: Landmark },
-  receipt_posting: { label: "Receipt posting", icon: FileText },
-  anomaly: { label: "Anomaly", icon: AlertTriangle },
-  vat_review: { label: "VAT review", icon: ClipboardCheck },
-  trial_balance: { label: "Trial balance", icon: Gauge },
-  document_request: { label: "Document request", icon: MessageCircle },
-};
+const getReviewKindConfig = (): Record<
+  ReviewItemKind,
+  { label: string; icon: typeof ShieldCheck }
+> => ({
+  bank_match: { label: pageMessages.t("bankMatch"), icon: Landmark },
+  receipt_posting: { label: pageMessages.t("receiptPosting"), icon: FileText },
+  anomaly: { label: pageMessages.t("anomaly"), icon: AlertTriangle },
+  vat_review: { label: pageMessages.t("vatReview"), icon: ClipboardCheck },
+  trial_balance: { label: pageMessages.t("trialBalance"), icon: Gauge },
+  document_request: { label: pageMessages.t("documentRequest"), icon: MessageCircle },
+});
 
 function formatAed(value: number): string {
   return new Intl.NumberFormat("en-AE", {
@@ -297,6 +301,8 @@ function MetricCard({
 }
 
 export default function ValueOps() {
+  const tr = pageMessages.useT();
+
   const [location, navigate] = useLocation();
   const [selectedPack, setSelectedPack] = useState<{
     companyId: string;
@@ -343,8 +349,8 @@ export default function ValueOps() {
   if (dashboardQuery.isLoading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center text-muted-foreground">
-        <Sparkles className="mr-2 h-5 w-5 animate-pulse" />
-        Loading value operations...
+        <Sparkles className="me-2 h-5 w-5 animate-pulse" />
+        {tr("loadingValueOperations")}
       </div>
     );
   }
@@ -352,7 +358,7 @@ export default function ValueOps() {
   if (dashboardQuery.isError || !data) {
     return (
       <div className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm text-danger-subtle-foreground">
-        Value operations could not be loaded.
+        {tr("valueOperationsCouldNotBeLoaded")}
       </div>
     );
   }
@@ -360,35 +366,35 @@ export default function ValueOps() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Value Ops"
-        description="NRA-wide cash, compliance, close, review, and client reporting queue."
+        eyebrow={tr("firm")}
+        title={tr("valueOps")}
+        description={tr("nraWideCashComplianceCloseReview")}
         actions={
           <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
-            <Gauge className="mr-2 h-4 w-4" />
-            Refresh
+            <Gauge className="me-2 h-4 w-4" />
+            {tr("refresh")}
           </Button>
         }
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Cash at risk"
+          title={tr("cashAtRisk")}
           value={formatAed(data.summary.cashAtRisk)}
           icon={Banknote}
         />
         <MetricCard
-          title="Penalty-risk clients"
+          title={tr("penaltyRiskClients")}
           value={`${data.summary.penaltyRiskClients}`}
           icon={AlertTriangle}
         />
         <MetricCard
-          title="Reviewer queue"
+          title={tr("reviewerQueue")}
           value={`${data.summary.reviewerQueueItems}`}
           icon={Bot}
         />
         <MetricCard
-          title="NRA service AR"
+          title={tr("nraServiceAr")}
           value={formatAed(data.summary.nraServiceAr)}
           icon={BriefcaseBusiness}
         />
@@ -396,16 +402,16 @@ export default function ValueOps() {
 
       <Tabs defaultValue="board" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="board">Board</TabsTrigger>
-          <TabsTrigger value="review">AI review</TabsTrigger>
-          <TabsTrigger value="actions">Actions</TabsTrigger>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
+          <TabsTrigger value="board">{tr("board")}</TabsTrigger>
+          <TabsTrigger value="review">{tr("aiReview")}</TabsTrigger>
+          <TabsTrigger value="actions">{tr("actions")}</TabsTrigger>
+          <TabsTrigger value="clients">{tr("clients")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="board" className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             {data.opportunities.map((opportunity) => {
-              const Icon = laneConfig[opportunity.lane].icon;
+              const Icon = getLaneConfig()[opportunity.lane].icon;
               return (
                 <Card key={opportunity.lane}>
                   <CardHeader className="space-y-0 pb-3">
@@ -417,11 +423,11 @@ export default function ValueOps() {
                   <CardContent className="space-y-3">
                     <div className="text-2xl font-semibold">{opportunity.valueMetric}</div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{opportunity.count} open</span>
+                      <span>{tr("open", { count: opportunity.count })}</span>
                       <span>{formatAed(opportunity.impactAed)}</span>
                     </div>
                     <div className="min-h-5 truncate text-xs text-muted-foreground">
-                      {opportunity.topClient ?? "No priority client"}
+                      {opportunity.topClient ?? tr("noPriorityClient")}
                     </div>
                   </CardContent>
                 </Card>
@@ -433,25 +439,25 @@ export default function ValueOps() {
         <TabsContent value="review">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">AI Reviewer Queue</CardTitle>
+              <CardTitle className="text-base">{tr("aiReviewerQueue")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Why it needs review</TableHead>
-                    <TableHead className="text-right">Confidence</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Due</TableHead>
+                    <TableHead>{tr("priority")}</TableHead>
+                    <TableHead>{tr("type")}</TableHead>
+                    <TableHead>{tr("client")}</TableHead>
+                    <TableHead>{tr("whyItNeedsReview")}</TableHead>
+                    <TableHead className="text-end">{tr("confidence")}</TableHead>
+                    <TableHead className="text-end">{tr("amount")}</TableHead>
+                    <TableHead>{tr("due")}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(reviewQueueQuery.data ?? []).map((item) => {
-                    const config = reviewKindConfig[item.kind];
+                    const config = getReviewKindConfig()[item.kind];
                     const Icon = config.icon;
                     return (
                       <TableRow key={item.id}>
@@ -472,16 +478,14 @@ export default function ValueOps() {
                             {item.suggestedAction}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatPercent(item.confidence)}
-                        </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">{formatPercent(item.confidence)}</TableCell>
+                        <TableCell className="text-end">
                           {item.amountAed > 0 ? formatAed(item.amountAed) : "—"}
                         </TableCell>
                         <TableCell>{formatDate(item.dueDate)}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
-                            Review <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                            {tr("review")} <ArrowRight className="ms-1 h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -490,7 +494,7 @@ export default function ValueOps() {
                   {(reviewQueueQuery.data ?? []).length === 0 && !reviewQueueQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No reviewer exceptions right now.
+                        {tr("noReviewerExceptionsRightNow")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -503,17 +507,17 @@ export default function ValueOps() {
         <TabsContent value="actions">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Priority Actions</CardTitle>
+              <CardTitle className="text-base">{tr("priorityActions")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Lane</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead className="text-right">AED impact</TableHead>
+                    <TableHead>{tr("priority")}</TableHead>
+                    <TableHead>{tr("lane")}</TableHead>
+                    <TableHead>{tr("client")}</TableHead>
+                    <TableHead>{tr("action")}</TableHead>
+                    <TableHead className="text-end">{tr("aedImpact")}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -523,16 +527,16 @@ export default function ValueOps() {
                       <TableCell>
                         <Badge className={priorityClass(action.priority)}>{action.priority}</Badge>
                       </TableCell>
-                      <TableCell>{laneConfig[action.lane].label}</TableCell>
+                      <TableCell>{getLaneConfig()[action.lane].label}</TableCell>
                       <TableCell className="font-medium">{action.companyName}</TableCell>
                       <TableCell>
                         <div className="font-medium">{action.title}</div>
                         <div className="text-xs text-muted-foreground">{action.detail}</div>
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(action.impactAed)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">{formatAed(action.impactAed)}</TableCell>
+                      <TableCell className="text-end">
                         <Button variant="ghost" size="sm" onClick={() => navigate(action.href)}>
-                          Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          {tr("open2")} <ArrowRight className="ms-1 h-3.5 w-3.5" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -540,7 +544,7 @@ export default function ValueOps() {
                   {data.actions.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No priority actions.
+                        {tr("noPriorityActions")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -553,18 +557,18 @@ export default function ValueOps() {
         <TabsContent value="clients">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Client Value Scorecards</CardTitle>
+              <CardTitle className="text-base">{tr("clientValueScorecards")}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Audit</TableHead>
-                    <TableHead>Close</TableHead>
-                    <TableHead>Risk</TableHead>
-                    <TableHead className="text-right">Overdue AR</TableHead>
-                    <TableHead className="text-right">Review items</TableHead>
+                    <TableHead>{tr("client")}</TableHead>
+                    <TableHead>{tr("audit")}</TableHead>
+                    <TableHead>{tr("close")}</TableHead>
+                    <TableHead>{tr("risk")}</TableHead>
+                    <TableHead className="text-end">{tr("overdueAr")}</TableHead>
+                    <TableHead className="text-end">{tr("reviewItems")}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -574,22 +578,30 @@ export default function ValueOps() {
                       <TableCell>
                         <div className="font-medium">{client.companyName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {client.trn ?? "No TRN"}
+                          {client.trn ?? tr("noTrn")}
                         </div>
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Defense" value={client.scores.auditDefense} inverse />
+                        <ScoreBar
+                          label={tr("defense")}
+                          value={client.scores.auditDefense}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Readiness" value={client.scores.closeReadiness} inverse />
+                        <ScoreBar
+                          label={tr("readiness")}
+                          value={client.scores.closeReadiness}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Compliance" value={client.scores.complianceRisk} />
+                        <ScoreBar label={tr("compliance")} value={client.scores.complianceRisk} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {formatAed(client.money.overdueAr)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {client.workload.reviewerQueueItems}
                       </TableCell>
                       <TableCell>
@@ -601,8 +613,8 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "audit" })
                             }
                           >
-                            <FileArchive className="mr-1 h-4 w-4" />
-                            Audit
+                            <FileArchive className="me-1 h-4 w-4" />
+                            {tr("audit")}
                           </Button>
                           <Button
                             variant="ghost"
@@ -611,8 +623,8 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "cfo" })
                             }
                           >
-                            <PackageOpen className="mr-1 h-4 w-4" />
-                            CFO
+                            <PackageOpen className="me-1 h-4 w-4" />
+                            {tr("cfo")}
                           </Button>
                         </div>
                       </TableCell>
@@ -621,7 +633,7 @@ export default function ValueOps() {
                   {data.clients.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                        No managed clients.
+                        {tr("noManagedClients")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -636,7 +648,7 @@ export default function ValueOps() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              {selectedPack?.type === "audit" ? "Audit Defense Pack" : "Monthly CFO Pack"}
+              {selectedPack?.type === "audit" ? tr("auditDefensePack") : tr("monthlyCfoPack")}
               {selectedClient ? ` · ${selectedClient.companyName}` : ""}
             </DialogTitle>
           </DialogHeader>
@@ -654,24 +666,26 @@ export default function ValueOps() {
 }
 
 function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boolean }) {
+  const tr = pageMessages.useT();
+
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return <div className="py-10 text-center text-muted-foreground">{tr("loadingPack")}</div>;
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return <div className="py-10 text-center text-muted-foreground">{tr("noPackAvailable")}</div>;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT status</div>
-          <div className="font-medium">{pack.vatReturn?.status ?? "No return"}</div>
+          <div className="text-xs text-muted-foreground">{tr("vatStatus")}</div>
+          <div className="font-medium">{pack.vatReturn?.status ?? tr("noReturn")}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Due date</div>
+          <div className="text-xs text-muted-foreground">{tr("dueDate")}</div>
           <div className="font-medium">{formatDate(pack.vatReturn?.dueDate)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Payable tax</div>
+          <div className="text-xs text-muted-foreground">{tr("payableTax")}</div>
           <div className="font-medium">{formatAed(pack.vatReturn?.payableTax ?? 0)}</div>
         </div>
       </div>
@@ -695,7 +709,9 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 
       {pack.reviewerNotes.length > 0 && (
         <div className="rounded-md border border-warning/30 bg-warning-subtle p-3">
-          <div className="mb-2 font-medium text-warning-subtle-foreground">Reviewer notes</div>
+          <div className="mb-2 font-medium text-warning-subtle-foreground">
+            {tr("reviewerNotes")}
+          </div>
           <ul className="space-y-1 text-sm text-warning-subtle-foreground">
             {pack.reviewerNotes.map((note) => (
               <li key={note}>{note}</li>
@@ -706,7 +722,7 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
       {pack.reviewerNotes.length === 0 && (
         <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success-subtle p-3 text-sm text-success-subtle-foreground">
           <CheckCircle2 className="h-4 w-4" />
-          Evidence pack is ready for reviewer sign-off.
+          {tr("evidencePackIsReadyForReviewer")}
         </div>
       )}
     </div>
@@ -714,36 +730,38 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 }
 
 function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean }) {
+  const tr = pageMessages.useT();
+
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return <div className="py-10 text-center text-muted-foreground">{tr("loadingPack")}</div>;
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return <div className="py-10 text-center text-muted-foreground">{tr("noPackAvailable")}</div>;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Revenue</div>
+          <div className="text-xs text-muted-foreground">{tr("revenue")}</div>
           <div className="font-medium">{formatAed(pack.metrics.revenue)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Expenses</div>
+          <div className="text-xs text-muted-foreground">{tr("expenses")}</div>
           <div className="font-medium">{formatAed(pack.metrics.expenses)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Net</div>
+          <div className="text-xs text-muted-foreground">{tr("net")}</div>
           <div className="font-medium">{formatAed(pack.metrics.net)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Open AR</div>
+          <div className="text-xs text-muted-foreground">{tr("openAr")}</div>
           <div className="font-medium">{formatAed(pack.metrics.openAr)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Overdue AR</div>
+          <div className="text-xs text-muted-foreground">{tr("overdueAr")}</div>
           <div className="font-medium">{formatAed(pack.metrics.overdueAr)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT payable</div>
+          <div className="text-xs text-muted-foreground">{tr("vatPayable")}</div>
           <div className="font-medium">{formatAed(pack.metrics.vatPayable)}</div>
         </div>
       </div>
@@ -751,7 +769,7 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
       <div className="rounded-md border p-3">
         <div className="mb-2 flex items-center gap-2 font-medium">
           <TrendingUp className="h-4 w-4" />
-          Narrative
+          {tr("narrative")}
         </div>
         <ul className="space-y-2 text-sm text-muted-foreground">
           {pack.narrative.map((line) => (
@@ -761,7 +779,7 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
       </div>
 
       <div className="rounded-md border p-3">
-        <div className="mb-2 font-medium">Next actions</div>
+        <div className="mb-2 font-medium">{tr("nextActions")}</div>
         {pack.nextActions.length > 0 ? (
           <ul className="space-y-2 text-sm text-muted-foreground">
             {pack.nextActions.map((line) => (
@@ -769,7 +787,7 @@ function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean
             ))}
           </ul>
         ) : (
-          <div className="text-sm text-muted-foreground">No immediate actions.</div>
+          <div className="text-sm text-muted-foreground">{tr("noImmediateActions")}</div>
         )}
       </div>
     </div>

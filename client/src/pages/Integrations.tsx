@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { IntegrationSync } from "@shared/schema";
+import { messages as pageMessages } from "./Integrations.i18n";
 
 interface IntegrationStatus {
   connected: boolean;
@@ -60,6 +61,8 @@ interface IntegrationsStatusResponse {
 }
 
 export default function Integrations() {
+  const tr = pageMessages.useT();
+
   const { locale } = useI18n();
   const { toast } = useToast();
   const { company: currentCompany } = useDefaultCompany();
@@ -72,43 +75,37 @@ export default function Integrations() {
   const isRTL = locale === "ar";
 
   const t = {
-    title: locale === "en" ? "Integrations" : "التكاملات",
-    subtitle:
-      locale === "en"
-        ? "Connect your favorite apps and services to sync your financial data"
-        : "اربط تطبيقاتك وخدماتك المفضلة لمزامنة بياناتك المالية",
-    connected: locale === "en" ? "Connected" : "متصل",
-    notConnected: locale === "en" ? "Not Connected" : "غير متصل",
-    export: locale === "en" ? "Export" : "تصدير",
-    import: locale === "en" ? "Import" : "استيراد",
-    sync: locale === "en" ? "Sync" : "مزامنة",
-    connect: locale === "en" ? "Connect" : "اتصال",
-    exportToSheets: locale === "en" ? "Export to Google Sheets" : "تصدير إلى جداول Google",
-    selectDataType: locale === "en" ? "Select what to export" : "اختر ما تريد تصديره",
-    importFromSheets: locale === "en" ? "Import from Google Sheets" : "استيراد من جداول Google",
-    selectImportType: locale === "en" ? "Select what to import" : "اختر ما تريد استيراده",
-    sheetUrl: locale === "en" ? "Google Sheets URL" : "رابط جداول Google",
+    title: tr("integrations"),
+    subtitle: tr("connectYourFavoriteAppsAndServices"),
+    connected: tr("connected"),
+    notConnected: tr("notConnected"),
+    export: tr("export"),
+    import: tr("import"),
+    sync: tr("sync"),
+    connect: tr("connect"),
+    exportToSheets: tr("exportToGoogleSheets"),
+    selectDataType: tr("selectWhatToExport"),
+    importFromSheets: tr("importFromGoogleSheets"),
+    selectImportType: tr("selectWhatToImport"),
+    sheetUrl: tr("googleSheetsUrl"),
     sheetUrlPlaceholder:
       locale === "en"
         ? "https://docs.google.com/spreadsheets/d/..."
         : "https://docs.google.com/spreadsheets/d/...",
-    importing: locale === "en" ? "Importing..." : "جاري الاستيراد...",
-    importSuccess: locale === "en" ? "Import successful!" : "تم الاستيراد بنجاح!",
-    invoices: locale === "en" ? "Invoices" : "الفواتير",
-    expenses: locale === "en" ? "Expenses" : "المصروفات",
-    journalEntries: locale === "en" ? "Journal Entries" : "القيود اليومية",
-    chartOfAccounts: locale === "en" ? "Chart of Accounts" : "دليل الحسابات",
-    exporting: locale === "en" ? "Exporting..." : "جاري التصدير...",
-    exportSuccess: locale === "en" ? "Export successful!" : "تم التصدير بنجاح!",
-    openSpreadsheet: locale === "en" ? "Open Spreadsheet" : "فتح الجدول",
-    syncHistory: locale === "en" ? "Sync History" : "سجل المزامنة",
-    noHistory: locale === "en" ? "No sync history yet" : "لا يوجد سجل مزامنة بعد",
-    records: locale === "en" ? "records" : "سجلات",
-    availableIntegrations: locale === "en" ? "Available Integrations" : "التكاملات المتاحة",
-    googleSheetsDesc:
-      locale === "en"
-        ? "Export invoices, expenses, and reports to Google Sheets for easy sharing and analysis"
-        : "صدّر الفواتير والمصروفات والتقارير إلى Google Sheets للمشاركة والتحليل بسهولة",
+    importing: tr("importing"),
+    importSuccess: tr("importSuccessful"),
+    invoices: tr("invoices"),
+    expenses: tr("expenses"),
+    journalEntries: tr("journalEntries"),
+    chartOfAccounts: tr("chartOfAccounts"),
+    exporting: tr("exporting"),
+    exportSuccess: tr("exportSuccessful"),
+    openSpreadsheet: tr("openSpreadsheet"),
+    syncHistory: tr("syncHistory"),
+    noHistory: tr("noSyncHistoryYet"),
+    records: tr("records"),
+    availableIntegrations: tr("availableIntegrations"),
+    googleSheetsDesc: tr("exportInvoicesExpensesAndReportsTo"),
   };
 
   const { data: integrationStatus, isLoading: statusLoading } =
@@ -143,7 +140,7 @@ export default function Integrations() {
     },
     onError: (error: Error) => {
       toast({
-        title: locale === "en" ? "Export failed" : "فشل التصدير",
+        title: tr("exportFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -158,7 +155,7 @@ export default function Integrations() {
     onSuccess: (data: any) => {
       toast({
         title: t.importSuccess,
-        description: `${data.recordCount} ${t.records} ${locale === "en" ? "imported" : "تم استيرادها"}`,
+        description: `${data.recordCount} ${t.records} ${tr("imported")}`,
       });
       queryClient.invalidateQueries({
         queryKey: [`/api/integrations/sync-history?companyId=${currentCompany?.id}`],
@@ -169,7 +166,7 @@ export default function Integrations() {
     },
     onError: (error: Error) => {
       toast({
-        title: locale === "en" ? "Import failed" : "فشل الاستيراد",
+        title: tr("importFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -218,7 +215,7 @@ export default function Integrations() {
       dir={isRTL ? "rtl" : "ltr"}
     >
       <PageHeader
-        eyebrow="Settings"
+        eyebrow={tr("settings")}
         title={t.title}
         testId="integrations-title"
         description={<span data-testid="integrations-subtitle">{t.subtitle}</span>}
@@ -235,14 +232,14 @@ export default function Integrations() {
         <div className="grid md:grid-cols-2 gap-6">
           {/* Google Sheets Integration */}
           <Card className="relative overflow-hidden" data-testid="integration-google-sheets">
-            <div className="absolute top-0 right-0 w-32 h-32 rounded-bl-full" />
+            <div className="absolute top-0 end-0 w-32 h-32 rounded-es-full" />
             <CardHeader className="flex flex-row items-start gap-4">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg">
                 <SiGoogle className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Google Sheets</CardTitle>
+                  <CardTitle className="text-lg">{tr("googleSheets")}</CardTitle>
                   <Badge
                     variant={integrationStatus?.googleSheets?.connected ? "default" : "secondary"}
                     className={integrationStatus?.googleSheets?.connected ? "bg-success" : ""}
@@ -250,11 +247,11 @@ export default function Integrations() {
                   >
                     {integrationStatus?.googleSheets?.connected ? (
                       <>
-                        <Check className="w-3 h-3 mr-1" /> {t.connected}
+                        <Check className="w-3 h-3 me-1" /> {t.connected}
                       </>
                     ) : (
                       <>
-                        <X className="w-3 h-3 mr-1" /> {t.notConnected}
+                        <X className="w-3 h-3 me-1" /> {t.notConnected}
                       </>
                     )}
                   </Badge>
@@ -322,11 +319,11 @@ export default function Integrations() {
                           >
                             {exportMutation.isPending ? (
                               <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.exporting}
+                                <Loader2 className="w-4 h-4 me-2 animate-spin" /> {t.exporting}
                               </>
                             ) : (
                               <>
-                                <Download className="w-4 h-4 mr-2" /> {t.export}
+                                <Download className="w-4 h-4 me-2" /> {t.export}
                               </>
                             )}
                           </Button>
@@ -381,9 +378,7 @@ export default function Integrations() {
                               data-testid="input-sheet-url"
                             />
                             <p className="text-xs text-muted-foreground mt-1">
-                              {locale === "en"
-                                ? "First sheet will be used. Ensure columns match expected format."
-                                : "سيتم استخدام الورقة الأولى. تأكد من أن الأعمدة تطابق الصيغة المتوقعة."}
+                              {tr("firstSheetWillBeUsedEnsure")}
                             </p>
                           </div>
 
@@ -395,11 +390,11 @@ export default function Integrations() {
                           >
                             {importMutation.isPending ? (
                               <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.importing}
+                                <Loader2 className="w-4 h-4 me-2 animate-spin" /> {t.importing}
                               </>
                             ) : (
                               <>
-                                <Upload className="w-4 h-4 mr-2" /> {t.import}
+                                <Upload className="w-4 h-4 me-2" /> {t.import}
                               </>
                             )}
                           </Button>
@@ -410,9 +405,7 @@ export default function Integrations() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {locale === "en"
-                    ? "Google Sheets export is not configured in this environment. Add provider credentials before enabling export/import."
-                    : "لم يتم تكوين تصدير Google Sheets في هذه البيئة. أضف بيانات اعتماد المزود قبل تفعيل التصدير أو الاستيراد."}
+                  {tr("googleSheetsExportIsNotConfigured")}
                 </p>
               )}
             </CardContent>
@@ -470,7 +463,7 @@ export default function Integrations() {
                         onClick={() => window.open(sync.externalUrl!, "_blank")}
                         data-testid={`button-open-sync-${sync.id}`}
                       >
-                        <ExternalLink className="w-4 h-4 mr-2" />
+                        <ExternalLink className="w-4 h-4 me-2" />
                         {t.openSpreadsheet}
                       </Button>
                     )}

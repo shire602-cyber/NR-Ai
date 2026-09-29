@@ -1,0 +1,48 @@
+import { defineMessages } from "@/lib/i18n-messages";
+
+export const messages = defineMessages(
+  "FirmAnalytics",
+  {
+    overdueInvoices: "Overdue Invoices",
+    overdueVatReturns: "Overdue VAT Returns",
+    vsLastMonth: "{abs}% vs last month",
+    firm: "Firm",
+    firmAnalytics: "Firm Analytics",
+    revenueUtilizationAndClientHealthOverview: "Revenue, utilization, and client health overview",
+    totalMrr: "Total MRR",
+    revenueGrowth: "Revenue Growth",
+    vsLast30Days: "vs. last 30 days",
+    avgRevenueClient: "Avg Revenue / Client",
+    totalClients: "Total Clients",
+    revenueByClientTop10: "Revenue by Client (Top 10)",
+    clientHealth: "Client Health",
+    topIssues: "Top Issues",
+    totalClients2: "— {count} total, {affectedClients} clients",
+    staffUtilization: "Staff Utilization",
+    totalStaff: "Total Staff",
+    clientsStaff: "Clients / Staff",
+    avgClientsAdmin: "Avg Clients / Admin",
+  },
+  {
+    overdueInvoices: "الفواتير المتأخرة",
+    overdueVatReturns: "إقرارات ضريبة القيمة المضافة المتأخرة",
+    vsLastMonth: "{abs}% مقارنةً بالشهر الماضي",
+    firm: "المكتب",
+    firmAnalytics: "تحليلات المكتب",
+    revenueUtilizationAndClientHealthOverview:
+      "نظرة عامة على الإيرادات ومعدل الاستخدام وصحة العملاء",
+    totalMrr: "إجمالي الإيرادات الشهرية المتكررة",
+    revenueGrowth: "نمو الإيرادات",
+    vsLast30Days: "مقارنةً بآخر 30 يومًا",
+    avgRevenueClient: "متوسط الإيرادات / العميل",
+    totalClients: "إجمالي العملاء",
+    revenueByClientTop10: "الإيرادات حسب العميل (أعلى 10)",
+    clientHealth: "صحة العملاء",
+    topIssues: "أبرز المشكلات",
+    totalClients2: "— {count} إجمالي، {affectedClients} عملاء متأثرون",
+    staffUtilization: "استخدام الموظفين",
+    totalStaff: "إجمالي الموظفين",
+    clientsStaff: "العملاء / الموظف",
+    avgClientsAdmin: "متوسط العملاء / مسؤول",
+  }
+);

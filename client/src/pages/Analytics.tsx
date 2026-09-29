@@ -32,6 +32,7 @@ import {
   Users,
   Clock,
 } from "lucide-react";
+import { messages as pageMessages } from "./Analytics.i18n";
 
 interface AnalyticsDashboard {
   summary: {
@@ -49,6 +50,8 @@ interface AnalyticsDashboard {
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D"];
 
 export default function Analytics() {
+  const tr = pageMessages.useT();
+
   const [activeTab, setActiveTab] = useState("overview");
 
   const { data: analytics, isLoading } = useQuery<AnalyticsDashboard>({
@@ -91,61 +94,61 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Insights"
-        title="Usage Analytics"
-        description="Monitor feature engagement and user activity"
+        eyebrow={tr("insights")}
+        title={tr("usageAnalytics")}
+        description={tr("monitorFeatureEngagementAndUserActivity")}
       />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Page Views</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("pageViews")}</CardTitle>
             <Eye className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-page-views">
               {analytics?.summary?.totalPageViews || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Total page views</p>
+            <p className="text-xs text-muted-foreground">{tr("totalPageViews")}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Feature Uses</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("featureUses")}</CardTitle>
             <MousePointer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-feature-uses">
               {analytics?.summary?.totalFeatureUses || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Feature interactions</p>
+            <p className="text-xs text-muted-foreground">{tr("featureInteractions")}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Errors</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("errors")}</CardTitle>
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-errors">
               {analytics?.summary?.totalErrors || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Error events</p>
+            <p className="text-xs text-muted-foreground">{tr("errorEvents")}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Events</CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalEvents")}</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="stat-total-events">
               {analytics?.summary?.totalEvents || 0}
             </div>
-            <p className="text-xs text-muted-foreground">All tracked events</p>
+            <p className="text-xs text-muted-foreground">{tr("allTrackedEvents")}</p>
           </CardContent>
         </Card>
       </div>
@@ -153,16 +156,16 @@ export default function Analytics() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Overview
+            <BarChart3 className="w-4 h-4 me-2" />
+            {tr("overview")}
           </TabsTrigger>
           <TabsTrigger value="pages" data-testid="tab-pages">
-            <Eye className="w-4 h-4 mr-2" />
-            Pages
+            <Eye className="w-4 h-4 me-2" />
+            {tr("pages")}
           </TabsTrigger>
           <TabsTrigger value="events" data-testid="tab-events">
-            <Activity className="w-4 h-4 mr-2" />
-            Events
+            <Activity className="w-4 h-4 me-2" />
+            {tr("events")}
           </TabsTrigger>
         </TabsList>
 
@@ -172,15 +175,15 @@ export default function Analytics() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="w-5 h-5" />
-                  Top Events
+                  {tr("topEvents")}
                 </CardTitle>
-                <CardDescription>Most frequent user actions</CardDescription>
+                <CardDescription>{tr("mostFrequentUserActions")}</CardDescription>
               </CardHeader>
               <CardContent>
                 {eventChartData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                     <BarChart3 className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No event data yet</p>
+                    <p>{tr("noEventDataYet")}</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -200,15 +203,15 @@ export default function Analytics() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <PieChartIcon className="w-5 h-5" />
-                  Event Distribution
+                  {tr("eventDistribution")}
                 </CardTitle>
-                <CardDescription>Breakdown of event types</CardDescription>
+                <CardDescription>{tr("breakdownOfEventTypes")}</CardDescription>
               </CardHeader>
               <CardContent>
                 {pieData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                     <PieChartIcon className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No data to display</p>
+                    <p>{tr("noDataToDisplay")}</p>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -241,15 +244,15 @@ export default function Analytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Eye className="w-5 h-5" />
-                Page Views
+                {tr("pageViews")}
               </CardTitle>
-              <CardDescription>Most visited pages</CardDescription>
+              <CardDescription>{tr("mostVisitedPages")}</CardDescription>
             </CardHeader>
             <CardContent>
               {pageChartData.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <Eye className="w-12 h-12 mb-4 opacity-50" />
-                  <p>No page view data yet</p>
+                  <p>{tr("noPageViewDataYet")}</p>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={400}>
@@ -271,15 +274,15 @@ export default function Analytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="w-5 h-5" />
-                Recent Events
+                {tr("recentEvents")}
               </CardTitle>
-              <CardDescription>Latest user activity</CardDescription>
+              <CardDescription>{tr("latestUserActivity")}</CardDescription>
             </CardHeader>
             <CardContent>
               {!analytics?.recentEvents?.length ? (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <Activity className="w-12 h-12 mb-4 opacity-50" />
-                  <p>No events recorded yet</p>
+                  <p>{tr("noEventsRecordedYet")}</p>
                 </div>
               ) : (
                 <ScrollArea className="h-[500px]">

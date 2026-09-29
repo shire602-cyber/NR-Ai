@@ -22,7 +22,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "../db";
-import { runExclusive } from "./document-queue";
+import { runExclusive, runInPostingSlot } from "./document-queue";
 
 /** Stable 32-bit key from a document id (advisory locks take bigints). */
 function lockKey(id: string): number {
@@ -50,10 +50,15 @@ export async function withDocumentLock<T>(
   // Queue same-document callers in-process first, so waiters do not each hold
   // a pooled connection while the holder needs more (see document-queue.ts).
   return await runExclusive(`${namespace}:${documentId}`, () =>
-    db.transaction(async (tx: typeof db) => {
-      await acquireDocumentLock(tx, documentId, namespace);
-      return await fn(tx);
-    })
+    // The slot keeps the number of open document transactions below the pool
+    // size: each one needs a SECOND connection for its own reads and journal
+    // insert, so a pool full of first connections would starve itself.
+    runInPostingSlot(() =>
+      db.transaction(async (tx: typeof db) => {
+        await acquireDocumentLock(tx, documentId, namespace);
+        return await fn(tx);
+      })
+    )
   );
 }
 
@@ -70,4 +75,6 @@ export const LOCK_NS = {
   INVOICE_POSTING: 1001,
   CREDIT_NOTE: 1002,
   FX_REVALUATION: 1003,
+  /** Per company-month: shared by postings, exclusive for whoever locks the month (posting-lock.ts). */
+  PERIOD_POSTING: 1004,
 } as const;

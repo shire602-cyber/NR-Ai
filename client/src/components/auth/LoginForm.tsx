@@ -26,10 +26,11 @@ import { useTranslation } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { LogIn } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
+import { messages as pageMessages } from "./LoginForm.i18n";
 
 const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email(pageMessages.marker("pleaseEnterAValidEmail")),
+  password: z.string().min(6, pageMessages.marker("passwordMustBeAtLeast6")),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -46,6 +47,8 @@ function currentEpochMs(): number {
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
+  const tr = pageMessages.useT();
+
   const { t } = useTranslation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -106,14 +109,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       await onSuccess(result.user);
 
       toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
+        title: tr("welcomeBack"),
+        description: tr("youHaveSuccessfullyLoggedIn"),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Login failed",
-        description: error?.message || "Please check your credentials and try again.",
+        title: tr("loginFailed"),
+        description: error?.message || tr("pleaseCheckYourCredentialsAndTry"),
       });
     } finally {
       setIsLoading(false);
@@ -124,9 +127,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     <Card className="w-full max-w-md border-border/60 shadow-xl">
       <CardHeader className="space-y-1.5">
         <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          Welcome back<span className="text-accent">.</span>
+          {tr("welcomeBack2")}
+          <span className="text-accent">.</span>
         </CardTitle>
-        <CardDescription>Enter your credentials to access your account</CardDescription>
+        <CardDescription>{tr("enterYourCredentialsToAccessYour")}</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -162,7 +166,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                       className="text-xs text-primary hover:underline"
                       data-testid="link-forgot-password"
                     >
-                      Forgot password?
+                      {tr("forgotPassword")}
                     </Link>
                   </div>
                   <FormControl>
@@ -184,16 +188,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               disabled={isLoading || isCoolingDown}
               data-testid="button-login"
             >
-              <LogIn className="w-4 h-4 mr-2" />
+              <LogIn className="w-4 h-4 me-2" />
               {isLoading
                 ? t.loading
                 : isCoolingDown
-                  ? `Try again in ${cooldownSeconds}s`
+                  ? tr("tryAgainInS", { cooldownSeconds })
                   : t.signIn}
             </Button>
             {isCoolingDown && (
               <p className="text-center text-sm text-muted-foreground" role="status">
-                Too many failed attempts for this email. Try again in {cooldownSeconds} seconds.
+                {tr("tooManyFailedAttemptsForThis", { cooldownSeconds })}
               </p>
             )}
           </form>

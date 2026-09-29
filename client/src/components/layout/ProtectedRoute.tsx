@@ -1,12 +1,15 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { messages as pageMessages } from "./ProtectedRoute.i18n";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { data: user, isLoading, isError } = useCurrentUser();
 
@@ -34,7 +37,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     // Session check hit a transient failure; react-query is retrying.
     return (
       <div className="flex items-center justify-center h-screen text-sm text-muted-foreground">
-        Reconnecting…
+        {tr("reconnecting")}
       </div>
     );
   }

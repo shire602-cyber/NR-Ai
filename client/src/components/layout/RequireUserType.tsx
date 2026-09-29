@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { messages as pageMessages } from "./RequireUserType.i18n";
 
 interface Props {
   allowedTypes: string[];
@@ -10,6 +11,8 @@ interface Props {
 }
 
 export function RequireUserType({ allowedTypes, children, redirectTo = "/dashboard" }: Props) {
+  const tr = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: user, isLoading } = useCurrentUser();
@@ -20,8 +23,8 @@ export function RequireUserType({ allowedTypes, children, redirectTo = "/dashboa
   useEffect(() => {
     if (!isLoading && !isAllowed) {
       toast({
-        title: "Access Restricted",
-        description: "You do not have access to this page.",
+        title: tr("accessRestricted"),
+        description: tr("youDoNotHaveAccessTo"),
         variant: "destructive",
       });
       setLocation(redirectTo);

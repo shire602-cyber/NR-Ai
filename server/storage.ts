@@ -275,6 +275,7 @@ import { computeInvoiceBalance } from "./services/invoice-outstanding";
 import { getInvoiceBalance } from "./services/invoice-outstanding.db";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
+import { lockAndCheckMonth, type PostingBypass } from "./services/posting-lock";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -464,7 +465,7 @@ export interface IStorage {
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; excludeClosing?: boolean }
   ): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
     companyId: string
@@ -473,7 +474,7 @@ export interface IStorage {
     entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
     lines: Array<Omit<InsertJournalLine, "entryId">>,
     /** Run inside the caller's transaction (document + journal commit or roll back together). */
-    opts?: { tx?: any }
+    opts?: { tx?: any; allowLockedPeriod?: PostingBypass }
   ): Promise<JournalEntry>;
   updateJournalEntry(
     id: string,
@@ -1823,15 +1824,28 @@ export class DatabaseStorage implements IStorage {
 
   async getJournalEntriesByCompanyId(
     companyId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; excludeClosing?: boolean }
   ): Promise<JournalEntry[]> {
     // S3: optional pagination. Default (no opts) returns all rows — the many
     // internal callers (financial statements, reports, CT) rely on the full set;
     // the list endpoint passes {limit, offset} to cap the payload.
+    //
+    // `excludeClosing` leaves out financial-year closing entries (and their reversals).
+    // Period profit-and-loss style reports need it: the closing entry zeroes every income
+    // and expense account on the last day of the year, so without it a closed year would
+    // report no profit. Balance-sheet style callers keep the default: the closing entry is
+    // how retained earnings carry forward.
     let q: any = db
       .select()
       .from(journalEntries)
-      .where(eq(journalEntries.companyId, companyId))
+      .where(
+        opts?.excludeClosing
+          ? and(
+              eq(journalEntries.companyId, companyId),
+              notInArray(journalEntries.source, ["year_end_close", "year_end_close_reversal"])
+            )
+          : eq(journalEntries.companyId, companyId)
+      )
       .orderBy(desc(journalEntries.date));
     if (opts?.limit != null) q = q.limit(opts.limit);
     if (opts?.offset != null) q = q.offset(opts.offset);
@@ -1867,7 +1881,7 @@ export class DatabaseStorage implements IStorage {
   async createJournalEntry(
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
     lines: Array<Omit<InsertJournalLine, "entryId">>,
-    opts?: { tx?: any }
+    opts?: { tx?: any; allowLockedPeriod?: PostingBypass }
   ): Promise<JournalEntry> {
     if (!Array.isArray(lines) || lines.length === 0) {
       throw new Error("Journal entry must have at least one line");
@@ -1894,6 +1908,13 @@ export class DatabaseStorage implements IStorage {
     const lockKey2 = hashStringToInt(prefix);
 
     const insertInTx = async (tx: typeof db) => {
+      // A posted entry takes the SHARED lock of its company-month and re-checks
+      // the period lock on this transaction's own connection, so a filing or
+      // close that locks the month cannot interleave with this write
+      // (posting-lock.ts). Always before the numbering lock: one lock order.
+      if (insertEntry.companyId && insertEntry.status === "posted") {
+        await lockAndCheckMonth(tx, insertEntry.companyId, entryDate, opts?.allowLockedPeriod);
+      }
       // Serialize numbering for the lifetime of THIS transaction. The
       // xact-scoped advisory lock is held until commit, so two concurrent
       // creators can't compute the same MAX+1 (the flaw in generating the
@@ -1914,7 +1935,13 @@ export class DatabaseStorage implements IStorage {
         const next = Number(rows[0]?.max_seq ?? 0) + 1;
         insertEntry.entryNumber = `${prefix}-${String(next).padStart(3, "0")}`;
       }
-      const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
+      // created_at is the moment of the insert (after every lock wait), not the transaction start
+      // (now()): "was this entry created before or after the period was locked?" must be answerable
+      // from the timestamps.
+      const [entry] = await tx
+        .insert(journalEntries)
+        .values({ createdAt: sql`clock_timestamp()`, ...insertEntry } as any)
+        .returning();
       for (const line of lines) {
         await tx.insert(journalLines).values({ ...line, entryId: entry.id });
       }
@@ -1958,15 +1985,44 @@ export class DatabaseStorage implements IStorage {
     companyId: string,
     data: Partial<JournalEntry>
   ): Promise<JournalEntry> {
-    const [entry] = await db
-      .update(journalEntries)
-      .set(data)
-      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
-      .returning();
-    if (!entry) {
-      throw new Error("Journal entry not found");
+    return await db.transaction(async (tx: typeof db) => {
+      // Changing (or posting) a posted entry is a posting: month lock + re-check.
+      await this.lockPostedEntryMonths(tx, id, companyId, data);
+      const [entry] = await tx
+        .update(journalEntries)
+        .set(data)
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
+        .returning();
+      if (!entry) {
+        throw new Error("Journal entry not found");
+      }
+      return entry;
+    });
+  }
+
+  /**
+   * Shared month lock + period re-check for an update/delete of a journal entry that is
+   * (or becomes) posted: the month of its current date and, when it moves, of the new date.
+   */
+  private async lockPostedEntryMonths(
+    tx: typeof db,
+    id: string,
+    companyId: string,
+    data: Partial<JournalEntry> | null
+  ): Promise<void> {
+    const [current] = await tx
+      .select({ status: journalEntries.status, date: journalEntries.date })
+      .from(journalEntries)
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
+    if (!current) return;
+    if (current.status !== "posted" && data?.status !== "posted") return;
+    await lockAndCheckMonth(tx, companyId, current.date as Date);
+    if (data?.date) {
+      const next = data.date instanceof Date ? data.date : new Date(data.date as any);
+      if (next.toISOString().slice(0, 7) !== new Date(current.date as any).toISOString().slice(0, 7)) {
+        await lockAndCheckMonth(tx, companyId, next);
+      }
     }
-    return entry;
   }
 
   async updateJournalEntryWithLines(
@@ -1981,6 +2037,7 @@ export class DatabaseStorage implements IStorage {
     assertBalanced(lines);
 
     return await db.transaction(async (tx: typeof db) => {
+      await this.lockPostedEntryMonths(tx, id, companyId, data);
       const [entry] = await tx
         .update(journalEntries)
         .set(data)
@@ -1998,9 +2055,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteJournalEntry(id: string, companyId: string): Promise<void> {
-    await db
-      .delete(journalEntries)
-      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
+    await db.transaction(async (tx: typeof db) => {
+      await this.lockPostedEntryMonths(tx, id, companyId, null);
+      await tx
+        .delete(journalEntries)
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
+    });
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
@@ -2023,14 +2083,17 @@ export class DatabaseStorage implements IStorage {
     //    net. If we still collide (different DB instances / restored backups /
     //    bug), the insert will fail and the caller can retry.
     //
-    // The advisory lock is session-scoped here (not _xact_) because the caller
-    // typically generates the number, then runs createJournalEntry which opens
-    // its own transaction. We release at function exit.
+    // The lock, the read and its release must all happen on ONE connection. This used to take a
+    // session-level lock with three separate pool calls (lock, select, unlock): under concurrency
+    // the unlock could run on a different pooled connection, leaving the lock held by an idle
+    // connection, and every later caller for that company-day then waited until the 30 s
+    // statement timeout (a 500). A transaction-scoped lock is released with the transaction.
+    // The number is advisory: createJournalEntry recomputes it under its own transaction lock.
     const lockKey1 = hashStringToInt(companyId);
     const lockKey2 = hashStringToInt(prefix);
-    await db.execute(sql`SELECT pg_advisory_lock(${lockKey1}, ${lockKey2})`);
-    try {
-      const result: any = await db.execute(sql`
+    return await db.transaction(async (tx: typeof db) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
+      const result: any = await tx.execute(sql`
         SELECT COALESCE(
           MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
           0
@@ -2043,9 +2106,7 @@ export class DatabaseStorage implements IStorage {
       const maxSeq = Number(rows[0]?.max_seq ?? 0);
       const nextNumber = maxSeq + 1;
       return `${prefix}-${String(nextNumber).padStart(3, "0")}`;
-    } finally {
-      await db.execute(sql`SELECT pg_advisory_unlock(${lockKey1}, ${lockKey2})`).catch(() => {});
-    }
+    });
   }
 
   // Journal Lines
@@ -4206,7 +4267,8 @@ export class DatabaseStorage implements IStorage {
           lt(corporateTaxReturns.taxPeriodEnd, periodStart)
         )
       )
-      .orderBy(desc(corporateTaxReturns.taxPeriodEnd))
+      // An amendment supersedes the original of the same period (newest first).
+      .orderBy(desc(corporateTaxReturns.taxPeriodEnd), desc(corporateTaxReturns.createdAt))
       .limit(2);
     const prior = rows.find((r: { id: string }) => r.id !== excludeReturnId);
     return Number(prior?.lossCarriedForward ?? 0) || 0;
@@ -5103,6 +5165,8 @@ export class DatabaseStorage implements IStorage {
       const prefix = `JE-${dateStr}`;
       const lockKey1 = hashStringToInt(input.companyId);
       const lockKey2 = hashStringToInt(prefix);
+      // A payment posts a journal entry: shared month lock + period re-check first.
+      await lockAndCheckMonth(tx, input.companyId, input.date);
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
       const counterStart = prefix.length + 2;
       const numResult: any = await tx.execute(sql`

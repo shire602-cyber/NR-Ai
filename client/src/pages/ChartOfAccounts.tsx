@@ -26,6 +26,7 @@ import {
   BookOpen,
   ArrowRight,
 } from "lucide-react";
+import { messages as pageMessages } from "./ChartOfAccounts.i18n";
 
 interface AccountWithBalance {
   account: Account;
@@ -36,7 +37,7 @@ interface AccountWithBalance {
 
 const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
 
-const ACCOUNT_TYPE_CONFIG: Record<
+const getAccountTypeConfig = (): Record<
   string,
   {
     label: string;
@@ -45,45 +46,47 @@ const ACCOUNT_TYPE_CONFIG: Record<
     colorClass: string;
     bgClass: string;
   }
-> = {
+> => ({
   asset: {
-    label: "Assets",
+    label: pageMessages.t("assets"),
     labelAr: "الأصول",
     icon: Wallet,
     colorClass: "text-success ",
     bgClass: "bg-success-subtle ",
   },
   liability: {
-    label: "Liabilities",
+    label: pageMessages.t("liabilities"),
     labelAr: "الخصوم",
     icon: CreditCard,
     colorClass: "text-destructive ",
     bgClass: "bg-danger-subtle ",
   },
   equity: {
-    label: "Equity",
+    label: pageMessages.t("equity"),
     labelAr: "حقوق الملكية",
     icon: PiggyBank,
     colorClass: "text-chart-5 ",
     bgClass: "bg-chart-5/10 ",
   },
   income: {
-    label: "Revenue",
+    label: pageMessages.t("revenue"),
     labelAr: "الإيرادات",
     icon: TrendingUp,
     colorClass: "text-info ",
     bgClass: "bg-info-subtle ",
   },
   expense: {
-    label: "Expenses",
+    label: pageMessages.t("expenses"),
     labelAr: "المصروفات",
     icon: Receipt,
     colorClass: "text-warning ",
     bgClass: "bg-warning-subtle ",
   },
-};
+});
 
 export default function ChartOfAccounts() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
@@ -144,12 +147,12 @@ export default function ChartOfAccounts() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
         <BookOpen className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
+        <h2 className="text-xl font-semibold mb-2">{tr("setUpYourCompany")}</h2>
         <p className="text-muted-foreground text-center max-w-md mb-4">
-          You need a company before you can configure your Chart of Accounts.
+          {tr("youNeedACompanyBeforeYou")}
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-          Create your company
+          {tr("createYourCompany")}
         </Button>
       </div>
     );
@@ -158,7 +161,7 @@ export default function ChartOfAccounts() {
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={tr("accounting")}
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
@@ -167,19 +170,19 @@ export default function ChartOfAccounts() {
             data-testid="button-add-account"
             onClick={() => navigate("/journal")}
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="h-4 w-4 me-2" />
             {t.addAccount}
           </Button>
         }
       />
 
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t.searchAccounts}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
+          className="ps-10"
           data-testid="input-search-accounts"
         />
       </div>
@@ -220,7 +223,7 @@ export default function ChartOfAccounts() {
               const accounts = groupedAccounts[type];
               if (!accounts || accounts.length === 0) return null;
 
-              const config = ACCOUNT_TYPE_CONFIG[type];
+              const config = getAccountTypeConfig()[type];
               const Icon = config.icon;
               const isExpanded = expandedTypes.has(type);
 
@@ -254,9 +257,10 @@ export default function ChartOfAccounts() {
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
-                              <div className="text-right">
+                              <div className="text-end">
                                 <p className="text-sm text-muted-foreground">{t.total}</p>
                                 <p
+                                  dir="ltr"
                                   className={`text-lg font-mono font-semibold ${
                                     typeTotals[type] >= 0 ? "text-foreground" : "text-destructive"
                                   }`}
@@ -301,8 +305,9 @@ export default function ChartOfAccounts() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                  <div className="text-right">
+                                  <div className="text-end">
                                     <p
+                                      dir="ltr"
                                       className={`font-mono font-medium ${
                                         item.balance >= 0 ? "text-foreground" : "text-destructive"
                                       }`}
@@ -310,8 +315,16 @@ export default function ChartOfAccounts() {
                                       {formatCurrency(Math.abs(item.balance))}
                                     </p>
                                     <div className="flex gap-2 text-xs text-muted-foreground">
-                                      <span>Dr: {formatCurrency(item.debitTotal)}</span>
-                                      <span>Cr: {formatCurrency(item.creditTotal)}</span>
+                                      <span>
+                                        {tr("dr", {
+                                          formatCurrency: formatCurrency(item.debitTotal),
+                                        })}
+                                      </span>
+                                      <span>
+                                        {tr("cr", {
+                                          formatCurrency: formatCurrency(item.creditTotal),
+                                        })}
+                                      </span>
                                     </div>
                                   </div>
                                   <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -337,7 +350,7 @@ export default function ChartOfAccounts() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {ACCOUNT_TYPE_ORDER.map((type) => {
-              const config = ACCOUNT_TYPE_CONFIG[type];
+              const config = getAccountTypeConfig()[type];
               const Icon = config.icon;
               const total = typeTotals[type] || 0;
 
@@ -354,6 +367,7 @@ export default function ChartOfAccounts() {
                     </span>
                   </div>
                   <p
+                    dir="ltr"
                     className={`font-mono font-semibold text-lg ${
                       total >= 0 ? "text-foreground" : "text-destructive"
                     }`}

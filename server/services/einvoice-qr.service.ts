@@ -1,3 +1,9 @@
+// NOTE: this builds a ZATCA-style (Saudi Arabia) TLV payload with 5 fields (seller name, VAT
+// number, timestamp, total with VAT, VAT amount). The UAE has NOT been confirmed to require
+// this QR format for e-invoices. It is kept, unchanged and under its current names, because
+// the invoice PDF prints it; do not present it to users as a UAE regulatory requirement until
+// the FTA / the chosen Accredited Service Provider confirms what (if anything) the UAE needs.
+
 import QRCode from "qrcode";
 
 // ZATCA / UAE FTA Phase 2 e-invoicing QR payload tags.

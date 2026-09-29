@@ -8,8 +8,11 @@ import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { messages as pageMessages } from "./PortalMessages.i18n";
 
 export default function PortalMessages() {
+  const tr = pageMessages.useT();
+
   const qc = useQueryClient();
   const { toast } = useToast();
   const [subject, setSubject] = useState("");
@@ -26,10 +29,10 @@ export default function PortalMessages() {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
       setSubject("");
       setContent("");
-      toast({ title: "Message sent", description: "NR Accounting will respond shortly." });
+      toast({ title: tr("messageSent"), description: tr("nrAccountingWillRespondShortly") });
     },
     onError: (e: any) =>
-      toast({ title: "Failed to send", description: e.message, variant: "destructive" }),
+      toast({ title: tr("failedToSend"), description: e.message, variant: "destructive" }),
   });
 
   function handleSend() {
@@ -44,21 +47,23 @@ export default function PortalMessages() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Messages</h2>
-        <p className="text-sm text-muted-foreground mt-1">Communicate with your NR Accounting team.</p>
+        <h2 className="text-xl font-semibold text-foreground">{tr("messages")}</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          {tr("communicateWithYourNrAccountingTeam")}
+        </p>
       </div>
 
       {/* Compose */}
       <Card>
         <CardContent className="pt-4 space-y-3">
-          <p className="text-sm font-medium text-foreground">New Message</p>
+          <p className="text-sm font-medium text-foreground">{tr("newMessage")}</p>
           <Input
-            placeholder="Subject (optional)"
+            placeholder={tr("subjectOptional")}
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
           />
           <Textarea
-            placeholder="Write your message..."
+            placeholder={tr("writeYourMessage")}
             rows={4}
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -70,11 +75,11 @@ export default function PortalMessages() {
               className="bg-info hover:bg-info text-white"
             >
               {sendMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Send className="w-4 h-4 mr-2" />
+                <Send className="w-4 h-4 me-2" />
               )}
-              Send
+              {tr("send")}
             </Button>
           </div>
         </CardContent>
@@ -90,7 +95,7 @@ export default function PortalMessages() {
           ) : sorted.length === 0 ? (
             <div className="text-center py-12">
               <MessageSquare className="w-9 h-9 text-muted-foreground/70 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground/70">No messages yet.</p>
+              <p className="text-sm text-muted-foreground/70">{tr("noMessagesYet")}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -113,7 +118,7 @@ export default function PortalMessages() {
                   </div>
                   {!msg.isRead && (
                     <span className="inline-block mt-1 text-xs bg-info-subtle text-info rounded px-1.5 py-0.5">
-                      Unread
+                      {tr("unread")}
                     </span>
                   )}
                 </div>

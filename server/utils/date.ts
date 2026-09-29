@@ -87,6 +87,16 @@ export function uaeTodayStart(now: Date = new Date()): Date {
 }
 
 /**
+ * The accounting date of an instant: UTC midnight of its UAE calendar day. Journal entry dates
+ * are read as `date::date` in SQL (the ledger, the VAT engines), so a posting made at 01:30 UAE on
+ * 1 October must be stored as 2026-10-01T00:00Z, not as its 21:30Z instant of 30 September.
+ */
+export function uaeCalendarDate(now: Date = new Date()): Date {
+  const { year, month, day } = uaeYmdParts(now);
+  return new Date(Date.UTC(year, month, day));
+}
+
+/**
  * Returns 0 (Sunday) … 6 (Saturday) for the UAE-local day of week. Use this
  * for weekend checks — `Date.getDay()` reflects server-local TZ and rolls the
  * day at the wrong instant for late-night UAE activity.

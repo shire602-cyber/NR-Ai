@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
+import { lockAndCheckMonthPg } from "../services/posting-lock";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 
@@ -79,6 +80,11 @@ async function insertJournalEntryTx(
     );
   }
 
+  // Posted entries take the shared month lock and re-check the period lock on
+  // this connection, so a filing / close cannot interleave (posting-lock.ts).
+  if (entry.status === "posted") {
+    await lockAndCheckMonthPg(client, entry.companyId, entry.date);
+  }
   const inserted = await client.query(
     `INSERT INTO journal_entries
        (company_id, entry_number, date, memo, status, source, source_id, created_by, posted_by, posted_at)

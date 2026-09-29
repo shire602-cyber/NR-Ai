@@ -59,6 +59,7 @@ import {
   Plus,
   Filter,
 } from "lucide-react";
+import { messages as pageMessages } from "./DocumentVault.i18n";
 
 interface Document {
   id: string;
@@ -98,6 +99,8 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function DocumentVault() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -138,8 +141,8 @@ export default function DocumentVault() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
       toast({
-        title: locale === "ar" ? "تم الرفع بنجاح" : "Upload Successful",
-        description: locale === "ar" ? "تم حفظ المستند" : "Document has been saved",
+        title: tr("uploadSuccessful"),
+        description: tr("documentHasBeenSaved"),
       });
       setUploadDialogOpen(false);
       resetForm();
@@ -147,7 +150,7 @@ export default function DocumentVault() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "فشل الرفع" : "Upload Failed",
+        title: tr("uploadFailed"),
         description: error?.message,
       });
     },
@@ -158,8 +161,8 @@ export default function DocumentVault() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
       toast({
-        title: locale === "ar" ? "تم الحذف" : "Deleted",
-        description: locale === "ar" ? "تم حذف المستند" : "Document has been deleted",
+        title: tr("deleted"),
+        description: tr("documentHasBeenDeleted"),
       });
     },
   });
@@ -180,8 +183,8 @@ export default function DocumentVault() {
     if (!newDocument.name) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
-        description: locale === "ar" ? "يرجى إدخال اسم المستند" : "Please enter document name",
+        title: tr("missingInformation"),
+        description: tr("pleaseEnterDocumentName"),
       });
       return;
     }
@@ -189,8 +192,8 @@ export default function DocumentVault() {
     if (!selectedFile) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
-        description: locale === "ar" ? "يرجى اختيار ملف" : "Please choose a file to upload",
+        title: tr("missingInformation"),
+        description: tr("pleaseChooseAFileToUpload"),
       });
       return;
     }
@@ -198,7 +201,7 @@ export default function DocumentVault() {
     if (problem) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "ملف غير صالح" : "Invalid file",
+        title: tr("invalidFile"),
         description: fileProblemMessage(problem, locale),
       });
       return;
@@ -223,7 +226,7 @@ export default function DocumentVault() {
       if (!uploadMutation.isError) {
         toast({
           variant: "destructive",
-          title: locale === "ar" ? "فشل الرفع" : "Upload Failed",
+          title: tr("uploadFailed"),
           description: error?.message,
         });
       }
@@ -238,7 +241,7 @@ export default function DocumentVault() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "فشل التنزيل" : "Download failed",
+        title: tr("downloadFailed"),
         description: error?.message,
       });
     }
@@ -297,17 +300,13 @@ export default function DocumentVault() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Operations"
-        title={locale === "ar" ? "خزنة المستندات" : "Document Vault"}
-        description={
-          locale === "ar"
-            ? "قم بتخزين وإدارة مستنداتك المهمة مع تنبيهات انتهاء الصلاحية"
-            : "Store and manage your important documents with expiry alerts"
-        }
+        eyebrow={tr("operations")}
+        title={tr("documentVault")}
+        description={tr("storeAndManageYourImportantDocuments")}
         actions={
           <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
-            <Plus className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "رفع مستند" : "Upload Document"}
+            <Plus className="w-4 h-4 me-2" />
+            {tr("uploadDocument")}
           </Button>
         }
       />
@@ -315,9 +314,7 @@ export default function DocumentVault() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المستندات" : "Total Documents"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("totalDocuments")}</CardTitle>
             <FolderOpen className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -327,31 +324,23 @@ export default function DocumentVault() {
 
         <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "تنتهي قريباً" : "Expiring Soon"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("expiringSoon")}</CardTitle>
             <Clock className="w-4 h-4 text-warning" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-warning">{expiringDocs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {locale === "ar" ? "خلال 30 يوم" : "Within 30 days"}
-            </p>
+            <p className="text-xs text-muted-foreground">{tr("within30Days")}</p>
           </CardContent>
         </Card>
 
         <Card className={expiredDocs.length > 0 ? "border-destructive" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "منتهية الصلاحية" : "Expired"}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{tr("expired")}</CardTitle>
             <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {locale === "ar" ? "تحتاج إلى تجديد" : "Need renewal"}
-            </p>
+            <p className="text-xs text-muted-foreground">{tr("needRenewal")}</p>
           </CardContent>
         </Card>
       </div>
@@ -360,26 +349,22 @@ export default function DocumentVault() {
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder={locale === "ar" ? "بحث في المستندات..." : "Search documents..."}
+                placeholder={tr("searchDocuments")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-documents"
               />
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue
-                  placeholder={locale === "ar" ? "تصفية حسب الفئة" : "Filter by category"}
-                />
+                <Filter className="w-4 h-4 me-2" />
+                <SelectValue placeholder={tr("filterByCategory")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">
-                  {locale === "ar" ? "جميع الفئات" : "All Categories"}
-                </SelectItem>
+                <SelectItem value="all">{tr("allCategories")}</SelectItem>
                 {DOCUMENT_CATEGORIES.map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
                     {locale === "ar" ? cat.labelAr : cat.labelEn}
@@ -393,9 +378,9 @@ export default function DocumentVault() {
           {filteredDocuments.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مستندات" : "No documents found"}</p>
+              <p>{tr("noDocumentsFound")}</p>
               <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                {locale === "ar" ? "رفع أول مستند" : "Upload your first document"}
+                {tr("uploadYourFirstDocument")}
               </Button>
             </div>
           ) : (
@@ -403,14 +388,12 @@ export default function DocumentVault() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{locale === "ar" ? "اسم المستند" : "Document Name"}</TableHead>
-                    <TableHead>{locale === "ar" ? "الفئة" : "Category"}</TableHead>
-                    <TableHead>{locale === "ar" ? "تاريخ الانتهاء" : "Expiry Date"}</TableHead>
-                    <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
-                    <TableHead>{locale === "ar" ? "تاريخ الرفع" : "Upload Date"}</TableHead>
-                    <TableHead className="text-right">
-                      {locale === "ar" ? "إجراءات" : "Actions"}
-                    </TableHead>
+                    <TableHead>{tr("documentName")}</TableHead>
+                    <TableHead>{tr("category")}</TableHead>
+                    <TableHead>{tr("expiryDate")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead>{tr("uploadDate")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -473,26 +456,24 @@ export default function DocumentVault() {
                               )}
                               {expiryStatus.status === "valid" && (
                                 <>
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  {locale === "ar" ? "صالح" : "Valid"}
+                                  <CheckCircle2 className="w-3 h-3 me-1" />
+                                  {tr("valid")}
                                 </>
                               )}
                             </Badge>
                           ) : (
-                            <Badge variant="outline">
-                              {locale === "ar" ? "بدون انتهاء" : "No Expiry"}
-                            </Badge>
+                            <Badge variant="outline">{tr("noExpiry")}</Badge>
                           )}
                         </TableCell>
                         <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <div className="flex justify-end gap-2">
                             <Button
                               size="icon"
                               variant="ghost"
                               onClick={() => handleDownload(doc)}
                               data-testid={`button-download-${doc.id}`}
-                              aria-label={locale === "ar" ? "تنزيل" : "Download"}
+                              aria-label={tr("download")}
                             >
                               <Download className="w-4 h-4" />
                             </Button>
@@ -501,13 +482,7 @@ export default function DocumentVault() {
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
-                                if (
-                                  confirm(
-                                    locale === "ar"
-                                      ? "هل أنت متأكد من حذف هذا المستند؟"
-                                      : "Are you sure you want to delete this document?"
-                                  )
-                                ) {
+                                if (confirm(tr("areYouSureYouWantTo"))) {
                                   deleteMutation.mutate(doc.id);
                                 }
                               }}
@@ -530,28 +505,22 @@ export default function DocumentVault() {
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "رفع مستند جديد" : "Upload New Document"}</DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
-                : "Upload an important document like trade license or contracts"}
-            </DialogDescription>
+            <DialogTitle>{tr("uploadNewDocument")}</DialogTitle>
+            <DialogDescription>{tr("uploadAnImportantDocumentLikeTrade")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>
-                  {locale === "ar" ? "اسم المستند (إنجليزي)" : "Document Name (English)"}
-                </Label>
+                <Label>{tr("documentNameEnglish")}</Label>
                 <Input
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
-                  placeholder="Trade License 2025"
+                  placeholder={tr("tradeLicense2025")}
                   data-testid="input-document-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "اسم المستند (عربي)" : "Document Name (Arabic)"}</Label>
+                <Label>{tr("documentNameArabic")}</Label>
                 <Input
                   value={newDocument.nameAr}
                   onChange={(e) => setNewDocument({ ...newDocument, nameAr: e.target.value })}
@@ -563,7 +532,7 @@ export default function DocumentVault() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الفئة" : "Category"}</Label>
+              <Label>{tr("category")}</Label>
               <Select
                 value={newDocument.category}
                 onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
@@ -582,24 +551,18 @@ export default function DocumentVault() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (Optional)"}</Label>
+              <Label>{tr("descriptionOptional")}</Label>
               <Textarea
                 value={newDocument.description}
                 onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
-                placeholder={
-                  locale === "ar"
-                    ? "أضف ملاحظات حول هذا المستند..."
-                    : "Add notes about this document..."
-                }
+                placeholder={tr("addNotesAboutThisDocument")}
                 data-testid="input-document-description"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>
-                  {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry Date (Optional)"}
-                </Label>
+                <Label>{tr("expiryDateOptional")}</Label>
                 <Input
                   type="date"
                   value={newDocument.expiryDate}
@@ -608,7 +571,7 @@ export default function DocumentVault() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تذكير قبل (أيام)" : "Remind Before (Days)"}</Label>
+                <Label>{tr("remindBeforeDays")}</Label>
                 <Input
                   type="number"
                   value={newDocument.reminderDays}
@@ -623,7 +586,7 @@ export default function DocumentVault() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "الملف" : "File"}</Label>
+              <Label>{tr("file")}</Label>
               <Input
                 type="file"
                 accept={ACCEPTED_UPLOAD_TYPES}
@@ -637,7 +600,7 @@ export default function DocumentVault() {
               )}
               {isUploading && (
                 <p className="text-sm text-muted-foreground" role="status">
-                  {locale === "ar" ? "جارٍ رفع الملف…" : "Uploading file…"}
+                  {tr("uploadingFile")}
                 </p>
               )}
             </div>
@@ -650,15 +613,15 @@ export default function DocumentVault() {
                 resetForm();
               }}
             >
-              {locale === "ar" ? "إلغاء" : "Cancel"}
+              {tr("cancel")}
             </Button>
             <Button
               onClick={handleUpload}
               disabled={isUploading}
               data-testid="button-confirm-upload"
             >
-              {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {locale === "ar" ? "رفع" : "Upload"}
+              {isUploading && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {tr("upload")}
             </Button>
           </DialogFooter>
         </DialogContent>

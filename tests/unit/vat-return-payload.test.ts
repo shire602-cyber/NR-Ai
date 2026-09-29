@@ -215,6 +215,25 @@ describe("evaluateVatReturnPatch", () => {
     const filed = { ...closed, status: "filed" };
     expect(check(filed, { status: "draft" })).toMatchObject({ ok: false, code: "VAT_RETURN_LOCKED" });
     expect(check(filed, { status: "pending_review" })).toMatchObject({ ok: false, code: "VAT_RETURN_LOCKED" });
-    expect(check(filed, { notes: "paid via bank", paymentAmount: 10 })).toEqual({ ok: true });
+    expect(check(filed, { notes: "paid via bank" })).toEqual({ ok: true });
+  });
+
+  it("a filed return's payment and reference fields move only through the filing/payment endpoints", () => {
+    const filed = { ...closed, status: "filed" };
+    for (const patch of [{ paymentAmount: 10 }, { paymentStatus: "paid" }, { ftaReferenceNumber: "X" }]) {
+      expect(check(filed, patch)).toMatchObject({ ok: false, status: 409, code: "VAT_RETURN_LOCKED" });
+    }
+  });
+
+  it("PATCH cannot mark a return filed: filing needs a reference, a date and the record endpoint", () => {
+    expect(check(closed, { status: "filed" })).toMatchObject({ ok: false, status: 409, code: "VAT_FILING_REQUIRES_RECORD" });
+    // an already-filed return is not affected by the rule (it is locked for other reasons)
+    expect(check({ ...closed, status: "filed" }, { notes: "n" })).toEqual({ ok: true });
+  });
+
+  it("amendment links are not client-writable", () => {
+    const parsed = vatReturnPatchSchema.parse({ amendsReturnId: "00000000-0000-0000-0000-000000000000", isAmendment: true, notes: "n" });
+    expect(parsed).not.toHaveProperty("amendsReturnId");
+    expect(parsed).not.toHaveProperty("isAmendment");
   });
 });

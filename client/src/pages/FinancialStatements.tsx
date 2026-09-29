@@ -34,6 +34,7 @@ import {
   Search,
   Download,
 } from "lucide-react";
+import { messages as pageMessages } from "./FinancialStatements.i18n";
 
 // Types matching server response shapes
 
@@ -93,34 +94,34 @@ function getDefaultDateRange() {
 
 function prepareCashFlowExport(data: CashFlowData): ExportData[] {
   const detailRows = [
-    ...data.operating.breakdown.map((item) => ({ activity: "Operating", ...item })),
-    ...data.investing.breakdown.map((item) => ({ activity: "Investing", ...item })),
-    ...data.financing.breakdown.map((item) => ({ activity: "Financing", ...item })),
+    ...data.operating.breakdown.map((item) => ({ activity: pageMessages.t("operating"), ...item })),
+    ...data.investing.breakdown.map((item) => ({ activity: pageMessages.t("investing"), ...item })),
+    ...data.financing.breakdown.map((item) => ({ activity: pageMessages.t("financing"), ...item })),
   ];
 
   return [
     {
       sheetName: "Cash Flow Statement",
       columns: [
-        { header: "Metric", key: "metric", width: 34 },
-        { header: "Amount (AED)", key: "amount", width: 18 },
+        { header: pageMessages.t("metric"), key: "metric", width: 34 },
+        { header: pageMessages.t("amountAed"), key: "amount", width: 18 },
       ],
       rows: [
-        { metric: "Period start", amount: data.startDate },
-        { metric: "Period end", amount: data.endDate },
-        { metric: "Net operating cash flow", amount: data.operating.total.toFixed(2) },
-        { metric: "Net investing cash flow", amount: data.investing.total.toFixed(2) },
-        { metric: "Net financing cash flow", amount: data.financing.total.toFixed(2) },
-        { metric: "Net cash change", amount: data.netCashChange.toFixed(2) },
+        { metric: pageMessages.t("periodStart"), amount: data.startDate },
+        { metric: pageMessages.t("periodEnd"), amount: data.endDate },
+        { metric: pageMessages.t("netOperatingCashFlow"), amount: data.operating.total.toFixed(2) },
+        { metric: pageMessages.t("netInvestingCashFlow"), amount: data.investing.total.toFixed(2) },
+        { metric: pageMessages.t("netFinancingCashFlow"), amount: data.financing.total.toFixed(2) },
+        { metric: pageMessages.t("netCashChange"), amount: data.netCashChange.toFixed(2) },
       ],
     },
     {
       sheetName: "Cash Flow Detail",
       columns: [
-        { header: "Activity", key: "activity", width: 16 },
-        { header: "Code", key: "accountCode", width: 12 },
-        { header: "Account", key: "accountName", width: 34 },
-        { header: "Amount (AED)", key: "amount", width: 18 },
+        { header: pageMessages.t("activity"), key: "activity", width: 16 },
+        { header: pageMessages.t("code"), key: "accountCode", width: 12 },
+        { header: pageMessages.t("account"), key: "accountName", width: 34 },
+        { header: pageMessages.t("amountAed"), key: "amount", width: 18 },
       ],
       rows: detailRows.map((row) => ({
         activity: row.activity,
@@ -133,16 +134,18 @@ function prepareCashFlowExport(data: CashFlowData): ExportData[] {
 }
 
 function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: string }) {
+  const tr = pageMessages.useT();
+
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground py-2">No entries found.</p>;
+    return <p className="text-sm text-muted-foreground py-2">{tr("noEntriesFound")}</p>;
   }
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Code</TableHead>
-          <TableHead>Account</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
+          <TableHead>{tr("code")}</TableHead>
+          <TableHead>{tr("account")}</TableHead>
+          <TableHead className="text-end">{tr("amount")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -150,7 +153,7 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: 
           <TableRow key={item.accountId}>
             <TableCell className="font-mono text-sm">{item.accountCode}</TableCell>
             <TableCell>{item.accountName}</TableCell>
-            <TableCell className="text-right font-mono">
+            <TableCell className="text-end font-mono">
               {formatCurrency(item.amount, "AED", locale)}
             </TableCell>
           </TableRow>
@@ -165,6 +168,8 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale: 
 // ================================
 
 function ProfitLossTab({ companyId, locale }: { companyId: string; locale: string }) {
+  const tr = pageMessages.useT();
+
   const defaults = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
@@ -187,16 +192,16 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>{tr("startDate")}</Label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>{tr("endDate")}</Label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
-              <Search className="h-4 w-4 mr-2" />
-              Generate
+              <Search className="h-4 w-4 me-2" />
+              {tr("generate")}
             </Button>
           </div>
         </CardContent>
@@ -212,7 +217,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
       {error && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-destructive">Failed to load profit & loss statement.</p>
+            <p className="text-destructive">{tr("failedToLoadProfitLossStatement")}</p>
           </CardContent>
         </Card>
       )}
@@ -223,7 +228,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Revenue</CardDescription>
+                <CardDescription>{tr("totalRevenue")}</CardDescription>
                 <CardTitle className="text-2xl text-success flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
                   {formatCurrency(data.revenue, "AED", locale)}
@@ -232,7 +237,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Expenses</CardDescription>
+                <CardDescription>{tr("totalExpenses")}</CardDescription>
                 <CardTitle className="text-2xl text-destructive flex items-center gap-2">
                   <TrendingDown className="h-5 w-5" />
                   {formatCurrency(data.expenses, "AED", locale)}
@@ -241,7 +246,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Net Income</CardDescription>
+                <CardDescription>{tr("netIncome")}</CardDescription>
                 <CardTitle
                   className={`text-2xl flex items-center gap-2 ${data.netIncome >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -255,7 +260,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           {/* Revenue Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Revenue</CardTitle>
+              <CardTitle className="text-lg">{tr("revenue")}</CardTitle>
               <CardDescription>
                 {formatDate(data.startDate, locale)} - {formatDate(data.endDate, locale)}
               </CardDescription>
@@ -264,8 +269,10 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
               <BreakdownTable items={data.breakdown.revenue} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Revenue</span>
-                <span className="font-mono">{formatCurrency(data.revenue, "AED", locale)}</span>
+                <span>{tr("totalRevenue")}</span>
+                <span dir="ltr" className="font-mono">
+                  {formatCurrency(data.revenue, "AED", locale)}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -273,14 +280,16 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           {/* Expense Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Expenses</CardTitle>
+              <CardTitle className="text-lg">{tr("expenses")}</CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.breakdown.expenses} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Expenses</span>
-                <span className="font-mono">{formatCurrency(data.expenses, "AED", locale)}</span>
+                <span>{tr("totalExpenses")}</span>
+                <span dir="ltr" className="font-mono">
+                  {formatCurrency(data.expenses, "AED", locale)}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -295,6 +304,8 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
 // ================================
 
 function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: string }) {
+  const tr = pageMessages.useT();
+
   const today = new Date().toISOString().slice(0, 10);
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
@@ -316,12 +327,12 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div className="space-y-2">
-              <Label>As of Date</Label>
+              <Label>{tr("asOfDate")}</Label>
               <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
-              <Search className="h-4 w-4 mr-2" />
-              Generate
+              <Search className="h-4 w-4 me-2" />
+              {tr("generate")}
             </Button>
           </div>
         </CardContent>
@@ -337,7 +348,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
       {error && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-destructive">Failed to load balance sheet.</p>
+            <p className="text-destructive">{tr("failedToLoadBalanceSheet")}</p>
           </CardContent>
         </Card>
       )}
@@ -348,17 +359,17 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           <div className="flex items-center gap-2">
             {data.isBalanced ? (
               <Badge variant="outline" className="text-success border-success">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Balanced
+                <CheckCircle2 className="h-3 w-3 me-1" />
+                {tr("balanced")}
               </Badge>
             ) : (
               <Badge variant="destructive">
-                <XCircle className="h-3 w-3 mr-1" />
-                Not Balanced
+                <XCircle className="h-3 w-3 me-1" />
+                {tr("notBalanced")}
               </Badge>
             )}
             <span className="text-sm text-muted-foreground">
-              As of {formatDate(data.asOfDate, locale)}
+              {tr("asOf", { formatDate: formatDate(data.asOfDate, locale) })}
             </span>
           </div>
 
@@ -366,7 +377,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Assets</CardDescription>
+                <CardDescription>{tr("totalAssets")}</CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.assets.total, "AED", locale)}
                 </CardTitle>
@@ -374,7 +385,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Liabilities</CardDescription>
+                <CardDescription>{tr("totalLiabilities")}</CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.liabilities.total, "AED", locale)}
                 </CardTitle>
@@ -382,7 +393,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Equity</CardDescription>
+                <CardDescription>{tr("totalEquity")}</CardDescription>
                 <CardTitle className="text-2xl">
                   {formatCurrency(data.equity.total, "AED", locale)}
                 </CardTitle>
@@ -393,14 +404,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Assets */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Assets</CardTitle>
+              <CardTitle className="text-lg">{tr("assets")}</CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.assets.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Assets</span>
-                <span className="font-mono">
+                <span>{tr("totalAssets")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.assets.total, "AED", locale)}
                 </span>
               </div>
@@ -410,14 +421,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Liabilities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Liabilities</CardTitle>
+              <CardTitle className="text-lg">{tr("liabilities")}</CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.liabilities.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Liabilities</span>
-                <span className="font-mono">
+                <span>{tr("totalLiabilities")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.liabilities.total, "AED", locale)}
                 </span>
               </div>
@@ -427,14 +438,14 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           {/* Equity */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Equity</CardTitle>
+              <CardTitle className="text-lg">{tr("equity")}</CardTitle>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.equity.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Total Equity</span>
-                <span className="font-mono">
+                <span>{tr("totalEquity")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.equity.total, "AED", locale)}
                 </span>
               </div>
@@ -446,12 +457,12 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
             <CardContent className="pt-6">
               <div className="flex items-center justify-between text-lg">
                 <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Assets</p>
+                  <p className="text-sm text-muted-foreground">{tr("assets")}</p>
                   <p className="font-bold">{formatCurrency(data.assets.total, "AED", locale)}</p>
                 </div>
                 <Scale className="h-6 w-6 text-muted-foreground" />
                 <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Liabilities + Equity</p>
+                  <p className="text-sm text-muted-foreground">{tr("liabilitiesEquity")}</p>
                   <p className="font-bold">
                     {formatCurrency(data.totalLiabilitiesAndEquity, "AED", locale)}
                   </p>
@@ -470,6 +481,8 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
 // ================================
 
 function CashFlowTab({ companyId, locale }: { companyId: string; locale: string }) {
+  const tr = pageMessages.useT();
+
   const { toast } = useToast();
   const defaults = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaults.startDate);
@@ -496,14 +509,14 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
         `cash-flow-statement-${data.startDate}-to-${data.endDate}`
       );
       toast({
-        title: "Cash flow exported",
-        description: "The statement workbook has been downloaded for review.",
+        title: tr("cashFlowExported"),
+        description: tr("theStatementWorkbookHasBeenDownloaded"),
       });
     } catch (exportError: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: exportError?.message || "Could not export the cash flow statement.",
+        title: tr("exportFailed"),
+        description: exportError?.message || tr("couldNotExportTheCashFlow"),
       });
     }
   };
@@ -514,20 +527,20 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-4 items-end">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>{tr("startDate")}</Label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>{tr("endDate")}</Label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
-              <Search className="h-4 w-4 mr-2" />
-              Generate
+              <Search className="h-4 w-4 me-2" />
+              {tr("generate")}
             </Button>
             <Button variant="outline" onClick={() => void handleExport()} disabled={!data}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
+              <Download className="h-4 w-4 me-2" />
+              {tr("export")}
             </Button>
           </div>
         </CardContent>
@@ -543,7 +556,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
       {error && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-destructive">Failed to load cash flow statement.</p>
+            <p className="text-destructive">{tr("failedToLoadCashFlowStatement")}</p>
           </CardContent>
         </Card>
       )}
@@ -554,7 +567,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Operating</CardDescription>
+                <CardDescription>{tr("operating")}</CardDescription>
                 <CardTitle
                   className={`text-xl ${data.operating.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -564,7 +577,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Investing</CardDescription>
+                <CardDescription>{tr("investing")}</CardDescription>
                 <CardTitle
                   className={`text-xl ${data.investing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -574,7 +587,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Financing</CardDescription>
+                <CardDescription>{tr("financing")}</CardDescription>
                 <CardTitle
                   className={`text-xl ${data.financing.total >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -584,7 +597,7 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
             </Card>
             <Card className="border-2">
               <CardHeader className="pb-2">
-                <CardDescription>Net Cash Change</CardDescription>
+                <CardDescription>{tr("netCashChange2")}</CardDescription>
                 <CardTitle
                   className={`text-xl flex items-center gap-2 ${data.netCashChange >= 0 ? "text-success" : "text-destructive"}`}
                 >
@@ -598,15 +611,15 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Operating Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Operating Activities</CardTitle>
-              <CardDescription>Cash from day-to-day business operations</CardDescription>
+              <CardTitle className="text-lg">{tr("operatingActivities")}</CardTitle>
+              <CardDescription>{tr("cashFromDayToDayBusiness")}</CardDescription>
             </CardHeader>
             <CardContent>
               <BreakdownTable items={data.operating.breakdown} locale={locale} />
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Operating Cash Flow</span>
-                <span className="font-mono">
+                <span>{tr("netOperatingCashFlow2")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.operating.total, "AED", locale)}
                 </span>
               </div>
@@ -616,21 +629,21 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Investing Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Investing Activities</CardTitle>
-              <CardDescription>Cash from buying/selling long-term assets</CardDescription>
+              <CardTitle className="text-lg">{tr("investingActivities")}</CardTitle>
+              <CardDescription>{tr("cashFromBuyingSellingLongTerm")}</CardDescription>
             </CardHeader>
             <CardContent>
               {data.investing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  No investing activities in this period.
+                  {tr("noInvestingActivitiesInThisPeriod")}
                 </p>
               ) : (
                 <BreakdownTable items={data.investing.breakdown} locale={locale} />
               )}
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Investing Cash Flow</span>
-                <span className="font-mono">
+                <span>{tr("netInvestingCashFlow2")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.investing.total, "AED", locale)}
                 </span>
               </div>
@@ -640,21 +653,21 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           {/* Financing Activities */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Financing Activities</CardTitle>
-              <CardDescription>Cash from debt, equity, and dividends</CardDescription>
+              <CardTitle className="text-lg">{tr("financingActivities")}</CardTitle>
+              <CardDescription>{tr("cashFromDebtEquityAndDividends")}</CardDescription>
             </CardHeader>
             <CardContent>
               {data.financing.breakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
-                  No financing activities in this period.
+                  {tr("noFinancingActivitiesInThisPeriod")}
                 </p>
               ) : (
                 <BreakdownTable items={data.financing.breakdown} locale={locale} />
               )}
               <Separator className="my-2" />
               <div className="flex justify-between items-center font-bold py-2">
-                <span>Net Financing Cash Flow</span>
-                <span className="font-mono">
+                <span>{tr("netFinancingCashFlow2")}</span>
+                <span dir="ltr" className="font-mono">
                   {formatCurrency(data.financing.total, "AED", locale)}
                 </span>
               </div>
@@ -671,6 +684,8 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
 // ================================
 
 export default function FinancialStatements() {
+  const tr = pageMessages.useT();
+
   const { locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const search = useSearch();
@@ -696,7 +711,7 @@ export default function FinancialStatements() {
   if (!companyId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">No company found. Please create a company first.</p>
+        <p className="text-muted-foreground">{tr("noCompanyFoundPleaseCreateA")}</p>
       </div>
     );
   }
@@ -704,26 +719,26 @@ export default function FinancialStatements() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Financial Statements"
-        description="Generate profit & loss, balance sheet, and cash flow statements"
+        eyebrow={tr("accounting")}
+        title={tr("financialStatements")}
+        description={tr("generateProfitLossBalanceSheetAnd")}
         backHref="/reports"
-        backLabel="Back to reports"
+        backLabel={tr("backToReports")}
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profit-loss" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
-            Profit & Loss
+            {tr("profitLoss")}
           </TabsTrigger>
           <TabsTrigger value="balance-sheet" className="flex items-center gap-2">
             <Scale className="h-4 w-4" />
-            Balance Sheet
+            {tr("balanceSheet")}
           </TabsTrigger>
           <TabsTrigger value="cash-flow" className="flex items-center gap-2">
             <Banknote className="h-4 w-4" />
-            Cash Flow
+            {tr("cashFlow")}
           </TabsTrigger>
         </TabsList>
 

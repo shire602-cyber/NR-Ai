@@ -269,8 +269,9 @@ async function main() {
       ok("D1: changing only periodEnd is refused too", r.status === 400 && r.json?.code === "VAT_PERIOD_IMMUTABLE", { s: r.status, j: r.json });
       r = await api("PATCH", `/api/vat-returns/${vrId}`, { token: c.token, body: { periodStart: prevStart, periodEnd: prevEnd, notes: "same period" } });
       ok("D1: sending the stored period back is accepted", r.status === 200, { s: r.status, j: r.json });
-      r = await api("PATCH", `/api/vat-returns/${vrId}`, { token: c.token, body: { box8TotalVat: 12.5 } });
-      ok("D1: manual box edits on a DRAFT return still work", r.status === 200 && close(r.json?.box8TotalVat, 12.5), { s: r.status, j: r.json });
+      // a manual edit of a figure now needs a written reason (10+ characters) in the same request
+      r = await api("PATCH", `/api/vat-returns/${vrId}`, { token: c.token, body: { box8TotalVat: 12.5, adjustmentReason: "Test edit: hand-corrected total" } });
+      ok("D1: manual box edits on a DRAFT return still work (with a reason)", r.status === 200 && close(r.json?.box8TotalVat, 12.5), { s: r.status, j: r.json });
       r = await api("PATCH", `/api/vat-returns/${vrId}`, { token: c.token, body: { status: "pending_review" } });
       ok("D1: a closed period may move to pending_review", r.status === 200 && r.json?.status === "pending_review", { s: r.status, j: r.json });
 
