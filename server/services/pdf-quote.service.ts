@@ -1,5 +1,6 @@
 import { createPdfDocument } from "./pdf-fonts";
 import type { Quote, QuoteLine, Company } from "../../shared/schema";
+import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
 
 /**
@@ -163,10 +164,14 @@ export async function generateQuotePDF(
         doc.fillColor("#1F2937");
         doc.text(line.description, colX.description, y + 8, { width: 230 });
         doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
-        doc.text(formatUnitPriceCurrency(line.unitPrice, quote.currency), colX.price, y + 8, {
+        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, quote.currency);
+        doc.fontSize(fitFontSize(doc, unitPriceText, 60, 9));
+        doc.text(unitPriceText, colX.price, y + 8, {
           width: 60,
           align: "center",
+          lineBreak: false,
         });
+        doc.fontSize(9);
         doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: "center" });
         doc.text(formatAmount(lineTotal, quote.currency), colX.amount - 60, y + 8, {
           width: 60,

@@ -979,7 +979,13 @@ async function main() {
 
       await page.request.patch(`${BASE}/api/companies/${companyId}`, {
         headers: { "x-csrf-token": csrfToken ?? "" },
-        data: { trnVatNumber: "100123456700003" },
+        // An e-invoice needs the seller's TRN and full address.
+        data: {
+          trnVatNumber: "100123456700003",
+          addressStreet: "Office 1804, Boulevard Plaza",
+          addressCity: "Dubai",
+          emirate: "dubai",
+        },
       });
 
       const check = await (

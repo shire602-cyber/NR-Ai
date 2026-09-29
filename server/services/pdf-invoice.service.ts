@@ -2,6 +2,7 @@ import { createPdfDocument } from "./pdf-fonts";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
+import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency, formatUnitPrice } from "../../shared/format-unit-price";
 
 const PAGE_WIDTH = 595.28;
@@ -234,7 +235,7 @@ async function generateStandardInvoicePDF(
       doc.text("Qty", colX.qty, tableTop + 7, { width: colWidths.qty, align: "center" });
       doc.text("Unit Price", colX.price, tableTop + 7, { width: colWidths.price, align: "right" });
       doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
-      doc.text("Amount", colX.amount - colWidths.amount + 5, tableTop + 7, {
+      doc.text("Amount", colX.amount - colWidths.amount - 1, tableTop + 7, {
         width: colWidths.amount,
         align: "right",
       });
@@ -256,14 +257,18 @@ async function generateStandardInvoicePDF(
           width: colWidths.qty,
           align: "center",
         });
-        doc.text(formatUnitPriceCurrency(line.unitPrice, invoice.currency), colX.price, y + 7, {
+        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, invoice.currency);
+        doc.fontSize(fitFontSize(doc, unitPriceText, colWidths.price, 9));
+        doc.text(unitPriceText, colX.price, y + 7, {
           width: colWidths.price,
           align: "right",
+          lineBreak: false,
         });
+        doc.fontSize(9);
         doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
         doc.text(
           formatAmount(lineTotal, invoice.currency),
-          colX.amount - colWidths.amount + 5,
+          colX.amount - colWidths.amount - 1,
           y + 7,
           { width: colWidths.amount, align: "right" }
         );
@@ -356,6 +361,7 @@ async function generateStandardInvoicePDF(
       doc.text(formatAmount(invoice.total, invoice.currency), totalsX + labelW, y + 2, {
         width: valueW,
         align: "right",
+        lineBreak: false,
       });
 
       y += 40;
@@ -374,7 +380,7 @@ async function generateStandardInvoicePDF(
       if (qrPng) {
         doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
         doc.fontSize(6).fillColor("#6B7280").font("Helvetica");
-        doc.text("FTA e-Invoice", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
+        doc.text("Invoice summary", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
       } else {
         doc.rect(qrX, qrY, qrSize, qrSize).stroke("#D1D5DB");
         doc.fontSize(6).fillColor("#9CA3AF").font("Helvetica");

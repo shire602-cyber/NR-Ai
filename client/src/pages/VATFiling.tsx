@@ -956,8 +956,10 @@ export default function VATFiling() {
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h2 className="font-display text-2xl leading-none tracking-tight text-foreground">
-                {format(currentFiling.periodStart, "d MMM")} –{" "}
-                {format(currentFiling.periodEnd, "d MMM yyyy")}
+                <bdi dir="ltr">
+                  {format(currentFiling.periodStart, "d MMM")} –{" "}
+                  {format(currentFiling.periodEnd, "d MMM yyyy")}
+                </bdi>
               </h2>
               {currentFiling.hasReturn && getStatusBadge(currentFiling.status)}
             </div>
@@ -1055,7 +1057,7 @@ export default function VATFiling() {
               {locale === "ar" ? "آخر موعد للتقديم" : "Filing deadline"}
             </p>
             <p className="mt-1 font-display text-xl leading-tight tracking-tight text-foreground">
-              {format(currentFiling.dueDate, "d MMMM yyyy")}
+              <bdi dir="ltr">{format(currentFiling.dueDate, "d MMMM yyyy")}</bdi>
             </p>
             {(() => {
               const d = currentFiling.daysUntilDue;
@@ -1195,11 +1197,13 @@ export default function VATFiling() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">
-                                {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                                {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                                <bdi dir="ltr">
+                                  {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                  {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                                </bdi>
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Due {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
+                                Due <bdi dir="ltr">{format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}</bdi>
                               </p>
                             </div>
                             <div className="flex flex-col items-end gap-1">
@@ -1331,11 +1335,13 @@ export default function VATFiling() {
                         {vatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
-                              {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                              {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                              <bdi dir="ltr">
+                                {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
+                              </bdi>
                             </TableCell>
                             <TableCell>
-                              {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
+                              <bdi dir="ltr">{format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}</bdi>
                             </TableCell>
                             <TableCell className="text-right font-mono">
                               {formatCurrency(
@@ -1547,8 +1553,10 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  <bdi dir="ltr">
+                    {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                    {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  </bdi>
                 </span>
               )}
             </DialogDescription>
@@ -1617,8 +1625,10 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  <bdi dir="ltr">
+                    {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                    {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
+                  </bdi>
                 </span>
               )}
             </DialogDescription>

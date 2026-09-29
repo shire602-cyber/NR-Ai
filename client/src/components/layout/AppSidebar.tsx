@@ -304,8 +304,10 @@ export function AppSidebar() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Always side="left": styles/rtl.css mirrors left/right under dir="rtl", so
+  // passing "right" in Arabic flipped twice and put the sidebar over the page.
   return (
-    <Sidebar side={isRTL ? "right" : "left"}>
+    <Sidebar side="left">
       <motion.div
         initial={{ opacity: 0, x: rtlValue(-12, 12) }}
         animate={{ opacity: 1, x: 0 }}
