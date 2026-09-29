@@ -3,9 +3,12 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
+import Decimal from "decimal.js";
 import {
+  buildBalanceSheetTotals,
   classifyBalanceSheetAccount,
   computeCashFlow,
+  roundRowsWithTotal,
 } from "../services/financial-statements";
 
 interface AccountBreakdown {
@@ -99,11 +102,9 @@ export function registerFinancialStatementRoutes(app: Express) {
 
       // Income = net credits to income accounts (credit - debit)
       const revenueBreakdown: AccountBreakdown[] = [];
-      let totalRevenue = 0;
 
       // Expenses = net debits to expense accounts (debit - credit)
       const expenseBreakdown: AccountBreakdown[] = [];
-      let totalExpenses = 0;
 
       for (const [accountId, data] of Object.entries(grouped)) {
         const account = accountMap.get(accountId);
@@ -111,7 +112,6 @@ export function registerFinancialStatementRoutes(app: Express) {
 
         if (account.type === "income") {
           const amount = data.creditTotal - data.debitTotal;
-          totalRevenue += amount;
           revenueBreakdown.push({
             accountId,
             accountCode: data.accountCode,
@@ -120,7 +120,6 @@ export function registerFinancialStatementRoutes(app: Express) {
           });
         } else if (account.type === "expense") {
           const amount = data.debitTotal - data.creditTotal;
-          totalExpenses += amount;
           expenseBreakdown.push({
             accountId,
             accountCode: data.accountCode,
@@ -134,15 +133,20 @@ export function registerFinancialStatementRoutes(app: Express) {
       revenueBreakdown.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
       expenseBreakdown.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
 
+      // Rows are rounded to fils first; every total is the sum of the rounded
+      // rows so the statement always ties to what it displays.
+      const revenueRounded = roundRowsWithTotal(revenueBreakdown);
+      const expensesRounded = roundRowsWithTotal(expenseBreakdown);
+
       res.json({
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
-        revenue: Math.round(totalRevenue * 100) / 100,
-        expenses: Math.round(totalExpenses * 100) / 100,
-        netIncome: Math.round((totalRevenue - totalExpenses) * 100) / 100,
+        revenue: revenueRounded.total,
+        expenses: expensesRounded.total,
+        netIncome: new Decimal(revenueRounded.total).minus(expensesRounded.total).toNumber(),
         breakdown: {
-          revenue: revenueBreakdown,
-          expenses: expenseBreakdown,
+          revenue: revenueRounded.rows,
+          expenses: expensesRounded.rows,
         },
       });
     })
@@ -202,13 +206,10 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       const assetBreakdown: AccountBreakdown[] = [];
-      let totalAssets = 0;
 
       const liabilityBreakdown: AccountBreakdown[] = [];
-      let totalLiabilities = 0;
 
       const equityBreakdown: AccountBreakdown[] = [];
-      let totalEquity = 0;
 
       // Income/expense roll up into retained earnings for BS
       let retainedEarnings = 0;
@@ -232,7 +233,6 @@ export function registerFinancialStatementRoutes(app: Express) {
         });
 
         if (classified.section === "asset") {
-          totalAssets += classified.amount;
           assetBreakdown.push({
             accountId,
             accountCode: data.accountCode,
@@ -240,7 +240,6 @@ export function registerFinancialStatementRoutes(app: Express) {
             amount: classified.amount,
           });
         } else if (classified.section === "liability") {
-          totalLiabilities += classified.amount;
           liabilityBreakdown.push({
             accountId,
             accountCode: data.accountCode,
@@ -248,7 +247,6 @@ export function registerFinancialStatementRoutes(app: Express) {
             amount: classified.amount,
           });
         } else if (classified.section === "equity") {
-          totalEquity += classified.amount;
           equityBreakdown.push({
             accountId,
             accountCode: data.accountCode,
@@ -262,7 +260,6 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       // Add retained earnings to equity
-      totalEquity += retainedEarnings;
       if (retainedEarnings !== 0) {
         equityBreakdown.push({
           accountId: "retained-earnings",
@@ -279,23 +276,20 @@ export function registerFinancialStatementRoutes(app: Express) {
       liabilityBreakdown.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
       equityBreakdown.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
 
+      const bs = buildBalanceSheetTotals({
+        assets: assetBreakdown,
+        liabilities: liabilityBreakdown,
+        equity: equityBreakdown,
+      });
+
       res.json({
         asOfDate: asOfDate.toISOString(),
-        assets: {
-          total: Math.round(totalAssets * 100) / 100,
-          breakdown: assetBreakdown,
-        },
-        liabilities: {
-          total: Math.round(totalLiabilities * 100) / 100,
-          breakdown: liabilityBreakdown,
-        },
-        equity: {
-          total: Math.round(totalEquity * 100) / 100,
-          breakdown: equityBreakdown,
-        },
-        // Accounting equation check
-        totalLiabilitiesAndEquity: Math.round((totalLiabilities + totalEquity) * 100) / 100,
-        isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+        assets: { total: bs.assets.total, breakdown: bs.assets.rows },
+        liabilities: { total: bs.liabilities.total, breakdown: bs.liabilities.rows },
+        equity: { total: bs.equity.total, breakdown: bs.equity.rows },
+        // Accounting equation check (totals are sums of the rounded rows)
+        totalLiabilitiesAndEquity: bs.totalLiabilitiesAndEquity,
+        isBalanced: bs.isBalanced,
       });
     })
   );

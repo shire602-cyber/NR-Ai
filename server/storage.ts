@@ -468,7 +468,9 @@ export interface IStorage {
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
   createJournalEntry(
     entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
-    lines: Array<Omit<InsertJournalLine, "entryId">>
+    lines: Array<Omit<InsertJournalLine, "entryId">>,
+    /** Run inside the caller's transaction (document + journal commit or roll back together). */
+    opts?: { tx?: any }
   ): Promise<JournalEntry>;
   updateJournalEntry(
     id: string,
@@ -1852,7 +1854,8 @@ export class DatabaseStorage implements IStorage {
 
   async createJournalEntry(
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
-    lines: Array<Omit<InsertJournalLine, "entryId">>
+    lines: Array<Omit<InsertJournalLine, "entryId">>,
+    opts?: { tx?: any }
   ): Promise<JournalEntry> {
     if (!Array.isArray(lines) || lines.length === 0) {
       throw new Error("Journal entry must have at least one line");
@@ -1878,35 +1881,41 @@ export class DatabaseStorage implements IStorage {
     const lockKey1 = insertEntry.companyId ? hashStringToInt(insertEntry.companyId) : 0;
     const lockKey2 = hashStringToInt(prefix);
 
+    const insertInTx = async (tx: typeof db) => {
+      // Serialize numbering for the lifetime of THIS transaction. The
+      // xact-scoped advisory lock is held until commit, so two concurrent
+      // creators can't compute the same MAX+1 (the flaw in generating the
+      // number before the insert in a separate session-scoped lock).
+      if (insertEntry.companyId) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
+        const res: any = await tx.execute(sql`
+          SELECT COALESCE(
+            MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
+            0
+          ) AS max_seq
+          FROM journal_entries
+          WHERE company_id = ${insertEntry.companyId}
+            AND entry_number LIKE ${prefix + "-%"}
+            AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
+        `);
+        const rows = (res.rows ?? res) as Array<{ max_seq: number | string | null }>;
+        const next = Number(rows[0]?.max_seq ?? 0) + 1;
+        insertEntry.entryNumber = `${prefix}-${String(next).padStart(3, "0")}`;
+      }
+      const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
+      for (const line of lines) {
+        await tx.insert(journalLines).values({ ...line, entryId: entry.id });
+      }
+      return entry;
+    };
+
+    // Caller-supplied transaction: the advisory xact lock above already
+    // serialises numbering, and the caller owns commit / rollback, so no retry.
+    if (opts?.tx) return await insertInTx(opts.tx);
+
     while (true) {
       try {
-        return await db.transaction(async (tx: typeof db) => {
-          // Serialize numbering for the lifetime of THIS transaction. The
-          // xact-scoped advisory lock is held until commit, so two concurrent
-          // creators can't compute the same MAX+1 (the flaw in generating the
-          // number before the insert in a separate session-scoped lock).
-          if (insertEntry.companyId) {
-            await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
-            const res: any = await tx.execute(sql`
-              SELECT COALESCE(
-                MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
-                0
-              ) AS max_seq
-              FROM journal_entries
-              WHERE company_id = ${insertEntry.companyId}
-                AND entry_number LIKE ${prefix + "-%"}
-                AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
-            `);
-            const rows = (res.rows ?? res) as Array<{ max_seq: number | string | null }>;
-            const next = Number(rows[0]?.max_seq ?? 0) + 1;
-            insertEntry.entryNumber = `${prefix}-${String(next).padStart(3, "0")}`;
-          }
-          const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
-          for (const line of lines) {
-            await tx.insert(journalLines).values({ ...line, entryId: entry.id });
-          }
-          return entry;
-        });
+        return await db.transaction(insertInTx);
       } catch (err: any) {
         // Drizzle wraps the pg error — the SQLSTATE 23505 and constraint name
         // live on err.cause. Walk the cause chain to find them.

@@ -8,6 +8,18 @@ import { createLogger } from "../config/logger";
 import { calculateDocumentTotals } from "../services/document-totals.service";
 import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
 import { db } from "../db";
+import { getLatestRate } from "./exchange-rates.routes";
+import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
+import { deriveVatSupplyType } from "../services/vat-supply-type";
+import { UAE_VAT_RATE } from "../constants";
+import { normalizeDocumentLines } from "../services/document-line-limits";
+
+// Quote lines are stored as the client sent them, so normalise the supply
+// type (0% lines are zero-rated, never the column default) on the way in.
+function withSupplyType(line: any) {
+  const rate = Number(line?.vatRate ?? UAE_VAT_RATE);
+  return { ...line, vatSupplyType: deriveVatSupplyType(rate === 5 ? UAE_VAT_RATE : rate, line?.vatSupplyType) };
+}
 
 const logger = createLogger("quotes-routes");
 
@@ -78,12 +90,15 @@ export function registerQuoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...quoteData } = req.body;
+      const { lines: rawLines, ...quoteData } = req.body;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      // Cap and round quantity / unit price to what the columns can store.
+      const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
 
       // `quotes.number` is NOT NULL and this route never set it, so any caller
       // that did not hand-type a number got an HTTP 500 from Postgres. Allocate
@@ -96,6 +111,16 @@ export function registerQuoteRoutes(app: Express) {
       const quoteNumber =
         suppliedNumber ?? (await allocateInvoiceNumber(companyId, "quote", new Date()));
 
+      if (Array.isArray(lines)) {
+        const revenueCheck = await checkRevenueAccountsForCompany(
+          companyId,
+          lines.map((l: any) => l?.revenueAccountId)
+        );
+        if (!revenueCheck.ok) {
+          return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+        }
+      }
+
       const totals = calculateDocumentTotals(lines);
       const quote = await storage.createQuote(
         normalizeQuoteDates({ ...quoteData, ...totals, number: quoteNumber, companyId })
@@ -103,7 +128,7 @@ export function registerQuoteRoutes(app: Express) {
 
       if (lines && Array.isArray(lines)) {
         for (const line of lines) {
-          await storage.createQuoteLine({ ...line, quoteId: quote.id });
+          await storage.createQuoteLine({ ...withSupplyType(line), quoteId: quote.id });
         }
       }
 
@@ -121,7 +146,7 @@ export function registerQuoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...updateData } = req.body;
+      const { lines: rawLines, ...updateData } = req.body;
 
       const quote = await storage.getQuote(id);
       if (!quote) {
@@ -131,6 +156,18 @@ export function registerQuoteRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, quote.companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
+
+      if (Array.isArray(lines)) {
+        const revenueCheck = await checkRevenueAccountsForCompany(
+          quote.companyId,
+          lines.map((l: any) => l?.revenueAccountId)
+        );
+        if (!revenueCheck.ok) {
+          return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+        }
       }
 
       const updated = await storage.updateQuote(
@@ -145,7 +182,7 @@ export function registerQuoteRoutes(app: Express) {
       if (lines && Array.isArray(lines)) {
         await storage.deleteQuoteLinesByQuoteId(quote.id);
         for (const line of lines) {
-          await storage.createQuoteLine({ ...line, quoteId: quote.id });
+          await storage.createQuoteLine({ ...withSupplyType(line), quoteId: quote.id });
         }
       }
 
@@ -210,6 +247,24 @@ export function registerQuoteRoutes(app: Express) {
       // recomputed from the quote lines, not trusted from the quote row.
       const invoiceDate = new Date();
       const totals = calculateDocumentTotals(lines as any);
+
+      // Carry the quote's currency over. Quotes store no exchange rate, and a
+      // stored rate may be stale anyway, so a foreign-currency invoice takes the
+      // rate for the conversion date from exchange_rates - the same lookup
+      // invoice creation uses when the caller supplies none. Resolved before
+      // the number is allocated so a missing rate cannot burn a number.
+      const docCurrency = (quote.currency || "AED").toUpperCase();
+      let exchangeRate = 1;
+      if (docCurrency !== "AED") {
+        const stored = await getLatestRate(docCurrency, "AED", invoiceDate, quote.companyId);
+        if (!stored || stored <= 0) {
+          return res.status(422).json({
+            message: `No ${docCurrency}→AED exchange rate available. Add one under Exchange Rates, then convert the quote again.`,
+            code: "NO_EXCHANGE_RATE",
+          });
+        }
+        exchangeRate = Number(stored);
+      }
       const invoiceNumber = await allocateInvoiceNumber(
         quote.companyId,
         "invoice",
@@ -222,7 +277,9 @@ export function registerQuoteRoutes(app: Express) {
         customerName: quote.customerName,
         customerTrn: quote.customerTrn,
         date: invoiceDate,
-        currency: quote.currency,
+        currency: docCurrency,
+        exchangeRate,
+        baseCurrencyAmount: Math.round(totals.total * exchangeRate * 100) / 100,
         subtotal: totals.subtotal,
         vatAmount: totals.vatAmount,
         total: totals.total,
@@ -237,7 +294,10 @@ export function registerQuoteRoutes(app: Express) {
           quantity: line.quantity,
           unitPrice: line.unitPrice,
           vatRate: line.vatRate,
-          vatSupplyType: line.vatSupplyType,
+          // The rate decides: a stale exempt / out-of-scope tag on a taxed
+          // quote line must not survive the conversion.
+          vatSupplyType: deriveVatSupplyType(Number(line.vatRate), line.vatSupplyType),
+          revenueAccountId: line.revenueAccountId,
         });
       }
 

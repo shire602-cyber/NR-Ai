@@ -4,6 +4,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
+import { PaymentDateField, toDateOnly } from "@/components/PaymentDateField";
 import {
   Receipt,
   Plus,
@@ -243,6 +244,7 @@ export default function ExpenseClaims() {
     resolver: zodResolver(paymentFormSchema),
     defaultValues: { payment_reference: "" },
   });
+  const [paymentDate, setPaymentDate] = useState<Date>(() => new Date());
 
   // ─── Mutations ────────────────────────────────────────
 
@@ -350,8 +352,19 @@ export default function ExpenseClaims() {
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: ({ id, payment_reference }: { id: string; payment_reference?: string | null }) =>
-      apiRequest("POST", `/api/expense-claims/${id}/mark-paid`, { payment_reference }),
+    mutationFn: ({
+      id,
+      payment_reference,
+      payment_date,
+    }: {
+      id: string;
+      payment_reference?: string | null;
+      payment_date?: string;
+    }) =>
+      apiRequest("POST", `/api/expense-claims/${id}/mark-paid`, {
+        payment_reference,
+        payment_date,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       queryClient.invalidateQueries({
@@ -463,12 +476,17 @@ export default function ExpenseClaims() {
   const handleOpenPaymentDialog = (claimId: string) => {
     setPaymentClaimId(claimId);
     paymentForm.reset({ payment_reference: "" });
+    setPaymentDate(new Date());
     setPaymentDialogOpen(true);
   };
 
   const handlePaymentSubmit = (data: PaymentFormData) => {
     if (!paymentClaimId) return;
-    markPaidMutation.mutate({ id: paymentClaimId, payment_reference: data.payment_reference });
+    markPaidMutation.mutate({
+      id: paymentClaimId,
+      payment_reference: data.payment_reference,
+      payment_date: toDateOnly(paymentDate),
+    });
   };
 
   // ─── Helpers ──────────────────────────────────────────
@@ -1322,6 +1340,12 @@ export default function ExpenseClaims() {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <PaymentDateField
+                value={paymentDate}
+                onChange={setPaymentDate}
+                testId="button-claim-payment-date"
               />
 
               <DialogFooter>

@@ -300,6 +300,16 @@ describe("aggregateInvoiceLines", () => {
     expect(result.standardRatedVat).toBe(5);
   });
 
+  it("treats a legacy line stored as exempt at 5% as standard-rated with its VAT", () => {
+    const result = aggregateInvoiceLines([
+      { quantity: 1, unitPrice: 1000, vatRate: 0.05, vatSupplyType: "exempt" },
+    ]);
+    expect(result.standardRatedAmount).toBe(1000);
+    expect(result.standardRatedVat).toBe(50);
+    expect(result.exemptAmount).toBe(0);
+    expect(result.outOfScopeAmount).toBe(0);
+  });
+
   it("returns all-zero buckets for zero invoices (empty array)", () => {
     const result = aggregateInvoiceLines([]);
     expect(result).toEqual({
@@ -331,19 +341,28 @@ describe("aggregateInvoiceLines", () => {
     expect(result.zeroRatedAmount).toBe(0);
   });
 
-  it("excludes out_of_scope supplies from every VAT 201 bucket", () => {
+  it("excludes 0% out_of_scope supplies from every VAT 201 bucket", () => {
     // Out-of-scope supplies (e.g. designated-zone transactions, supplies made
     // outside UAE) must not appear in Box 1, 4, or 5 — they are not reportable
     // on the FTA VAT 201 form. Tracked separately so callers can verify.
     const result = aggregateInvoiceLines([
       { quantity: 1, unitPrice: 100, vatRate: 0.05, vatSupplyType: "standard_rated" },
-      { quantity: 2, unitPrice: 250, vatRate: 0.05, vatSupplyType: "out_of_scope" },
+      { quantity: 2, unitPrice: 250, vatRate: 0, vatSupplyType: "out_of_scope" },
     ]);
     expect(result.standardRatedAmount).toBe(100);
     expect(result.standardRatedVat).toBe(5);
     expect(result.zeroRatedAmount).toBe(0);
     expect(result.exemptAmount).toBe(0);
     expect(result.outOfScopeAmount).toBe(500);
+  });
+
+  it("a 5% line typed out_of_scope is standard-rated: VAT was charged so it is payable", () => {
+    const result = aggregateInvoiceLines([
+      { quantity: 2, unitPrice: 250, vatRate: 0.05, vatSupplyType: "out_of_scope" },
+    ]);
+    expect(result.standardRatedAmount).toBe(500);
+    expect(result.standardRatedVat).toBe(25);
+    expect(result.outOfScopeAmount).toBe(0);
   });
 });
 

@@ -183,7 +183,14 @@ async function main() {
 
   // ── H2: filing status must be honest ───────────────────────
   {
-    const gen = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: today } });
+    // Only an ended period can be filed; an open one is a draft preview.
+    const prevEnd = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, 0)).toISOString().slice(0, 10);
+    const prevStart = prevEnd.slice(0, 8) + "01";
+    const open = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: monthStart, periodEnd: today } });
+    ok("H2 an open period is a draft preview and is not saved",
+      open.status === 200 && open.json?.isDraftPreview === true && !open.json?.id,
+      { status: open.status, preview: open.json?.isDraftPreview, id: open.json?.id });
+    const gen = await api("POST", `/api/companies/${companyId}/vat-returns/generate`, { token, body: { periodStart: prevStart, periodEnd: prevEnd } });
     const id = gen.json?.id;
     // submit with no FTA reference -> finalised only, explicitly NOT transmitted
     const s1 = await api("POST", `/api/vat-returns/${id}/submit`, { token, body: { notes: "review" } });

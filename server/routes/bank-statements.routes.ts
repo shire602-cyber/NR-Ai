@@ -11,6 +11,7 @@ import {
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { ACCOUNT_CODES } from "../constants";
 
 const log = createLogger("bank-statements");
@@ -64,6 +65,9 @@ const bankStatementImportSchema = z.object({
 const bankMatchSchema = z.object({
   matchedType: z.enum(["invoice", "receipt", "journal"]),
   matchedId: z.string().uuid("matchedId must be a valid UUID"),
+  // Optional payment date for invoice matches. Defaults to the bank
+  // transaction's own date; may not be in the future or before the invoice date.
+  paymentDate: z.string().min(1).optional().nullable(),
 });
 
 const bankCreateEntrySchema = z.object({
@@ -749,12 +753,20 @@ export function registerBankStatementRoutes(app: Express) {
 
         let journalEntryId: string | null = null;
         if (paymentAmount > 0.005) {
+          // The payment journal posts on the bank line's date unless the caller
+          // supplies a different `paymentDate`. Validated: not in the future
+          // and not in a locked period (a bank date before the invoice date is
+          // a legitimate deposit/prepayment).
+          const { date: paymentDate } = await resolveSettlementDate(companyId, {
+            requested: req.body.paymentDate,
+            fallback: txn.transactionDate,
+          });
           try {
             const result = await storage.recordInvoicePayment({
               invoiceId: matchedId,
               companyId,
               amount: paymentAmount,
-              date: new Date(txn.transactionDate),
+              date: paymentDate,
               method: "bank_reconciliation",
               reference: txn.reference,
               notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),

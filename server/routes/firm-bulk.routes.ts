@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { deriveVatSupplyType } from "../services/vat-supply-type";
 import type { Express, Request, Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
@@ -439,7 +440,7 @@ router.post(
           quantity: 1,
           unitPrice: amount,
           vatRate,
-          vatSupplyType: "standard_rated",
+          vatSupplyType: deriveVatSupplyType(Number(vatRate), null),
         });
 
         results.push({

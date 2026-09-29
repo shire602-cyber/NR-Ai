@@ -5,6 +5,8 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
+import { localWallDateToUtcMidnight } from "../utils/date";
 import { buildExpenseClaimJournalLines } from "../services/expense-claim-posting";
 
 const log = createLogger("expense-claims");
@@ -349,7 +351,9 @@ export function registerExpenseClaimRoutes(app: Express) {
         `SELECT MAX(expense_date) AS latest FROM expense_claim_items WHERE claim_id = $1`,
         [id]
       );
-      const latestExpenseDate = itemDates.rows[0]?.latest;
+      // expense_date is a date-only `timestamp` column; node-pg reads it in
+      // server-local time, so normalise to UTC midnight of the calendar day.
+      const latestExpenseDate = localWallDateToUtcMidnight(itemDates.rows[0]?.latest);
       if (latestExpenseDate) {
         await assertPeriodNotLocked(claim.company_id, latestExpenseDate);
       }
@@ -501,10 +505,13 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res.status(400).json({ message: "Only approved claims can be marked as paid" });
       }
 
-      // Mark-paid stamps the payment with NOW() and posts a cash JE on that date.
-      await assertPeriodNotLocked(claim.company_id, new Date());
+      const { payment_reference, payment_account_id, payment_date } = req.body;
 
-      const { payment_reference, payment_account_id } = req.body;
+      // The reimbursement cash JE posts on `payment_date` (optional, default
+      // today). It may not be in the future or inside a locked period.
+      const { date: payDate, ymd: payYmd } = await resolveSettlementDate(claim.company_id, {
+        requested: payment_date,
+      });
 
       // TD5: this handler's own comment promised a cash JE but never posted
       // one — the Employee Reimbursements Payable liability lived forever and
@@ -536,10 +543,10 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const updatedResult = await pool.query(
         `UPDATE expense_claims
-       SET status = 'paid', paid_at = NOW(), payment_reference = $1
+       SET status = 'paid', paid_at = COALESCE($3::timestamp, NOW()), payment_reference = $1
        WHERE id = $2
        RETURNING *`,
-        [payment_reference || null, id]
+        [payment_reference || null, id, payment_date ? payYmd : null]
       );
 
       if (gross > 0) {
@@ -549,7 +556,6 @@ export function registerExpenseClaimRoutes(app: Express) {
           id
         );
         if (!existingPayments.some((e) => e.status === "posted")) {
-          const payDate = new Date();
           const entryNumber = await storage.generateEntryNumber(claim.company_id, payDate);
           await storage.createJournalEntry(
             {
@@ -562,7 +568,7 @@ export function registerExpenseClaimRoutes(app: Express) {
               sourceId: id,
               createdBy: userId,
               postedBy: userId,
-              postedAt: payDate,
+              postedAt: new Date(),
             } as any,
             [
               {

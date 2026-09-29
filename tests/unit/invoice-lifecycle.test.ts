@@ -7,6 +7,7 @@ import {
   computeRealisedFx,
   buildPaymentJournalLines,
   round2,
+  selectVoidableEntries,
 } from "../../server/services/invoice-lifecycle";
 
 describe("buildPaymentJournalLines (A-B5 + A-B12 wiring)", () => {
@@ -157,6 +158,26 @@ describe("evaluateVoidRequest (A-1: void of a paid invoice)", () => {
   it("ignores non-void transitions", () => {
     expect(evaluateVoidRequest({ targetStatus: "paid", paidTotal: 999 })).toEqual({ ok: true });
   });
+
+  it("blocks voiding an invoice that has non-void credit notes", () => {
+    const d = evaluateVoidRequest({ targetStatus: "void", paidTotal: 0, creditNoteCount: 1 });
+    expect(d.ok).toBe(false);
+    if (!d.ok) {
+      expect(d.code).toBe("INVOICE_HAS_CREDIT_NOTES");
+      expect(d.status).toBe(409);
+      expect(d.message).toMatch(/void the credit notes first/i);
+      expect(d.message).toMatch(/final credit note/i);
+    }
+  });
+
+  it("blocks cancelling an invoice with credit notes too", () => {
+    const d = evaluateVoidRequest({ targetStatus: "cancelled", paidTotal: 0, creditNoteCount: 2 });
+    expect(d.ok).toBe(false);
+  });
+
+  it("allows voiding when there are no credit notes", () => {
+    expect(evaluateVoidRequest({ targetStatus: "void", paidTotal: 0, creditNoteCount: 0 })).toEqual({ ok: true });
+  });
 });
 
 describe("evaluateCreditNoteRequest (A-B3: dedup / cap)", () => {
@@ -268,5 +289,35 @@ describe("buildReversalLines (A-B2: balanced, fail-hard on missing accounts)", (
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("CHART_OF_ACCOUNTS_MISSING");
+  });
+});
+
+describe("selectVoidableEntries (void idempotency under the lock)", () => {
+  const e = (id: string, reversedEntryId: string | null = null, status = "posted") => ({ id, status, reversedEntryId });
+
+  it("an invoice's own posted entry is the original; nothing reverses it yet", () => {
+    const r = selectVoidableEntries([e("je1")]);
+    expect(r.original?.id).toBe("je1");
+    expect(r.reversal).toBeUndefined();
+  });
+
+  it("once a reversal exists it is found, and the original stays the original", () => {
+    const r = selectVoidableEntries([e("je1"), e("je2", "je1")]);
+    expect(r.original?.id).toBe("je1");
+    expect(r.reversal?.id).toBe("je2");
+  });
+
+  it("a credit note's entry points at the INVOICE's entry (outside the set): still the original", () => {
+    const r = selectVoidableEntries([e("cn1", "invoice-entry")]);
+    expect(r.original?.id).toBe("cn1");
+    expect(r.reversal).toBeUndefined();
+    const voided = selectVoidableEntries([e("cn1", "invoice-entry"), e("cn2", "cn1")]);
+    expect(voided.original?.id).toBe("cn1");
+    expect(voided.reversal?.id).toBe("cn2");
+  });
+
+  it("drafts and voided entries are ignored", () => {
+    expect(selectVoidableEntries([e("d", null, "draft")]).original).toBeUndefined();
+    expect(selectVoidableEntries([]).original).toBeUndefined();
   });
 });

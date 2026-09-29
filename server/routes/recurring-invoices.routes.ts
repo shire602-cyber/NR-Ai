@@ -4,6 +4,44 @@ import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
+import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
+import { normalizeDocumentLines } from "../services/document-line-limits";
+import { normaliseVatRate } from "../services/document-totals.service";
+import { deriveVatSupplyType } from "../services/vat-supply-type";
+
+// Lines live as JSON on the template; pull out the revenue accounts the lines
+// chose so they can be validated against the company chart.
+function revenueAccountIdsOf(linesJson: unknown): string[] {
+  try {
+    const lines = JSON.parse(typeof linesJson === "string" ? linesJson : JSON.stringify(linesJson));
+    return Array.isArray(lines)
+      ? lines.map((l: any) => l?.revenueAccountId).filter((id: unknown): id is string => !!id)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+// Template lines are stored as JSON exactly as sent. Cap / round the amounts to
+// what an invoice line can store (an oversized value is a clean 400 here rather
+// than a failed run later) and let the RATE decide the supply type, so a stale
+// exempt tag on a taxed line never reaches the generated invoices. Unparseable
+// input is returned unchanged — the callers / scheduler already deal with it.
+function normalizeTemplateLines(linesJson: unknown): string {
+  const raw = typeof linesJson === "string" ? linesJson : JSON.stringify(linesJson);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  if (!Array.isArray(parsed)) return raw;
+  const lines = normalizeDocumentLines(parsed as Array<Record<string, any>>).map((line) => {
+    const vatRate = normaliseVatRate(line?.vatRate);
+    return { ...line, vatRate, vatSupplyType: deriveVatSupplyType(vatRate, line?.vatSupplyType) };
+  });
+  return JSON.stringify(lines);
+}
 
 const log = createLogger("recurring-invoices");
 
@@ -102,6 +140,14 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         return res.status(400).json({ message: "linesJson must be valid JSON" });
       }
 
+      const revenueCheck = await checkRevenueAccountsForCompany(
+        companyId,
+        revenueAccountIdsOf(linesJson)
+      );
+      if (!revenueCheck.ok) {
+        return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+      }
+
       const parsedStartDate = new Date(startDate);
       const parsedEndDate = endDate ? new Date(endDate) : null;
 
@@ -114,7 +160,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         startDate: parsedStartDate,
         nextRunDate: parsedStartDate,
         endDate: parsedEndDate,
-        linesJson: typeof linesJson === "string" ? linesJson : JSON.stringify(linesJson),
+        linesJson: normalizeTemplateLines(linesJson),
         isActive: true,
         lastGeneratedInvoiceId: null,
         totalGenerated: 0,
@@ -165,6 +211,16 @@ export function registerRecurringInvoiceRoutes(app: Express) {
         }
       }
 
+      if (linesJson !== undefined) {
+        const revenueCheck = await checkRevenueAccountsForCompany(
+          existing.companyId,
+          revenueAccountIdsOf(linesJson)
+        );
+        if (!revenueCheck.ok) {
+          return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+        }
+      }
+
       const updateData: any = {};
       if (customerName !== undefined) updateData.customerName = customerName;
       if (customerTrn !== undefined) updateData.customerTrn = customerTrn;
@@ -173,9 +229,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       if (startDate !== undefined) updateData.startDate = new Date(startDate);
       if (nextRunDate !== undefined) updateData.nextRunDate = new Date(nextRunDate);
       if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
-      if (linesJson !== undefined)
-        updateData.linesJson =
-          typeof linesJson === "string" ? linesJson : JSON.stringify(linesJson);
+      if (linesJson !== undefined) updateData.linesJson = normalizeTemplateLines(linesJson);
 
       const item = await storage.updateRecurringInvoice(id, updateData);
       log.info({ id }, "Updated recurring invoice");

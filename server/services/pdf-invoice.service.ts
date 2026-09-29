@@ -3,6 +3,7 @@ import PDFDocument from "pdfkit";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
+import { formatUnitPriceCurrency, formatUnitPrice } from "../../shared/format-unit-price";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -249,7 +250,7 @@ async function generateStandardInvoicePDF(
           width: colWidths.qty,
           align: "center",
         });
-        doc.text(formatAmount(line.unitPrice, invoice.currency), colX.price, y + 7, {
+        doc.text(formatUnitPriceCurrency(line.unitPrice, invoice.currency), colX.price, y + 7, {
           width: colWidths.price,
           align: "right",
         });
@@ -594,7 +595,7 @@ function drawNraLineItemsTable(doc: PdfDoc, lines: InvoiceLine[]) {
     });
     doc.text(parsed.itemCode, colX[1] + 3, rowY, { width: widths[1] - 6 });
     doc.text(parsed.description, colX[2] + 3, rowY, { width: widths[2] - 6 });
-    doc.text(formatNraPlainAmount(Number(line.unitPrice || 0)), colX[3] + 3, rowY, {
+    doc.text(formatUnitPrice(Number(line.unitPrice || 0), { grouping: true }), colX[3] + 3, rowY, {
       width: widths[3] - 8,
       align: "right",
     });

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
+import { formatUnitPrice } from "../../shared/format-unit-price";
 
 /**
  * Escape XML special characters to prevent malformed output.
@@ -127,7 +128,7 @@ export function generateEInvoiceXML(
         </cac:ClassifiedTaxCategory>
       </cac:Item>
       <cac:Price>
-        <cbc:PriceAmount currencyID="${escapeXml(currency)}">${line.unitPrice.toFixed(2)}</cbc:PriceAmount>
+        <cbc:PriceAmount currencyID="${escapeXml(currency)}">${formatUnitPrice(line.unitPrice)}</cbc:PriceAmount>
       </cac:Price>
     </cac:InvoiceLine>`;
     })

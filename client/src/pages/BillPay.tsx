@@ -4,6 +4,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { toDateOnly } from "@/components/PaymentDateField";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -387,8 +388,8 @@ export default function BillPay() {
     mutationFn: (data: BillFormData) => {
       const payload = {
         ...data,
-        bill_date: data.bill_date.toISOString(),
-        due_date: data.due_date ? data.due_date.toISOString() : null,
+        bill_date: toDateOnly(data.bill_date),
+        due_date: data.due_date ? toDateOnly(data.due_date) : null,
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
@@ -415,8 +416,8 @@ export default function BillPay() {
     mutationFn: ({ id, data }: { id: string; data: BillFormData }) => {
       const payload = {
         ...data,
-        bill_date: data.bill_date.toISOString(),
-        due_date: data.due_date ? data.due_date.toISOString() : null,
+        bill_date: toDateOnly(data.bill_date),
+        due_date: data.due_date ? toDateOnly(data.due_date) : null,
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
@@ -474,7 +475,7 @@ export default function BillPay() {
     mutationFn: ({ billId, data }: { billId: string; data: PaymentFormData }) => {
       const payload = {
         ...data,
-        payment_date: data.payment_date.toISOString(),
+        payment_date: toDateOnly(data.payment_date),
       };
       return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },

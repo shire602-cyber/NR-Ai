@@ -29,6 +29,7 @@ import { insertUserSchema } from "../../shared/schema";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
+import { BCRYPT_COST } from "../config/bcrypt";
 import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
@@ -53,7 +54,7 @@ function publicUser(user: any) {
 }
 
 async function createOAuthCustomer(profile: OAuthIdentityProfile) {
-  const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
+  const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), BCRYPT_COST);
   const user = await storage.createUser({
     name: profile.name,
     email: profile.email,
@@ -259,7 +260,7 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       // Hash password
-      const passwordHash = await bcrypt.hash(validated.password, 10);
+      const passwordHash = await bcrypt.hash(validated.password, BCRYPT_COST);
 
       // SECURITY: Force userType to 'customer' - never trust client-supplied userType
       // Self-signup users can only be customers. Clients/admins must use invitation flow.
@@ -337,7 +338,7 @@ export function registerAuthRoutes(app: Express): void {
   // unknown so we still spend CPU on a comparison — this removes the
   // timing signal that distinguishes "no such user" from "wrong password"
   // and prevents email enumeration via response-time measurement.
-  const DUMMY_HASH = bcrypt.hashSync("account_enumeration_placeholder", 10);
+  const DUMMY_HASH = bcrypt.hashSync("account_enumeration_placeholder", BCRYPT_COST);
   const loginLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 8,
@@ -569,7 +570,7 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       await storage.updateUserPassword(record.userId, passwordHash);
       await storage.markPasswordResetTokenUsed(record.id);
       await storage.deletePasswordResetTokensForUser(record.userId);
@@ -700,7 +701,7 @@ export function registerAuthRoutes(app: Express): void {
 
       // Create user with appropriate userType from invitation.
       // Only pass passwordHash — never the raw password.
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       const user = await storage.createUser({
         email: invitation.email,
         name,

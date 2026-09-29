@@ -617,6 +617,27 @@
    "when": 1781430030000,
    "tag": "0088_emirate_no_default",
    "breakpoints": false
+  },
+  {
+   "idx": 88,
+   "version": "7",
+   "when": 1781430040000,
+   "tag": "0089_unit_price_precision",
+   "breakpoints": false
+  },
+  {
+   "idx": 89,
+   "version": "7",
+   "when": 1781430050000,
+   "tag": "0090_invoice_line_revenue_account",
+   "breakpoints": false
+  },
+  {
+   "idx": 90,
+   "version": "7",
+   "when": 1781430060000,
+   "tag": "0091_exchange_rates_company_scope",
+   "breakpoints": false
   }
  ]
 }

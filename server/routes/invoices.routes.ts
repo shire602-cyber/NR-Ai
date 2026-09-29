@@ -20,13 +20,35 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { db } from "../db";
 import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from "../../shared/schema";
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
 import {
-  evaluateVoidRequest,
   evaluateCreditNoteRequest,
   buildReversalLines,
+  selectVoidableEntries,
 } from "../services/invoice-lifecycle";
 import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
+import { voidOrCancelInvoice, alreadyTerminalOutcome } from "../services/invoice-void.service";
+import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
+import { allocateRevenueCredits } from "../services/revenue-allocation.service";
+import { deriveVatSupplyType } from "../services/vat-supply-type";
+import { resolveInvoiceFx, toBaseCurrencyAmount } from "../services/invoice-fx";
+import { checkPostedInvoiceEdit } from "../services/posted-invoice-lock.service";
+import { normalizeUnitPrice } from "../services/document-line-limits";
+import {
+  bucketLines,
+  compareBuckets,
+  effectiveRevenueAccountId,
+  findBucketExcess,
+  remainderBuckets,
+  remainingByAccount,
+  remainingLines,
+  remainingVatBuckets,
+  resolveCreditLineAccount,
+  reverseToZero,
+  type RevenueCtx,
+} from "../services/credit-note-remainder.service";
+import { requiredQuantity, requiredUnitPrice } from "../services/document-line-limits";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
@@ -52,27 +74,15 @@ async function findInvoiceForUser(userId: string, invoiceId: string): Promise<In
   return hasAccess ? invoice : undefined;
 }
 
-// Money columns are numeric(15,2): the largest representable value is
-// 9,999,999,999,999.99. A line that overflows that used to reach Postgres and
-// come back as an HTTP 500 ("numeric field overflow"). Bound it here so an
-// absurd amount is a clean 400 with a field-level message instead of a server
-// error. 1e12 per line leaves headroom for quantity x price and the VAT uplift.
-const MAX_LINE_VALUE = 1_000_000_000_000; // 1 trillion, per factor
-// The document total must fit numeric(15,2) with room for the VAT uplift.
+// The document total must fit numeric(15,2) (largest value 9,999,999,999,999.99)
+// with room for the VAT uplift. Per-line quantity / unit-price limits live in
+// document-line-limits (shared with quotes, credit notes, POs, recurring).
 const MAX_DOCUMENT_TOTAL = 9_000_000_000_000; // 9 trillion
 
-const invoiceLineInputSchema = z.object({
+const invoiceLineObject = z.object({
   description: z.string().trim().min(1, "Line description is required").max(1000),
-  quantity: z.coerce
-    .number()
-    .finite()
-    .positive("Line quantity must be greater than 0")
-    .max(MAX_LINE_VALUE, "Line quantity is too large"),
-  unitPrice: z.coerce
-    .number()
-    .finite()
-    .positive("Line unit price must be greater than 0")
-    .max(MAX_LINE_VALUE, "Line unit price is too large"),
+  quantity: requiredQuantity,
+  unitPrice: requiredUnitPrice,
   // UAE has exactly two VAT rates: 0% (zero-rated/exempt lines) and 5%
   // (standard). Accept either decimal (0.05) or percent (5) form — a typo
   // like 0.5 must be rejected, not silently baked into a tax invoice.
@@ -86,13 +96,39 @@ const invoiceLineInputSchema = z.object({
       })
     )
     .default(UAE_VAT_RATE),
+  // Optional: standard_rated | zero_rated | exempt | out_of_scope. Normalised
+  // below so a 0% line is never stored as standard-rated by default.
+  vatSupplyType: z
+    .enum(["standard_rated", "zero_rated", "exempt", "out_of_scope"])
+    .optional()
+    .nullable(),
+  // Optional income account for this line's net amount (null = default account).
+  revenueAccountId: z.string().uuid("revenueAccountId must be a valid UUID").optional().nullable(),
 });
+
+// The RATE decides the supply type (deriveVatSupplyType): a taxed line is
+// always standard-rated, whatever type was sent.
+const withDerivedSupplyType = <T extends { vatRate: number; vatSupplyType?: string | null }>(
+  line: T
+) => ({
+  ...line,
+  vatSupplyType: deriveVatSupplyType(line.vatRate, line.vatSupplyType),
+});
+
+const invoiceLineInputSchema = invoiceLineObject.transform(withDerivedSupplyType);
+
+// A credit-note line may name the original invoice line it credits, so the
+// revenue account is resolved from that id instead of matching descriptions.
+const creditNoteLineInputSchema = invoiceLineObject
+  .extend({ originalLineId: z.string().uuid("originalLineId must be a valid UUID").optional().nullable() })
+  .transform(withDerivedSupplyType);
 
 const invoiceLinesInputSchema = z
   .array(invoiceLineInputSchema)
   .min(1, "At least one invoice line is required");
 
 type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
+type CreditNoteLineInput = z.infer<typeof creditNoteLineInputSchema>;
 
 function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
   let subtotalD = new Decimal(0);
@@ -127,6 +163,50 @@ function normalizeOptionalInvoiceDateField(
   }
   data[field] = parsed;
   return { ok: true };
+}
+
+const round2Num = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+type JournalLineLike = Record<string, any> & {
+  accountId: string;
+  debit: number;
+  credit: number;
+  description: string;
+};
+
+// Default / zero-rated income accounts of a chart: what a line with no revenue
+// account of its own posts to (see invoice-posting.service). Undefined when the
+// chart has no default revenue account.
+function revenueContextOf(
+  accounts: Array<{ id: string; type: string; code: string; isSystemAccount?: boolean | null }>
+): RevenueCtx | undefined {
+  const defaultAccount = accounts.find(
+    (a) =>
+      a.isSystemAccount &&
+      a.type === "income" &&
+      (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
+  );
+  if (!defaultAccount) return undefined;
+  const zeroRated = accounts.find(
+    (a) => a.type === "income" && a.code === ACCOUNT_CODES.ZERO_RATED_SALES
+  );
+  return { defaultAccountId: defaultAccount.id, zeroRatedAccountId: zeroRated?.id ?? null };
+}
+
+// Foreign-currency invoices keep the document-currency amount on the AR leg of
+// a reversal, like the original posting did (the ledger amounts stay AED).
+function withForeignReceivable(
+  lines: JournalLineLike[],
+  receivableId: string,
+  fx: { currency: string; rate: number; isForeign: boolean },
+  docAmount: number
+): JournalLineLike[] {
+  if (!fx.isForeign) return lines;
+  return lines.map((l) =>
+    l.accountId === receivableId && l.credit > 0
+      ? { ...l, foreignCurrency: fx.currency, exchangeRate: fx.rate, foreignCredit: docAmount }
+      : l
+  );
 }
 
 export function registerInvoiceRoutes(app: Express) {
@@ -280,6 +360,15 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Chosen revenue accounts must be income accounts of THIS company.
+      const revenueCheck = await checkRevenueAccountsForCompany(
+        companyId,
+        parsedLines.map((l) => l.revenueAccountId)
+      );
+      if (!revenueCheck.ok) {
+        return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+      }
+
       // Calculate totals using decimal.js to avoid binary-float drift on
       // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
       const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
@@ -330,7 +419,7 @@ export function registerInvoiceRoutes(app: Express) {
         if (Number.isFinite(supplied) && supplied > 0) {
           exchangeRate = supplied;
         } else {
-          const stored = await getLatestRate(docCurrency, "AED", invoiceDate);
+          const stored = await getLatestRate(docCurrency, "AED", invoiceDate, companyId);
           if (!stored || stored <= 0) {
             return res.status(422).json({
               message: `No ${docCurrency}→AED exchange rate available. Add one under Exchange Rates or pass exchangeRate.`,
@@ -522,8 +611,22 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
+      const revenueCheck = await checkRevenueAccountsForCompany(
+        invoice.companyId,
+        parsedLines.map((l) => l.revenueAccountId)
+      );
+      if (!revenueCheck.ok) {
+        return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+      }
+
       // Recompute totals from lines using decimal.js for precise money math.
       const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
+      if (!Number.isFinite(total) || Math.abs(total) > MAX_DOCUMENT_TOTAL) {
+        return res.status(422).json({
+          message: `Invoice total is too large to record (limit ${MAX_DOCUMENT_TOTAL.toLocaleString()}).`,
+          code: "AMOUNT_OUT_OF_RANGE",
+        });
+      }
 
       // If a posted journal entry exists for this invoice and the amount is
       // changing, refuse. The user must void & reissue (or issue a credit
@@ -545,6 +648,29 @@ export function registerInvoiceRoutes(app: Express) {
             "Invoice amount cannot be changed while a posted journal entry exists. Void this invoice and issue a credit note or new invoice instead.",
           code: "INVOICE_POSTED_AMOUNT_LOCKED",
         });
+      }
+
+      // The journal was posted from the per-account allocation of the lines and
+      // the VAT return reads the lines' rate / supply type. Locking only the
+      // totals let amounts move between revenue accounts (or between a 5% and a
+      // 0% line) at unchanged totals, so a later void / credit note reversed the
+      // wrong accounts. Compare what the ledger and the VAT return derive from
+      // the lines, before and after, and refuse any difference.
+      if (postedEntry) {
+        const existingLines = await storage.getInvoiceLinesByInvoiceId(id);
+        const chart = await storage.getAccountsByCompanyId(invoice.companyId);
+        const revenueCtx = revenueContextOf(chart);
+        const storedRate = resolveInvoiceFx(invoice as any).rate;
+        const requestedRate = Number(invoiceData.exchangeRate) > 0 ? Number(invoiceData.exchangeRate) : storedRate;
+        const verdict = checkPostedInvoiceEdit({
+          before: { lines: existingLines as any[], subtotal: Number(invoice.subtotal), rate: storedRate },
+          after: { lines: parsedLines, subtotal, rate: requestedRate },
+          defaultAccountId: revenueCtx?.defaultAccountId ?? null,
+          zeroRatedAccountId: revenueCtx?.zeroRatedAccountId ?? null,
+        });
+        if (!verdict.ok) {
+          return res.status(422).json({ message: verdict.message, code: verdict.code });
+        }
       }
 
       const invoiceDate = typeof date === "string" ? new Date(date) : date;
@@ -684,12 +810,12 @@ export function registerInvoiceRoutes(app: Express) {
 
       const oldStatus = invoice.status;
 
-      // Status transitions that post journal entries (currently only
-      // draft/sent -> paid) must respect period locks. Use the invoice's
-      // own date — that's the period the JE is being posted into — not the
-      // wall-clock now, which can mismatch when paying historic invoices.
-      if (status === "paid" && oldStatus !== "paid") {
-        await assertPeriodNotLocked(invoice.companyId, invoice.date);
+      // Voiding / cancelling a document that is already void or cancelled is
+      // not a silent no-op: it was reversed once and must not look as if it
+      // had just been reversed again (the locked transaction re-checks this).
+      if ((status === "void" || status === "cancelled") && (oldStatus === "void" || oldStatus === "cancelled")) {
+        const already = alreadyTerminalOutcome(oldStatus);
+        if (!already.ok) return res.status(already.status).json({ message: already.message, code: already.code });
       }
 
       // No-op transition is fine.
@@ -727,6 +853,13 @@ export function registerInvoiceRoutes(app: Express) {
           return res.status(500).json({ message: "Accounts Receivable account not found" });
         }
 
+        // The settlement journal is posted on the real payment date (optional
+        // `paymentDate` / `date` in the body, default today). Validated: not in
+        // the future, not before the invoice date, and not in a locked period.
+        const { date: paymentDate } = await resolveSettlementDate(invoice.companyId, {
+          requested: req.body.paymentDate ?? req.body.date,
+        });
+
         // Compute the unpaid remainder so we don't double-record.
         const previouslyPaid = await storage.getInvoicePaidTotal(id);
         const remaining = invoice.total - previouslyPaid;
@@ -737,7 +870,7 @@ export function registerInvoiceRoutes(app: Express) {
               invoiceId: id,
               companyId: invoice.companyId,
               amount: remaining,
-              date: new Date(),
+              date: paymentDate,
               method: "manual",
               reference: null,
               notes: "Marked paid via status update",
@@ -784,102 +917,22 @@ export function registerInvoiceRoutes(app: Express) {
         }
 
         // Void/cancel must reverse the original revenue-recognition JE so the
-        // GL doesn't keep recognising sales that were never realised. Drafts
-        // normally have no JE (nothing to reverse), but data created before
-        // drafts stopped auto-posting can — so cancellation checks too.
+        // GL doesn't keep recognising sales that were never realised. It runs
+        // in ONE locked transaction (see invoice-void.service): a repeated or
+        // parallel request can never post a second reversal.
         if (status === "void" || status === "cancelled") {
-          // A-1: refuse to void/cancel an invoice that has recorded payments.
-          // The reversal below only unwinds revenue/VAT/AR; the cash already
-          // received would be left orphaned (overstated bank + abnormal credit
-          // AR). The correct path is a credit note plus a refund.
-          const paidTotal = await storage.getInvoicePaidTotal(id);
-          const voidDecision = evaluateVoidRequest({ targetStatus: status, paidTotal });
-          if (!voidDecision.ok) {
-            return res
-              .status(voidDecision.status)
-              .json({ message: voidDecision.message, code: voidDecision.code });
+          const outcome = await voidOrCancelInvoice({
+            invoiceId: id,
+            companyId: invoice.companyId,
+            targetStatus: status,
+            userId,
+          });
+          if (!outcome.ok) {
+            return res.status(outcome.status).json({ message: outcome.message, code: outcome.code });
           }
-
-          const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-          const accountsReceivable = accounts.find(
-            (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-          );
-          const salesRevenue = accounts.find(
-            (a) =>
-              a.isSystemAccount &&
-              a.type === "income" &&
-              (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-          );
-          const vatPayable = accounts.find(
-            (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-          );
-
-          const existingEntries = await storage.getJournalEntriesBySource(
-            invoice.companyId,
-            "invoice",
-            id
-          );
-          const originalEntry = existingEntries.find((e) => e.status === "posted");
-
-          if (originalEntry) {
-            const reversalDate = new Date();
-            // Block reversal posting into a locked period — without this we
-            // could flip status without writing the offsetting JE.
-            await assertPeriodNotLocked(invoice.companyId, reversalDate);
-
-            // A-B2: build balanced legs and fail hard (422) if a required
-            // account is missing, instead of silently posting an unbalanced
-            // entry that 500s inside the posting engine.
-            const built = buildReversalLines({
-              amounts: {
-                subtotal: Number(invoice.subtotal),
-                vatAmount: Number(invoice.vatAmount),
-                total: Number(invoice.total),
-              },
-              accounts: {
-                accountsReceivableId: accountsReceivable?.id,
-                salesRevenueId: salesRevenue?.id,
-                vatPayableId: vatPayable?.id,
-              },
-              labels: {
-                revenue: `Reverse revenue - Void Invoice ${invoice.number}`,
-                vat: `Reverse VAT - Void Invoice ${invoice.number}`,
-                ar: `Reverse A/R - Void Invoice ${invoice.number}`,
-              },
-            });
-            if (!built.ok) {
-              return res.status(built.status).json({ message: built.message, code: built.code });
-            }
-            const reversalLines = built.lines;
-
-            const entryNumber = await storage.generateEntryNumber(invoice.companyId, reversalDate);
-
-            await storage.createJournalEntry(
-              {
-                companyId: invoice.companyId,
-                date: reversalDate,
-                memo: `Void Invoice ${invoice.number} - reversal of original posting`,
-                entryNumber,
-                status: "posted",
-                source: "invoice",
-                sourceId: id,
-                reversedEntryId: originalEntry.id,
-                reversalReason: `Invoice ${status}`,
-                createdBy: userId,
-                postedBy: userId,
-                postedAt: reversalDate,
-              } as any,
-              reversalLines
-            );
-
-            log.info(
-              { invoiceId: id, originalEntryId: originalEntry.id, entryNumber },
-              "Void reversal journal entry created"
-            );
-          }
+        } else {
+          await storage.updateInvoiceStatus(id, invoice.companyId, status);
         }
-
-        await storage.updateInvoiceStatus(id, invoice.companyId, status);
       }
 
       const updatedInvoice = await storage.getInvoice(id, invoice.companyId);
@@ -1344,10 +1397,11 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(500).json({ message: "Accounts Receivable account not found" });
       }
 
-      const paymentDate = date ? new Date(date) : new Date();
-
-      // Block payment recording into a locked period.
-      await assertPeriodNotLocked(companyId, paymentDate);
+      // Validate the payment date (default today): not in the future, not
+      // before the invoice date, and outside any locked period.
+      const { date: paymentDate } = await resolveSettlementDate(companyId, {
+        requested: date,
+      });
 
       let result;
       try {
@@ -1429,6 +1483,20 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
+      // A credit note reverses revenue that was RECOGNISED. A draft was never
+      // posted, and a void / cancelled invoice was already reversed in full:
+      // crediting either would debit revenue and VAT that never stood on the
+      // ledger. (A credit note of a credit note keeps its own CN_OF_CN error.)
+      if (
+        original.invoiceType !== "credit_note" &&
+        (original.status === "draft" || original.status === "void" || original.status === "cancelled")
+      ) {
+        return res.status(409).json({
+          message: `Cannot issue a credit note for a ${original.status} invoice: it has no posted journal entry to reverse.`,
+          code: "INVOICE_NOT_POSTED",
+        });
+      }
+
       // PARTIAL CREDIT NOTES.
       //
       // Previously this endpoint accepted a `lines` payload and silently threw
@@ -1441,7 +1509,7 @@ export function registerInvoiceRoutes(app: Express) {
       // reversal (the UI sends `{}` and keeps that behaviour). The amount is
       // capped against the remaining uncredited balance below.
       const requestedLines = (req.body as any)?.lines;
-      let creditLines: InvoiceLineInput[] | null = null;
+      let creditLines: CreditNoteLineInput[] | null = null;
       let creditAmounts: { subtotal: number; vatAmount: number; total: number } | null = null;
       if (requestedLines !== undefined && requestedLines !== null) {
         if (!Array.isArray(requestedLines) || requestedLines.length === 0) {
@@ -1450,24 +1518,32 @@ export function registerInvoiceRoutes(app: Express) {
             code: "INVALID_CREDIT_LINES",
           });
         }
-        creditLines = invoiceLinesInputSchema.parse(requestedLines);
+        creditLines = z.array(creditNoteLineInputSchema).parse(requestedLines);
+        const creditRevenueCheck = await checkRevenueAccountsForCompany(
+          companyId,
+          creditLines.map((l) => l.revenueAccountId)
+        );
+        if (!creditRevenueCheck.ok) {
+          return res
+            .status(creditRevenueCheck.status)
+            .json({ message: creditRevenueCheck.message, code: creditRevenueCheck.code });
+        }
         creditAmounts = calculateInvoiceTotals(creditLines);
+        if (!Number.isFinite(creditAmounts.total) || Math.abs(creditAmounts.total) > MAX_DOCUMENT_TOTAL) {
+          return res.status(422).json({
+            message: `Credit note total is too large to record (limit ${MAX_DOCUMENT_TOTAL.toLocaleString()}).`,
+            code: "AMOUNT_OUT_OF_RANGE",
+          });
+        }
       }
 
-      // The signed amounts that will be written to the credit note document and
-      // used to build the reversing journal entry. `let` because a full
-      // reversal after a partial credit is capped to the remaining balance
-      // below (inside the document lock, once the committed state is known).
-      let creditSubtotal = creditAmounts ? creditAmounts.subtotal : Number(original.subtotal);
-      let creditVat = creditAmounts ? creditAmounts.vatAmount : Number(original.vatAmount);
-      let creditTotal = creditAmounts ? creditAmounts.total : Number(original.total);
-      // Set when an omitted-lines "full reversal" was scaled down because part
-      // of the invoice had already been credited.
-      let creditWasCapped = false;
-      let creditCapFactor = 1;
+      // The invoice's own currency and rate: the credit note is stored in the
+      // same currency at the SAME rate, and the reversing journal is posted in
+      // AED at that rate (never in document currency).
+      const fx = resolveInvoiceFx(original);
 
-      // A-B3: de-duplicate and cap credit notes. Without this, issuing two
-      // full credit notes double-reverses AR and drives it negative. We sum the
+      // A-B3: de-duplicate and cap credit notes. Without this, issuing two full
+      // credit notes double-reverses AR and drives it negative. We sum the
       // absolute totals of any existing credit notes for this invoice and
       // refuse to credit beyond the original total.
       // Concurrency: the cap below is a check-then-write. Five parallel credit
@@ -1477,7 +1553,11 @@ export function registerInvoiceRoutes(app: Express) {
       return await withDocumentLock(invoiceId, LOCK_NS.CREDIT_NOTE, async () => {
       const companyInvoices = await storage.getInvoicesByCompanyId(companyId);
       const existingCreditNotes = companyInvoices.filter(
-        (i) => i.originalInvoiceId === invoiceId && i.invoiceType === "credit_note"
+        (i) =>
+          i.originalInvoiceId === invoiceId &&
+          i.invoiceType === "credit_note" &&
+          i.status !== "void" &&
+          i.status !== "cancelled"
       );
       const alreadyCreditedTotal = existingCreditNotes.reduce(
         (sum, i) => sum + Math.abs(Number(i.total)),
@@ -1489,28 +1569,10 @@ export function registerInvoiceRoutes(app: Express) {
         alreadyCreditedTotal,
         // Cap a partial credit at what is still uncreditable. Omitted (full
         // reversal) defaults to the whole remaining balance.
-        requestedAmount: creditAmounts ? creditTotal : undefined,
+        requestedAmount: creditAmounts ? creditAmounts.total : undefined,
       });
       if (!cnDecision.ok) {
         return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
-      }
-
-      // TD4: an omitted-lines "full reversal" must credit only the REMAINING
-      // balance. The evaluator already computed that cap (`creditable`), but
-      // this handler previously ignored it and wrote the full original
-      // amounts — so a full CN issued after a partial CN over-credited the
-      // invoice (1,050 original, 420 partial, then another 1,050 instead of
-      // 630), driving A/R negative and over-reversing output VAT.
-      if (!creditAmounts && cnDecision.creditable != null) {
-        const originalAbs = Math.abs(Number(original.total));
-        if (originalAbs > 0 && cnDecision.creditable < originalAbs) {
-          creditWasCapped = true;
-          creditCapFactor = cnDecision.creditable / originalAbs;
-          creditTotal = Math.round(cnDecision.creditable * 100) / 100;
-          creditSubtotal = Math.round(Number(original.subtotal) * creditCapFactor * 100) / 100;
-          // Derive VAT from the difference so subtotal + VAT = total exactly.
-          creditVat = Math.round((creditTotal - creditSubtotal) * 100) / 100;
-        }
       }
 
       // TD5: honour a caller-supplied credit-note date (previously silently
@@ -1540,44 +1602,319 @@ export function registerInvoiceRoutes(app: Express) {
       }
       await assertPeriodNotLocked(companyId, cnDate);
 
-      // A-B2: validate that the accounts needed for the reversal JE exist
-      // BEFORE inserting the credit-note document, so a missing-account error
-      // cannot leave an orphaned credit note (and a consumed number) behind.
+      // A-B2 / defect 9: EVERYTHING that can reject the credit note (accounts,
+      // revenue split, balance) is computed here, BEFORE any row is written.
+      // The document and its journal entry are then inserted in one
+      // transaction, so a failure can no longer leave an orphan credit note
+      // (with a consumed number) and no journal entry.
       const cnAccounts = await storage.getAccountsByCompanyId(companyId);
       const cnReceivable = cnAccounts.find(
         (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
       );
-      const cnRevenue = cnAccounts.find(
-        (a) =>
-          a.isSystemAccount &&
-          a.type === "income" &&
-          (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-      );
       const cnVatPayable = cnAccounts.find(
         (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
       );
-      const cnPreflight = buildReversalLines({
-        amounts: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
-        accounts: {
-          accountsReceivableId: cnReceivable?.id,
-          salesRevenueId: cnRevenue?.id,
-          vatPayableId: cnVatPayable?.id,
-        },
-        labels: { revenue: "", vat: "", ar: "" },
-      });
-      if (!cnPreflight.ok) {
-        return res
-          .status(cnPreflight.status)
-          .json({ message: cnPreflight.message, code: cnPreflight.code });
+      const revenueCtx = revenueContextOf(cnAccounts);
+      if (!revenueCtx || !cnReceivable) {
+        return res.status(422).json({
+          message:
+            "Cannot post reversal: Accounts Receivable or Revenue account is missing. Seed the default chart of accounts first.",
+          code: "CHART_OF_ACCOUNTS_MISSING",
+        });
       }
 
       const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
-      // Allocate credit-note number AND insert the credit note + its lines in
-      // a single transaction so a failed insert rolls back the sequence
-      // increment (otherwise FTA-required gap-free numbering breaks).
+      // What is already on the ledger for this invoice (AED, as posted): its
+      // own entry plus the entries of the credit notes issued so far.
+      const originalEntries = await storage.getJournalEntriesBySource(companyId, "invoice", invoiceId);
+      const originalEntry = selectVoidableEntries(originalEntries).original;
+      if (!originalEntry) {
+        // e.g. an invoice created before drafts stopped auto-posting, or one whose
+        // entry was voided: there is nothing on the ledger to reverse.
+        return res.status(409).json({
+          message: "Cannot issue a credit note: this invoice has no posted journal entry to reverse.",
+          code: "INVOICE_NOT_POSTED",
+        });
+      }
+      const priorCreditNoteIds = existingCreditNotes.map((c) => c.id);
+      const priorEntryIds: string[] = [];
+      for (const cnId of priorCreditNoteIds) {
+        const entries = await storage.getJournalEntriesBySource(companyId, "invoice", cnId);
+        for (const e of entries) if (e.status === "posted") priorEntryIds.push(e.id);
+      }
+      const ledgerLines = originalEntry
+        ? (await storage.getJournalLinesByEntryIds([originalEntry.id, ...priorEntryIds])).map((l) => ({
+            accountId: l.accountId,
+            debit: Number(l.debit) || 0,
+            credit: Number(l.credit) || 0,
+          }))
+        : [];
+      const existingCreditLines =
+        priorCreditNoteIds.length > 0
+          ? await storage.getInvoiceLinesByInvoiceIds(priorCreditNoteIds)
+          : [];
+
+      // The credit note lines, each carrying the revenue account it reverses.
+      //
+      // INVARIANT: the document lines must always agree with what the journal
+      // reverses, per VAT rate / supply type and per revenue account, because
+      // the VAT engines read the document lines while the ledger is reversed
+      // from the journal. So:
+      //  * a credit note that brings the invoice to fully credited (explicit
+      //    full credit, omitted lines, or a final partial) gets its lines BUILT
+      //    from what is left of each original line; lines the client sent must
+      //    match that remainder bucket for bucket (else 422);
+      //  * a partial one is capped per VAT bucket, not only per account.
+      let creditSubtotal: number;
+      let creditVat: number;
+      let creditTotal: number;
+      let docLines: Array<{
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        vatRate: number;
+        vatSupplyType: string;
+        revenueAccountId: string;
+      }>;
+      let bringsToFullyCredited: boolean;
+      const creditWasCapped = !creditLines && existingCreditNotes.length > 0;
+
+      let resolvedCreditLines: Array<{
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        vatRate: number;
+        vatSupplyType: string;
+        revenueAccountId: string;
+      }> | null = null;
+      if (creditLines) {
+        const resolved: Array<{ accountId: string }> = [];
+        for (const l of creditLines) {
+          const r = resolveCreditLineAccount(l, originalLines as any[], revenueCtx);
+          if (!r.ok) return res.status(400).json({ message: r.message, code: r.code });
+          resolved.push({ accountId: r.accountId });
+        }
+        creditSubtotal = creditAmounts!.subtotal;
+        creditVat = creditAmounts!.vatAmount;
+        creditTotal = creditAmounts!.total;
+        resolvedCreditLines = creditLines.map((l, i) => {
+          // A line that names the original line it credits takes that line's
+          // supply type (a 0% exempt sale is credited as exempt, not zero-rated).
+          const named = l.originalLineId
+            ? (originalLines as any[]).find((o) => o.id === l.originalLineId)
+            : undefined;
+          const supply =
+            named && Number(named.vatRate) === Number(l.vatRate)
+              ? deriveVatSupplyType(Number(named.vatRate), named.vatSupplyType)
+              : l.vatSupplyType;
+          return {
+            description: `[Credit] ${l.description}`,
+            quantity: -l.quantity,
+            unitPrice: l.unitPrice,
+            vatRate: l.vatRate,
+            vatSupplyType: supply,
+            revenueAccountId: resolved[i].accountId,
+          };
+        });
+        bringsToFullyCredited =
+          round2Num(alreadyCreditedTotal + creditTotal) >= round2Num(Math.abs(Number(original.total))) - 0.005;
+      } else {
+        bringsToFullyCredited = true;
+      }
+
+      if (bringsToFullyCredited) {
+        if (resolvedCreditLines) {
+          const expected = remainderBuckets({
+            originalLines: originalLines as any[],
+            creditedLines: existingCreditLines as any[],
+            ctx: revenueCtx,
+          });
+          const supplied = bucketLines(resolvedCreditLines as any[], revenueCtx, { byAccount: true });
+          const match = compareBuckets(expected, supplied);
+          if (!match.ok) {
+            return res.status(422).json({
+              message:
+                "This credit note takes the invoice to fully credited, but its lines do not match what is left of the invoice per VAT rate, supply type and revenue account. Credit exactly the remaining lines, or omit `lines` to credit the remainder.",
+              code: "CREDIT_NOTE_LINES_MISMATCH",
+              expectedBuckets: match.expected,
+              suppliedBuckets: match.supplied,
+            });
+          }
+        }
+        const originalAbs = Math.abs(Number(original.total));
+        if (existingCreditNotes.length === 0) {
+          // Nothing credited yet: mirror every original line.
+          creditSubtotal = Number(original.subtotal);
+          creditVat = Number(original.vatAmount);
+          creditTotal = Number(original.total);
+          docLines = originalLines.map((l) => ({
+            description: `[Credit] ${l.description}`,
+            quantity: -Number(l.quantity),
+            unitPrice: Number(l.unitPrice),
+            vatRate: Number(l.vatRate),
+            vatSupplyType: deriveVatSupplyType(Number(l.vatRate), l.vatSupplyType),
+            revenueAccountId: effectiveRevenueAccountId(l as any, revenueCtx),
+          }));
+        } else {
+          // TD4 / defect 3: credit exactly what is LEFT, per line and per
+          // account - not the original scaled by one factor, which reversed
+          // the wrong accounts whenever an earlier partial credit note had
+          // touched only some of them.
+          const left = remainingLines({
+            originalLines: originalLines as any[],
+            creditedLines: existingCreditLines as any[],
+            ctx: revenueCtx,
+          });
+          creditTotal = round2Num(originalAbs - round2Num(alreadyCreditedTotal));
+          const leftAccounts = remainingByAccount({
+            originalLines: originalLines as any[],
+            creditedLines: existingCreditLines as any[],
+            ctx: revenueCtx,
+          });
+          creditSubtotal = round2Num(leftAccounts.accounts.reduce((s, a) => s + a.net, 0));
+          // Derive VAT from the difference so subtotal + VAT = total exactly.
+          creditVat = round2Num(creditTotal - creditSubtotal);
+          docLines = left.map((l) => ({
+            description: `[Credit] ${l.description} (remaining balance)`,
+            quantity: -1,
+            unitPrice: normalizeUnitPrice(l.net),
+            vatRate: l.vatRate,
+            vatSupplyType: deriveVatSupplyType(l.vatRate, l.vatSupplyType),
+            revenueAccountId: l.revenueAccountId,
+          }));
+        }
+      } else {
+        // Partial: cap per VAT bucket (rate + supply type) - "no more at 5%
+        // than remains at 5%" - on top of the per-account cap on the ledger.
+        docLines = resolvedCreditLines!;
+        const excess = findBucketExcess(
+          remainingVatBuckets({
+            originalLines: originalLines as any[],
+            creditedLines: existingCreditLines as any[],
+            ctx: revenueCtx,
+          }),
+          bucketLines(docLines as any[], revenueCtx)
+        );
+        if (excess) {
+          return res.status(409).json({
+            message: `This credit note takes back more at ${Math.round(excess.vatRate * 10000) / 100}% (${excess.supplyType.replace("_", " ")}) than remains on the invoice at that VAT rate after the earlier credit notes.`,
+            code: "CREDIT_EXCEEDS_VAT_BUCKET",
+            bucket: excess,
+          });
+        }
+      }
+
+      // The reversing legs, in AED. The final credit note reverses what is
+      // actually standing on the ledger (posted minus already reversed), so
+      // AR, revenue and VAT each land on exactly 0.00 whatever the FX rate and
+      // rounding. A partial one converts its own amounts at the invoice rate.
+      const reversalLabels = (cnNumber: string) => ({
+        revenue: `Reverse revenue - ${cnNumber}`,
+        vat: `Reverse VAT - ${cnNumber}`,
+        ar: `Reduce A/R - ${cnNumber}`,
+      });
+      const buildLegs = (
+        cnNumber: string
+      ):
+        | { ok: true; lines: JournalLineLike[]; baseSubtotal: number; baseVat: number; baseTotal: number }
+        | { ok: false; status: number; code: string; message: string } => {
+        const labels = reversalLabels(cnNumber);
+        if (bringsToFullyCredited && ledgerLines.length > 0) {
+          const legs = reverseToZero(ledgerLines, {
+            arAccountId: cnReceivable.id,
+            vatAccountId: cnVatPayable?.id ?? null,
+            labels,
+          });
+          if (legs.length === 0) {
+            return {
+              ok: false,
+              status: 409,
+              code: "FULLY_CREDITED",
+              message: "This invoice has already been fully credited.",
+            };
+          }
+          const baseTotal = legs.filter((l) => l.accountId === cnReceivable.id).reduce((s, l) => s + l.credit, 0);
+          const baseVat = legs.filter((l) => l.accountId === cnVatPayable?.id).reduce((s, l) => s + l.debit, 0);
+          return {
+            ok: true,
+            lines: withForeignReceivable(legs, cnReceivable.id, fx, creditTotal),
+            baseTotal: round2Num(baseTotal),
+            baseVat: round2Num(baseVat),
+            baseSubtotal: round2Num(baseTotal - baseVat),
+          };
+        }
+
+        const baseSubtotal = toBaseCurrencyAmount(creditSubtotal, fx.rate);
+        const baseVat = toBaseCurrencyAmount(creditVat, fx.rate);
+        const built = buildReversalLines({
+          amounts: { subtotal: baseSubtotal, vatAmount: baseVat, total: round2Num(baseSubtotal + baseVat) },
+          accounts: {
+            accountsReceivableId: cnReceivable.id,
+            salesRevenueId: revenueCtx.defaultAccountId,
+            vatPayableId: cnVatPayable?.id,
+          },
+          revenueSplit: allocateRevenueCredits({
+            lines: docLines.map((l) => ({
+              quantity: Math.abs(l.quantity),
+              unitPrice: l.unitPrice,
+              vatRate: l.vatRate,
+              revenueAccountId: l.revenueAccountId,
+            })),
+            rate: fx.rate,
+            subtotal: baseSubtotal,
+            defaultAccountId: revenueCtx.defaultAccountId,
+            zeroRatedAccountId: revenueCtx.zeroRatedAccountId ?? null,
+          }),
+          labels,
+        });
+        if (!built.ok) return built;
+
+        // A partial credit note cannot take back more from an account (or from
+        // VAT) than is still standing on it.
+        if (ledgerLines.length > 0) {
+          const standing = new Map(
+            reverseToZero(ledgerLines, { arAccountId: cnReceivable.id, vatAccountId: cnVatPayable?.id ?? null, labels }).map(
+              (l) => [l.accountId, l.debit]
+            )
+          );
+          for (const leg of built.lines) {
+            if (leg.debit > 0 && leg.debit > (standing.get(leg.accountId) ?? 0) + 0.01) {
+              return {
+                ok: false,
+                status: 409,
+                code: "CREDIT_EXCEEDS_ACCOUNT_BALANCE",
+                message:
+                  "This credit note would credit more to a revenue account (or to VAT) than is still standing on it after the earlier credit notes.",
+              };
+            }
+          }
+        }
+        return {
+          ok: true,
+          lines: withForeignReceivable(built.lines, cnReceivable.id, fx, creditTotal),
+          baseSubtotal,
+          baseVat,
+          baseTotal: round2Num(baseSubtotal + baseVat),
+        };
+      };
+
+      const preflight = buildLegs("(pending)");
+      if (!preflight.ok) {
+        return res.status(preflight.status).json({ message: preflight.message, code: preflight.code });
+      }
+
+      // Allocate the credit-note number, insert the credit note + its lines
+      // AND post its reversing journal entry in ONE transaction: gap-free
+      // numbering (FTA) and a document that can never exist without its entry.
       const { cnNumber, creditNote } = await db.transaction(async (tx: typeof db) => {
         const number = await allocateInvoiceNumber(companyId, "credit_note", new Date(), tx);
+        const legs = buildLegs(number);
+        if (!legs.ok) {
+          const e: any = new Error(legs.message);
+          e.code = legs.code;
+          throw e;
+        }
 
         const [insertedCreditNote] = await tx
           .insert(invoicesTable)
@@ -1588,6 +1925,11 @@ export function registerInvoiceRoutes(app: Express) {
             customerTrn: original.customerTrn || undefined,
             date: cnDate,
             currency: original.currency,
+            // VAT 201 converts every invoice row (credit notes included) with
+            // its own stored rate: a foreign-currency credit note must carry
+            // the original invoice's rate or it is counted as if it were AED.
+            exchangeRate: fx.rate,
+            baseCurrencyAmount: -legs.baseTotal,
             subtotal: -creditSubtotal,
             vatAmount: -creditVat,
             total: -creditTotal,
@@ -1597,97 +1939,37 @@ export function registerInvoiceRoutes(app: Express) {
           } as any)
           .returning();
 
-        if (creditLines) {
-          // Partial credit: write exactly the lines the caller asked to credit.
-          for (const line of creditLines) {
-            await tx.insert(invoiceLinesTable).values({
-              invoiceId: insertedCreditNote.id,
-              description: `[Credit] ${line.description}`,
-              quantity: -line.quantity,
-              unitPrice: line.unitPrice,
-              vatRate: line.vatRate,
-            } as any);
-          }
-        } else {
-          // Full reversal: mirror every original line. If the reversal was
-          // capped to the remaining balance (part already credited), scale
-          // each line's unit price so the document lines sum to the capped
-          // amount rather than the full original.
-          for (const line of originalLines) {
-            const scaledUnitPrice = creditWasCapped
-              ? Math.round(Number(line.unitPrice) * creditCapFactor * 10000) / 10000
-              : line.unitPrice;
-            await tx.insert(invoiceLinesTable).values({
-              invoiceId: insertedCreditNote.id,
-              description: creditWasCapped
-                ? `[Credit] ${line.description} (remaining balance)`
-                : `[Credit] ${line.description}`,
-              quantity: -line.quantity,
-              unitPrice: scaledUnitPrice,
-              vatRate: line.vatRate,
-              vatSupplyType: line.vatSupplyType || undefined,
-            } as any);
-          }
+        for (const line of docLines) {
+          await tx.insert(invoiceLinesTable).values({
+            invoiceId: insertedCreditNote.id,
+            ...line,
+          } as any);
         }
-
-        return { cnNumber: number, creditNote: insertedCreditNote };
-      });
-
-      // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts
-      // Receivable. Accounts were already fetched and validated (cnPreflight)
-      // before the credit note was inserted; reuse them and attach the real
-      // credit-note number to the leg descriptions.
-      const cnBuilt = buildReversalLines({
-        amounts: { subtotal: creditSubtotal, vatAmount: creditVat, total: creditTotal },
-        accounts: {
-          accountsReceivableId: cnReceivable?.id,
-          salesRevenueId: cnRevenue?.id,
-          vatPayableId: cnVatPayable?.id,
-        },
-        labels: {
-          revenue: `Reverse revenue - ${cnNumber}`,
-          vat: `Reverse VAT - ${cnNumber}`,
-          ar: `Reduce A/R - ${cnNumber}`,
-        },
-      });
-      if (!cnBuilt.ok) {
-        return res.status(cnBuilt.status).json({ message: cnBuilt.message, code: cnBuilt.code });
-      }
-      {
-        // JE dated to the credit-note date so the reversal lands in the same
-        // period as the document (TD5).
-        const now = cnDate;
-        const entryNumber = await storage.generateEntryNumber(companyId, now);
-
-        // Find the original invoice's journal entry to reverse
-        const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
-        const originalEntry = allEntries.find(
-          (e) => e.sourceId === invoiceId && e.source === "invoice"
-        );
-
-        const cnLines = cnBuilt.lines;
 
         await storage.createJournalEntry(
           {
             companyId,
-            date: now,
+            date: cnDate,
             memo:
               creditLines || creditWasCapped
-                ? `Credit Note ${cnNumber} - partial credit of Invoice ${original.number}`
-                : `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
-            entryNumber,
+                ? `Credit Note ${number} - partial credit of Invoice ${original.number}`
+                : `Credit Note ${number} - reversal of Invoice ${original.number}`,
+            entryNumber: "PENDING", // assigned inside the transaction
             status: "posted",
             source: "invoice",
-            sourceId: creditNote.id,
+            sourceId: insertedCreditNote.id,
             reversedEntryId: originalEntry?.id || null,
             reversalReason: "Credit note issued",
             createdBy: userId,
             postedBy: userId,
-            postedAt: now,
+            postedAt: cnDate,
           } as any,
-          cnLines
+          legs.lines as any,
+          { tx }
         );
-      }
+
+        return { cnNumber: number, creditNote: insertedCreditNote };
+      });
 
       await recordAudit({
         userId,

@@ -468,6 +468,9 @@ export const t = {
     companySettings: "Company Settings",
     healthDashboard: "Health Dashboard",
     communications: "Communications",
+    paymentDate: "Payment date",
+    revenueAccount: "Revenue account",
+    revenueAccountDefault: "Default",
   },
   ar: {
     // Navigation
@@ -908,6 +911,9 @@ export const t = {
     companySettings: "إعدادات الشركة",
     healthDashboard: "لوحة الصحة",
     communications: "التواصل",
+    paymentDate: "تاريخ الدفع",
+    revenueAccount: "حساب الإيرادات",
+    revenueAccountDefault: "الافتراضي",
   },
 };
 

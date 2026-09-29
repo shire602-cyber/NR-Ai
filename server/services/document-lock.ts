@@ -47,9 +47,17 @@ export async function withDocumentLock<T>(
   fn: (tx: typeof db) => Promise<T>
 ): Promise<T> {
   return await db.transaction(async (tx: typeof db) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
+    await acquireDocumentLock(tx, documentId, namespace);
     return await fn(tx);
   });
+}
+
+/**
+ * Take the same transaction-scoped advisory lock inside a transaction the
+ * caller already owns (e.g. to hold several document locks at once).
+ */
+export async function acquireDocumentLock(tx: typeof db, documentId: string, namespace: number): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
 }
 
 /** Lock namespaces — keep distinct so unrelated guards never collide. */

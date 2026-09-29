@@ -1,6 +1,7 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import type { PurchaseOrder, PurchaseOrderLine, Company } from "../../shared/schema";
+import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
 
 /**
  * Generate a professional purchase order PDF on the server side using PDFKit.
@@ -161,7 +162,7 @@ export async function generatePurchaseOrderPDF(
         doc.fillColor("#1F2937");
         doc.text(line.description, colX.description, y + 8, { width: 230 });
         doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
-        doc.text(formatAmount(line.unitPrice, po.currency), colX.price, y + 8, {
+        doc.text(formatUnitPriceCurrency(line.unitPrice, po.currency), colX.price, y + 8, {
           width: 60,
           align: "center",
         });

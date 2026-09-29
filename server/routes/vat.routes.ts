@@ -3,9 +3,21 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { UAE_VAT_RATE } from "../constants";
+import { aggregateReturnSalesLines } from "../services/vat-sales-lines";
 import { pool } from "../db";
+import { round2 } from "../services/financial-statements";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import {
+  assertVatPeriodEnded,
+  classifyVatPeriod,
+  vatPeriodPreviewMeta,
+} from "../services/vat-period-status.service";
+import {
+  buildGeneratedVatReturnValues,
+  evaluateVatReturnPatch,
+  stripLegacyVatReturnFields,
+  vatReturnPatchSchema,
+} from "../services/vat-return-payload.service";
 import {
   addVatWorkpaperRow,
   addVatWorkpaperRowsBulk,
@@ -431,7 +443,7 @@ export function registerVATRoutes(app: Express) {
       }
 
       const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
-      res.json(vatReturns);
+      res.json(vatReturns.map((r) => stripLegacyVatReturnFields(r)));
     })
   );
 
@@ -476,16 +488,19 @@ export function registerVATRoutes(app: Express) {
           code: "PERIOD_TOO_LONG",
         });
       }
-      // The period cannot end in the future — you cannot file a period that has
-      // not finished. Allow the current day for same-day quarter-end filing.
-      const endOfToday = new Date();
-      endOfToday.setUTCHours(23, 59, 59, 999);
-      if (endMs > endOfToday.getTime()) {
+      // A period that has not started yet cannot be generated. A period that has
+      // started but not ended is allowed as a non-persisted draft preview
+      // (isDraftPreview) so accountants can watch the open quarter; it can never
+      // be saved, submitted or filed until the period is over.
+      const now = new Date();
+      const periodClass = classifyVatPeriod(periodStart, periodEnd, now);
+      if (periodClass === "future") {
         return res.status(422).json({
-          message: "A VAT return period cannot end in the future.",
+          message: "A VAT return period cannot start in the future.",
           code: "PERIOD_IN_FUTURE",
         });
       }
+      const previewMeta = vatPeriodPreviewMeta(periodStart, periodEnd, now);
 
       // Generating a VAT return for a period that is already closed would
       // produce numbers that disagree with the locked-period books. Block it.
@@ -565,27 +580,14 @@ export function registerVATRoutes(app: Express) {
           Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1,
         ])
       );
-      for (const line of periodLines) {
-        const fxRate = rateByInvoiceId.get(line.invoiceId) ?? 1;
-        const lineAmount = line.quantity * line.unitPrice * fxRate;
-        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || "standard_rated";
-
-        // Explicit supply type wins; the 0%-rate fallback only catches lines
-        // that weren't tagged. An exempt line also carries a 0% rate, so the
-        // exempt check must come first (Box 5, not Box 4).
-        if (supplyType === "exempt") {
-          // Exempt supplies (financial services, residential rent, etc.)
-          exemptAmount += lineAmount;
-        } else if (supplyType === "zero_rated" || line.vatRate === 0) {
-          // Zero-rated supplies (exports, international services)
-          zeroRatedAmount += lineAmount;
-        } else {
-          // Standard rated (5% VAT)
-          standardRatedAmount += lineAmount;
-          standardRatedVat += lineVat;
-        }
-      }
+      // Placement of every line is decided by the shared classifyVatLineForReturn
+      // rule (also used by the autopilot and the firm workpaper pull), so the
+      // three engines cannot disagree: 0% out-of-scope lines land in no box.
+      const salesTotals = aggregateReturnSalesLines(periodLines as any[], rateByInvoiceId);
+      standardRatedAmount = salesTotals.standardRatedAmount;
+      standardRatedVat = salesTotals.standardRatedVat;
+      zeroRatedAmount = salesTotals.zeroRatedAmount;
+      exemptAmount = salesTotals.exemptAmount;
 
       // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
       // with negative invoice lines after A-B11, so the invoice loop above
@@ -692,6 +694,17 @@ export function registerVATRoutes(app: Express) {
         // Expense-claims schema may not be installed — fail open like bills.
       }
 
+      // Summing float line amounts leaves binary noise (3428.3300000000017);
+      // settle every accumulator to fils before deriving boxes from them.
+      standardRatedAmount = round2(standardRatedAmount);
+      standardRatedVat = round2(standardRatedVat);
+      zeroRatedAmount = round2(zeroRatedAmount);
+      exemptAmount = round2(exemptAmount);
+      totalExpenses = round2(totalExpenses);
+      inputTaxGross = round2(inputTaxGross);
+      reverseChargeAmount = round2(reverseChargeAmount);
+      reverseChargeVatGross = round2(reverseChargeVatGross);
+
       // Partial-exemption apportionment (FTA Article 55). When a company makes
       // both taxable and exempt supplies, only the taxable portion of input VAT
       // is recoverable. Output VAT (including reverse-charge output in Box 3) is
@@ -772,11 +785,66 @@ export function registerVATRoutes(app: Express) {
       // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
       // (input, partial-exemption-reduced). Standard input tax (Box 9) is also
       // partial-exemption reduced via `inputTax`.
-      const totalOutputAmount =
-        standardRatedAmount + zeroRatedAmount + exemptAmount + reverseChargeAmount;
-      const totalOutputVat = standardRatedVat + reverseChargeVat;
-      const totalInputAmount = totalExpenses + reverseChargeAmount;
-      const totalInputVat = inputTax + reverseChargeVatRecoverable;
+      const totalOutputAmount = round2(
+        standardRatedAmount + zeroRatedAmount + exemptAmount + reverseChargeAmount
+      );
+      const totalOutputVat = round2(standardRatedVat + reverseChargeVat);
+      const totalInputAmount = round2(totalExpenses + reverseChargeAmount);
+      const totalInputVat = round2(inputTax + reverseChargeVatRecoverable);
+
+      const returnValues = buildGeneratedVatReturnValues({
+        companyId,
+        userId,
+        periodStart: startDate,
+        periodEnd: endDate,
+        dueDate,
+        vatStagger,
+        emirateBreakdown,
+        zeroRatedAmount,
+        exemptAmount,
+        reverseChargeAmount,
+        reverseChargeVat,
+        reverseChargeVatRecoverable,
+        totalExpenses,
+        inputTax,
+        totalOutputAmount,
+        totalOutputVat,
+        totalInputAmount,
+        totalInputVat,
+      });
+
+      const metadata = {
+        invoicesProcessed: periodInvoices.length,
+        receiptsProcessed: periodReceipts.length,
+        companyEmirate,
+        trnNumber: company.trnVatNumber,
+        standardRatedSales: standardRatedAmount,
+        zeroRatedSales: zeroRatedAmount,
+        exemptSales: exemptAmount,
+        reverseChargeAmount,
+        reverseChargeVat,
+        reverseChargeVatRecoverable,
+        totalInputVat,
+        netVatPayable: round2(totalOutputVat - totalInputVat),
+        partialExemption: {
+          exemptSupplyRatio: exemptRatio,
+          recoverableRatio,
+          grossInputVat: inputTaxGross,
+          recoverableInputVat: inputTax,
+          irrecoverableInputVat: irrecoverableInputTax,
+        },
+      };
+
+      // Open period: compute-only draft preview. Nothing is persisted, so an
+      // unfinished period can never be submitted, filed or listed as a return.
+      if (periodClass === "open") {
+        return res.status(200).json({
+          id: null,
+          ...returnValues,
+          ...previewMeta,
+          _metadata: metadata,
+        });
+      }
 
       // One return per period: regenerating refreshes the existing draft
       // instead of stacking duplicates (and some production databases carry a
@@ -798,89 +866,13 @@ export function registerVATRoutes(app: Express) {
       const persistVatReturn = (data: any) =>
         samePeriod ? storage.updateVatReturn(samePeriod.id, data) : storage.createVatReturn(data);
 
-      const vatReturn = await persistVatReturn({
-        companyId,
-        periodStart: startDate,
-        periodEnd: endDate,
-        dueDate,
-        status: "draft",
-        vatStagger,
-        // Emirate breakdown from company registration
-        ...emirateBreakdown,
-        // Box 2: Tourist Refund Scheme (manual entry needed)
-        box2TouristRefundAmount: 0,
-        box2TouristRefundVat: 0,
-        // Box 3: Reverse charge supplies (imports requiring reverse charge) —
-        // OUTPUT side: buyer must self-assess output VAT on these supplies.
-        box3ReverseChargeAmount: reverseChargeAmount,
-        box3ReverseChargeVat: reverseChargeVat,
-        // Box 4: Zero-rated supplies (exports, international services)
-        box4ZeroRatedAmount: zeroRatedAmount,
-        // Box 5: Exempt supplies (financial services, residential rent)
-        box5ExemptAmount: exemptAmount,
-        // Box 6: Imports subject to VAT
-        box6ImportsAmount: 0,
-        box6ImportsVat: 0,
-        // Box 7: Adjustments for imports
-        box7ImportsAdjAmount: 0,
-        box7ImportsAdjVat: 0,
-        // Box 8: Total output amounts and VAT
-        box8TotalAmount: totalOutputAmount,
-        box8TotalVat: totalOutputVat,
-        box8TotalAdj: 0,
-        // Box 9: Standard rated expenses (input VAT recovery)
-        box9ExpensesAmount: totalExpenses,
-        box9ExpensesVat: inputTax,
-        box9ExpensesAdj: 0,
-        // Box 10: Reverse charge on imports (input side) — buyer claims back the
-        // self-assessed VAT, reduced by partial-exemption ratio when applicable.
-        box10ReverseChargeAmount: reverseChargeAmount,
-        box10ReverseChargeVat: reverseChargeVatRecoverable,
-        // Box 11: Total input amounts and VAT
-        box11TotalAmount: totalInputAmount,
-        box11TotalVat: totalInputVat,
-        box11TotalAdj: 0,
-        // Box 12-14: VAT calculations
-        box12TotalDueTax: totalOutputVat,
-        box13RecoverableTax: totalInputVat,
-        box14PayableTax: totalOutputVat - totalInputVat,
-        // Legacy fields for backward compatibility
-        box1SalesStandard: standardRatedAmount,
-        box2SalesOtherEmirates: 0,
-        box3SalesTaxExempt: zeroRatedAmount,
-        box4SalesExempt: exemptAmount,
-        box5TotalOutputTax: totalOutputVat,
-        box6ExpensesStandard: totalExpenses,
-        box7ExpensesTouristRefund: 0,
-        box8TotalInputTax: totalInputVat,
-        box9NetTax: totalOutputVat - totalInputVat,
-        createdBy: userId,
-      });
+      const vatReturn = await persistVatReturn(returnValues);
 
       // Return with additional metadata for the UI
       res.status(201).json({
-        ...vatReturn,
-        _metadata: {
-          invoicesProcessed: periodInvoices.length,
-          receiptsProcessed: periodReceipts.length,
-          companyEmirate,
-          trnNumber: company.trnVatNumber,
-          standardRatedSales: standardRatedAmount,
-          zeroRatedSales: zeroRatedAmount,
-          exemptSales: exemptAmount,
-          reverseChargeAmount,
-          reverseChargeVat,
-          reverseChargeVatRecoverable,
-          totalInputVat,
-          netVatPayable: totalOutputVat - totalInputVat,
-          partialExemption: {
-            exemptSupplyRatio: exemptRatio,
-            recoverableRatio,
-            grossInputVat: inputTaxGross,
-            recoverableInputVat: inputTax,
-            irrecoverableInputVat: irrecoverableInputTax,
-          },
-        },
+        ...stripLegacyVatReturnFields(vatReturn),
+        ...previewMeta,
+        _metadata: metadata,
       });
     })
   );
@@ -903,6 +895,9 @@ export function registerVATRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      // A return can only be submitted once its period has ended.
+      assertVatPeriodEnded(existing.periodStart as any, existing.periodEnd as any);
 
       // Submitting the return finalises the VAT settlement against periodEnd —
       // refuse if the underlying period is already closed.
@@ -937,7 +932,8 @@ export function registerVATRoutes(app: Express) {
       });
 
       res.json({
-        ...vatReturn,
+        ...stripLegacyVatReturnFields(vatReturn),
+        isDraftPreview: false,
         filing: {
           transmittedByMuhasib: false,
           channel: reference ? "manual-emaratax" : "none",
@@ -956,7 +952,6 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
       const { id } = req.params;
-      const updateData = req.body;
 
       const existing = await storage.getVatReturn(id);
       if (!existing) {
@@ -968,16 +963,33 @@ export function registerVATRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Never allow the client to rewrite the tenant scope of a VAT return.
-      delete (updateData as any).companyId;
-      delete (updateData as any).id;
+      // Validated body: dates coerced, status enum-checked, amounts numeric.
+      // companyId / id / createdBy are dropped by the schema, so the client can
+      // never rewrite the tenant scope of a VAT return.
+      const parsed = vatReturnPatchSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Invalid VAT return update",
+          code: "VALIDATION_ERROR",
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        });
+      }
+      // Legacy 8-box aliases are no longer client-writable.
+      const cleanUpdate = stripLegacyVatReturnFields(parsed.data);
 
-      const vatReturn = await storage.updateVatReturn(id, {
-        ...updateData,
-        updatedAt: new Date(),
-      });
+      // The period is immutable, a submitted/filed return keeps its figures,
+      // and no non-draft status is allowed before the period has ended.
+      const decision = evaluateVatReturnPatch({ existing: existing as any, body: req.body, patch: cleanUpdate });
+      if (!decision.ok) {
+        return res
+          .status(decision.status)
+          .json({ message: decision.message, code: decision.code });
+      }
 
-      res.json(vatReturn);
+      // storage.updateVatReturn stamps updatedAt itself.
+      const vatReturn = await storage.updateVatReturn(id, cleanUpdate);
+
+      res.json(stripLegacyVatReturnFields(vatReturn));
     })
   );
 }

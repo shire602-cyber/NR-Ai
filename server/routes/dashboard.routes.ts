@@ -4,6 +4,15 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
 import { uaeDayStart, uaeDayEnd, uaeMonthStart, uaeMonthEnd, uaeYmdParts } from "../utils/date";
+import { round2, roundRowsWithTotal, buildBalanceSheetTotals } from "../services/financial-statements";
+import Decimal from "decimal.js";
+
+// Summing float journal amounts leaks binary noise (3428.3300000000017) into
+// responses; round money to fils at the response boundary.
+const roundRows = <T extends Record<string, any>>(rows: T[], key: keyof T): T[] =>
+  rows.map((r) => ({ ...r, [key]: round2(Number(r[key])) }));
+const roundValues = <T extends Record<string, number>>(o: T): T =>
+  Object.fromEntries(Object.entries(o).map(([k, v]) => [k, round2(v)])) as T;
 
 // Identifies a "real cash" account — bank, cash on hand, or petty cash.
 // Used by Cash Position and any other view that should ignore non-cash
@@ -211,19 +220,19 @@ export function registerDashboardRoutes(app: Express) {
     const outstanding = unpaidInvoices.reduce((sum, inv) => sum + inv.total, 0);
 
     return {
-      revenue,
-      expenses,
-      outstanding,
+      revenue: round2(revenue),
+      expenses: round2(expenses),
+      outstanding: round2(outstanding),
       totalInvoices: invoices.length,
       totalEntries: entries.length,
-      cashPosition,
-      monthlyBurnRate,
-      cashRunway,
-      arAging,
-      apAging,
-      revenueGrowth,
-      expenseGrowth,
-      topExpenseCategories,
+      cashPosition: round2(cashPosition),
+      monthlyBurnRate: round2(monthlyBurnRate),
+      cashRunway: cashRunway === null ? null : round2(cashRunway),
+      arAging: roundValues(arAging),
+      apAging: roundValues(apAging),
+      revenueGrowth: revenueGrowth === null ? null : round2(revenueGrowth),
+      expenseGrowth: expenseGrowth === null ? null : round2(expenseGrowth),
+      topExpenseCategories: roundRows(topExpenseCategories, "value"),
     };
   }
 
@@ -278,7 +287,7 @@ export function registerDashboardRoutes(app: Express) {
         .sort((a, b) => b.value - a.value)
         .slice(0, 5);
 
-      res.json(breakdown);
+      res.json(roundRows(breakdown, "value"));
     })
   );
 
@@ -335,7 +344,7 @@ export function registerDashboardRoutes(app: Express) {
           expenses += line.debit - line.credit;
         }
 
-        return { month, revenue, expenses };
+        return { month, revenue: round2(revenue), expenses: round2(expenses) };
       });
 
       res.json(trends);
@@ -406,17 +415,18 @@ export function registerDashboardRoutes(app: Express) {
         .map((a) => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }))
         .filter((item) => item.amount !== 0);
 
-      const totalRevenue = revenue.reduce((sum, item) => sum + item.amount, 0);
-      const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
-      const netProfit = totalRevenue - totalExpenses;
+      // Rows rounded first; totals and net profit are sums of the rounded rows
+      // so the report always ties to what it displays.
+      const revenueRounded = roundRowsWithTotal(revenue);
+      const expensesRounded = roundRowsWithTotal(expenses);
 
       res.json({
         reportCurrency: "AED",
-        revenue,
-        expenses,
-        totalRevenue,
-        totalExpenses,
-        netProfit,
+        revenue: revenueRounded.rows,
+        expenses: expensesRounded.rows,
+        totalRevenue: revenueRounded.total,
+        totalExpenses: expensesRounded.total,
+        netProfit: new Decimal(revenueRounded.total).minus(expensesRounded.total).toNumber(),
       });
     })
   );
@@ -511,15 +521,20 @@ export function registerDashboardRoutes(app: Express) {
         equity.push({ accountName: "Current Period Net Income", amount: netIncome });
       }
 
+      // Rows rounded first; every total is the sum of the rounded rows.
+      const bs = buildBalanceSheetTotals({ assets, liabilities, equity });
+
       res.json({
         reportCurrency: "AED",
-        assets,
-        liabilities,
-        equity,
-        totalAssets: assets.reduce((s, i) => s + i.amount, 0),
-        totalLiabilities: liabilities.reduce((s, i) => s + i.amount, 0),
-        totalEquity: equity.reduce((s, i) => s + i.amount, 0),
-        currentPeriodNetIncome: netIncome,
+        assets: bs.assets.rows,
+        liabilities: bs.liabilities.rows,
+        equity: bs.equity.rows,
+        totalAssets: bs.assets.total,
+        totalLiabilities: bs.liabilities.total,
+        totalEquity: bs.equity.total,
+        totalLiabilitiesAndEquity: bs.totalLiabilitiesAndEquity,
+        isBalanced: bs.isBalanced,
+        currentPeriodNetIncome: round2(netIncome),
       });
     })
   );
@@ -609,11 +624,11 @@ export function registerDashboardRoutes(app: Express) {
       res.json({
         reportCurrency: "AED",
         period: "Current Period",
-        salesSubtotal,
-        salesVAT,
-        purchasesSubtotal,
-        purchasesVAT,
-        netVATPayable: salesVAT - purchasesVAT,
+        salesSubtotal: round2(salesSubtotal),
+        salesVAT: round2(salesVAT),
+        purchasesSubtotal: round2(purchasesSubtotal),
+        purchasesVAT: round2(purchasesVAT),
+        netVATPayable: round2(salesVAT - purchasesVAT),
       });
     })
   );
@@ -731,6 +746,7 @@ export function registerDashboardRoutes(app: Express) {
           .filter((item) => item.value > 0)
           .sort((a, b) => b.value - a.value)
           .slice(0, 5)
+          .map((item) => ({ ...item, value: round2(item.value) }))
       );
     })
   );

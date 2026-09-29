@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { generatePurchaseOrderPDF } from "../services/pdf-purchase-order.service";
 import { createLogger } from "../config/logger";
 import { calculateDocumentTotals } from "../services/document-totals.service";
+import { normalizeDocumentLines } from "../services/document-line-limits";
 
 const logger = createLogger("purchase-orders-routes");
 
@@ -78,12 +79,17 @@ export function registerPurchaseOrderRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...poData } = req.body;
+      const { lines: rawLines, ...poData } = req.body;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      // Cap and round quantity / unit price to what the columns can store, so
+      // totals are computed from exactly what is persisted (and an oversized
+      // value is a clean 400, not a Postgres overflow).
+      const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
 
       const po = await storage.createPurchaseOrder(
         normalizePoDates({ ...poData, ...calculateDocumentTotals(lines), companyId })
@@ -110,7 +116,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, ...updateData } = req.body;
+      const { lines: rawLines, ...updateData } = req.body;
 
       const po = await storage.getPurchaseOrder(id);
       if (!po) {
@@ -125,6 +131,8 @@ export function registerPurchaseOrderRoutes(app: Express) {
       if (po.status === "received") {
         return res.status(400).json({ message: "Cannot update a received purchase order" });
       }
+
+      const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
 
       const updated = await storage.updatePurchaseOrder(
         id,

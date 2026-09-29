@@ -6,9 +6,9 @@ import { z } from "zod";
 
 import { storage } from "../storage";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
-import { insertBankTransactionSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
+import { parseBankTransactionInput } from "../services/bank-transaction-input.service";
 import { asyncHandler } from "../middleware/errorHandler";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { categorizationRequestSchema } from "../../shared/schema";
@@ -961,6 +961,10 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           return res.status(404).json({ message: "Transaction not found" });
         }
 
+        // Same guard as every other bank path: a future bank date is refused
+        // and the period lock is checked on the bank date.
+        await resolveSettlementDate(txn.companyId, { fallback: txn.transactionDate });
+
         const transaction = await storage.reconcileBankTransaction(
           id,
           txn.companyId,
@@ -1013,12 +1017,26 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           return res.status(403).json({ message: "Access denied" });
         }
 
-        // S-M1: allowlist body fields, then pin the tenant scope.
+        // Validated body (zod): the date is a calendar date, a future date is
+        // refused, and only allow-listed fields pass (S-M1) - reconciliation
+        // state and the tenant scope are never client-writable.
+        const parsed = parseBankTransactionInput(req.body);
+        if (!parsed.ok) {
+          return res
+            .status(parsed.status)
+            .json({ message: parsed.message, code: parsed.code, issues: parsed.issues });
+        }
+        if (parsed.value.bankAccountId) {
+          const bankAccount = await storage.getAccount(parsed.value.bankAccountId, companyId);
+          if (!bankAccount) {
+            return res.status(400).json({ message: "bankAccountId is not an account of this company", code: "INVALID_BANK_ACCOUNT" });
+          }
+        }
         const transaction = await storage.createBankTransaction({
-          ...pickAllowed(req.body, insertBankTransactionSchema, ["companyId"]),
+          ...parsed.value,
           companyId,
         } as any);
-        res.json(transaction);
+        res.status(201).json(transaction);
       } catch (error: any) {
         res.status(error?.status || error?.statusCode || 500).json({ message: error.message, ...(error?.status === 503 ? { code: "AI_NOT_CONFIGURED" } : {}) });
       }

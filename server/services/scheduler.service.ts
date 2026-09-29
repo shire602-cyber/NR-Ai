@@ -10,6 +10,7 @@ import {
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
+import { deriveVatSupplyType } from "./vat-supply-type";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
@@ -552,6 +553,7 @@ async function generateDueRecurringInvoices() {
           unitPrice: number;
           vatRate?: number;
           vatSupplyType?: string;
+          revenueAccountId?: string | null;
         }>;
         try {
           templateLines = JSON.parse(template.linesJson);
@@ -627,14 +629,27 @@ async function generateDueRecurringInvoices() {
           } as any)
           .returning();
 
+        // A revenue account chosen on the template may have been deleted or
+        // deactivated since; fall back to the default account rather than
+        // failing the whole run on a foreign-key error.
+        const validRevenueIds = new Set(
+          (await storage.getAccountsByCompanyId(template.companyId))
+            .filter((a) => a.type === "income" && a.isActive !== false)
+            .map((a) => a.id)
+        );
         for (const line of templateLines) {
+          const vatRate = line.vatRate ?? UAE_VAT_RATE;
           await tx.insert(invoiceLinesTable).values({
             invoiceId: insertedInvoice.id,
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
-            vatRate: line.vatRate ?? UAE_VAT_RATE,
-            vatSupplyType: line.vatSupplyType || undefined,
+            vatRate,
+            vatSupplyType: deriveVatSupplyType(vatRate, line.vatSupplyType),
+            revenueAccountId:
+              line.revenueAccountId && validRevenueIds.has(line.revenueAccountId)
+                ? line.revenueAccountId
+                : undefined,
           } as any);
         }
 

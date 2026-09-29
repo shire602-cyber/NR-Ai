@@ -202,3 +202,68 @@ describe("contra-asset presentation", () => {
     expect(cost.amount + accDep.amount).toBe(35000); // net book value
   });
 });
+
+// ── Statement rounding: rows first, totals are the sum of the ROUNDED rows ──
+import { roundRowsWithTotal, buildBalanceSheetTotals } from "../../server/services/financial-statements";
+
+describe("roundRowsWithTotal", () => {
+  it("rounds each row to 2dp and totals the rounded rows (no independent rounding)", () => {
+    const { rows, total } = roundRowsWithTotal([{ amount: 10.004 }, { amount: 10.004 }]);
+    expect(rows.map((r) => r.amount)).toEqual([10, 10]);
+    // Independent rounding of the raw sum would give 20.01.
+    expect(total).toBe(20);
+  });
+
+  it("strips float noise and keeps extra row fields", () => {
+    const { rows, total } = roundRowsWithTotal([
+      { name: "a", amount: 3428.3300000000017 },
+      { name: "b", amount: 0.1 + 0.2 },
+    ]);
+    expect(rows).toEqual([
+      { name: "a", amount: 3428.33 },
+      { name: "b", amount: 0.3 },
+    ]);
+    expect(total).toBe(3428.63);
+  });
+
+  it("returns zero for no rows", () => {
+    expect(roundRowsWithTotal([])).toEqual({ rows: [], total: 0 });
+  });
+});
+
+describe("buildBalanceSheetTotals", () => {
+  it("ties Assets to Liabilities + Equity exactly when raw values would mismatch by 0.01", () => {
+    // Raw: assets 20.008 -> old total round2 = 20.01; L+E raw 20.004 -> 20.00.
+    const bs = buildBalanceSheetTotals({
+      assets: [{ amount: 10.004 }, { amount: 10.004 }],
+      liabilities: [{ amount: 12.002 }],
+      equity: [{ amount: 8.002 }],
+    });
+    expect(bs.assets.total).toBe(20);
+    expect(bs.liabilities.total).toBe(12);
+    expect(bs.equity.total).toBe(8);
+    expect(bs.totalLiabilitiesAndEquity).toBe(20);
+    expect(bs.assets.total).toBe(bs.totalLiabilitiesAndEquity);
+    expect(bs.isBalanced).toBe(true);
+  });
+
+  it("displayed rows always sum to the displayed totals", () => {
+    const bs = buildBalanceSheetTotals({
+      assets: [{ amount: 0.004 }, { amount: 0.004 }, { amount: 0.004 }],
+      liabilities: [{ amount: 0.006 }],
+      equity: [],
+    });
+    const sum = (r: { amount: number }[]) => Math.round(r.reduce((s, x) => s + x.amount * 100, 0)) / 100;
+    expect(bs.assets.total).toBe(sum(bs.assets.rows));
+    expect(bs.liabilities.total).toBe(sum(bs.liabilities.rows));
+  });
+
+  it("reports an unbalanced sheet honestly (a real 0.01 difference is not hidden)", () => {
+    const bs = buildBalanceSheetTotals({
+      assets: [{ amount: 100.01 }],
+      liabilities: [{ amount: 100 }],
+      equity: [],
+    });
+    expect(bs.isBalanced).toBe(false);
+  });
+});

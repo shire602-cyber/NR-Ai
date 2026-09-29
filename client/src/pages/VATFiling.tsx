@@ -44,6 +44,7 @@ import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
+import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   FileText,
@@ -68,6 +69,9 @@ interface VATReturn {
   periodEnd: string;
   dueDate: string;
   taxYearEnd: string | null;
+  /** true when computed for a period that has not ended; never persisted or submittable */
+  isDraftPreview?: boolean;
+  previewAsOf?: string | null;
   vatStagger: string | null;
   status: string;
   box1aAbuDhabiAmount: number;
@@ -211,13 +215,22 @@ export default function VATFiling() {
         periodStart,
         periodEnd,
       }),
-    onSuccess: () => {
+    onSuccess: (data: VATReturn) => {
+      setCreateDialogOpen(false);
+      if (data?.isDraftPreview) {
+        // Open period: nothing was saved. Show it read-only with the banner.
+        toast({
+          title: "Draft preview — period not ended",
+          description: "Calculated to date. It cannot be submitted until the period has ended.",
+        });
+        handleViewReturn(data);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
         title: "VAT Return Generated",
         description: "Review the calculated amounts before submitting.",
       });
-      setCreateDialogOpen(false);
     },
     onError: (error: any) => {
       toast({
@@ -498,7 +511,7 @@ export default function VATFiling() {
   };
 
   const handleSubmitReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || selectedReturn.isDraftPreview) return;
     submitMutation.mutate({ id: selectedReturn.id });
   };
 
@@ -515,7 +528,12 @@ export default function VATFiling() {
     doc.rect(0, 0, pageWidth, 25, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text("VAT RETURN - VAT 201", pageWidth / 2, 12, { align: "center" });
+    doc.text(
+      vatReturn.isDraftPreview ? "DRAFT PREVIEW - VAT 201 (PERIOD NOT ENDED)" : "VAT RETURN - VAT 201",
+      pageWidth / 2,
+      12,
+      { align: "center" }
+    );
     doc.setFontSize(10);
     doc.text("Federal Tax Authority | الهيئة الاتحادية للضرائب", pageWidth / 2, 20, {
       align: "center",
@@ -1408,6 +1426,9 @@ export default function VATFiling() {
               )}
             </DialogDescription>
           </DialogHeader>
+          {selectedReturn?.isDraftPreview && (
+            <DraftPreviewBanner previewAsOf={selectedReturn.previewAsOf} />
+          )}
           {selectedReturn && company && (
             <VAT201Form
               data={vatFormData}
@@ -1464,6 +1485,9 @@ export default function VATFiling() {
               )}
             </DialogDescription>
           </DialogHeader>
+          {selectedReturn?.isDraftPreview && (
+            <DraftPreviewBanner previewAsOf={selectedReturn.previewAsOf} />
+          )}
           {selectedReturn && company && (
             <>
               <VAT201Form
@@ -1505,12 +1529,22 @@ export default function VATFiling() {
             <Button
               variant="secondary"
               onClick={handleSaveReturn}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || !!selectedReturn?.isDraftPreview}
             >
               {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {locale === "ar" ? "حفظ المسودة" : "Save Draft"}
             </Button>
-            <Button onClick={handleSubmitReturn} disabled={submitMutation.isPending}>
+            <Button
+              onClick={handleSubmitReturn}
+              disabled={submitMutation.isPending || !!selectedReturn?.isDraftPreview}
+              title={
+                selectedReturn?.isDraftPreview
+                  ? locale === "ar"
+                    ? "الفترة لم تنتهِ بعد"
+                    : "Period not ended"
+                  : undefined
+              }
+            >
               {submitMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               <Send className="w-4 h-4 mr-2" />
               {locale === "ar" ? "تقديم للمراجعة" : "Submit for Filing"}

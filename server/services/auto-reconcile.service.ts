@@ -8,6 +8,7 @@ import type {
   Account,
 } from "../../shared/schema";
 import { ACCOUNT_CODES } from "../constants";
+import { resolveSettlementDate } from "./payment-date-guard.service";
 
 export interface ReconcileMatch {
   bankTransactionId: string;
@@ -518,6 +519,11 @@ export async function applyReconcileMatches(
 
   for (const match of matchIds) {
     try {
+      // Reconciliation posts its journal on the bank transaction's date. Use
+      // the same resolver as every other settlement path: a future bank date is
+      // refused and the period lock is checked on the bank date.
+      const txn = await storage.getBankTransactionById(match.bankTransactionId, companyId);
+      if (txn) await resolveSettlementDate(companyId, { fallback: txn.transactionDate });
       await storage.reconcileBankTransaction(
         match.bankTransactionId,
         companyId,
