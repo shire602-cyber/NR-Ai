@@ -40,6 +40,7 @@ import {
   type ClientSnapshot,
   type SortDir,
 } from "../services/firm-command-center.service";
+import { openArAmount, openArCondition } from "../services/invoice-outstanding.db";
 
 const logger = createLogger("firm-command-center-routes");
 
@@ -522,7 +523,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, allowedCompanyIds),
-            inArray(invoices.status, ["sent", "partial"]),
+            openArCondition,
             lt(invoices.dueDate, now),
             or(isNull(invoices.lastReminderSentAt), lt(invoices.lastReminderSentAt, startOfToday))
           )

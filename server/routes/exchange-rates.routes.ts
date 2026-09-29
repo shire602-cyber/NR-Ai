@@ -2,17 +2,18 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, adminMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
-import { eq, and, desc, sql } from "drizzle-orm";
-import { exchangeRates, invoices, receipts } from "../../shared/schema";
-import { revalueForeignBalance, buildFxRevaluationLines } from "../services/financial-statements";
+import { eq, and, desc, ne, sql } from "drizzle-orm";
+import { exchangeRates, journalEntries } from "../../shared/schema";
+import { buildFxRevaluationLines } from "../services/financial-statements";
+import { computeRevaluation, type RevaluedItem } from "../services/fx-revaluation.service";
+import { loadRevaluationItems } from "../services/fx-revaluation.db";
+import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { ACCOUNT_CODES } from "../constants";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import type {
   UnrealizedFxGainLoss,
   FxGainsLossesReport,
   ExchangeRate,
-  Invoice,
-  Receipt,
 } from "../../shared/schema";
 import { storage } from "../storage";
 import {
@@ -390,9 +391,12 @@ export function registerExchangeRateRoutes(app: Express) {
 
   // ─────────────────────────────────────────────
   // GET /api/companies/:companyId/reports/fx-gains-losses
-  // Returns unrealized FX gains/losses on open
-  // receivables (unpaid invoices in foreign currency)
-  // and open payables (unposted receipts in foreign currency).
+  // Unrealised FX gains/losses on the OPEN foreign-currency balances:
+  //   receivables = issued invoices with an amount outstanding ON the as-of
+  //     date (payments and credit notes dated later do not count);
+  //   payables    = approved vendor bills with an amount outstanding on that date.
+  // Drafts, void and cancelled documents are excluded, and every figure is on
+  // what is still OUTSTANDING, not the document total.
   // ─────────────────────────────────────────────
   app.get(
     "/api/companies/:companyId/reports/fx-gains-losses",
@@ -406,89 +410,34 @@ export function registerExchangeRateRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const asOf = new Date();
-
-      // ── Open foreign-currency receivables (invoices) ──
-      const openInvoices = await db
-        .select()
-        .from(invoices)
-        .where(and(eq(invoices.companyId, companyId)));
-
-      const foreignInvoices = openInvoices.filter(
-        (inv: Invoice) => inv.currency !== "AED" && inv.status !== "paid" && inv.status !== "void"
-      );
-
-      const receivables: UnrealizedFxGainLoss[] = [];
-      for (const inv of foreignInvoices) {
-        // A-B4: canonical convention is AED per 1 unit of foreign currency, so
-        // request foreign->AED (NOT AED->foreign) and MULTIPLY, matching the
-        // invoice booking path (baseCurrencyAmount = total * exchangeRate).
-        const currentRate = await getLatestRate(inv.currency, "AED", asOf, companyId);
-        if (currentRate === null) continue;
-
-        const txRate = inv.exchangeRate > 0 ? inv.exchangeRate : 1;
-        const foreignTotal = inv.total;
-
-        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
-          foreignAmount: foreignTotal,
-          bookRateAedPerUnit: txRate,
-          currentRateAedPerUnit: currentRate,
-          kind: "receivable",
-        });
-
-        receivables.push({
-          entityType: "invoice",
-          entityId: inv.id,
-          entityNumber: inv.number,
-          counterparty: inv.customerName,
-          currency: inv.currency,
-          foreignAmount: foreignTotal,
-          transactionRate: txRate,
-          currentRate,
-          bookValueAed,
-          currentValueAed,
-          unrealizedGainLoss,
-        });
+      // ?asOf=YYYY-MM-DD reports the position on that day (default: today).
+      const asOfParam = typeof req.query.asOf === "string" ? req.query.asOf : "";
+      let asOf = new Date();
+      if (asOfParam) {
+        const requested = new Date(asOfParam);
+        if (Number.isNaN(requested.getTime())) {
+          return res.status(400).json({ message: "Invalid asOf date" });
+        }
+        asOf = new Date(`${requested.toISOString().slice(0, 10)}T00:00:00.000Z`);
+        assertNotFutureDate(asOf);
       }
+      const revalued = computeRevaluation(await loadRevaluationItems(companyId, asOf));
 
-      // ── Open foreign-currency payables (unposted receipts) ──
-      const allReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
-
-      const foreignReceipts = allReceipts.filter(
-        (r: Receipt) => r.currency && r.currency !== "AED" && !r.posted
-      );
-
-      const payables: UnrealizedFxGainLoss[] = [];
-      for (const rec of foreignReceipts) {
-        const currency = rec.currency!;
-        // A-B4: foreign->AED, MULTIPLY (AED per unit of foreign currency).
-        const currentRate = await getLatestRate(currency, "AED", asOf, companyId);
-        if (currentRate === null) continue;
-
-        const txRate = rec.exchangeRate > 0 ? rec.exchangeRate : 1;
-        const foreignAmount = rec.amount ?? 0;
-
-        const { bookValueAed, currentValueAed, unrealizedGainLoss } = revalueForeignBalance({
-          foreignAmount,
-          bookRateAedPerUnit: txRate,
-          currentRateAedPerUnit: currentRate,
-          kind: "payable",
-        });
-
-        payables.push({
-          entityType: "payable",
-          entityId: rec.id,
-          entityNumber: `RCP-${rec.id.slice(0, 8)}`,
-          counterparty: rec.merchant ?? "Unknown",
-          currency,
-          foreignAmount,
-          transactionRate: txRate,
-          currentRate,
-          bookValueAed,
-          currentValueAed,
-          unrealizedGainLoss,
-        });
-      }
+      const toRow = (item: RevaluedItem): UnrealizedFxGainLoss => ({
+        entityType: item.kind === "receivable" ? "invoice" : "payable",
+        entityId: item.id,
+        entityNumber: item.number ?? item.id.slice(0, 8),
+        counterparty: item.counterparty ?? "Unknown",
+        currency: item.currency,
+        foreignAmount: item.outstandingForeign,
+        transactionRate: item.bookRate,
+        currentRate: item.currentRate,
+        bookValueAed: item.bookValueAed,
+        currentValueAed: item.currentValueAed,
+        unrealizedGainLoss: item.adjustmentAed,
+      });
+      const receivables = revalued.items.filter((i) => i.kind === "receivable").map(toRow);
+      const payables = revalued.items.filter((i) => i.kind === "payable").map(toRow);
 
       const allItems = [...receivables, ...payables];
       const totalUnrealizedGain = allItems
@@ -514,7 +463,16 @@ export function registerExchangeRateRoutes(app: Express) {
 
   // A-B8: post an unrealised FX revaluation of open foreign A/R and A/P as of a
   // date, with an automatic reversing entry the next day (standard period-end
-  // practice — the realised result is recognised on settlement instead).
+  // practice - the realised result is recognised on settlement instead).
+  //
+  //  * Each run recomputes the full unrealised amount on what is outstanding at
+  //    the as-of date. Because the previous run is reversed the day after it,
+  //    nothing stacks, so no delta against earlier runs is needed.
+  //  * Idempotent per company and as-of date: a second request for a date that
+  //    already has a revaluation entry is refused 409 REVALUATION_ALREADY_POSTED
+  //    (the same convention as the month-end closing entries).
+  //  * The entries are system-generated, so source_id stays NULL (it is a uuid
+  //    column) and the as-of date lives in the entry date and memo.
   app.post(
     "/api/companies/:companyId/exchange-rates/revalue",
     authMiddleware,
@@ -525,45 +483,39 @@ export function registerExchangeRateRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const asOf = req.body?.asOf ? new Date(req.body.asOf) : new Date();
-      if (Number.isNaN(asOf.getTime())) {
+      const requested = req.body?.asOf ? new Date(req.body.asOf) : new Date();
+      if (Number.isNaN(requested.getTime())) {
         return res.status(400).json({ message: "Invalid asOf date" });
       }
+      // The revaluation date is a calendar day (UTC midnight).
+      const asOfYmd = requested.toISOString().slice(0, 10);
+      const asOf = new Date(`${asOfYmd}T00:00:00.000Z`);
+      const reversalDate = new Date(asOf.getTime() + 24 * 60 * 60 * 1000);
 
-      // Net AED revaluation across open foreign receivables (unpaid invoices)…
-      let receivableRevalAed = 0;
-      const openInvoices = await db.select().from(invoices).where(eq(invoices.companyId, companyId));
-      for (const inv of openInvoices) {
-        if (inv.currency === "AED" || inv.status === "paid" || inv.status === "void") continue;
-        const currentRate = await getLatestRate(inv.currency, "AED", asOf, companyId);
-        if (currentRate === null) continue;
-        receivableRevalAed += revalueForeignBalance({
-          foreignAmount: inv.total,
-          bookRateAedPerUnit: inv.exchangeRate > 0 ? inv.exchangeRate : 1,
-          currentRateAedPerUnit: currentRate,
-          kind: "receivable",
-        }).unrealizedGainLoss;
-      }
-      // …and open foreign payables (unposted receipts).
-      let payableRevalAed = 0;
-      const openReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
-      for (const rec of openReceipts) {
-        if (!rec.currency || rec.currency === "AED" || rec.posted) continue;
-        const currentRate = await getLatestRate(rec.currency, "AED", asOf, companyId);
-        if (currentRate === null) continue;
-        payableRevalAed += revalueForeignBalance({
-          foreignAmount: rec.amount ?? 0,
-          bookRateAedPerUnit: rec.exchangeRate > 0 ? rec.exchangeRate : 1,
-          currentRateAedPerUnit: currentRate,
-          kind: "payable",
-        }).unrealizedGainLoss;
+      // A future revaluation would book an unrealised result that has not
+      // happened yet; a locked period must not be written into (either day).
+      assertNotFutureDate(asOf);
+      await assertPeriodNotLocked(companyId, asOf);
+      await assertPeriodNotLocked(companyId, reversalDate);
+
+      const items = await loadRevaluationItems(companyId, asOf);
+      const revalued = computeRevaluation(items);
+      if (revalued.skipped.length > 0) {
+        const currencies = Array.from(
+          new Set(items.filter((i) => revalued.skipped.some((s) => s.id === i.id)).map((i) => i.currency))
+        ).sort();
+        return res.status(422).json({
+          message: `No ${currencies.join(", ")}→AED exchange rate is available on ${asOfYmd}, so those open balances cannot be revalued. Add the rate under Exchange Rates, then run the revaluation again.`,
+          code: "NO_EXCHANGE_RATE",
+          currencies,
+        });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
       const byCode = (code: string) => accounts.find((a) => a.code === code)?.id ?? null;
       const built = buildFxRevaluationLines({
-        receivableRevalAed,
-        payableRevalAed,
+        receivableRevalAed: revalued.receivableRevalAed,
+        payableRevalAed: revalued.payableRevalAed,
         accounts: {
           arId: byCode(ACCOUNT_CODES.AR),
           apId: byCode(ACCOUNT_CODES.AP),
@@ -575,73 +527,109 @@ export function registerExchangeRateRoutes(app: Express) {
         if (built.code === "NO_REVALUATION") {
           return res.json({ posted: false, message: "No open foreign-currency balances to revalue." });
         }
-        return res.status(422).json({ message: built.message, code: built.code });
+        // Name the account: never post to a different one.
+        const missing: Record<string, string> = {
+          AR_ACCOUNT_MISSING: `Accounts Receivable (${ACCOUNT_CODES.AR})`,
+          AP_ACCOUNT_MISSING: `Accounts Payable (${ACCOUNT_CODES.AP})`,
+          FX_GAIN_ACCOUNT_MISSING: `Foreign Exchange Gain (${ACCOUNT_CODES.FX_GAIN})`,
+          FX_LOSS_ACCOUNT_MISSING: `Foreign Exchange Loss (${ACCOUNT_CODES.FX_LOSS})`,
+        };
+        const name = missing[built.code];
+        return res.status(422).json({
+          message: name
+            ? `The ${name} account is missing from the chart of accounts, so the revaluation cannot be posted. Add it, then run the revaluation again.`
+            : built.message,
+          code: built.code,
+        });
       }
 
-      await assertPeriodNotLocked(companyId, asOf);
-      const sourceId = asOf.toISOString().slice(0, 10); // one revaluation per as-of date
-      const existing = await storage.getJournalEntriesBySource(companyId, "fx_revaluation", sourceId);
-      if (existing.some((e) => e.status === "posted")) {
-        return res.json({ posted: false, message: `Revaluation already posted for ${sourceId}.` });
+      const outcome = await withDocumentLock(`${companyId}:${asOfYmd}`, LOCK_NS.FX_REVALUATION, async (tx) => {
+        const existing = await tx
+          .select({ id: journalEntries.id, entryNumber: journalEntries.entryNumber })
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.companyId, companyId),
+              eq(journalEntries.source, "fx_revaluation"),
+              ne(journalEntries.status, "void"),
+              sql`${journalEntries.date}::date = ${asOfYmd}::date`
+            )
+          );
+        if (existing.length > 0) return { alreadyPosted: existing[0] };
+
+        const entry = await storage.createJournalEntry(
+          {
+            companyId,
+            date: asOf,
+            memo: `Unrealised FX revaluation as of ${asOfYmd}`,
+            entryNumber: "PENDING", // assigned inside the transaction
+            status: "posted",
+            source: "fx_revaluation",
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          } as any,
+          built.lines,
+          { tx }
+        );
+        const reversal = await storage.createJournalEntry(
+          {
+            companyId,
+            date: reversalDate,
+            memo: `Reversal of unrealised FX revaluation as of ${asOfYmd}`,
+            entryNumber: "PENDING",
+            status: "posted",
+            source: "fx_revaluation_reversal",
+            reversedEntryId: entry.id,
+            reversalReason: "Automatic reversal of period-end unrealised FX revaluation",
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          } as any,
+          built.lines.map((l) => ({
+            accountId: l.accountId,
+            debit: l.credit,
+            credit: l.debit,
+            description: `Reversal — ${l.description}`,
+          })),
+          { tx }
+        );
+        return { entry, reversal };
+      });
+
+      if ("alreadyPosted" in outcome) {
+        return res.status(409).json({
+          message: `An FX revaluation for ${asOfYmd} is already posted (entry ${outcome.alreadyPosted.entryNumber}). Reverse it before running it again.`,
+          code: "REVALUATION_ALREADY_POSTED",
+          journalEntryId: outcome.alreadyPosted.id,
+        });
       }
-
-      const revNumber = await storage.generateEntryNumber(companyId, asOf);
-      await storage.createJournalEntry(
-        {
-          companyId,
-          date: asOf,
-          memo: `Unrealised FX revaluation ${sourceId}`,
-          entryNumber: revNumber,
-          status: "posted",
-          source: "fx_revaluation",
-          sourceId,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: asOf,
-        } as any,
-        built.lines
-      );
-
-      const reversalDate = new Date(asOf.getTime() + 24 * 60 * 60 * 1000);
-      await assertPeriodNotLocked(companyId, reversalDate);
-      const reversalNumber = await storage.generateEntryNumber(companyId, reversalDate);
-      await storage.createJournalEntry(
-        {
-          companyId,
-          date: reversalDate,
-          memo: `Reversal of unrealised FX revaluation ${sourceId}`,
-          entryNumber: reversalNumber,
-          status: "posted",
-          source: "fx_revaluation_reversal",
-          sourceId,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: reversalDate,
-        } as any,
-        built.lines.map((l) => ({
-          accountId: l.accountId,
-          debit: l.credit,
-          credit: l.debit,
-          description: `Reversal — ${l.description}`,
-        }))
-      );
 
       await recordAudit({
         userId,
         companyId,
         action: "fx.revaluation",
         entityType: "journal_entry",
-        entityId: sourceId,
-        after: { receivableRevalAed, payableRevalAed },
+        entityId: outcome.entry.id,
+        after: {
+          asOf: asOfYmd,
+          receivableRevalAed: revalued.receivableRevalAed,
+          payableRevalAed: revalued.payableRevalAed,
+          reversalEntryId: outcome.reversal.id,
+        },
         req,
       });
 
-      res.json({
+      res.status(201).json({
         posted: true,
-        asOf: sourceId,
-        receivableRevalAed: Math.round(receivableRevalAed * 100) / 100,
-        payableRevalAed: Math.round(payableRevalAed * 100) / 100,
-        netGainLoss: Math.round((receivableRevalAed + payableRevalAed) * 100) / 100,
+        asOf: asOfYmd,
+        journalEntryId: outcome.entry.id,
+        reversalEntryId: outcome.reversal.id,
+        reversalDate: reversalDate.toISOString().slice(0, 10),
+        receivableRevalAed: revalued.receivableRevalAed,
+        payableRevalAed: revalued.payableRevalAed,
+        netGainLoss: Math.round((revalued.receivableRevalAed + revalued.payableRevalAed) * 100) / 100,
+        documents: revalued.items.length,
       });
     })
   );

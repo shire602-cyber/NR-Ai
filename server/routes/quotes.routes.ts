@@ -8,7 +8,7 @@ import { createLogger } from "../config/logger";
 import { calculateDocumentTotals } from "../services/document-totals.service";
 import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
 import { db } from "../db";
-import { getLatestRate } from "./exchange-rates.routes";
+import { resolveDocumentExchangeRate } from "../services/document-fx-rate";
 import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
 import { deriveVatSupplyType } from "../services/vat-supply-type";
 import { UAE_VAT_RATE } from "../constants";
@@ -254,17 +254,16 @@ export function registerQuoteRoutes(app: Express) {
       // invoice creation uses when the caller supplies none. Resolved before
       // the number is allocated so a missing rate cannot burn a number.
       const docCurrency = (quote.currency || "AED").toUpperCase();
-      let exchangeRate = 1;
-      if (docCurrency !== "AED") {
-        const stored = await getLatestRate(docCurrency, "AED", invoiceDate, quote.companyId);
-        if (!stored || stored <= 0) {
-          return res.status(422).json({
-            message: `No ${docCurrency}→AED exchange rate available. Add one under Exchange Rates, then convert the quote again.`,
-            code: "NO_EXCHANGE_RATE",
-          });
-        }
-        exchangeRate = Number(stored);
+      const fxResult = await resolveDocumentExchangeRate({
+        currency: docCurrency,
+        date: invoiceDate,
+        companyId: quote.companyId,
+        hint: "Add one under Exchange Rates, then convert the quote again.",
+      });
+      if (!fxResult.ok) {
+        return res.status(422).json({ message: fxResult.message, code: fxResult.code });
       }
+      const exchangeRate = fxResult.rate;
       const invoiceNumber = await allocateInvoiceNumber(
         quote.companyId,
         "invoice",

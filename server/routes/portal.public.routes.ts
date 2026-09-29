@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
+import { buildInvoiceBalances, receivableOutstanding } from "../services/invoice-outstanding";
 import crypto from "crypto";
 
 /**
@@ -110,6 +111,11 @@ export function registerPortalPublicRoutes(app: Express) {
       const customerInvoices = allInvoices.filter(
         (inv) => inv.customerName.toLowerCase() === contact.name.toLowerCase()
       );
+      // What the customer still owes: total - payments - credit notes (shared definition).
+      const balances = buildInvoiceBalances(
+        allInvoices,
+        await storage.getInvoicePaymentsByCompanyId(contact.companyId)
+      );
 
       // Return sanitized invoice data (no internal company details)
       const sanitizedInvoices = customerInvoices.map((inv) => ({
@@ -121,6 +127,9 @@ export function registerPortalPublicRoutes(app: Express) {
         vatAmount: inv.vatAmount,
         total: inv.total,
         status: inv.status,
+        invoiceType: inv.invoiceType,
+        outstandingAmount: receivableOutstanding(inv, balances.get(inv.id)),
+        isFullyCredited: balances.get(inv.id)?.isFullyCredited ?? false,
       }));
 
       res.json(sanitizedInvoices);

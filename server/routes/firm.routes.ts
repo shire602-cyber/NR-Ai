@@ -45,6 +45,7 @@ import {
   journalLines,
   engagements,
 } from "../../shared/schema";
+import { openArAmount, openArCondition } from "../services/invoice-outstanding.db";
 
 const logger = createLogger("firm-routes");
 
@@ -67,16 +68,11 @@ async function getClientStats(companyId: string) {
         .where(eq(invoices.companyId, companyId))
         .then((r: { cnt: number; total: string | null }[]) => r[0]),
 
-      // Outstanding AR: sum of totals for sent/partial invoices
+      // Outstanding AR: sum of what is still owed (total - payments - credit notes, AED) on open invoices
       db
-        .select({ ar: sum(invoices.total) })
+        .select({ ar: sql<string>`sum(${openArAmount})` })
         .from(invoices)
-        .where(
-          and(
-            eq(invoices.companyId, companyId),
-            or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-          )
-        )
+        .where(and(eq(invoices.companyId, companyId), openArCondition))
         .then((r: { ar: string | null }[]) => r[0]),
 
       // Last receipt uploaded
@@ -1133,8 +1129,8 @@ export function registerFirmRoutes(app: Express): void {
           .select({
             companyId: invoices.companyId,
             invoiceCount: count(),
-            openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
-            overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now})`,
+            openAr: sql<string>`sum(case when ${openArCondition} then ${openArAmount} else 0 end)`,
+            overdueCount: sql<string>`count(*) filter (where ${openArCondition} and ${invoices.dueDate} < ${now})`,
             missingCustomerTrnCount: sql<string>`count(*) filter (where ${invoices.vatAmount} > 0 and (${invoices.customerTrn} is null or ${invoices.customerTrn} = ''))`,
             latestInvoiceDate: max(invoices.createdAt),
           })
@@ -1871,9 +1867,9 @@ export function registerFirmRoutes(app: Express): void {
       const arRows: ArBucketRow[] = (await db
         .select({
           companyId: invoices.companyId,
-          totalOutstanding: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
-          overdueAmount: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now} then ${invoices.total} else 0 end)`,
-          overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now})`,
+          totalOutstanding: sql<string>`sum(case when ${openArCondition} then ${openArAmount} else 0 end)`,
+          overdueAmount: sql<string>`sum(case when ${openArCondition} and ${invoices.dueDate} < ${now} then ${openArAmount} else 0 end)`,
+          overdueCount: sql<string>`count(*) filter (where ${openArCondition} and ${invoices.dueDate} < ${now})`,
         })
         .from(invoices)
         .where(inArray(invoices.companyId, clientIds))
@@ -2383,12 +2379,12 @@ export function registerFirmRoutes(app: Express): void {
           )
           .then((r: { cnt: number }[]) => r[0]),
         db
-          .select({ total: sum(invoices.total) })
+          .select({ total: sql<string>`sum(${openArAmount})` })
           .from(invoices)
           .where(
             and(
               inArray(invoices.companyId, clientIds),
-              or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+              openArCondition,
               lt(invoices.dueDate, now)
             )
           )
@@ -2415,7 +2411,7 @@ export function registerFirmRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, clientIds),
-            or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+            openArCondition,
             lt(invoices.dueDate, now)
           )
         )

@@ -31,6 +31,7 @@ import {
   type FirmAlertType,
 } from "../../shared/schema";
 import { NotFoundError, ValidationError } from "../errors";
+import { openArAmount, openArCondition } from "./invoice-outstanding.db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -511,14 +512,14 @@ export async function buildClientSnapshots(
   const overdueRows = (await db
     .select({
       companyId: invoices.companyId,
-      balance: sum(invoices.total),
+      balance: sql<string>`sum(${openArAmount})`,
       cnt: count(),
     })
     .from(invoices)
     .where(
       and(
         inArray(invoices.companyId, companyIds),
-        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+        openArCondition,
         lt(invoices.dueDate, now)
       )
     )
@@ -653,14 +654,9 @@ export async function buildDashboardSummary(
       .from(invoices)
       .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid"))),
     db
-      .select({ total: sum(invoices.total) })
+      .select({ total: sql<string>`sum(${openArAmount})` })
       .from(invoices)
-      .where(
-        and(
-          inArray(invoices.companyId, companyIds),
-          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-        )
-      ),
+      .where(and(inArray(invoices.companyId, companyIds), openArCondition)),
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)

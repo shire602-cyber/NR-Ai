@@ -6,6 +6,7 @@ import { pool } from "../db";
 import { uaeDayStart, uaeDayEnd, uaeMonthStart, uaeMonthEnd, uaeYmdParts } from "../utils/date";
 import { round2, roundRowsWithTotal, buildBalanceSheetTotals } from "../services/financial-statements";
 import Decimal from "decimal.js";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 
 // Summing float journal amounts leaks binary noise (3428.3300000000017) into
 // responses; round money to fils at the response boundary.
@@ -49,12 +50,13 @@ export function registerDashboardRoutes(app: Express) {
     const lastMonthStart = uaeMonthStart(lastMonthAnchor);
     const lastMonthEnd = uaeMonthEnd(lastMonthAnchor);
 
-    const [invoices, accounts, allEntries, allLines, receipts] = await Promise.all([
+    const [invoices, accounts, allEntries, allLines, receipts, invoicePayments] = await Promise.all([
       storage.getInvoicesByCompanyId(companyId),
       storage.getAccountsByCompanyId(companyId),
       storage.getJournalEntriesByCompanyId(companyId),
       storage.getJournalLinesByCompanyId(companyId),
       storage.getReceiptsByCompanyId(companyId),
+      storage.getInvoicePaymentsByCompanyId(companyId),
     ]);
 
     // Only posted entries affect financial balances; drafts and voided
@@ -181,19 +183,20 @@ export function registerDashboardRoutes(app: Express) {
     // delivered to the customer and create no receivable; partial means
     // some amount remains outstanding. Aging buckets count days *past due*
     // from the invoice's due date; if no dueDate, default to issue+30.
-    const unpaidInvoices = invoices.filter(
-      (inv) => inv.status === "sent" || inv.status === "partial"
-    );
+    // Amounts are what is still OUTSTANDING (total - payments - credit notes,
+    // the shared definition), in AED. Credit notes are netted off their invoice
+    // instead of being counted as receivables of their own.
+    const openReceivables = listOpenReceivables(invoices, invoicePayments);
     const arAging = { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-    for (const inv of unpaidInvoices) {
+    for (const { invoice: inv, outstandingBase } of openReceivables) {
       const due = inv.dueDate
         ? new Date(inv.dueDate)
         : new Date(new Date(inv.date).getTime() + 30 * 86400000);
       const daysPastDue = Math.floor((now.getTime() - due.getTime()) / 86400000);
-      if (daysPastDue <= 30) arAging.days0to30 += inv.total;
-      else if (daysPastDue <= 60) arAging.days31to60 += inv.total;
-      else if (daysPastDue <= 90) arAging.days61to90 += inv.total;
-      else arAging.days90plus += inv.total;
+      if (daysPastDue <= 30) arAging.days0to30 += outstandingBase;
+      else if (daysPastDue <= 60) arAging.days31to60 += outstandingBase;
+      else if (daysPastDue <= 90) arAging.days61to90 += outstandingBase;
+      else arAging.days90plus += outstandingBase;
     }
 
     // ── AP Aging ──────────────────────────────────────────────────
@@ -217,7 +220,7 @@ export function registerDashboardRoutes(app: Express) {
       else apAging.days90plus += amount;
     }
 
-    const outstanding = unpaidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    const outstanding = openReceivables.reduce((sum, r) => sum + r.outstandingBase, 0);
 
     return {
       revenue: round2(revenue),

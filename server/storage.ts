@@ -262,7 +262,7 @@ import {
   chaseConfigs,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, lt, lte, gt, gte, isNull, isNotNull, notInArray, or, sql, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import {
   statusFromPayments,
@@ -271,6 +271,8 @@ import {
 } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
 import { allocatePayment, buildPaymentJournalLines } from "./services/invoice-lifecycle";
+import { computeInvoiceBalance } from "./services/invoice-outstanding";
+import { getInvoiceBalance } from "./services/invoice-outstanding.db";
 import { CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP } from "../shared/ct-workpaper";
 import { decryptSecret, encryptSecret } from "./services/secret-vault";
 
@@ -2728,6 +2730,41 @@ export class DatabaseStorage implements IStorage {
     return transaction;
   }
 
+  /** Payment cap for the bank-reconciliation path (see reconcileBankTransaction). */
+  private async assertBankReceiptWithinOutstanding(
+    companyId: string,
+    invoiceId: string,
+    bankAmount: number
+  ): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId, companyId);
+    if (!invoice) {
+      const e: any = new Error("Invoice not found");
+      e.status = 404;
+      e.code = "INVOICE_NOT_FOUND";
+      throw e;
+    }
+    const balance = await getInvoiceBalance(companyId, invoiceId);
+    if (balance.outstanding <= 0.005) {
+      const e: any = new Error(
+        `Invoice ${invoice.number} has nothing outstanding${balance.isFullyCredited ? " (fully credited)" : ""}; a bank receipt cannot be matched to it.`
+      );
+      e.status = 409;
+      e.code = "INVOICE_NOTHING_OUTSTANDING";
+      throw e;
+    }
+    // The bank amount is in AED; the outstanding balance is in document currency.
+    const rate = Number(invoice.exchangeRate) > 0 ? Number(invoice.exchangeRate) : 1;
+    const outstandingBase = Math.round(balance.outstanding * rate * 100) / 100;
+    if (bankAmount > outstandingBase + 0.01) {
+      const e: any = new Error(
+        `The bank receipt (${bankAmount.toFixed(2)}) exceeds what is outstanding on invoice ${invoice.number} (${outstandingBase.toFixed(2)} AED).`
+      );
+      e.status = 422;
+      e.code = "PAYMENT_EXCEEDS_BALANCE";
+      throw e;
+    }
+  }
+
   async reconcileBankTransaction(
     id: string,
     companyId: string,
@@ -2739,6 +2776,20 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getBankTransactionById(id, companyId);
     if (!existing) {
       throw new Error("Bank transaction not found");
+    }
+
+    // A fully credited invoice is settled by its credit note: no bank receipt
+    // belongs to it, whichever reconciliation path (manual, auto, AI) got here.
+    if (matchType === "invoice") {
+      const target = await this.getInvoice(matchedId, companyId);
+      if (target?.status === "credited") {
+        const e: any = new Error(
+          `Invoice ${target.number} is fully credited: nothing is outstanding, so a bank receipt cannot be matched to it.`
+        );
+        e.status = 409;
+        e.code = "INVOICE_NOTHING_OUTSTANDING";
+        throw e;
+      }
     }
 
     const updateData: any = {
@@ -2776,6 +2827,12 @@ export class DatabaseStorage implements IStorage {
       if (linkedExisting) {
         updateData.matchedJournalEntryId = linkedExisting.id;
       } else {
+        // A bank receipt matched to an invoice settles it: it may not exceed
+        // what is still owed (total - payments - credit notes), and a fully
+        // credited / settled invoice owes nothing.
+        if (matchType === "invoice" && Number(existing.amount) > 0) {
+          await this.assertBankReceiptWithinOutstanding(existing.companyId, matchedId, Number(existing.amount));
+        }
         const accounts = await this.getAccountsByCompanyId(existing.companyId);
         const arAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
         const apAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount);
@@ -4740,26 +4797,21 @@ export class DatabaseStorage implements IStorage {
     // cron tick. Without this, a period-locked or errored template stays
     // "earliest due" and the scheduler would re-fetch it on every loop
     // iteration, starving later due templates.
-    const result: any =
-      excludeIds.length === 0
-        ? await tx.execute(sql`
-          SELECT * FROM recurring_invoices
-          WHERE is_active = true
-            AND next_run_date <= now()
-          ORDER BY next_run_date ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `)
-        : await tx.execute(sql`
-          SELECT * FROM recurring_invoices
-          WHERE is_active = true
-            AND next_run_date <= now()
-            AND id <> ALL(${excludeIds}::uuid[])
-          ORDER BY next_run_date ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `);
-    const rows = (result.rows ?? result) as RecurringInvoice[];
+    // A typed select (not raw SQL): raw rows come back snake_case, so
+    // `template.linesJson` / `template.companyId` were all undefined and the
+    // generator disabled every template it touched.
+    const conditions = [
+      eq(recurringInvoices.isActive, true),
+      lte(recurringInvoices.nextRunDate, sql`now()`),
+    ];
+    if (excludeIds.length > 0) conditions.push(notInArray(recurringInvoices.id, excludeIds));
+    const rows = await tx
+      .select()
+      .from(recurringInvoices)
+      .where(and(...conditions))
+      .orderBy(asc(recurringInvoices.nextRunDate))
+      .limit(1)
+      .for("update", { skipLocked: true });
     return rows[0];
   }
 
@@ -4880,7 +4932,10 @@ export class DatabaseStorage implements IStorage {
         e.code = "INVOICE_COMPANY_MISMATCH";
         throw e;
       }
-      if (isTerminal(lockedInvoice.status)) {
+      // Void / cancelled documents never take a payment. A paid or fully
+      // credited invoice is refused below with the more useful
+      // INVOICE_NOTHING_OUTSTANDING once the balance is known.
+      if (lockedInvoice.status === "void" || lockedInvoice.status === "cancelled") {
         const e: any = new Error(`Cannot record payment on ${lockedInvoice.status} invoice`);
         e.code = "INVOICE_TERMINAL";
         throw e;
@@ -4910,12 +4965,39 @@ export class DatabaseStorage implements IStorage {
       `);
       const sumRows = (sumResult.rows ?? sumResult) as Array<{ paid: number | string }>;
 
+      // Live credit notes reduce what is owed exactly like payments do; they
+      // are read inside the same lock so the cap below is against committed state.
+      const creditResult: any = await tx.execute(sql`
+        SELECT COALESCE(SUM(ABS(total)), 0) AS credited
+        FROM invoices
+        WHERE original_invoice_id = ${input.invoiceId}
+          AND invoice_type = 'credit_note'
+          AND status NOT IN ('void', 'cancelled')
+      `);
+      const creditRows = (creditResult.rows ?? creditResult) as Array<{ credited: number | string }>;
+
       // Decimal.js comparison so summing many payments cannot drift past
       // the invoice total via binary-float error and silently overpay.
-      const totalD = new Decimal(lockedInvoice.total);
-      const previouslyPaidD = new Decimal(sumRows[0]?.paid ?? 0);
+      const balance = computeInvoiceBalance({
+        total: lockedInvoice.total,
+        paid: sumRows[0]?.paid ?? 0,
+        credited: creditRows[0]?.credited ?? 0,
+      });
+      const previouslyPaidD = new Decimal(balance.paid);
+      const creditedD = new Decimal(balance.credited);
       const amountD = new Decimal(input.amount);
-      const remainingD = totalD.minus(previouslyPaidD);
+      const remainingD = new Decimal(balance.outstanding);
+      if (remainingD.lessThanOrEqualTo("0.005")) {
+        const label = lockedInvoice.number ? `Invoice ${lockedInvoice.number}` : "This invoice";
+        const e: any = new Error(
+          balance.isFullyCredited
+            ? `${label} is fully credited: nothing is outstanding, so no payment can be recorded.`
+            : `${label} has nothing outstanding: no payment can be recorded.`
+        );
+        e.code = "INVOICE_NOTHING_OUTSTANDING";
+        e.details = { outstanding: balance.outstanding, paid: balance.paid, credited: balance.credited };
+        throw e;
+      }
 
       // A-B12: split the payment into the part that clears the receivable and
       // any excess that becomes a customer credit (a liability), rather than
@@ -5067,7 +5149,8 @@ export class DatabaseStorage implements IStorage {
       const newStatus = statusFromPayments(
         lockedInvoice.status as InvoiceStatus,
         Number(lockedInvoice.total),
-        newTotalPaid
+        newTotalPaid,
+        creditedD.toNumber()
       );
       const [updatedInvoice] = await tx
         .update(invoices)

@@ -9,6 +9,7 @@ import type {
 } from "../../shared/schema";
 import { ACCOUNT_CODES } from "../constants";
 import { resolveSettlementDate } from "./payment-date-guard.service";
+import { buildInvoiceBalances } from "./invoice-outstanding";
 
 export interface ReconcileMatch {
   bankTransactionId: string;
@@ -229,13 +230,30 @@ interface CandidatePool {
 }
 
 async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
-  const [entriesWithLines, invoices, receipts, accounts, managedBankAccounts] = await Promise.all([
-    storage.getPostedJournalEntriesWithLines(companyId),
-    storage.getInvoicesByCompanyId(companyId),
-    storage.getReceiptsByCompanyId(companyId),
-    storage.getAccountsByCompanyId(companyId),
-    storage.getBankAccountsByCompanyId(companyId),
-  ]);
+  const [entriesWithLines, allInvoices, invoicePayments, receipts, accounts, managedBankAccounts] =
+    await Promise.all([
+      storage.getPostedJournalEntriesWithLines(companyId),
+      storage.getInvoicesByCompanyId(companyId),
+      storage.getInvoicePaymentsByCompanyId(companyId),
+      storage.getReceiptsByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+      storage.getBankAccountsByCompanyId(companyId),
+    ]);
+
+  // A bank receipt can only settle an invoice that still owes something:
+  // total - payments - credit notes (shared definition) > 0. Credit notes
+  // themselves, settled and fully credited invoices are not candidates, so a
+  // suggestion can never be applied as a second settlement.
+  const balances = buildInvoiceBalances(allInvoices, invoicePayments);
+  const invoices = allInvoices
+    .filter(
+      (inv) => inv.invoiceType !== "credit_note" && (balances.get(inv.id)?.outstanding ?? 0) > 0.005
+    )
+    // A partly credited invoice is expected to be paid at what is left.
+    .map((inv) => {
+      const b = balances.get(inv.id);
+      return b && b.credited > 0 ? { ...inv, total: b.outstanding } : inv;
+    });
 
   const arAccountIds = new Set(
     accounts.filter((a) => a.code === ACCOUNT_CODES.AR).map((a) => a.id)

@@ -10,12 +10,16 @@
  *    a chase. Once an invoice has reached level 3 we will not send a level 1
  *    reminder again even if the user adjusts the due date — that would feel
  *    inconsistent to the recipient.
- *  - Outstanding amount = total - paidAmount. We compute paidAmount from the
+ *  - Outstanding amount = total - paidAmount - creditedAmount (the shared
+ *    definition in invoice-outstanding.ts). We compute paidAmount from the
  *    invoice_payments rows passed in, not from any cached field, so partial
- *    payments are reflected immediately.
+ *    payments are reflected immediately; creditedAmount is the sum of live
+ *    credit notes, so a credited invoice is never chased.
  *  - "Days overdue" uses calendar days (UTC midnight) so we don't get the
  *    classic "47.9 days" off-by-one when the server runs at 00:30 UAE time.
  */
+
+import { computeInvoiceBalance } from "./invoice-outstanding";
 
 export type ChaseLevel = 1 | 2 | 3 | 4;
 export type ChaseLanguage = "en" | "ar";
@@ -28,7 +32,9 @@ export interface ChaseInvoice {
   currency: string;
   total: number;
   dueDate: Date | string | null;
-  status: string; // draft | sent | paid | partial | void
+  status: string; // draft | sent | paid | partial | credited | void
+  /** Sum of live credit notes against this invoice (positive number). */
+  creditedAmount?: number;
   contactId?: string | null;
   chaseLevel?: number;
   lastChasedAt?: Date | string | null;
@@ -79,7 +85,7 @@ const LEVEL_THRESHOLDS: Array<{ minDays: number; level: ChaseLevel }> = [
   { minDays: 1, level: 1 },
 ];
 
-const TERMINAL_INVOICE_STATUSES = new Set(["paid", "void", "cancelled"]);
+const TERMINAL_INVOICE_STATUSES = new Set(["paid", "credited", "void", "cancelled"]);
 
 // ─── Aging ───────────────────────────────────────────────────────────────────
 
@@ -117,15 +123,19 @@ export function recommendedLevelFor(daysOverdue: number): ChaseLevel {
 }
 
 /**
- * Compute outstanding amount (total - sum of payments). Clamped at zero so
- * over-applied payments don't produce negative chasing amounts.
+ * Compute outstanding amount (total - payments - credit notes) through the one
+ * shared definition. Clamped at zero so over-applied payments / credits don't
+ * produce negative chasing amounts.
  */
 export function outstandingFor(invoice: ChaseInvoice, payments: ChasePayment[]): number {
   const paid = payments
     .filter((p) => p.invoiceId === invoice.id)
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const outstanding = Math.max(0, (Number(invoice.total) || 0) - paid);
-  return Math.round(outstanding * 100) / 100;
+  return computeInvoiceBalance({
+    total: Number(invoice.total) || 0,
+    paid,
+    credited: invoice.creditedAmount ?? 0,
+  }).outstanding;
 }
 
 export function buildAgingRow(

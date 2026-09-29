@@ -17,6 +17,13 @@ import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
 import { round2 } from "../services/financial-statements";
 import {
+  creditedSql,
+  openReceivableSql,
+  outstandingBaseSql,
+  outstandingSql,
+  paidSql,
+} from "../services/invoice-outstanding.db";
+import {
   buildReportCatalogDiscovery,
   isReportCatalogPersona,
 } from "../services/report-catalog.service";
@@ -297,23 +304,14 @@ export function registerReportRoutes(app: Express) {
 
       const [receivableResult, payableResult] = await Promise.all([
         pool.query(
-          `WITH payments AS (
-            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
-            FROM invoice_payments
-            WHERE company_id = $1
-            GROUP BY invoice_id
-          ),
-          open_invoices AS (
+          `WITH open_invoices AS (
             SELECT
               COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
-              GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)
-                * COALESCE(NULLIF(i.exchange_rate, 0), 1) AS open_balance_aed,
+              ${outstandingBaseSql("i")} AS open_balance_aed,
               COALESCE(i.due_date, i.date + INTERVAL '30 days') AS due_date
             FROM invoices i
-            LEFT JOIN payments p ON p.invoice_id = i.id
             WHERE i.company_id = $1
-              AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
-              AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
+              AND ${openReceivableSql("i")}
           )
           SELECT
             name,
@@ -546,34 +544,32 @@ export function registerReportRoutes(app: Express) {
 
       const [customerResult, vendorResult] = await Promise.all([
         pool.query(
-          `WITH payments AS (
-            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
-            FROM invoice_payments
-            WHERE company_id = $1
-            GROUP BY invoice_id
+          `WITH open_inv AS (
+            SELECT i.customer_name, i.currency, i.total, i.due_date, i.exchange_rate,
+                   ${paidSql("i")} AS paid_amount,
+                   ${creditedSql("i")} AS credited_amount,
+                   ${outstandingSql("i")} AS outstanding
+            FROM invoices i
+            WHERE i.company_id = $1
+              AND ${openReceivableSql("i")}
           )
           SELECT
-            i.customer_name,
-            i.currency,
+            customer_name,
+            currency,
             COUNT(*)::int AS invoice_count,
-            COALESCE(SUM(i.total), 0)::float AS total_invoiced,
-            COALESCE(SUM(COALESCE(p.paid_amount, 0)), 0)::float AS paid_amount,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)), 0)::float AS open_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance_aed,
+            COALESCE(SUM(total), 0)::float AS total_invoiced,
+            COALESCE(SUM(paid_amount), 0)::float AS paid_amount,
+            COALESCE(SUM(credited_amount), 0)::float AS credited_amount,
+            COALESCE(SUM(outstanding), 0)::float AS open_balance,
+            COALESCE(SUM(outstanding * COALESCE(NULLIF(exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
+            COALESCE(SUM(outstanding) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(outstanding * COALESCE(NULLIF(exchange_rate, 0), 1)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
             MAX(CASE
-              WHEN i.due_date < NOW()
-                AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-              THEN DATE_PART('day', NOW() - i.due_date)
+              WHEN due_date < NOW() THEN DATE_PART('day', NOW() - due_date)
               ELSE 0
             END)::int AS max_days_overdue
-          FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
-          WHERE i.company_id = $1
-            AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
-            AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-          GROUP BY i.customer_name, i.currency
+          FROM open_inv
+          GROUP BY customer_name, currency
           ORDER BY open_balance DESC`,
           [companyId]
         ),
@@ -611,6 +607,7 @@ export function registerReportRoutes(app: Express) {
           invoiceCount: Number(row.invoice_count) || 0,
           totalInvoiced: round2(Number(row.total_invoiced) || 0),
           paidAmount: round2(Number(row.paid_amount) || 0),
+          creditedAmount: round2(Number(row.credited_amount) || 0),
           openBalance: round2(Number(row.open_balance) || 0),
           openBalanceAed: round2(Number(row.open_balance_aed) || 0),
           overdueBalance: round2(Number(row.overdue_balance) || 0),

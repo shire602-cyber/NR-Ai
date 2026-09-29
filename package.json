@@ -22,7 +22,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
-    "test:integration": "node tests/integration/fixes.test.mjs && node tests/integration/flow.test.mjs && node tests/integration/concurrency.test.mjs && node tests/integration/modules.test.mjs && node tests/integration/uncovered-modules.test.mjs && node tests/integration/accountant-fixes.test.mjs && node tests/integration/ai-degradation.test.mjs && node tests/integration/launch-fixes.test.mjs && node tests/integration/review-fixes.test.mjs && node tests/integration/review-fixes-2.test.mjs && node tests/integration/review-fixes-3.test.mjs && node tests/integration/review-fixes-4.test.mjs && node tests/integration/review-fixes-5.test.mjs",
+    "test:integration": "node tests/integration/fixes.test.mjs && node tests/integration/flow.test.mjs && node tests/integration/concurrency.test.mjs && node tests/integration/modules.test.mjs && node tests/integration/uncovered-modules.test.mjs && node tests/integration/accountant-fixes.test.mjs && node tests/integration/ai-degradation.test.mjs && node tests/integration/launch-fixes.test.mjs && node tests/integration/review-fixes.test.mjs && node tests/integration/review-fixes-2.test.mjs && node tests/integration/review-fixes-3.test.mjs && node tests/integration/review-fixes-4.test.mjs && node tests/integration/review-fixes-5.test.mjs && node tests/integration/review-fixes-6.test.mjs && node tests/integration/review-fixes-7.test.mjs",
     "test:credit-note-consolidation": "RUN_DB_INTEGRATION=1 vitest run tests/integration/credit-note-consolidation.test.ts",
     "audit:campaign": "node scripts/audit-campaign.mjs",
     "audit:inventory": "node scripts/audit-inventory.mjs --markdown",

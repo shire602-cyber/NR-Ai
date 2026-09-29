@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import type { JournalEntry, JournalLine, Account, Invoice, Receipt } from "../../shared/schema";
+import { listOpenReceivables } from "./invoice-outstanding";
 
 interface WeeklyProjection {
   week: number;
@@ -39,13 +40,15 @@ export async function generateCashFlowForecast(
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
   // Fetch all necessary data in parallel
-  const [accounts, journalEntries, invoices, receipts, bankTransactions] = await Promise.all([
-    storage.getAccountsByCompanyId(companyId),
-    storage.getJournalEntriesByCompanyId(companyId),
-    storage.getInvoicesByCompanyId(companyId),
-    storage.getReceiptsByCompanyId(companyId),
-    storage.getBankTransactionsByCompanyId(companyId),
-  ]);
+  const [accounts, journalEntries, invoices, receipts, bankTransactions, invoicePayments] =
+    await Promise.all([
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getInvoicesByCompanyId(companyId),
+      storage.getReceiptsByCompanyId(companyId),
+      storage.getBankTransactionsByCompanyId(companyId),
+      storage.getInvoicePaymentsByCompanyId(companyId),
+    ]);
 
   // Build account lookup maps
   const accountMap = new Map<string, Account>();
@@ -138,24 +141,24 @@ export async function generateCashFlowForecast(
     }
   }
 
-  // Outstanding invoices (receivables) - unpaid invoices
-  const outstandingInvoices = invoices.filter(
-    (inv) => inv.status === "sent" || inv.status === "draft"
-  );
+  // Outstanding invoices (receivables): issued invoices that still owe money
+  // after payments and credit notes (shared definition). Drafts are not
+  // receivables and credit notes are netted off their invoice, not counted.
+  const outstandingInvoices = listOpenReceivables(invoices, invoicePayments);
 
   // Outstanding receipts (payables) - unposted receipts
   const outstandingReceipts = receipts.filter((r) => !r.posted && r.amount && r.amount > 0);
 
   // Calculate total receivables and payables
-  const totalReceivables = outstandingInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+  const totalReceivables = outstandingInvoices.reduce((sum, r) => sum + r.outstandingBase, 0);
   // receipts.amount is the net subtotal (excludes VAT); cash outflow when
   // the receipt is paid is amount + vatAmount.
   const totalPayables = outstandingReceipts.reduce(
     (sum, r) => sum + (r.amount || 0) + (r.vatAmount || 0),
     0
   );
-  const overdueInvoices = outstandingInvoices.filter((inv) => new Date(inv.date) < now);
-  const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+  const overdueInvoices = outstandingInvoices.filter((r) => new Date(r.invoice.date) < now);
+  const overdueAmount = overdueInvoices.reduce((sum, r) => sum + r.outstandingBase, 0);
 
   // Generate weekly projections
   const totalWeeks = Math.ceil(days / 7);

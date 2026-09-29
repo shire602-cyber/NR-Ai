@@ -39,6 +39,10 @@ interface PortalInvoice {
   vatAmount: number;
   total: number;
   status: string;
+  invoiceType?: string;
+  /** total - payments - credit notes, from the server. */
+  outstandingAmount?: number;
+  isFullyCredited?: boolean;
 }
 
 function formatCurrency(amount: number, currency: string = "AED"): string {
@@ -66,6 +70,8 @@ function getStatusBadge(status: string) {
       return <Badge className="bg-info-subtle text-info-subtle-foreground hover:bg-info-subtle">Sent</Badge>;
     case "draft":
       return <Badge className="bg-muted text-foreground hover:bg-muted">Draft</Badge>;
+    case "credited":
+      return <Badge className="bg-muted text-foreground hover:bg-muted">Credited</Badge>;
     case "void":
       return <Badge className="bg-danger-subtle text-danger-subtle-foreground hover:bg-danger-subtle">Void</Badge>;
     default:
@@ -74,7 +80,14 @@ function getStatusBadge(status: string) {
 }
 
 function isOverdue(invoice: PortalInvoice): boolean {
-  if (invoice.status === "paid" || invoice.status === "void" || invoice.status === "draft")
+  if (
+    invoice.status === "paid" ||
+    invoice.status === "void" ||
+    invoice.status === "draft" ||
+    invoice.status === "credited" ||
+    invoice.invoiceType === "credit_note" ||
+    (invoice.outstandingAmount !== undefined && invoice.outstandingAmount <= 0.005)
+  )
     return false;
   const invoiceDate = new Date(invoice.date);
   const thirtyDaysLater = new Date(invoiceDate);
@@ -164,9 +177,17 @@ export default function CustomerPortal() {
   }
 
   // Calculate summary stats
+  // What is still owed after payments and credit notes (computed by the server).
   const totalOutstanding = invoices
-    .filter((inv) => inv.status !== "paid" && inv.status !== "void" && inv.status !== "draft")
-    .reduce((sum, inv) => sum + inv.total, 0);
+    .filter(
+      (inv) =>
+        inv.invoiceType !== "credit_note" &&
+        inv.status !== "paid" &&
+        inv.status !== "void" &&
+        inv.status !== "draft" &&
+        inv.status !== "credited"
+    )
+    .reduce((sum, inv) => sum + (inv.outstandingAmount ?? inv.total), 0);
 
   const totalPaid = invoices
     .filter((inv) => inv.status === "paid")

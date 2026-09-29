@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 
 export function registerReminderRoutes(app: Express) {
   // =====================================
@@ -161,8 +162,12 @@ export function registerReminderRoutes(app: Express) {
       }
 
       // Unpaid invoice deadlines
-      const unpaidInvoices = invoices.filter((inv) => inv.status === "sent");
-      unpaidInvoices.forEach((inv) => {
+      // Only invoices that still owe money (total - payments - credit notes > 0).
+      const unpaidInvoices = listOpenReceivables(
+        invoices,
+        await storage.getInvoicePaymentsByCompanyId(companyId as string)
+      );
+      unpaidInvoices.forEach(({ invoice: inv, outstandingBase }) => {
         const invoiceDate = new Date(inv.date);
         const dueDate = new Date(invoiceDate);
         dueDate.setDate(dueDate.getDate() + 30); // Assume 30-day payment terms
@@ -176,7 +181,7 @@ export function registerReminderRoutes(app: Express) {
           id: `invoice-${inv.id}`,
           type: isOverdue ? "invoice_overdue" : "invoice_due",
           title: isOverdue ? `Invoice ${inv.number} Overdue` : `Invoice ${inv.number} Due Soon`,
-          description: `${inv.customerName} - AED ${inv.total.toFixed(2)}`,
+          description: `${inv.customerName} - AED ${outstandingBase.toFixed(2)}`,
           dueDate: dueDate.toISOString(),
           daysRemaining,
           priority: isOverdue ? "urgent" : daysRemaining <= 7 ? "high" : "normal",

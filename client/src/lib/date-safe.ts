@@ -58,3 +58,15 @@ export function daysBetween(a: unknown, b: unknown): number | null {
   if (!ad || !bd) return null;
   return Math.floor((ad.getTime() - bd.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+/**
+ * VAT period boundaries and due dates are calendar days stored as UTC instants
+ * (a period end is 23:59:59.999Z). Reading them in the viewer's timezone shifts
+ * the day: in UAE time, 30 Sep 23:59Z displays as 1 Oct. This returns a local
+ * Date at noon on the UTC calendar day, so formatting shows the intended day.
+ */
+export function parseCalendarDay(input: string | Date): Date {
+  const d = typeof input === "string" ? new Date(input) : input;
+  if (Number.isNaN(d.getTime())) return new Date(NaN);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0);
+}

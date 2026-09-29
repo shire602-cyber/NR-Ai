@@ -28,6 +28,9 @@ import {
   selectVoidableEntries,
 } from "../services/invoice-lifecycle";
 import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
+import { syncInvoiceStatusFromBalance } from "../services/invoice-credit-status";
+import { getInvoiceBalance, loadInvoiceBalances } from "../services/invoice-outstanding.db";
+import { invoiceBalanceFields } from "../services/invoice-outstanding";
 import { voidOrCancelInvoice, alreadyTerminalOutcome } from "../services/invoice-void.service";
 import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
 import { allocateRevenueCredits } from "../services/revenue-allocation.service";
@@ -57,7 +60,7 @@ import {
   peekNextInvoiceNumber,
 } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
-import { getLatestRate } from "./exchange-rates.routes";
+import { resolveDocumentExchangeRate } from "../services/document-fx-rate";
 
 const log = createLogger("invoices");
 
@@ -235,7 +238,10 @@ export function registerInvoiceRoutes(app: Express) {
       const limit = Math.min(Number(req.query.limit) || 1000, 1000);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
       const invoices = await storage.getInvoicesSummaryByCompanyId(companyId, { limit, offset });
-      res.json(invoices);
+      // Outstanding amount and credited flag come from the one shared
+      // definition (total - payments - credit notes), never from status alone.
+      const balances = await loadInvoiceBalances(companyId);
+      res.json(invoices.map((inv) => ({ ...inv, ...invoiceBalanceFields(inv, balances.get(inv.id)) })));
     })
   );
 
@@ -256,8 +262,9 @@ export function registerInvoiceRoutes(app: Express) {
 
       // Fetch invoice lines
       const lines = await storage.getInvoiceLinesByInvoiceId(id);
+      const balance = await getInvoiceBalance(invoice.companyId, id);
 
-      res.json({ ...invoice, lines });
+      res.json({ ...invoice, ...invoiceBalanceFields(invoice, balance), lines });
     })
   );
 
@@ -412,23 +419,16 @@ export function registerInvoiceRoutes(app: Express) {
       // date — the GL, VAT return, and FTA reporting are all AED. Accept an
       // explicit exchangeRate from the caller or fall back to the stored
       // rates; refuse to book a foreign invoice with no rate at all.
-      const docCurrency = (invoiceData.currency || "AED").toUpperCase();
-      let exchangeRate = 1;
-      if (docCurrency !== "AED") {
-        const supplied = Number(invoiceData.exchangeRate);
-        if (Number.isFinite(supplied) && supplied > 0) {
-          exchangeRate = supplied;
-        } else {
-          const stored = await getLatestRate(docCurrency, "AED", invoiceDate, companyId);
-          if (!stored || stored <= 0) {
-            return res.status(422).json({
-              message: `No ${docCurrency}→AED exchange rate available. Add one under Exchange Rates or pass exchangeRate.`,
-              code: "NO_EXCHANGE_RATE",
-            });
-          }
-          exchangeRate = stored;
-        }
+      const fxResult = await resolveDocumentExchangeRate({
+        currency: invoiceData.currency,
+        date: invoiceDate,
+        companyId,
+        suppliedRate: invoiceData.exchangeRate,
+      });
+      if (!fxResult.ok) {
+        return res.status(422).json({ message: fxResult.message, code: fxResult.code });
       }
+      const exchangeRate = fxResult.rate;
       invoiceData.exchangeRate = exchangeRate;
       invoiceData.baseCurrencyAmount = Math.round(total * exchangeRate * 100) / 100;
 
@@ -554,7 +554,7 @@ export function registerInvoiceRoutes(app: Express) {
         // issued while the chart of accounts was missing) gets its revenue
         // recognition created now.
         const hasAny = entries.some((e) => e.sourceId === id);
-        const issued = ["sent", "posted", "partial", "paid"].includes(invoice.status);
+        const issued = ["sent", "posted", "partial", "paid", "credited"].includes(invoice.status);
         if (!hasAny && issued) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
           const posted = await postInvoiceRevenueJournal(invoice as any, userId);
@@ -604,7 +604,7 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (isTerminal(invoice.status)) {
+      if (isTerminal(invoice.status) || invoice.status === "credited") {
         return res.status(422).json({
           message: `Cannot edit ${invoice.status} invoice`,
           code: "INVOICE_TERMINAL",
@@ -802,6 +802,13 @@ export function registerInvoiceRoutes(app: Express) {
             "Invalid status. Must be one of: draft, sent, posted, partial, paid, void, cancelled",
         });
       }
+      // 'credited' is derived from the credit notes; it cannot be set by hand.
+      if (status === "credited") {
+        return res.status(422).json({
+          message: "An invoice becomes 'credited' automatically when credit notes cover its full amount.",
+          code: "CREDITED_IS_AUTOMATIC",
+        });
+      }
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
@@ -810,12 +817,44 @@ export function registerInvoiceRoutes(app: Express) {
 
       const oldStatus = invoice.status;
 
+      // A credited invoice reopens only when its credit note is voided (the
+      // system sync does that). It cannot be moved by hand; voiding it is
+      // handled below and refused while credit notes exist.
+      if (oldStatus === "credited" && status !== "void") {
+        return res.status(422).json({
+          message: "A credited invoice cannot be changed by hand. Void the credit note to reopen the invoice.",
+          code: "INVOICE_CREDITED_LOCKED",
+        });
+      }
+
       // Voiding / cancelling a document that is already void or cancelled is
       // not a silent no-op: it was reversed once and must not look as if it
       // had just been reversed again (the locked transaction re-checks this).
       if ((status === "void" || status === "cancelled") && (oldStatus === "void" || oldStatus === "cancelled")) {
         const already = alreadyTerminalOutcome(oldStatus);
         if (!already.ok) return res.status(already.status).json({ message: already.message, code: already.code });
+      }
+
+      // Marking paid records the cash still owed. With nothing outstanding
+      // (fully credited or already settled) there is nothing to record: refuse
+      // before anything else so a credited invoice cannot be "settled" a second time.
+      let outstandingNow = 0;
+      if (status === "paid" && oldStatus !== "paid") {
+        const balance = await getInvoiceBalance(invoice.companyId, id);
+        outstandingNow = balance.outstanding;
+        if (
+          invoice.status !== "draft" &&
+          invoice.status !== "void" &&
+          invoice.status !== "cancelled" &&
+          balance.outstanding <= 0.005
+        ) {
+          return res.status(409).json({
+            message: balance.isFullyCredited
+              ? `Invoice ${invoice.number} is fully credited: nothing is outstanding to mark as paid.`
+              : `Invoice ${invoice.number} has nothing outstanding to mark as paid.`,
+            code: "INVOICE_NOTHING_OUTSTANDING",
+          });
+        }
       }
 
       // No-op transition is fine.
@@ -860,9 +899,10 @@ export function registerInvoiceRoutes(app: Express) {
           requested: req.body.paymentDate ?? req.body.date,
         });
 
-        // Compute the unpaid remainder so we don't double-record.
-        const previouslyPaid = await storage.getInvoicePaidTotal(id);
-        const remaining = invoice.total - previouslyPaid;
+        // The unpaid remainder: total - payments - credit notes (shared
+        // definition). Never the bare total, or a credited invoice would be
+        // settled for cash that is not owed.
+        const remaining = outstandingNow;
 
         try {
           if (remaining > 0.005) {
@@ -883,6 +923,9 @@ export function registerInvoiceRoutes(app: Express) {
             await storage.updateInvoiceStatus(id, invoice.companyId, "paid");
           }
         } catch (err: any) {
+          if (err?.code === "INVOICE_NOTHING_OUTSTANDING") {
+            return res.status(409).json({ message: err.message, code: err.code });
+          }
           if (err?.code === "INVOICE_TERMINAL") {
             return res.status(422).json({ message: err.message, code: err.code });
           }
@@ -1365,7 +1408,7 @@ export function registerInvoiceRoutes(app: Express) {
 
       // Reject voided/cancelled invoices up front (the storage layer also
       // re-checks under FOR UPDATE; this is a fast-path 422).
-      if (isTerminal(invoice.status)) {
+      if (invoice.status === "void" || invoice.status === "cancelled") {
         return res.status(422).json({
           message: `Cannot record payment on ${invoice.status} invoice`,
           code: "INVOICE_TERMINAL",
@@ -1424,6 +1467,9 @@ export function registerInvoiceRoutes(app: Express) {
         const code = err?.code;
         if (code === "PAYMENT_EXCEEDS_BALANCE") {
           return res.status(422).json({ message: err.message, code, details: err.details });
+        }
+        if (code === "INVOICE_NOTHING_OUTSTANDING") {
+          return res.status(409).json({ message: err.message, code, details: err.details });
         }
         if (code === "OVERPAYMENT" || code === "INVOICE_TERMINAL" || code === "CURRENCY_MISMATCH") {
           return res.status(422).json({ message: err.message, code });
@@ -1968,6 +2014,11 @@ export function registerInvoiceRoutes(app: Express) {
           { tx }
         );
 
+        // The credit note reduces what the customer owes: a fully credited,
+        // unpaid invoice becomes 'credited'; credit + payments that settle it
+        // make it 'paid'.
+        await syncInvoiceStatusFromBalance(tx, companyId, invoiceId);
+
         return { cnNumber: number, creditNote: insertedCreditNote };
       });
 
@@ -2125,10 +2176,18 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (invoice.status === "paid" || invoice.status === "void") {
+      if (invoice.status === "paid" || invoice.status === "void" || invoice.status === "credited") {
         return res
           .status(400)
           .json({ message: `Cannot send reminder for a ${invoice.status} invoice` });
+      }
+      // Nothing owed (credit notes and payments cover the invoice): nothing to chase.
+      const reminderBalance = await getInvoiceBalance(companyId, invoiceId);
+      if (reminderBalance.outstanding <= 0.005) {
+        return res.status(409).json({
+          message: "This invoice has nothing outstanding, so no payment reminder is needed.",
+          code: "INVOICE_NOTHING_OUTSTANDING",
+        });
       }
 
       const company = await storage.getCompany(companyId);

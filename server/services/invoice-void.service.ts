@@ -33,6 +33,7 @@ import { reverseToZero } from "./credit-note-remainder.service";
 import { resolveInvoiceFx } from "./invoice-fx";
 import { acquireDocumentLock, LOCK_NS } from "./document-lock";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { syncInvoiceStatusFromBalance } from "./invoice-credit-status";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("invoice-void");
@@ -195,6 +196,11 @@ export async function voidOrCancelInvoice(args: {
       .update(invoicesTable)
       .set({ status: targetStatus })
       .where(and(eq(invoicesTable.id, invoiceId), eq(invoicesTable.companyId, companyId)));
+    // A voided credit note no longer reduces its invoice: give the invoice its
+    // open / partial / paid status back (a credited invoice becomes payable again).
+    if (invoice.invoiceType === "credit_note" && invoice.originalInvoiceId) {
+      await syncInvoiceStatusFromBalance(tx, companyId, invoice.originalInvoiceId);
+    }
     return { ok: true, reversalEntryId } as VoidOutcome;
   });
 }

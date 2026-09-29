@@ -586,6 +586,7 @@ export default function Invoices() {
         return "bg-success-subtle text-success ";
       case "sent":
         return "bg-info-subtle text-info ";
+      case "credited":
       case "void":
         return "bg-muted text-foreground ";
       default:
@@ -1217,6 +1218,10 @@ export default function Invoices() {
                             <SelectItem value="sent">{t.sent}</SelectItem>
                             <SelectItem value="paid">{t.paid}</SelectItem>
                             <SelectItem value="partial">Partial</SelectItem>
+                            {/* Derived from credit notes: shown, never selectable. */}
+                            <SelectItem value="credited" disabled>
+                              {t.credited}
+                            </SelectItem>
                             <SelectItem value="void">{t.void}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1318,6 +1323,14 @@ export default function Invoices() {
                                   data-testid={`status-option-partial-${invoice.id}`}
                                 >
                                   Partial
+                                </SelectItem>
+                                {/* Derived from credit notes: shown, never selectable. */}
+                                <SelectItem
+                                  value="credited"
+                                  disabled
+                                  data-testid={`status-option-credited-${invoice.id}`}
+                                >
+                                  {t.credited}
                                 </SelectItem>
                                 <SelectItem
                                   value="void"

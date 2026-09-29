@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
+import { buildInvoiceBalances, listOpenReceivables, receivableOutstanding } from "../services/invoice-outstanding";
 import { db } from "../db";
 import { eq, and, or, desc } from "drizzle-orm";
 import {
@@ -57,16 +58,16 @@ export function registerClientPortalRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const companyId: string = (req as any).portalCompanyId;
 
-      const [allInvoices, vatReturns, documents] = await Promise.all([
+      const [allInvoices, vatReturns, documents, invoicePayments] = await Promise.all([
         storage.getInvoicesByCompanyId(companyId),
         storage.getVatReturnsByCompanyId(companyId),
         storage.getDocuments(companyId),
+        storage.getInvoicePaymentsByCompanyId(companyId),
       ]);
 
-      const outstanding = allInvoices.filter(
-        (inv) => inv.status === "sent" || inv.status === "partial"
-      );
-      const outstandingTotal = outstanding.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+      // Outstanding = total - payments - credit notes (shared definition), AED.
+      const outstanding = listOpenReceivables(allInvoices, invoicePayments);
+      const outstandingTotal = outstanding.reduce((sum, r) => sum + r.outstandingBase, 0);
 
       const paid = allInvoices.filter((inv) => inv.status === "paid");
       const paidTotal = paid.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
@@ -105,10 +106,21 @@ export function registerClientPortalRoutes(app: Express): void {
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const companyId: string = (req as any).portalCompanyId;
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const sorted = [...invoices].sort(
-        (a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
-      );
+      const [invoices, invoicePayments] = await Promise.all([
+        storage.getInvoicesByCompanyId(companyId),
+        storage.getInvoicePaymentsByCompanyId(companyId),
+      ]);
+      const balances = buildInvoiceBalances(invoices, invoicePayments);
+      const sorted = [...invoices]
+        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+        .map((inv) => {
+          const b = balances.get(inv.id);
+          return {
+            ...inv,
+            outstandingAmount: receivableOutstanding(inv, b),
+            isFullyCredited: b?.isFullyCredited ?? false,
+          };
+        });
       res.json(sorted);
     })
   );

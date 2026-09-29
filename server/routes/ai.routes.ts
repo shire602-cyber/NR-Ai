@@ -19,6 +19,7 @@ import {
 } from "../services/receipt-autopilot.service";
 import { saveReceiptImage } from "../services/fileStorage";
 import { randomUUID } from "crypto";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 import {
   getModelStats,
   getClassifierConfig,
@@ -302,6 +303,11 @@ If no valid transactions can be found, return { "transactions": [] }`,
         const accounts = await storage.getAccountsByCompanyId(companyId);
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
+        // Open receivables net of payments and credit notes (shared definition, AED).
+        const openReceivables = listOpenReceivables(
+          invoices,
+          await storage.getInvoicePaymentsByCompanyId(companyId)
+        );
 
         // Build financial context from actual data
         const financialContext = {
@@ -310,11 +316,8 @@ If no valid transactions can be found, return { "transactions": [] }`,
           totalExpenses: context?.profitLoss?.totalExpenses || context?.stats?.expenses || 0,
           netProfit: context?.profitLoss?.netProfit || 0,
           totalInvoices: invoices.length,
-          outstandingInvoices: invoices.filter((i) => i.status === "sent" || i.status === "draft")
-            .length,
-          outstandingAmount: invoices
-            .filter((i) => i.status === "sent" || i.status === "draft")
-            .reduce((sum, i) => sum + i.total, 0),
+          outstandingInvoices: openReceivables.length,
+          outstandingAmount: openReceivables.reduce((sum, r) => sum + r.outstandingBase, 0),
           totalReceipts: receipts.length,
           postedReceipts: receipts.filter((r) => r.posted).length,
           accountCount: accounts.length,
@@ -835,6 +838,13 @@ Respond with JSON:
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
         const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+        // Only invoices that still owe money can be matched to a bank receipt;
+        // the amount offered is what is outstanding after payments and credit notes.
+        const open = new Map(
+          listOpenReceivables(invoices, await storage.getInvoicePaymentsByCompanyId(companyId)).map(
+            (r) => [r.invoice.id, r.balance.outstanding] as const
+          )
+        );
 
         if (bankTransactions.length === 0) {
           return res.json({ matches: [], message: "No unreconciled transactions" });
@@ -851,12 +861,12 @@ Respond with JSON:
 
         const ledgerData = {
           invoices: invoices
-            .filter((i) => i.status === "sent" || i.status === "paid")
+            .filter((i) => open.has(i.id))
             .map((i) => ({
               id: i.id,
               type: "invoice",
               customerName: i.customerName,
-              amount: i.total,
+              amount: open.get(i.id),
               date: i.date,
               number: i.number,
             })),
@@ -1123,9 +1133,10 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           averageMonthlyExpenses: monthlyOutflow,
           totalInvoices: invoices.length,
           paidInvoices: invoices.filter((i) => i.status === "paid").length,
-          pendingReceivables: invoices
-            .filter((i) => i.status === "sent")
-            .reduce((sum, i) => sum + i.total, 0),
+          pendingReceivables: listOpenReceivables(
+            invoices,
+            await storage.getInvoicePaymentsByCompanyId(companyId)
+          ).reduce((sum, r) => sum + r.outstandingBase, 0),
           recentMonths: Array.from({ length: 6 }, (_, i) => {
             const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
             const monthInvoices = recentInvoices.filter((inv) => {
@@ -1516,13 +1527,15 @@ Respond with JSON:
         }
 
         // Gather comprehensive financial context — parallel + single line fetch.
-        const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
-          storage.getAccountsByCompanyId(companyId),
-          storage.getInvoicesByCompanyId(companyId),
-          storage.getReceiptsByCompanyId(companyId),
-          storage.getJournalEntriesByCompanyId(companyId),
-          storage.getJournalLinesByCompanyId(companyId),
-        ]);
+        const [accounts, invoices, receipts, entries, allLines, invoicePaymentsForContext] =
+          await Promise.all([
+            storage.getAccountsByCompanyId(companyId),
+            storage.getInvoicesByCompanyId(companyId),
+            storage.getReceiptsByCompanyId(companyId),
+            storage.getJournalEntriesByCompanyId(companyId),
+            storage.getJournalLinesByCompanyId(companyId),
+            storage.getInvoicePaymentsByCompanyId(companyId),
+          ]);
         const accountById = new Map(accounts.map((a) => [a.id, a]));
 
         // Calculate account balances in a single pass.
@@ -1569,9 +1582,10 @@ Respond with JSON:
             pending: invoices.filter((i) => i.status === "sent").length,
             draft: invoices.filter((i) => i.status === "draft").length,
             totalValue: invoices.reduce((sum, i) => sum + Number(i.total), 0),
-            outstandingValue: invoices
-              .filter((i) => i.status === "sent")
-              .reduce((sum, i) => sum + Number(i.total), 0),
+            outstandingValue: listOpenReceivables(invoices, invoicePaymentsForContext).reduce(
+              (sum, r) => sum + r.outstandingBase,
+              0
+            ),
           },
           expensesSummary: {
             total: receipts.length,

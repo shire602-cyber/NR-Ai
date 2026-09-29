@@ -172,6 +172,9 @@ async function main() {
       ok("G: 4.0 recorded", r0.status === 201, { s: r0.status, j: r0.json });
       r0 = await G.chfInvoice();
       ok("G: invoice booked at 4.0", close(r0.json?.exchangeRate, 4.0, 1e-6), r0.json?.exchangeRate);
+      // The FX report counts ISSUED documents only (a draft has never been posted): issue it first.
+      r0 = await api("PATCH", `/api/invoices/${r0.json.id}/status`, { token: G.token, body: { status: "sent" } });
+      ok("G: invoice issued", r0.status === 200, { s: r0.status, j: r0.json });
       r0 = await G.addRate({ fromCurrency: "CHF", toCurrency: "AED", rate: 4.4, effectiveDate: today });
       ok("G: 4.4 recorded for today", r0.status === 201, { s: r0.status, j: r0.json });
       r0 = await api("GET", `/api/companies/${G.cid}/reports/fx-gains-losses`, { token: G.token });

@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel, prepareFxGainsLossesForExport } from "@/lib/export";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
-import { Plus, ArrowRightLeft, RefreshCw, Download, Trash2 } from "lucide-react";
+import { Plus, ArrowRightLeft, RefreshCw, Download, Trash2, AlertTriangle } from "lucide-react";
 
 const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "PKR", "EGP", "BHD", "QAR"];
 // A rate is always entered as "1 <foreign currency> = <rate> AED".
@@ -113,6 +113,32 @@ export default function ExchangeRates() {
     queryKey: [`/api/companies/${companyId}/exchange-rates`],
     enabled: !!companyId,
   });
+
+  // Foreign-currency documents the company already has. Invoices and quotes in a
+  // currency with no trusted rate cannot be converted to AED, so tell the user
+  // which currencies still need a rate (see the notice below).
+  const { data: invoiceDocs } = useQuery<Array<{ currency?: string | null }>>({
+    queryKey: [`/api/companies/${companyId}/invoices`],
+    enabled: !!companyId,
+  });
+  const { data: quoteDocs } = useQuery<Array<{ currency?: string | null }>>({
+    queryKey: [`/api/companies/${companyId}/quotes`],
+    enabled: !!companyId,
+  });
+  const currenciesNeedingRate = useMemo(() => {
+    if (!rates) return [];
+    const covered = new Set(
+      rates.filter((r) => r.toCurrency === BASE_CURRENCY).map((r) => r.fromCurrency)
+    );
+    const used = new Set<string>();
+    for (const doc of [...(invoiceDocs ?? []), ...(quoteDocs ?? [])]) {
+      const c = (doc.currency ?? BASE_CURRENCY).toUpperCase();
+      if (c !== BASE_CURRENCY) used.add(c);
+    }
+    return Array.from(used)
+      .filter((c) => !covered.has(c))
+      .sort();
+  }, [rates, invoiceDocs, quoteDocs]);
 
   const { data: fxReport, isLoading: isLoadingFxReport } = useQuery<FxGainsLossesReport>({
     queryKey: [`/api/companies/${companyId}/reports/fx-gains-losses`],
@@ -282,14 +308,30 @@ export default function ExchangeRates() {
         }
       />
 
+      {currenciesNeedingRate.length > 0 && (
+        <div
+          role="alert"
+          data-testid="notice-rates-required"
+          className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning-subtle p-4 text-sm text-foreground"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <p>
+            {tr(
+              `You have documents in ${currenciesNeedingRate.join(", ")} but no exchange rate for ${currenciesNeedingRate.length === 1 ? "it" : "them"}. Rates entered before the latest update are no longer used, so enter today's rate (1 ${currenciesNeedingRate[0]} = ? AED) with "Add Rate". Until then new documents in that currency cannot be created and recurring invoices in it are skipped.`,
+              `لديك مستندات بالعملة ${currenciesNeedingRate.join("، ")} ولا يوجد سعر صرف لها. لم تعد أسعار الصرف المدخلة قبل آخر تحديث مستخدمة، لذا أدخل سعر اليوم (1 ${currenciesNeedingRate[0]} = ؟ درهم) عبر "Add Rate". إلى ذلك الحين لا يمكن إنشاء مستندات جديدة بهذه العملة، وسيتم تخطي الفواتير المتكررة بها.`
+            )}
+          </p>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle>FX Gains and Losses</CardTitle>
             <CardDescription>
               As of {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : "today"} · Source
-              basis: unpaid foreign-currency invoices and unposted foreign-currency receipt
-              expenses remeasured using saved exchange rates. Values are shown in{" "}
+              basis: the outstanding balance of issued foreign-currency invoices and approved
+              foreign-currency vendor bills, remeasured using saved exchange rates. Values are shown in{" "}
               {fxReport?.baseCurrency || "AED"}.
             </CardDescription>
           </div>

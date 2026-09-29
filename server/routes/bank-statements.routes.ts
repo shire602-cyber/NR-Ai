@@ -13,6 +13,7 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { ACCOUNT_CODES } from "../constants";
+import { getInvoiceBalance } from "../services/invoice-outstanding.db";
 
 const log = createLogger("bank-statements");
 
@@ -745,9 +746,18 @@ export function registerBankStatementRoutes(app: Express) {
           return res.status(400).json({ message: "Bank GL account not found" });
         }
 
-        // Match the unpaid remainder (or what the bank says, whichever is smaller).
-        const previouslyPaid = await storage.getInvoicePaidTotal(matchedId);
-        const remaining = Number(invoice.total) - previouslyPaid;
+        // Match the unpaid remainder (or what the bank says, whichever is
+        // smaller). The remainder is total - payments - credit notes (shared
+        // definition): a fully credited invoice owes nothing, so a bank line
+        // cannot be matched to it (409), and a payment never exceeds the balance.
+        const balance = await getInvoiceBalance(companyId, matchedId);
+        const remaining = balance.outstanding;
+        if (remaining <= 0.005 && balance.credited > 0) {
+          return res.status(409).json({
+            message: `Invoice ${invoice.number} has nothing outstanding${balance.isFullyCredited ? " (fully credited)" : ""}; a bank line cannot be matched to it.`,
+            code: "INVOICE_NOTHING_OUTSTANDING",
+          });
+        }
         const bankAbs = Math.abs(Number(txn.amount));
         const paymentAmount = Math.min(remaining, bankAbs);
 
@@ -777,6 +787,9 @@ export function registerBankStatementRoutes(app: Express) {
             });
             journalEntryId = result.journalEntryId;
           } catch (err: any) {
+            if (err?.code === "INVOICE_NOTHING_OUTSTANDING") {
+              return res.status(409).json({ message: err.message, code: err.code });
+            }
             if (
               err?.code === "CURRENCY_MISMATCH" ||
               err?.code === "OVERPAYMENT" ||

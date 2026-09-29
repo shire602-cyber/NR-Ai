@@ -64,4 +64,5 @@ export async function acquireDocumentLock(tx: typeof db, documentId: string, nam
 export const LOCK_NS = {
   INVOICE_POSTING: 1001,
   CREDIT_NOTE: 1002,
+  FX_REVALUATION: 1003,
 } as const;
