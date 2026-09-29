@@ -36,6 +36,21 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
         run: npm run check
 
+      - name: Lint
+        # NON-BLOCKING for now: `npm run lint` currently exits 1 on 4 errors
+        # (unused vars / expressions in tests/integration/*.test.mjs) plus ~500
+        # warnings, mostly @typescript-eslint/no-unused-vars. Fix those, then
+        # delete continue-on-error so lint gates merges.
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Dependency audit (production, high+)
+        # NON-BLOCKING for now: 3 high findings with fixes available but not
+        # yet upgraded (nodemailer, pdfjs-dist, browserslist). Upgrade them,
+        # then delete continue-on-error so new high/critical advisories gate merges.
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Unit tests
         env:
           DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci

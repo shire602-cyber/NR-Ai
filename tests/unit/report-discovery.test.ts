@@ -98,7 +98,11 @@ describe("report discoverability", () => {
   const reportLaunchPickerSource = read("client/src/components/reports/ReportLaunchPicker.tsx");
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
-  const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
+  // Menu data lives in nav-config.ts; the component and the data are checked together.
+  const sidebarSource = [
+    read("client/src/components/layout/AppSidebar.tsx"),
+    read("client/src/components/layout/nav-config.ts"),
+  ].join("\n");
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = read("client/src/pages/Reports.tsx");

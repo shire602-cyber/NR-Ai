@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
+import { captureException } from "../services/monitoring";
 
 const log = createLogger("client-error");
 
@@ -34,6 +35,22 @@ export function registerClientErrorRoutes(app: Express) {
         },
         "Client-side error reported"
       );
+
+      // Same alerting path as server faults so client crashes show up in the
+      // same place. captureException scrubs the context; the query string of
+      // the page URL is dropped here because it can carry tokens.
+      const clientError = new Error(parsed.data.message);
+      clientError.name = "ClientError";
+      if (parsed.data.stack) clientError.stack = parsed.data.stack;
+      captureException(clientError, {
+        source: "client",
+        requestId: req.id,
+        userId,
+        url: parsed.data.url?.split(/[?#]/)[0],
+        boundary: parsed.data.boundary,
+        releaseTag: parsed.data.releaseTag,
+        componentStack: parsed.data.componentStack,
+      });
 
       // Always 204 — never let logging failures cascade back to the UI.
       res.status(204).end();

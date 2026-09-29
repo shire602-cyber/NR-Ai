@@ -9,6 +9,8 @@ import {
   OutboundUrlBlockedError,
 } from "../services/url-guard";
 import crypto from "crypto";
+import { parseEventSubscription } from "../../shared/webhook-events";
+import { signWebhookPayload, WEBHOOK_TIMEOUT_MS } from "../services/webhook.service";
 
 export function registerWebhookRoutes(app: Express) {
   // =====================================
@@ -62,8 +64,9 @@ export function registerWebhookRoutes(app: Express) {
         return res.status(400).json({ message: "Webhook URL is required" });
       }
 
-      if (!events || typeof events !== "string" || events.trim().length === 0) {
-        return res.status(400).json({ message: "At least one event is required" });
+      const parsedEvents = parseEventSubscription(events);
+      if (!parsedEvents.ok) {
+        return res.status(400).json({ message: parsedEvents.message });
       }
 
       // Validate URL format and reject SSRF targets (private/internal hosts)
@@ -78,7 +81,7 @@ export function registerWebhookRoutes(app: Express) {
         companyId,
         url,
         secret,
-        events: events.trim(),
+        events: parsedEvents.events,
         isActive: true,
         createdBy: userId,
       });
@@ -121,7 +124,13 @@ export function registerWebhookRoutes(app: Express) {
 
       const updateData: Record<string, any> = {};
       if (url !== undefined) updateData.url = url;
-      if (events !== undefined) updateData.events = events;
+      if (events !== undefined) {
+        const parsedEvents = parseEventSubscription(events);
+        if (!parsedEvents.ok) {
+          return res.status(400).json({ message: parsedEvents.message });
+        }
+        updateData.events = parsedEvents.events;
+      }
       if (isActive !== undefined) updateData.isActive = isActive;
 
       const updated = await storage.updateWebhookEndpoint(id, updateData);
@@ -208,6 +217,7 @@ export function registerWebhookRoutes(app: Express) {
       }
 
       const testPayload = {
+        id: crypto.randomUUID(),
         event: "test",
         timestamp: new Date().toISOString(),
         data: {
@@ -218,10 +228,8 @@ export function registerWebhookRoutes(app: Express) {
       };
 
       const payloadStr = JSON.stringify(testPayload);
-      const signature = crypto
-        .createHmac("sha256", endpoint.secret)
-        .update(payloadStr)
-        .digest("hex");
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = signWebhookPayload(endpoint.secret, timestamp, payloadStr);
 
       let responseStatus: number | null = null;
       let responseBody: string | null = null;
@@ -234,12 +242,13 @@ export function registerWebhookRoutes(app: Express) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "X-Webhook-Signature": `sha256=${signature}`,
+              "X-Webhook-Signature": signature,
+              "X-Webhook-Timestamp": timestamp,
               "X-Webhook-Event": "test",
             },
             body: payloadStr,
           },
-          { timeoutMs: 10000 }
+          { timeoutMs: WEBHOOK_TIMEOUT_MS }
         );
 
         responseStatus = response.status;

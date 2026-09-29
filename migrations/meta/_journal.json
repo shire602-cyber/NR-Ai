@@ -638,6 +638,20 @@
    "when": 1781430060000,
    "tag": "0091_exchange_rates_company_scope",
    "breakpoints": false
+  },
+  {
+   "idx": 91,
+   "version": "7",
+   "when": 1781430070000,
+   "tag": "0092_trials_and_stored_files",
+   "breakpoints": false
+  },
+  {
+   "idx": 92,
+   "version": "7",
+   "when": 1781430080000,
+   "tag": "0093_user_is_active",
+   "breakpoints": false
   }
  ]
 }

@@ -34,6 +34,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
+import {
+  ACCEPTED_UPLOAD_TYPES,
+  checkFileBeforeUpload,
+  downloadAuthenticatedFile,
+  fileProblemMessage,
+  readFileAsBase64,
+} from "@/lib/file-upload";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -50,7 +57,6 @@ import {
   Calendar,
   Loader2,
   Plus,
-  Eye,
   Filter,
 } from "lucide-react";
 
@@ -123,13 +129,11 @@ export default function DocumentVault() {
       expiryDate: string;
       reminderDays: number;
       fileName: string;
-      fileSize: number;
       mimeType: string;
+      fileData: string;
     }) => {
-      return apiRequest("POST", `/api/companies/${companyId}/documents`, {
-        ...data,
-        fileUrl: `/uploads/${data.fileName}`, // Placeholder - in production would be cloud storage URL
-      });
+      // The file travels as base64; the server validates and stores it privately.
+      return apiRequest("POST", `/api/companies/${companyId}/documents`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "documents"] });
@@ -182,8 +186,27 @@ export default function DocumentVault() {
       return;
     }
 
+    if (!selectedFile) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
+        description: locale === "ar" ? "يرجى اختيار ملف" : "Please choose a file to upload",
+      });
+      return;
+    }
+    const problem = checkFileBeforeUpload(selectedFile);
+    if (problem) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "ملف غير صالح" : "Invalid file",
+        description: fileProblemMessage(problem, locale),
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
+      const fileData = await readFileAsBase64(selectedFile);
       await uploadMutation.mutateAsync({
         name: newDocument.name,
         nameAr: newDocument.nameAr,
@@ -191,12 +214,33 @@ export default function DocumentVault() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || "document.pdf",
-        fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || "application/pdf",
+        fileName: selectedFile.name,
+        mimeType: selectedFile.type || "application/octet-stream",
+        fileData,
       });
+    } catch (error: any) {
+      // Server rejections are toasted by the mutation; this covers read errors.
+      if (!uploadMutation.isError) {
+        toast({
+          variant: "destructive",
+          title: locale === "ar" ? "فشل الرفع" : "Upload Failed",
+          description: error?.message,
+        });
+      }
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDownload = async (doc: Document) => {
+    try {
+      await downloadAuthenticatedFile(`/api/documents/${doc.id}/download`, doc.fileName);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: locale === "ar" ? "فشل التنزيل" : "Download failed",
+        description: error?.message,
+      });
     }
   };
 
@@ -446,21 +490,9 @@ export default function DocumentVault() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => window.open(doc.fileUrl, "_blank")}
-                              data-testid={`button-view-${doc.id}`}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                                const link = document.createElement("a");
-                                link.href = doc.fileUrl;
-                                link.download = doc.fileName;
-                                link.click();
-                              }}
+                              onClick={() => handleDownload(doc)}
                               data-testid={`button-download-${doc.id}`}
+                              aria-label={locale === "ar" ? "تنزيل" : "Download"}
                             >
                               <Download className="w-4 h-4" />
                             </Button>
@@ -594,13 +626,18 @@ export default function DocumentVault() {
               <Label>{locale === "ar" ? "الملف" : "File"}</Label>
               <Input
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept={ACCEPTED_UPLOAD_TYPES}
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-document-file"
               />
               {selectedFile && (
                 <p className="text-sm text-muted-foreground">
                   {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+              {isUploading && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {locale === "ar" ? "جارٍ رفع الملف…" : "Uploading file…"}
                 </p>
               )}
             </div>

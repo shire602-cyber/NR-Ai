@@ -10,6 +10,11 @@ const sameSiteSchema = z.preprocess(
   z.enum(["strict", "lax", "none"]).optional()
 );
 
+// Treat an empty string (a blank line in a .env file or a cleared dashboard
+// variable) the same as "not set".
+const blankAsUndefined = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
+
 export const envSchema = z.object({
   // === Required ===
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -64,6 +69,19 @@ export const envSchema = z.object({
   STRIPE_PRICE_ENTERPRISE_MONTHLY: z.string().optional(),
   STRIPE_PRICE_ENTERPRISE_YEARLY: z.string().optional(),
 
+  // === Billing enforcement (owner switches, see docs/RELEASE_NOTES_PHASE2.md) ===
+  // Only the exact string "true" turns enforcement on; anything else observes
+  // (X-Billing-Would-Block header) without blocking.
+  BILLING_ENFORCEMENT: z.string().optional(),
+  // ISO date. Companies created before it stay on the top plan while set.
+  BILLING_GRANDFATHER_BEFORE: z.preprocess(
+    blankAsUndefined,
+    z
+      .string()
+      .refine((v) => !Number.isNaN(new Date(v).getTime()), "must be an ISO date, e.g. 2026-10-01")
+      .optional()
+  ),
+
   // === Web Push (VAPID) ===
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
@@ -77,6 +95,11 @@ export const envSchema = z.object({
   // === Open Banking (Lean Technologies aggregator) ===
   LEAN_APP_TOKEN: z.string().optional(),
   LEAN_API_BASE_URL: z.string().optional(),
+
+  // === Error tracking (optional - Sentry free tier) ===
+  // Unset: errors are logged only and the Sentry SDK is never loaded.
+  SENTRY_DSN: z.preprocess(blankAsUndefined, z.string().url().optional()),
+  SENTRY_ENVIRONMENT: z.preprocess(blankAsUndefined, z.string().max(64).optional()),
 
   // === Logging ===
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
@@ -129,6 +152,29 @@ export const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Misconfiguration that must stop a production boot: enforcement is on but
+ * there is no way to take payment, which would paywall every tenant behind a
+ * dead upgrade button. Returns a message, or null when fine.
+ */
+export function billingConfigProblem(env: {
+  NODE_ENV?: string;
+  BILLING_ENFORCEMENT?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+}): string | null {
+  if (env.NODE_ENV !== "production" || env.BILLING_ENFORCEMENT !== "true") return null;
+  const missing = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"].filter(
+    (key) => !env[key as "STRIPE_SECRET_KEY" | "STRIPE_WEBHOOK_SECRET"]
+  );
+  if (missing.length === 0) return null;
+  return (
+    `BILLING_ENFORCEMENT=true but ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not set. ` +
+    "Enforcing plans with no way to pay would lock every customer out. " +
+    "Set the Stripe variables first, or unset BILLING_ENFORCEMENT."
+  );
+}
+
 let _env: Env | null = null;
 
 /**
@@ -146,6 +192,12 @@ export function validateEnv(): Env {
 
     process.stderr.write(`\nEnvironment validation failed:\n\n${errorMessages}\n\n`);
     process.stderr.write("Please check your .env file or environment variables.\n");
+    process.exit(1);
+  }
+
+  const billingProblem = billingConfigProblem(result.data);
+  if (billingProblem) {
+    process.stderr.write(`\nEnvironment validation failed:\n\n  ${billingProblem}\n\n`);
     process.exit(1);
   }
 

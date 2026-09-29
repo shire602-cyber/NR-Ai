@@ -41,6 +41,7 @@ import { registerVATAutopilotRoutes } from "./routes/vat-autopilot.routes";
 import { registerCorporateTaxRoutes } from "./routes/corporate-tax.routes";
 import { registerTeamRoutes } from "./routes/team.routes";
 import { registerPortalRoutes } from "./routes/portal.routes";
+import { registerDocumentRoutes } from "./routes/documents.routes";
 import { registerPortalPublicRoutes } from "./routes/portal.public.routes";
 import { registerAdminRoutes } from "./routes/admin.routes";
 import { registerRecurringInvoiceRoutes } from "./routes/recurring-invoices.routes";
@@ -84,6 +85,7 @@ import { registerFirmValueOpsRoutes } from "./routes/firm-value-ops.routes";
 import { registerFirmGrowthRoutes } from "./routes/firm-growth.routes";
 import { registerFirmVatWorkspaceRoutes } from "./routes/firm-vat-workspace.routes";
 import { registerClientPortalRoutes } from "./routes/client-portal.routes";
+import { registerPortalInviteRoutes } from "./routes/portal-invites.routes";
 import { registerDocumentChasingRoutes } from "./routes/document-chasing.routes";
 import { registerEvidenceCenterRoutes } from "./routes/evidence-center.routes";
 
@@ -173,8 +175,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Team & Client Portal ──────────────────────────────
   registerTeamRoutes(app);
   registerPortalRoutes(app);
+  registerDocumentRoutes(app);
   registerPortalPublicRoutes(app);
   registerClientPortalRoutes(app);
+  registerPortalInviteRoutes(app);
 
   // ─── Admin Panel ────────────────────────────────────────
   registerAdminHealthRoutes(app);

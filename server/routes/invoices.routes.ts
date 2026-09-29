@@ -5,20 +5,33 @@ import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
+import {
+  insertInvoiceSchema,
+  type Invoice,
+  type JournalEntry,
+  type JournalLine,
+} from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
 import { getEInvoiceProvider } from "../services/einvoice-provider";
 import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { submitEInvoice, refreshEInvoiceStatus } from "../services/einvoice-submit.service";
 import {
-  hasSmtpConfig,
+  assertEmailSent,
+  emailStatus,
+  EMAIL_NOT_CONFIGURED_MESSAGE,
   sendInvoiceEmail,
   sendPaymentReminderEmail,
 } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
 import { db } from "../db";
-import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from "../../shared/schema";
+import {
+  invoices as invoicesTable,
+  invoiceLines as invoiceLinesTable,
+  journalEntries as journalEntriesTable,
+  journalLines as journalLinesTable,
+} from "../../shared/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
@@ -1596,31 +1609,12 @@ export function registerInvoiceRoutes(app: Express) {
       // notes each read "nothing credited yet" and all five posted, crediting
       // one invoice 5x and driving A/R negative. Serialise per invoice so the
       // cap is evaluated against committed state.
-      return await withDocumentLock(invoiceId, LOCK_NS.CREDIT_NOTE, async () => {
-      const companyInvoices = await storage.getInvoicesByCompanyId(companyId);
-      const existingCreditNotes = companyInvoices.filter(
-        (i) =>
-          i.originalInvoiceId === invoiceId &&
-          i.invoiceType === "credit_note" &&
-          i.status !== "void" &&
-          i.status !== "cancelled"
-      );
-      const alreadyCreditedTotal = existingCreditNotes.reduce(
-        (sum, i) => sum + Math.abs(Number(i.total)),
-        0
-      );
-      const cnDecision = evaluateCreditNoteRequest({
-        invoiceType: original.invoiceType ?? "invoice",
-        originalTotal: Number(original.total),
-        alreadyCreditedTotal,
-        // Cap a partial credit at what is still uncreditable. Omitted (full
-        // reversal) defaults to the whole remaining balance.
-        requestedAmount: creditAmounts ? creditAmounts.total : undefined,
-      });
-      if (!cnDecision.ok) {
-        return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
-      }
-
+      // Everything below that does NOT depend on the locked state is read BEFORE
+      // the transaction opens (same pattern as invoice-void.service). Inside the
+      // lock every read goes through the transaction's own connection: with
+      // DB_POOL_MAX connections, N waiting requests each hold one for their
+      // transaction, so a lock holder that reached for a second pool connection
+      // to read starved the pool and deadlocked the whole app.
       // TD5: honour a caller-supplied credit-note date (previously silently
       // ignored — CNs were always stamped "today", so a CN belonging to the
       // period being filed could never enter that period's VAT 201 or P&L).
@@ -1671,9 +1665,50 @@ export function registerInvoiceRoutes(app: Express) {
 
       const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
+      const outcome = await withDocumentLock(invoiceId, LOCK_NS.CREDIT_NOTE, async (lockTx: typeof db) => {
+      const creditNotesOfInvoice: Invoice[] = await lockTx
+        .select()
+        .from(invoicesTable)
+        .where(
+          and(
+            eq(invoicesTable.companyId, companyId),
+            eq(invoicesTable.originalInvoiceId, invoiceId),
+            eq(invoicesTable.invoiceType, "credit_note")
+          )
+        );
+      const existingCreditNotes = creditNotesOfInvoice.filter(
+        (i) => i.status !== "void" && i.status !== "cancelled"
+      );
+      const alreadyCreditedTotal = existingCreditNotes.reduce(
+        (sum, i) => sum + Math.abs(Number(i.total)),
+        0
+      );
+      const cnDecision = evaluateCreditNoteRequest({
+        invoiceType: original.invoiceType ?? "invoice",
+        originalTotal: Number(original.total),
+        alreadyCreditedTotal,
+        // Cap a partial credit at what is still uncreditable. Omitted (full
+        // reversal) defaults to the whole remaining balance.
+        requestedAmount: creditAmounts ? creditAmounts.total : undefined,
+      });
+      if (!cnDecision.ok) {
+        return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
+      }
+
+
+
       // What is already on the ledger for this invoice (AED, as posted): its
       // own entry plus the entries of the credit notes issued so far.
-      const originalEntries = await storage.getJournalEntriesBySource(companyId, "invoice", invoiceId);
+      const originalEntries: JournalEntry[] = await lockTx
+        .select()
+        .from(journalEntriesTable)
+        .where(
+          and(
+            eq(journalEntriesTable.companyId, companyId),
+            eq(journalEntriesTable.source, "invoice"),
+            eq(journalEntriesTable.sourceId, invoiceId)
+          )
+        );
       const originalEntry = selectVoidableEntries(originalEntries).original;
       if (!originalEntry) {
         // e.g. an invoice created before drafts stopped auto-posting, or one whose
@@ -1684,13 +1719,29 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
       const priorCreditNoteIds = existingCreditNotes.map((c) => c.id);
-      const priorEntryIds: string[] = [];
-      for (const cnId of priorCreditNoteIds) {
-        const entries = await storage.getJournalEntriesBySource(companyId, "invoice", cnId);
-        for (const e of entries) if (e.status === "posted") priorEntryIds.push(e.id);
-      }
+      const priorEntries: JournalEntry[] =
+        priorCreditNoteIds.length > 0
+          ? await lockTx
+              .select()
+              .from(journalEntriesTable)
+              .where(
+                and(
+                  eq(journalEntriesTable.companyId, companyId),
+                  eq(journalEntriesTable.source, "invoice"),
+                  inArray(journalEntriesTable.sourceId, priorCreditNoteIds)
+                )
+              )
+          : [];
+      const priorEntryIds: string[] = priorEntries.filter((e) => e.status === "posted").map((e) => e.id);
+      const entryIdsForLedger = [originalEntry.id, ...priorEntryIds];
+      const ledgerSourceLines: JournalLine[] = originalEntry
+        ? await lockTx
+            .select()
+            .from(journalLinesTable)
+            .where(inArray(journalLinesTable.entryId, entryIdsForLedger))
+        : [];
       const ledgerLines = originalEntry
-        ? (await storage.getJournalLinesByEntryIds([originalEntry.id, ...priorEntryIds])).map((l) => ({
+        ? ledgerSourceLines.map((l) => ({
             accountId: l.accountId,
             debit: Number(l.debit) || 0,
             credit: Number(l.credit) || 0,
@@ -1698,7 +1749,10 @@ export function registerInvoiceRoutes(app: Express) {
         : [];
       const existingCreditLines =
         priorCreditNoteIds.length > 0
-          ? await storage.getInvoiceLinesByInvoiceIds(priorCreditNoteIds)
+          ? await lockTx
+              .select()
+              .from(invoiceLinesTable)
+              .where(inArray(invoiceLinesTable.invoiceId, priorCreditNoteIds))
           : [];
 
       // The credit note lines, each carrying the revenue account it reverses.
@@ -1953,7 +2007,7 @@ export function registerInvoiceRoutes(app: Express) {
       // Allocate the credit-note number, insert the credit note + its lines
       // AND post its reversing journal entry in ONE transaction: gap-free
       // numbering (FTA) and a document that can never exist without its entry.
-      const { cnNumber, creditNote } = await db.transaction(async (tx: typeof db) => {
+      const insertCreditNote = async (tx: typeof db) => {
         const number = await allocateInvoiceNumber(companyId, "credit_note", new Date(), tx);
         const legs = buildLegs(number);
         if (!legs.ok) {
@@ -2020,8 +2074,18 @@ export function registerInvoiceRoutes(app: Express) {
         await syncInvoiceStatusFromBalance(tx, companyId, invoiceId);
 
         return { cnNumber: number, creditNote: insertedCreditNote };
-      });
+      };
+      const { cnNumber, creditNote } = await insertCreditNote(lockTx);
 
+      return { created: { cnNumber, creditNote } };
+      }); // end withDocumentLock
+
+      // Non-success paths already answered the request from inside the lock.
+      if (!outcome || !("created" in outcome)) return outcome;
+
+      // Audit AFTER the lock is released: it uses the pool, and doing that while
+      // holding the lock's connection is exactly what starved the pool.
+      const { cnNumber, creditNote } = outcome.created;
       await recordAudit({
         userId,
         companyId,
@@ -2038,7 +2102,6 @@ export function registerInvoiceRoutes(app: Express) {
       });
 
       return res.status(201).json(creditNote);
-      }); // end withDocumentLock
     })
   );
 
@@ -2096,12 +2159,10 @@ export function registerInvoiceRoutes(app: Express) {
       }
       const { to, subject, message } = parsed.data;
 
-      if (!hasSmtpConfig()) {
-        return res.status(503).json({
-          message:
-            "Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.",
-          code: "SMTP_NOT_CONFIGURED",
-        });
+      if (!emailStatus().configured) {
+        return res
+          .status(503)
+          .json({ message: EMAIL_NOT_CONFIGURED_MESSAGE, code: "EMAIL_NOT_CONFIGURED" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -2122,7 +2183,7 @@ export function registerInvoiceRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
       const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
 
-      await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message);
+      assertEmailSent(await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message));
 
       await storage.createActivityLog({
         userId,
@@ -2158,12 +2219,10 @@ export function registerInvoiceRoutes(app: Express) {
       }
       const { to } = parsed.data;
 
-      if (!hasSmtpConfig()) {
-        return res.status(503).json({
-          message:
-            "Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.",
-          code: "SMTP_NOT_CONFIGURED",
-        });
+      if (!emailStatus().configured) {
+        return res
+          .status(503)
+          .json({ message: EMAIL_NOT_CONFIGURED_MESSAGE, code: "EMAIL_NOT_CONFIGURED" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -2199,7 +2258,9 @@ export function registerInvoiceRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
       const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
 
-      await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
+      assertEmailSent(
+        await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount)
+      );
 
       await storage.updateInvoice(invoiceId, companyId, {
         reminderCount: newReminderCount,

@@ -19,8 +19,8 @@ import { createLogger } from "../config/logger";
 import {
   sendEmail,
   renderTemplate,
-  hasSmtpConfig,
-  sendGenericEmail,
+  emailStatus,
+  EmailNotConfiguredError,
 } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
 import { recordAudit } from "../services/audit.service";
@@ -272,6 +272,10 @@ export function registerFirmCommsRoutes(app: Express): void {
       if (!subject || !body) {
         return res.status(400).json({ message: "Could not resolve subject or body from template" });
       }
+
+      // Refuse up front rather than log a "failed" communication for a message
+      // that could never have been delivered.
+      if (!emailStatus().configured) throw new EmailNotConfiguredError();
 
       const result = await sendEmail(validated.recipientEmail, subject, body, {
         fromName: company.name,
@@ -541,6 +545,8 @@ export function registerFirmCommsRoutes(app: Express): void {
       if (dryRun) {
         return res.json({ preview: targets, count: targets.length, dryRun: true });
       }
+
+      if (targets.length > 0 && !emailStatus().configured) throw new EmailNotConfiguredError();
 
       const results: {
         companyId: string;

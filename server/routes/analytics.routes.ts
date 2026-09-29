@@ -3,23 +3,12 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
-import type { EcommerceIntegration } from "../../shared/schema";
-import { listOpenReceivables } from "../services/invoice-outstanding";
+import { serializeEcommerceIntegration } from "../services/ecommerce-integration-view";
+import { sendNotAvailable } from "../utils/not-available";
 
-/**
- * Credentials never leave the server once stored — responses carry presence
- * flags only. The client write-only form never needs them back.
- */
-function maskIntegrationSecrets(integration: EcommerceIntegration) {
-  const { apiKey, accessToken, refreshToken, webhookSecret, ...rest } = integration;
-  return {
-    ...rest,
-    hasApiKey: !!apiKey,
-    hasAccessToken: !!accessToken,
-    hasRefreshToken: !!refreshToken,
-    hasWebhookSecret: !!webhookSecret,
-  };
-}
+const ECOMMERCE_NOT_AVAILABLE_MESSAGE =
+  "E-commerce integrations (Shopify, WooCommerce) are not available yet.";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 
 export function registerAnalyticsRoutes(app: Express) {
   // =====================================
@@ -320,7 +309,7 @@ export function registerAnalyticsRoutes(app: Express) {
       }
 
       const integrations = await storage.getEcommerceIntegrations(companyId as string);
-      res.json((integrations || []).map(maskIntegrationSecrets));
+      res.json((integrations || []).map(serializeEcommerceIntegration));
     })
   );
 
@@ -346,96 +335,30 @@ export function registerAnalyticsRoutes(app: Express) {
     })
   );
 
-  // Connect e-commerce integration
+  // Connect / sync / toggle are disabled: there is no working sync, so storing
+  // credentials or reporting a sync would be a false promise. The list and
+  // transactions reads above stay so existing rows remain visible.
   app.post(
     "/api/integrations/ecommerce/connect",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId, platform, apiKey, shopDomain, accessToken } = req.body;
-
-      if (!companyId || !platform) {
-        return res.status(400).json({ message: "Company ID and platform required" });
-      }
-
-      // Verify access
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const integration = await storage.createEcommerceIntegration({
-        companyId,
-        platform,
-        isActive: true,
-        apiKey: apiKey || null,
-        shopDomain: shopDomain || null,
-        accessToken: accessToken || null,
-        syncStatus: "never",
-      });
-
-      res.json(maskIntegrationSecrets(integration));
+    asyncHandler(async (_req: Request, res: Response) => {
+      return sendNotAvailable(res, ECOMMERCE_NOT_AVAILABLE_MESSAGE);
     })
   );
 
-  // Sync e-commerce integration
   app.post(
     "/api/integrations/ecommerce/:integrationId/sync",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { integrationId } = req.params;
-      const userId = (req as any).user?.id;
-
-      // Verify integration exists and user has access
-      const integration = await storage.getEcommerceIntegrationById(integrationId);
-      if (!integration) {
-        return res.status(404).json({ message: "Integration not found" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Update sync status
-      await storage.updateEcommerceIntegration(integrationId, {
-        syncStatus: "syncing",
-        lastSyncAt: new Date(),
-      });
-
-      // In a real implementation, this would fetch data from the platform
-      // For now, we'll simulate a successful sync
-      setTimeout(async () => {
-        await storage.updateEcommerceIntegration(integrationId, {
-          syncStatus: "success",
-        });
-      }, 2000);
-
-      res.json({ message: "Sync started" });
+    asyncHandler(async (_req: Request, res: Response) => {
+      return sendNotAvailable(res, ECOMMERCE_NOT_AVAILABLE_MESSAGE);
     })
   );
 
-  // Toggle e-commerce integration
   app.patch(
     "/api/integrations/ecommerce/:integrationId/toggle",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { integrationId } = req.params;
-      const userId = (req as any).user?.id;
-      const { isActive } = req.body;
-
-      const integration = await storage.getEcommerceIntegrationById(integrationId);
-      if (!integration) {
-        return res.status(404).json({ message: "Integration not found" });
-      }
-
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.updateEcommerceIntegration(integrationId, { isActive });
-      res.json({ message: "Integration updated" });
+    asyncHandler(async (_req: Request, res: Response) => {
+      return sendNotAvailable(res, ECOMMERCE_NOT_AVAILABLE_MESSAGE);
     })
   );
 

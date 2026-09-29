@@ -18,6 +18,8 @@ import {
   recordClassificationFeedback,
 } from "../services/receipt-autopilot.service";
 import { saveReceiptImage } from "../services/fileStorage";
+import { recordStoredFile } from "../services/document-upload.service";
+import { estimateDecodedBytes } from "../services/document-validation";
 import { randomUUID } from "crypto";
 import { listOpenReceivables } from "../services/invoice-outstanding";
 import {
@@ -1412,6 +1414,15 @@ Respond with JSON:
       let safeImagePath: string | null = null;
       if (ocr.imageData) {
         safeImagePath = await saveReceiptImage(ocr.imageData, `${randomUUID()}.jpg`);
+        await recordStoredFile({
+          companyId,
+          key: safeImagePath,
+          category: "receipts",
+          filename: "receipt.jpg",
+          contentType: "image/jpeg",
+          sizeBytes: estimateDecodedBytes(ocr.imageData),
+          uploadedBy: userId,
+        });
       }
 
       const result = await runAutopilot(companyId, userId, {

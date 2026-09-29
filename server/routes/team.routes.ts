@@ -22,8 +22,8 @@ export function registerTeamRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const teamMembers = await storage.getCompanyUserWithUser(companyId);
-      res.json(teamMembers);
+      // The storage layer already strips password hashes from these rows.
+      res.json(await storage.getCompanyUserWithUser(companyId));
     })
   );
 

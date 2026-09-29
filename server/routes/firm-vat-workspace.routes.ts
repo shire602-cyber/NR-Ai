@@ -1,17 +1,16 @@
 import type { Express, Request, Response } from "express";
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Router } from "express";
 import { z } from "zod";
 
-import { ValidationError } from "../errors";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { requireFirmAdmin } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
+import { sendStoredDocument, storeUploadedFile } from "../services/document-upload.service";
 import { resolveAccessibleClientIds } from "../services/firm-command-center.service";
 import {
   addVatWorkpaperRow,
@@ -110,73 +109,41 @@ const statusSchema = z.object({
   notes: z.string().trim().max(4000).optional().nullable(),
 });
 
-const VAT_EVIDENCE_MAX_BYTES = Number(
-  process.env.VAT_EVIDENCE_UPLOAD_MAX_BYTES ?? 10 * 1024 * 1024
-);
-const VAT_EVIDENCE_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "text/plain",
-  "text/csv",
-  "application/json",
-  "application/octet-stream",
-]);
+/**
+ * Store an uploaded evidence file through the shared, validated, durable storage
+ * path (same type allow-list, magic-byte check and 10 MB cap as every other
+ * upload). A client-supplied `filePath` is never trusted - it is dropped and
+ * replaced with the private storage key of the file we actually stored.
+ */
+async function persistEvidenceUpload(
+  attachment: z.infer<typeof scanSchema>["attachment"],
+  ctx: { companyId: string; userId: string }
+) {
+  const { fileDataBase64, filePath: _clientPath, ...withoutData } = attachment;
+  if (!fileDataBase64) return { ...withoutData, filePath: null };
 
-function sanitizeFileName(fileName: string) {
-  const normalized = fileName
-    .replace(/[/\\?%*:|"<>]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-  return (normalized || "vat-evidence").slice(0, 140);
-}
+  const stored = await storeUploadedFile({
+    companyId: ctx.companyId,
+    category: "vat-evidence",
+    fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
+    fileData: fileDataBase64,
+    uploadedBy: ctx.userId,
+  });
 
-async function persistEvidenceUpload(attachment: z.infer<typeof scanSchema>["attachment"]) {
-  const fileDataBase64 = attachment.fileDataBase64;
-  if (!fileDataBase64) {
-    const { fileDataBase64: _unused, ...withoutData } = attachment;
-    return withoutData;
-  }
-
-  if (!VAT_EVIDENCE_MIME_TYPES.has(attachment.mimeType)) {
-    throw new ValidationError("Unsupported VAT evidence file type");
-  }
-
-  const rawBase64 = fileDataBase64.replace(/^data:[^;]+;base64,/, "");
-  const buffer = Buffer.from(rawBase64, "base64");
-  if (buffer.length === 0) throw new ValidationError("VAT evidence upload is empty");
-  if (buffer.length > VAT_EVIDENCE_MAX_BYTES)
-    throw new ValidationError("VAT evidence upload is too large");
-
-  const uploadsRoot = path.resolve(process.cwd(), "uploads");
-  const datedFolder = new Date().toISOString().slice(0, 10);
-  const relativeFolder = path.join("vat-workpapers", datedFolder);
-  const absoluteFolder = path.resolve(uploadsRoot, relativeFolder);
-  if (!absoluteFolder.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-
-  await fs.mkdir(absoluteFolder, { recursive: true });
-  const storedFileName = `${crypto.randomUUID()}-${sanitizeFileName(attachment.fileName)}`;
-  const absolutePath = path.resolve(absoluteFolder, storedFileName);
-  if (!absolutePath.startsWith(uploadsRoot + path.sep)) {
-    throw new ValidationError("Invalid VAT evidence upload path");
-  }
-  await fs.writeFile(absolutePath, buffer, { flag: "wx" });
-
-  const { fileDataBase64: _unused, ...withoutData } = attachment;
   return {
     ...withoutData,
-    filePath: path.posix.join("vat-workpapers", datedFolder, storedFileName),
+    mimeType: stored.contentType,
+    filePath: stored.key,
     extractionJson: {
       ...(withoutData.extractionJson ?? {}),
-      uploadedBytes: buffer.length,
+      uploadedBytes: stored.sizeBytes,
       storedAt: new Date().toISOString(),
     },
   };
 }
 
+/** Evidence written before durable storage existed lives under uploads/vat-workpapers/... */
 async function resolveEvidencePath(filePath: string | null | undefined) {
   if (!filePath) return null;
   const uploadsRoot = path.resolve(process.cwd(), "uploads");
@@ -429,7 +396,10 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       if (!detail) return;
 
       const parsed = scanSchema.parse(req.body);
-      const attachment = await persistEvidenceUpload(parsed.attachment);
+      const attachment = await persistEvidenceUpload(parsed.attachment, {
+        companyId: detail.workpaper.companyId,
+        userId: (req as any).user.id,
+      });
       const result = await scanVatWorkpaperEvidence(
         parsedParams.data.id,
         (req as any).user.id,
@@ -463,6 +433,19 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       );
       if (!attachment) return res.status(404).json({ message: "VAT evidence file not found" });
 
+      // Current uploads are namespaced storage keys, served from durable storage.
+      if (
+        await sendStoredDocument(res, {
+          key: attachment.filePath,
+          companyId: detail.workpaper.companyId,
+          filename: attachment.fileName,
+          contentType: attachment.mimeType,
+        })
+      ) {
+        return;
+      }
+
+      // Legacy local-disk evidence (pre-durable-storage uploads).
       const absolutePath = await resolveEvidencePath(attachment.filePath);
       if (!absolutePath)
         return res.status(404).json({ message: "VAT evidence file is not stored" });

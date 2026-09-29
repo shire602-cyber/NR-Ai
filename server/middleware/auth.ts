@@ -6,6 +6,7 @@ import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { getAccessTokenFromRequest } from "../services/auth-cookies.service";
 import { isTokenBlacklisted } from "../services/auth-tokens.service";
+import { isUserDeactivated, isPortalUserAllowedPath } from "../services/portal-invitations";
 
 const log = createLogger("auth");
 
@@ -84,6 +85,18 @@ export async function authMiddleware(
     const user = await storage.getUser(decoded.userId);
     if (!user) {
       res.status(401).json({ message: "User not found" });
+      return;
+    }
+
+    // A deactivated account loses access immediately, even with a valid token.
+    if (isUserDeactivated(user)) {
+      res.status(401).json({ message: "Account deactivated" });
+      return;
+    }
+
+    // Client-portal users are confined to the portal API (see portal-invitations).
+    if (user.userType === "client_portal" && !isPortalUserAllowedPath(req.originalUrl || req.url)) {
+      res.status(403).json({ message: "Client portal accounts can only use the client portal" });
       return;
     }
 

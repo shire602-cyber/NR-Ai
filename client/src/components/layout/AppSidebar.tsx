@@ -1,14 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard,
-  TrendingUp,
-  ShoppingCart,
-  BookMarked,
   BarChart3,
-  Banknote,
-  Settings,
-  Briefcase,
-  Shield,
   ChevronDown,
   Languages,
   LogOut,
@@ -45,25 +38,15 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import {
+  ADMIN_GROUP,
+  CUSTOMER_GROUPS,
+  MORE_GROUP,
+  NRA_GROUP,
+  type NavGroup,
+} from "./nav-config";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface SubItem {
-  key?: string;
-  titleKey: string;
-  url: string;
-  title?: string;
-  description?: string;
-  testId?: string;
-}
-
-interface NavGroup {
-  key: string;
-  titleKey: string;
-  icon: LucideIcon;
-  items: SubItem[];
-  url?: string;
-}
 
 interface ClientPortalItem {
   titleKey: string;
@@ -72,125 +55,7 @@ interface ClientPortalItem {
 }
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
-
-const CUSTOMER_GROUPS: NavGroup[] = [
-  {
-    key: "sales",
-    titleKey: "sales",
-    icon: TrendingUp,
-    items: [
-      { titleKey: "invoices", url: "/invoices" },
-      { titleKey: "quotes", url: "/quotes" },
-      { titleKey: "creditNotes", url: "/credit-notes" },
-      { titleKey: "invoiceTemplates", url: "/invoice-templates" },
-      { titleKey: "recurringInvoices", url: "/recurring-invoices" },
-      { titleKey: "paymentChasing", url: "/payment-chasing" },
-      { titleKey: "contacts", url: "/contacts" },
-    ],
-  },
-  {
-    key: "purchases",
-    titleKey: "purchases",
-    icon: ShoppingCart,
-    items: [
-      { titleKey: "receipts", url: "/receipts" },
-      { titleKey: "receiptAutopilot", url: "/receipt-autopilot" },
-      { titleKey: "billPay", url: "/bill-pay" },
-      { titleKey: "purchaseOrders", url: "/purchase-orders" },
-      { titleKey: "expenseClaims", url: "/expense-claims" },
-      { titleKey: "inventory", url: "/inventory" },
-    ],
-  },
-  {
-    key: "accounting",
-    titleKey: "accounting",
-    icon: BookMarked,
-    items: [
-      { titleKey: "chartOfAccounts", url: "/chart-of-accounts" },
-      { titleKey: "journal", url: "/journal" },
-      { titleKey: "bankReconciliation", url: "/bank-reconciliation" },
-      { titleKey: "reconciliationRules", url: "/reconciliation-rules" },
-      { titleKey: "costCenters", url: "/cost-centers" },
-      { titleKey: "exchangeRates", url: "/exchange-rates" },
-      { titleKey: "fixedAssets", url: "/fixed-assets" },
-      { titleKey: "monthEndClose", url: "/month-end" },
-    ],
-  },
-  {
-    key: "reports",
-    titleKey: "reportsSection",
-    icon: BarChart3,
-    url: "/reports",
-    items: [],
-  },
-  {
-    key: "payroll",
-    titleKey: "hrPayroll",
-    icon: Banknote,
-    items: [{ titleKey: "payroll", url: "/payroll" }],
-  },
-  {
-    key: "compliance",
-    titleKey: "compliance",
-    icon: ClipboardList,
-    items: [
-      { titleKey: "vatFiling", url: "/vat-filing" },
-      { titleKey: "vatAutopilot", url: "/vat-autopilot" },
-      { titleKey: "corporateTax", url: "/corporate-tax" },
-      { titleKey: "taxReturnArchive", url: "/tax-return-archive" },
-      { titleKey: "complianceCalendar", url: "/compliance-calendar" },
-      { titleKey: "documentVersions", url: "/document-versions" },
-    ],
-  },
-  {
-    key: "settings",
-    titleKey: "settings",
-    icon: Settings,
-    items: [
-      { titleKey: "companySettings", url: "/settings/company" },
-      { titleKey: "companyProfile", url: "/company-profile" },
-      { titleKey: "teamManagement", url: "/team" },
-      { titleKey: "integrations", url: "/integrations" },
-      { titleKey: "developerSettings", url: "/developer-settings" },
-      { titleKey: "notificationPreferences", url: "/notification-preferences" },
-      { titleKey: "subscription", url: "/subscription" },
-      { titleKey: "backupRestore", url: "/backup-restore" },
-      { titleKey: "history", url: "/history" },
-    ],
-  },
-];
-
-const NRA_GROUP: NavGroup = {
-  key: "nra",
-  titleKey: "nraCenter",
-  icon: Briefcase,
-  items: [
-    { titleKey: "firmCommandCenter", url: "/firm/command-center" },
-    { titleKey: "valueOps", url: "/firm/value-ops" },
-    { titleKey: "clientPortfolio", url: "/firm/clients" },
-    { titleKey: "staffManagement", url: "/firm/staff" },
-    { titleKey: "healthDashboard", url: "/firm/health" },
-    { titleKey: "communications", url: "/firm/comms" },
-    { titleKey: "documentChasing", url: "/firm/document-chasing" },
-    { titleKey: "emailIntake", url: "/firm/email-intake" },
-  ],
-};
-
-const ADMIN_GROUP: NavGroup = {
-  key: "admin",
-  titleKey: "adminPanel",
-  icon: Shield,
-  items: [
-    { titleKey: "adminDashboard", url: "/admin/dashboard" },
-    { titleKey: "clientManagement", url: "/admin/clients" },
-    { titleKey: "clientDocuments", url: "/admin/documents" },
-    { titleKey: "userInvitations", url: "/admin/invitations" },
-    { titleKey: "clientImport", url: "/admin/import" },
-    { titleKey: "userManagement", url: "/admin/users" },
-    { titleKey: "activityLogs", url: "/admin/activity-logs" },
-    { titleKey: "systemSettings", url: "/admin" },
-  ],
-};
+// Customer / firm / admin menus live in ./nav-config (unit-tested there).
 
 // Client portal flat items (no collapsible — spec: "don't change this")
 const CLIENT_PORTAL_DOCUMENT_ITEMS: ClientPortalItem[] = [
@@ -260,13 +125,15 @@ export function AppSidebar() {
       ...CUSTOMER_GROUPS,
       ...(showNraCenter ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
+      // Collapsed catch-all for less-used pages; always last.
+      MORE_GROUP,
     ],
     [showNraCenter, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP]);
+    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP, MORE_GROUP]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);

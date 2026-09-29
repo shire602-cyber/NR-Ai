@@ -11,14 +11,81 @@ import {
   isStripeConfigured,
 } from "../services/stripe.service";
 import { createLogger } from "../config/logger";
+import { getCompanyStorageBytes } from "../services/document-upload.service";
+import { ensureSubscription } from "../services/billing-trial.service";
+import { parseGrandfatherDate, resolveEffectivePlan, type EffectivePlan } from "../services/billing-plan";
 
 const log = createLogger("billing");
+
+/** Client-facing status word for an effective plan. */
+function statusLabel(effective: EffectivePlan, rawStatus?: string | null): string {
+  switch (effective.state) {
+    case "trial":
+      return "trialing";
+    case "trial_expired":
+      return "trial_expired";
+    case "grace":
+      return "past_due";
+    case "paid":
+      return rawStatus === "cancelled" ? "cancelled" : "active";
+    default:
+      return effective.state; // free | grandfathered | managed
+  }
+}
+
+/** Resolve a company's subscription (creating its trial lazily) and effective plan. */
+async function loadBilling(companyId: string) {
+  const company = await storage.getCompany(companyId);
+  let subscription: any = (await storage.getSubscription(companyId)) ?? null;
+  if (!subscription && company && company.companyType !== "client") {
+    subscription = (await ensureSubscription(companyId, { company })) ?? null;
+  }
+  const effective = resolveEffectivePlan({
+    subscription,
+    now: new Date(),
+    company,
+    grandfatherBefore: parseGrandfatherDate(process.env.BILLING_GRANDFATHER_BEFORE),
+  });
+  return { company, subscription, effective };
+}
 
 export function registerBillingRoutes(app: Express) {
   // Get available plans (public)
   app.get("/api/billing/plans", (_req: Request, res: Response) => {
     res.json(getAllPlanDefinitions());
   });
+
+  // Plan/trial status for the current company (drives the trial banner).
+  // ?companyId= selects the company; without it the user's first company is used.
+  app.get(
+    "/api/billing/status",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      let companyId = typeof req.query.companyId === "string" ? req.query.companyId : undefined;
+      if (!companyId) {
+        const owned = await storage.getCompaniesByUserId(userId);
+        companyId = owned[0]?.id;
+      }
+      if (!companyId) return res.status(404).json({ message: "No company found" });
+
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { subscription, effective } = await loadBilling(companyId);
+      res.json({
+        plan: effective.planId,
+        status: statusLabel(effective, subscription?.status),
+        trialEndsAt: effective.state === "trial" || effective.state === "trial_expired"
+          ? (effective.trialEndsAt?.toISOString() ?? null)
+          : null,
+        daysLeft: effective.daysLeft,
+        enforcement: process.env.BILLING_ENFORCEMENT === "true",
+      });
+    })
+  );
 
   // Get current subscription
   app.get(
@@ -32,21 +99,26 @@ export function registerBillingRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      // A company with no subscription row is implicitly on the free tier —
-      // mirror featureGate.getSubscriptionForRequest which defaults to 'free'.
-      // Returning 404 made the billing page error for every unsubscribed
-      // company (i.e. all of them until billing is live).
-      const subscription = (await storage.getSubscription(companyId)) ?? {
-        companyId,
-        planId: "free",
-        status: "active",
-        isDefault: true,
-        invoicesCreatedThisMonth: 0,
-        receiptsCreatedThisMonth: 0,
-        aiCreditsUsedThisMonth: 0,
+      // Effective plan: paid > live trial > free (see billing-plan.ts). A company
+      // with no row gets its trial created here, counted from its creation date.
+      const { subscription: row, effective } = await loadBilling(companyId);
+      const subscription = {
+        ...(row ?? {
+          companyId,
+          billingCycle: "monthly",
+          invoicesCreatedThisMonth: 0,
+          receiptsCreatedThisMonth: 0,
+          aiCreditsUsedThisMonth: 0,
+          isDefault: true,
+        }),
+        rawPlanId: row?.planId ?? "free",
+        planId: effective.planId,
+        planName: effective.planId.charAt(0).toUpperCase() + effective.planId.slice(1),
+        status: statusLabel(effective, row?.status),
+        daysLeft: effective.daysLeft,
       };
 
-      const limits = getTierLimits(subscription.planId);
+      const limits = getTierLimits(effective.planId);
       // Mirrors server/middleware/featureGate.ts: until BILLING_ENFORCEMENT=true
       // the client paywall must fail open too, or the UI blocks features the
       // API happily serves.
@@ -67,20 +139,19 @@ export function registerBillingRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const subscription = (await storage.getSubscription(companyId)) ?? {
-        companyId,
-        planId: "free",
-        status: "active",
+      const { subscription: row, effective } = await loadBilling(companyId);
+      const subscription = row ?? {
         invoicesCreatedThisMonth: 0,
         receiptsCreatedThisMonth: 0,
         aiCreditsUsedThisMonth: 0,
       };
 
-      const limits = getTierLimits(subscription.planId);
+      const limits = getTierLimits(effective.planId);
       const userCount = await storage.getUserCountByCompanyId(companyId);
+      const storageBytes = await getCompanyStorageBytes(companyId);
 
       res.json({
-        plan: subscription.planId,
+        plan: effective.planId,
         usage: {
           invoices: {
             used: subscription.invoicesCreatedThisMonth || 0,
@@ -95,7 +166,12 @@ export function registerBillingRoutes(app: Express) {
             limit: limits.aiCreditsPerMonth,
           },
           users: { used: userCount, limit: limits.maxUsers },
-          storage: { used: 0, limit: limits.maxStorageMb }, // TODO: calculate actual storage
+          // Real usage: sum of stored file sizes (stored_files ledger), reported in MB.
+          storage: {
+            used: Math.round((storageBytes / (1024 * 1024)) * 100) / 100,
+            usedBytes: storageBytes,
+            limit: limits.maxStorageMb,
+          },
         },
       });
     })
@@ -187,6 +263,12 @@ export function registerBillingRoutes(app: Express) {
 
       if (!sig || !webhookSecret) {
         return res.status(400).json({ message: "Missing signature or webhook secret" });
+      }
+
+      // Signature verification needs the exact raw bytes (index.ts mounts
+      // express.raw for this path); a parsed object can never verify.
+      if (!Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ message: "Webhook body must be the raw request payload" });
       }
 
       let event;

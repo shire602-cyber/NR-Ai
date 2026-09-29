@@ -117,15 +117,16 @@ export function registerIntegrationStatusRoutes(app: Express) {
           configured: true,
           detail: "per-endpoint secrets, no global config needed",
           requiredEnv: [],
-          unlocks: "Event delivery to customer systems (configure in Developer Settings)",
+          unlocks:
+            "Signed delivery of invoice.created/issued/paid/voided, credit_note.created, bill.approved and payment.received (configure in Developer Settings)",
         },
         {
           key: "apiKeys",
           name: "Public API keys",
-          configured: true,
-          detail: "no global config needed",
+          configured: false,
+          detail: "not available — there is no public API yet; key creation returns 501",
           requiredEnv: [],
-          unlocks: "Scoped API access (manage in Developer Settings)",
+          unlocks: "Nothing yet",
         },
       ];
       res.json({ integrations });

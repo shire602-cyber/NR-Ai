@@ -1,12 +1,20 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, FileImage, File, Loader2, CheckCircle2, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { useTranslation } from "@/lib/i18n";
+import {
+  ACCEPTED_UPLOAD_TYPES,
+  checkFileBeforeUpload,
+  downloadAuthenticatedFile,
+  fileProblemMessage,
+  readFileAsBase64,
+} from "@/lib/file-upload";
 
 const CATEGORY_LABELS: Record<string, string> = {
   trade_license: "Trade License",
@@ -37,6 +45,9 @@ export default function PortalDocuments() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const { locale } = useTranslation();
+  const isAr = locale === "ar";
 
   const { data: documents = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-documents"],
@@ -47,29 +58,55 @@ export default function PortalDocuments() {
     mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/documents", payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
-      toast({ title: "Document uploaded", description: "NR Accounting can now see your file." });
+      toast({
+        title: isAr ? "تم رفع المستند" : "Document uploaded",
+        description: isAr
+          ? "يمكن لمحاسبك الآن الاطلاع على ملفك."
+          : "NR Accounting can now see your file.",
+      });
     },
-    onError: (e: any) =>
-      toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadError(null);
+
+    const problem = checkFileBeforeUpload(file);
+    if (problem) {
+      setUploadError(fileProblemMessage(problem, locale));
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
-      // In production this would upload to S3; here we send metadata only
+      // The file itself is sent (base64); the server validates it and stores it privately.
+      const fileData = await readFileAsBase64(file);
       await uploadMutation.mutateAsync({
         name: file.name.replace(/\.[^.]+$/, ""),
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        fileSize: file.size,
         category: "other",
-        fileUrl: `/uploads/${file.name}`,
+        fileData,
       });
+    } catch (error: any) {
+      setUploadError(error?.message || (isAr ? "فشل الرفع" : "Upload failed"));
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleDownload(doc: any) {
+    try {
+      await downloadAuthenticatedFile(`/api/client-portal/documents/${doc.id}/download`, doc.fileName || doc.name);
+    } catch (error: any) {
+      toast({
+        title: isAr ? "فشل التنزيل" : "Download failed",
+        description: error?.message,
+        variant: "destructive",
+      });
     }
   }
 
@@ -88,7 +125,7 @@ export default function PortalDocuments() {
             type="file"
             className="hidden"
             onChange={handleFileChange}
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+            accept={ACCEPTED_UPLOAD_TYPES}
           />
           <Button
             onClick={() => fileRef.current?.click()}
@@ -100,10 +137,25 @@ export default function PortalDocuments() {
             ) : (
               <Upload className="w-4 h-4 mr-2" />
             )}
-            Upload Document
+            {uploading
+              ? isAr
+                ? "جارٍ الرفع…"
+                : "Uploading…"
+              : isAr
+                ? "رفع مستند"
+                : "Upload Document"}
           </Button>
         </div>
       </div>
+
+      {uploadError && (
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {uploadError}
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -138,6 +190,14 @@ export default function PortalDocuments() {
                     <Badge variant="outline" className="text-xs">
                       {CATEGORY_LABELS[doc.category] ?? doc.category}
                     </Badge>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleDownload(doc)}
+                      aria-label={isAr ? "تنزيل" : "Download"}
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
                     {doc.uploadedBy && (
                       <CheckCircle2
                         className="w-4 h-4 text-success"

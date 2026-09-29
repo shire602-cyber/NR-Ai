@@ -68,7 +68,7 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     try {
       const decoded = jwt.verify(rawToken, getEnv().JWT_SECRET) as { userId: string };
       const user = await storage.getUser(decoded.userId);
-      if (!user) {
+      if (!user || user.isActive === false) {
         return next(new Error("User not found"));
       }
       socket.data.userId = user.id;

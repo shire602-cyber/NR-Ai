@@ -1,7 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
-import { isStripeConfigured } from "../services/stripe.service";
+import { ensureSubscription } from "../services/billing-trial.service";
+import {
+  parseGrandfatherDate,
+  resolveEffectivePlan,
+  type EffectivePlan,
+} from "../services/billing-plan";
 
 const log = createLogger("feature-gate");
 
@@ -127,109 +132,115 @@ for (const feature of Object.keys(TIER_FEATURES.free)) {
   }
 }
 
+interface RequestPlan {
+  subscription: any | null;
+  effective: EffectivePlan;
+}
+
 /**
- * Get the subscription for the current request's company.
- * Caches on req.subscription to avoid repeated DB calls.
+ * Resolve (once per request) what plan the current request's company is
+ * effectively on: paid > unexpired trial > free, with the firm-managed and
+ * grandfathering rules. A company with no subscription row gets a trial
+ * created lazily, counted from its creation date. Returns null when the request
+ * names no company or the lookup fails (gates then stay out of the way).
  */
-async function getRequestSubscription(req: Request): Promise<any | null> {
-  if (req.subscription) return req.subscription;
+async function getRequestPlan(req: Request): Promise<RequestPlan | null> {
+  const cached = (req as any).billingPlan as RequestPlan | undefined;
+  if (cached) return cached;
 
   const companyId = req.params.companyId || req.body?.companyId;
   if (!companyId) return null;
 
   try {
-    const subscription = await storage.getSubscription(companyId);
-    if (subscription) {
-      req.subscription = subscription;
+    const company = await storage.getCompany(companyId);
+    let subscription: any = (await storage.getSubscription(companyId)) ?? null;
+    if (!subscription && company && company.companyType !== "client") {
+      subscription = (await ensureSubscription(companyId, { company })) ?? null;
     }
-    return subscription || null;
+    if (subscription) req.subscription = subscription;
+
+    const effective = resolveEffectivePlan({
+      subscription,
+      now: new Date(),
+      company,
+      grandfatherBefore: parseGrandfatherDate(process.env.BILLING_GRANDFATHER_BEFORE),
+    });
+    const resolved = { subscription, effective };
+    (req as any).billingPlan = resolved;
+    return resolved;
   } catch (error) {
-    log.error({ error, companyId }, "Failed to fetch subscription");
+    log.error({ error, companyId }, "Failed to resolve billing plan");
     return null;
   }
 }
 
-/**
- * Middleware: Require a specific feature to be available on the current tier.
- * Returns 403 with structured error if feature is locked.
- */
 // Tier enforcement policy:
-// - Explicit BILLING_ENFORCEMENT=true/false always wins, in any environment.
-// - Otherwise, production enforces tiers only when billing is actually usable
-//   (Stripe configured) — enforcing without a live checkout would paywall
-//   features behind a dead upgrade button, and running open with checkout
-//   live would give paid features away. Both states are logged at startup.
-// - Non-production without a flag fails open so dev/test never hit paywalls.
-// Memoized: env and Stripe config are fixed for the process lifetime, and
-// billingEnforced() runs on every gated request — without this, an
-// unconfigured Stripe would log a warning per request via getStripe().
-let stripeConfiguredCache: boolean | null = null;
-
+// - Gates BLOCK only when BILLING_ENFORCEMENT=true. That is the last switch the
+//   owner flips (after Stripe keys, price ids and BILLING_GRANDFATHER_BEFORE).
+// - Otherwise nothing is blocked, but a request that WOULD have been blocked
+//   carries `X-Billing-Would-Block: <feature>` and is logged at INFO, so the
+//   impact of enforcement is visible before it is switched on. Configuring
+//   Stripe does NOT switch enforcement on.
 export function billingEnforced(): boolean {
-  const flag = process.env.BILLING_ENFORCEMENT;
-  if (flag === "true") return true;
-  if (flag === "false") return false;
-  if (process.env.NODE_ENV === "production") {
-    if (stripeConfiguredCache === null) stripeConfiguredCache = isStripeConfigured();
-    return stripeConfiguredCache;
-  }
-  return false;
-}
-
-/** Test hook: clear the memoized Stripe-configured probe. */
-export function __resetBillingEnforcementCacheForTests(): void {
-  stripeConfiguredCache = null;
+  return process.env.BILLING_ENFORCEMENT === "true";
 }
 
 /** Call once at startup so the effective billing posture is loud and explicit. */
 export function logBillingEnforcementStatus(): void {
-  if (process.env.NODE_ENV !== "production") return;
-  const flag = process.env.BILLING_ENFORCEMENT;
+  const grandfather = parseGrandfatherDate(process.env.BILLING_GRANDFATHER_BEFORE);
   if (billingEnforced()) {
     log.info(
-      { source: flag === "true" ? "BILLING_ENFORCEMENT=true" : "Stripe configured" },
-      "Billing tier enforcement is ACTIVE — free-tier tenants are gated from paid features."
+      { grandfatherBefore: grandfather?.toISOString() ?? null },
+      "Billing tier enforcement is ACTIVE - companies without a paid plan or live trial are gated from paid features."
     );
   } else {
     log.warn(
-      {
-        source:
-          flag === "false" ? "BILLING_ENFORCEMENT=false" : "Stripe not configured (auto-open)",
-      },
-      "Billing tier enforcement is OFF in production — ALL paid features are free for every tenant. " +
-        "This is expected only during the pre-billing beta; it activates automatically once Stripe is configured."
+      { grandfatherBefore: grandfather?.toISOString() ?? null },
+      "Billing tier enforcement is OFF (BILLING_ENFORCEMENT is not 'true') - paid features are open to every tenant. " +
+        "Requests that enforcement would block are flagged with the X-Billing-Would-Block response header."
     );
   }
 }
 
+/** Record that enforcement (if on) would have blocked this request. */
+function flagWouldBlock(req: Request, res: Response, label: string, plan: EffectivePlan): void {
+  const previous = res.getHeader("X-Billing-Would-Block");
+  res.setHeader("X-Billing-Would-Block", previous ? `${previous}, ${label}` : label);
+  log.info(
+    { label, plan: plan.planId, state: plan.state, companyId: req.params.companyId, url: req.originalUrl?.split("?")[0] },
+    "Billing enforcement would block this request"
+  );
+}
+
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!billingEnforced()) {
-      next();
-      return;
-    }
-    const subscription = await getRequestSubscription(req);
-
-    if (!subscription) {
+    const plan = await getRequestPlan(req);
+    if (!plan) {
       next();
       return;
     }
 
-    const planId = subscription.planId || "free";
+    const planId = plan.effective.planId;
     const tierFeatures = TIER_FEATURES[planId] || TIER_FEATURES.free;
-
-    if (!tierFeatures[feature]) {
-      res.status(403).json({
-        message: "Upgrade required to access this feature",
-        code: "TIER_LOCKED",
-        feature,
-        currentTier: planId,
-        requiredTier: FEATURE_MIN_TIER[feature] || "starter",
-      });
+    if (tierFeatures[feature]) {
+      next();
       return;
     }
 
-    next();
+    if (!billingEnforced()) {
+      flagWouldBlock(req, res, feature, plan.effective);
+      next();
+      return;
+    }
+
+    res.status(403).json({
+      message: "Upgrade required to access this feature",
+      code: "TIER_LOCKED",
+      feature,
+      currentTier: planId,
+      requiredTier: FEATURE_MIN_TIER[feature] || "starter",
+      ...(plan.effective.state === "trial_expired" ? { reason: "TRIAL_EXPIRED" } : {}),
+    });
   };
 }
 
@@ -238,27 +249,31 @@ export function requireFeature(feature: string) {
  */
 export function requireTier(minimumTier: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!billingEnforced()) {
+    const plan = await getRequestPlan(req);
+    if (!plan) {
       next();
       return;
     }
-    const subscription = await getRequestSubscription(req);
-    const currentTier = subscription?.planId || "free";
 
-    const currentIndex = TIER_ORDER.indexOf(currentTier);
-    const requiredIndex = TIER_ORDER.indexOf(minimumTier);
-
-    if (currentIndex < requiredIndex) {
-      res.status(403).json({
-        message: `This feature requires the ${minimumTier} plan or higher`,
-        code: "TIER_LOCKED",
-        currentTier,
-        requiredTier: minimumTier,
-      });
+    const currentTier = plan.effective.planId;
+    if (TIER_ORDER.indexOf(currentTier) >= TIER_ORDER.indexOf(minimumTier)) {
+      next();
       return;
     }
 
-    next();
+    if (!billingEnforced()) {
+      flagWouldBlock(req, res, `tier:${minimumTier}`, plan.effective);
+      next();
+      return;
+    }
+
+    res.status(403).json({
+      message: `This feature requires the ${minimumTier} plan or higher`,
+      code: "TIER_LOCKED",
+      currentTier,
+      requiredTier: minimumTier,
+      ...(plan.effective.state === "trial_expired" ? { reason: "TRIAL_EXPIRED" } : {}),
+    });
   };
 }
 
@@ -272,8 +287,9 @@ export function checkUsageLimit(resource: "invoices" | "receipts" | "aiCredits")
       next();
       return;
     }
-    const subscription = await getRequestSubscription(req);
-    const planId = subscription?.planId || "free";
+    const plan = await getRequestPlan(req);
+    const subscription = plan?.subscription ?? null;
+    const planId = plan?.effective.planId || "free";
     const limits = TIER_LIMITS[planId] || TIER_LIMITS.free;
 
     // Map resource to limit key and usage field
@@ -399,7 +415,13 @@ export function checkCompanyQuota() {
       for (const c of owned) {
         try {
           const sub = await storage.getSubscription((c as any).id);
-          const idx = TIER_ORDER.indexOf(sub?.planId || "free");
+          const effective = resolveEffectivePlan({
+            subscription: sub,
+            now: new Date(),
+            company: c as any,
+            grandfatherBefore: parseGrandfatherDate(process.env.BILLING_GRANDFATHER_BEFORE),
+          });
+          const idx = TIER_ORDER.indexOf(effective.planId);
           if (idx > bestTierIdx) bestTierIdx = idx;
         } catch {
           /* a missing subscription just means free */

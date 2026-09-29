@@ -8,6 +8,17 @@ import { captureException } from "../services/monitoring";
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
 
+function captureContext(req: Request, extra: Record<string, unknown> = {}) {
+  return {
+    requestId: req.id,
+    method: req.method,
+    url: req.url,
+    userId: (req as any).user?.id,
+    companyId: req.params?.companyId,
+    ...extra,
+  };
+}
+
 function withRequestId<T extends object>(body: T, req: Request): T & { requestId?: string } {
   return req.id ? { ...body, requestId: req.id } : body;
 }
@@ -153,15 +164,10 @@ export function globalErrorHandler(
 
   // Any AppError (or subclass).
   if (err instanceof AppError) {
-    if (!err.isOperational || err.statusCode >= 500) {
-      captureException(err, {
-        requestId: req.id,
-        method: req.method,
-        url: req.url,
-        userId: (req as any).user?.id,
-        code: err.code,
-        operational: err.isOperational,
-      });
+    // Monitoring is for server faults only: a 4xx is the caller's mistake and
+    // would drown real incidents (even when flagged non-operational).
+    if (err.statusCode >= 500) {
+      captureException(err, captureContext(req, { code: err.code, operational: err.isOperational }));
     }
     res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
     return;
@@ -169,13 +175,7 @@ export function globalErrorHandler(
 
   // Anything else — unhandled. Always capture full detail; never leak stack
   // to the client in production.
-  captureException(err, {
-    requestId: req.id,
-    method: req.method,
-    url: req.url,
-    userId: (req as any).user?.id,
-    unhandled: true,
-  });
+  captureException(err, captureContext(req, { unhandled: true }));
 
   // Platform admins get the underlying message even in production — they own
   // the deployment and need it to diagnose schema/data drift without log

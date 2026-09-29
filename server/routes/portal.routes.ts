@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { storeUploadedFile, removeStoredFile } from "../services/document-upload.service";
 
 export function registerPortalRoutes(app: Express) {
   // =====================================
@@ -31,20 +32,6 @@ export function registerPortalRoutes(app: Express) {
   // CLIENT PORTAL - DOCUMENT VAULT
   // =====================================
 
-  // Allowed MIME types for document uploads — checked instead of trusting filename extensions.
-  const ALLOWED_DOC_MIME_TYPES = [
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain",
-    "text/csv",
-  ];
-
   // Get all documents for a company
   app.get(
     "/api/companies/:companyId/documents",
@@ -61,7 +48,10 @@ export function registerPortalRoutes(app: Express) {
     })
   );
 
-  // Upload document (stub - would need file upload middleware in production)
+  // Upload a document. The file itself is sent as base64 (`fileData`) and is
+  // validated (type allow-list, magic bytes, 10 MB cap) and stored durably; a
+  // client-supplied `fileUrl`/`fileSize` is never read. Download goes through
+  // GET /api/documents/:documentId/download (documents.routes.ts).
   app.post(
     "/api/companies/:companyId/documents",
     authMiddleware,
@@ -74,20 +64,14 @@ export function registerPortalRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Validate MIME type — never trust the filename extension alone.
-      const mimeType: string = (req.body.mimeType || "application/pdf").toString().toLowerCase();
-      if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
-        return res.status(400).json({
-          message: "Invalid file type. Allowed: PDF, images, Word, Excel, and text files.",
-        });
-      }
-
-      // Validate file size (max 50MB)
-      const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
-      const fileSize = Number(req.body.fileSize) || 0;
-      if (fileSize > MAX_DOC_SIZE) {
-        return res.status(400).json({ message: "File too large. Maximum size is 50MB." });
-      }
+      const stored = await storeUploadedFile({
+        companyId,
+        category: "documents",
+        fileName: req.body.fileName,
+        mimeType: req.body.mimeType,
+        fileData: req.body.fileData,
+        uploadedBy: userId,
+      });
 
       const documentData = {
         companyId,
@@ -95,19 +79,26 @@ export function registerPortalRoutes(app: Express) {
         nameAr: req.body.nameAr || null,
         category: req.body.category || "other",
         description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: fileSize || null,
-        mimeType,
+        fileUrl: stored.key, // private storage key, not a URL
+        fileName: stored.filename,
+        fileSize: stored.sizeBytes,
+        mimeType: stored.contentType,
         expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
         reminderDays: req.body.reminderDays || 30,
         reminderSent: false,
         tags: req.body.tags || null,
         isArchived: false,
+        sharedWithPortal: req.body.sharedWithPortal === true,
         uploadedBy: userId,
       };
 
-      const document = await storage.createDocument(documentData);
+      let document;
+      try {
+        document = await storage.createDocument(documentData);
+      } catch (err) {
+        await removeStoredFile(stored.key);
+        throw err;
+      }
       res.status(201).json(document);
     })
   );
@@ -128,6 +119,7 @@ export function registerPortalRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
       await storage.deleteDocument(documentId);
+      await removeStoredFile(document.fileUrl);
       res.json({ success: true });
     })
   );
@@ -175,14 +167,37 @@ export function registerPortalRoutes(app: Express) {
         ftaReferenceNumber: req.body.ftaReferenceNumber || null,
         taxAmount: parseFloat(req.body.taxAmount) || 0,
         paymentStatus: req.body.paymentStatus || "paid",
-        fileUrl: req.body.fileUrl || null,
-        fileName: req.body.fileName || null,
+        fileUrl: null as string | null,
+        fileName: null as string | null,
         notes: req.body.notes || null,
         filedBy: userId,
       };
 
-      const taxReturn = await storage.createTaxReturnArchive(returnData);
-      res.status(201).json(taxReturn);
+      // Optional PDF/scan of the filed return. Stored privately; a client
+      // supplied fileUrl is ignored. Downloaded via
+      // GET /api/tax-returns-archive/:id/download.
+      let storedKey: string | null = null;
+      if (req.body.fileData) {
+        const stored = await storeUploadedFile({
+          companyId,
+          category: "tax-returns",
+          fileName: req.body.fileName,
+          mimeType: req.body.mimeType,
+          fileData: req.body.fileData,
+          uploadedBy: userId,
+        });
+        storedKey = stored.key;
+        returnData.fileUrl = stored.key;
+        returnData.fileName = stored.filename;
+      }
+
+      try {
+        const taxReturn = await storage.createTaxReturnArchive(returnData);
+        res.status(201).json(taxReturn);
+      } catch (err) {
+        await removeStoredFile(storedKey);
+        throw err;
+      }
     })
   );
 
