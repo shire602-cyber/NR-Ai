@@ -350,7 +350,33 @@ async function main() {
     const invoices = await (
       await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
     ).json();
-    const sourceInvoice = invoices?.find?.((invoice) => invoice?.invoiceType !== "credit_note");
+    // A credit note reverses posted revenue, so the source must be an ISSUED
+    // invoice: crediting a draft is refused (409 INVOICE_NOT_POSTED). Issue a
+    // fresh one so the flow never depends on what earlier steps left behind.
+    const today = new Date().toISOString().slice(0, 10);
+    const draftRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: {
+        customerName: "Crawl Credit Note Co",
+        date: today,
+        dueDate: today,
+        lines: [{ description: "Crawl service", quantity: 1, unitPrice: 1000, vatRate: 0.05 }],
+      },
+    });
+    const draft = await draftRes.json().catch(() => ({}));
+    if (draft?.id) {
+      await page.request.patch(`${BASE}/api/invoices/${draft.id}/status`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { status: "sent" },
+      });
+    }
+    const sourceInvoice = draft?.id
+      ? draft
+      : invoices?.find?.(
+          (invoice) =>
+            invoice?.invoiceType !== "credit_note" &&
+            ["sent", "posted", "partial"].includes(invoice?.status)
+        );
     if (!sourceInvoice?.id) {
       await fail("credit-note-flow source", { detail: "no source invoice available" });
     } else {
@@ -658,6 +684,26 @@ async function main() {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
     const year = new Date().getFullYear();
+    // Pull-from-books reads POSTED entries only, so make sure the year has one.
+    {
+      const day = new Date().toISOString().slice(0, 10);
+      const invRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: {
+          customerName: "Crawl Corporate Tax Co",
+          date: day,
+          dueDate: day,
+          lines: [{ description: "Crawl revenue", quantity: 1, unitPrice: 2500, vatRate: 0.05 }],
+        },
+      });
+      const inv = await invRes.json().catch(() => ({}));
+      if (inv?.id) {
+        await page.request.patch(`${BASE}/api/invoices/${inv.id}/status`, {
+          headers: { "x-csrf-token": csrfToken ?? "" },
+          data: { status: "sent" },
+        });
+      }
+    }
     const ctRes = await page.request.post(
       `${BASE}/api/companies/${companyId}/corporate-tax/returns`,
       {
