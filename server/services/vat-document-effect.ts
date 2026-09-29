@@ -13,6 +13,11 @@
 //   invoice dated before P, void dated inside P           -> reverse_in_period (negative lines in P)
 //   anything else                                         -> none
 //
+// EXCEPT a document that was NEVER DECLARED (`neverDeclared`, decided in vat-void-history.ts): an
+// invoice voided after its period whose filed return was prepared under the old rule AFTER the
+// void, so that return already left it out. It stays out of its own period and is not reported
+// negatively in the period of the void (that would claim a refund on a sale nobody declared).
+//
 // The void date is the date of the reversal journal entry (VOID_DATE_LATERAL_SQL), read the way the
 // ledger reads it (`date::date`). A void or cancelled document with NO reversal entry was never
 // posted (a draft that was voided), so it never counts. Pure: no I/O.
@@ -29,6 +34,8 @@ export function vatDocumentEffectForPeriod(args: {
   voidedOn: DayInput | null | undefined;
   /** Void / cancelled but nothing was ever posted for it: it never counted anywhere. */
   neverPosted?: boolean;
+  /** A later void of a sale an old-rule filed return had already left out (vat-void-history.ts). */
+  neverDeclared?: boolean;
   periodStart: DayInput;
   periodEnd: DayInput;
 }): VatDocumentEffect {
@@ -43,9 +50,12 @@ export function vatDocumentEffectForPeriod(args: {
 
   if (doc >= start && doc <= end) {
     if (voided === null) return "include";
-    return voided <= end ? "exclude" : "include";
+    if (voided <= end) return "exclude";
+    return args.neverDeclared ? "exclude" : "include";
   }
-  if (doc < start && voided !== null && voided >= start && voided <= end) return "reverse_in_period";
+  if (doc < start && voided !== null && voided >= start && voided <= end) {
+    return args.neverDeclared ? "none" : "reverse_in_period";
+  }
   return "none";
 }
 
@@ -55,10 +65,11 @@ export function vatDocumentEffectForPeriod(args: {
  * (source "invoice", sourceId = the document) that reverses ANOTHER entry of the same document.
  * (A credit note's own issue entry also carries reversedEntryId, but it reverses the ORIGINAL
  * INVOICE's entry, so it does not qualify; same rule as selectVoidableEntries.) `rev.d` is NULL
- * when there is none.
+ * when there is none; `rev.at_ms` is the instant (epoch ms) the reversal was recorded.
  */
 export const VOID_DATE_LATERAL_SQL = `LEFT JOIN LATERAL (
-  SELECT MIN(je.date::date) AS d
+  SELECT MIN(je.date::date) AS d,
+         (extract(epoch from MIN(je.created_at)) * 1000)::float8 AS at_ms
     FROM journal_entries je
     JOIN journal_entries orig ON orig.id = je.reversed_entry_id
    WHERE je.company_id = i.company_id AND je.source = 'invoice' AND je.source_id = i.id
@@ -74,6 +85,10 @@ export interface VatSalesInvoiceRow {
   status: string;
   /** Calendar day of the reversal entry (see VOID_DATE_LATERAL_SQL). */
   voidedOn?: DayInput | null;
+  /** The instant the void was recorded (epoch ms), when known. */
+  voidedAtMs?: number | null;
+  /** Voided after its period, but the return that covers it never declared it (vat-void-history.ts). */
+  neverDeclared?: boolean;
   isOpeningBalance?: boolean | null;
 }
 
@@ -95,6 +110,7 @@ export function invoiceEffectForPeriod(
     documentDate: inv.date,
     voidedOn: isVoid ? inv.voidedOn ?? null : null,
     neverPosted: isVoid && !inv.voidedOn,
+    neverDeclared: isVoid && inv.neverDeclared === true,
     periodStart,
     periodEnd,
   });

@@ -4,6 +4,7 @@
 
 import { sql } from "drizzle-orm";
 import { periodYmd } from "./vat-period-status.service";
+import { neverDeclaredAmong } from "./vat-void-history.service";
 import {
   VOID_DATE_LATERAL_SQL,
   selectPeriodSalesDocuments,
@@ -22,6 +23,9 @@ export interface PeriodSalesInvoice extends VatSalesInvoiceRow {
   customerName: string | null;
   customerTrn: string | null;
   voidedOn: string | null;
+  voidedAtMs: number | null;
+  /** Voided after its period, but the filed return that covers it never declared it. */
+  neverDeclared: boolean;
 }
 
 export interface PeriodSalesLine {
@@ -51,7 +55,7 @@ export async function fetchPeriodSalesCandidates(
   const inv = rowsOf(
     await ex.execute(sql`
       SELECT i.id, i.number, to_char(i.date, 'YYYY-MM-DD') AS date_ymd, i.status, i.invoice_type,
-             i.exchange_rate, i.customer_name, i.customer_trn, to_char(rev.d, 'YYYY-MM-DD') AS voided_on
+             i.exchange_rate, i.customer_name, i.customer_trn, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
         FROM invoices i ${lateral}
        WHERE ${where}
        ORDER BY i.date, i.id`)
@@ -64,6 +68,17 @@ export async function fetchPeriodSalesCandidates(
        WHERE ${where}
        ORDER BY il.invoice_id, il.id`)
   );
+  const declared = await neverDeclaredAmong(
+    ex,
+    companyId,
+    inv.map((r) => ({
+      id: String(r.id),
+      date: String(r.date_ymd),
+      status: String(r.status),
+      voidedOn: r.voided_on ?? null,
+      voidedAtMs: r.at_ms == null ? null : Number(r.at_ms),
+    }))
+  );
   return {
     invoices: inv.map((r) => ({
       id: String(r.id),
@@ -75,6 +90,8 @@ export async function fetchPeriodSalesCandidates(
       customerName: r.customer_name ?? null,
       customerTrn: r.customer_trn ?? null,
       voidedOn: r.voided_on ?? null,
+      voidedAtMs: r.at_ms == null ? null : Number(r.at_ms),
+      neverDeclared: declared.has(String(r.id)),
       isOpeningBalance: false,
     })),
     lines: lines.map((r) => ({

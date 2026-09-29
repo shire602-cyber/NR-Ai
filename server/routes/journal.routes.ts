@@ -20,6 +20,7 @@ import {
 } from "../services/backdated-entry.service";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
+import { editRefusal, reversalRefusal } from "../services/journal-entry-protection";
 
 const log = createLogger("journal");
 
@@ -36,6 +37,13 @@ async function findJournalEntryForUser(
   if (!entry) return undefined;
   const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
   return hasAccess ? entry : undefined;
+}
+
+/** The entry a reversal entry reverses (undefined for any other entry): whether a reversal is a user's depends on it. */
+async function originalOf(entry: JournalEntry): Promise<JournalEntry | undefined> {
+  return entry.source === "reversal" && entry.reversedEntryId
+    ? storage.getJournalEntryById(entry.reversedEntryId)
+    : undefined;
 }
 
 async function evaluateBackdatedForCompany(
@@ -321,6 +329,12 @@ export function registerJournalRoutes(app: Express) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
 
+      // System entries are owned by the feature that posted them, drafts included.
+      const readOnly = editRefusal(entry, await originalOf(entry));
+      if (readOnly) {
+        return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
+      }
+
       // IMMUTABILITY: Posted entries cannot be edited - must be reversed instead
       if (entry.status === "posted") {
         return res.status(400).json({
@@ -578,6 +592,14 @@ export function registerJournalRoutes(app: Express) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
 
+      // Only a journal a user typed in (or the reversal of one) is reversed here. Entries posted by
+      // invoices, payments, VAT and corporate-tax filings, the year-end close, FX revaluation ...
+      // have their own undo; a bare reversal would leave the document or filing out of step with the ledger.
+      const refused = reversalRefusal(entry, await originalOf(entry));
+      if (refused) {
+        return res.status(409).json({ message: refused.message, code: refused.code, source: refused.source });
+      }
+
       if (entry.status !== "posted") {
         return res.status(400).json({ message: "Only posted entries can be reversed" });
       }
@@ -633,16 +655,13 @@ export function registerJournalRoutes(app: Express) {
         reversalLines
       );
 
-      // The ORIGINAL STAYS POSTED. Reversal accounting offsets the original
+      // The ORIGINAL STAYS POSTED and is not touched again. Reversal accounting offsets the original
       // with an equal-and-opposite posted entry — voiding the original as
       // well would remove it from reports while the reversal still
       // subtracts it, double-reversing the books (net effect −1× instead
       // of 0). The original keeps its place in the GL and audit trail; the
-      // pair nets to zero.
-      await storage.updateJournalEntry(id, entry.companyId, {
-        updatedBy: userId,
-        updatedAt: new Date(),
-      });
+      // pair nets to zero. (Touching it here would fail in a locked month AFTER the
+      // reversal had been posted, leaving a half-done reversal behind.)
 
       await recordAudit({
         userId,
@@ -683,6 +702,12 @@ export function registerJournalRoutes(app: Express) {
       const entry = await findJournalEntryForUser(userId, id);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
+      }
+
+      // System entries are owned by the feature that posted them, drafts included.
+      const readOnly = editRefusal(entry, await originalOf(entry));
+      if (readOnly) {
+        return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
       }
 
       // IMMUTABILITY: Posted entries cannot be deleted - must be reversed

@@ -546,16 +546,19 @@ export default function AccountLedger() {
                           {formatCurrency(Math.abs(entry.runningBalance))}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => handleReverseEntry(entry)}
-                            title={tr("reverseEntry")}
-                            data-testid={`button-reverse-${entry.id}`}
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
+                          {/* Only a journal a user typed in is reversed from here; system entries are undone where they were created. */}
+                          {(!entry.source || entry.source === "manual") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleReverseEntry(entry)}
+                              title={tr("reverseEntry")}
+                              data-testid={`button-reverse-${entry.id}`}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </motion.tr>
                     ))}

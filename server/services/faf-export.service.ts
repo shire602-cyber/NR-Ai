@@ -17,9 +17,10 @@
  * the listing totals tie to the return boxes for the same period.
  */
 
-import { pool } from "../db";
+import { db, pool } from "../db";
 import { classifyVatLineForReturn, type VatReturnClass } from "./vat-supply-type";
 import { VOID_DATE_LATERAL_SQL, invoiceEffectForPeriod } from "./vat-document-effect";
+import { neverDeclaredAmong } from "./vat-void-history.service";
 import { UAE_VAT_RATE } from "../constants";
 import {
   FAF_BLOCKS,
@@ -378,7 +379,7 @@ async function* supplyBatches(companyId: string, from: string, to: string): Asyn
     // listing follows the same shared rule as the VAT return (vat-document-effect.ts).
     const inv = await pool.query(
       `SELECT i.id, i.number, to_char(i.date, 'YYYY-MM-DD') AS d, i.date, i.status, i.customer_name, i.customer_trn,
-              i.currency, i.exchange_rate, i.reverse_charge, to_char(rev.d, 'YYYY-MM-DD') AS voided_on
+              i.currency, i.exchange_rate, i.reverse_charge, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
          FROM invoices i ${VOID_DATE_LATERAL_SQL}
         WHERE i.company_id = $1
           AND i.status <> 'draft'
@@ -400,9 +401,20 @@ async function* supplyBatches(companyId: string, from: string, to: string): Asyn
     const byInvoice = new Map<string, any[]>();
     for (const l of lines.rows) byInvoice.set(l.invoice_id, [...(byInvoice.get(l.invoice_id) ?? []), l]);
 
+    // A sale an old-rule filed return had already left out is never deducted a second time.
+    const neverDeclared = await neverDeclaredAmong(
+      db,
+      companyId,
+      inv.rows.map((d: any) => ({ id: d.id, date: d.d, status: d.status, voidedOn: d.voided_on, voidedAtMs: d.at_ms == null ? null : Number(d.at_ms) }))
+    );
+
     const rows: FafSupplyRow[] = [];
     for (const d of inv.rows) {
-      const effect = invoiceEffectForPeriod({ id: d.id, date: d.d, status: d.status, voidedOn: d.voided_on }, from, to);
+      const effect = invoiceEffectForPeriod(
+        { id: d.id, date: d.d, status: d.status, voidedOn: d.voided_on, neverDeclared: neverDeclared.has(d.id) },
+        from,
+        to
+      );
       if (effect !== "include" && effect !== "reverse_in_period") continue;
       // a cancellation from an earlier period is a negative line dated the day of the void
       const sign = effect === "reverse_in_period" ? -1 : 1;

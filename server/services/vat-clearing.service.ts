@@ -18,6 +18,7 @@ import {
   type ReturnVatFigures,
 } from "./tax-settlement";
 import { findAccountByCode, missingAccountError, type AccountRef } from "./tax-filing.service";
+import { neverDeclaredVoidedInvoiceIds } from "./vat-void-history.service";
 
 type Tx = any;
 
@@ -28,8 +29,17 @@ const EXCLUDED_SOURCES = ["vat_filing", "opening_balance", "opening_balance_reve
  * Ledger balances of the output VAT (2020, credit) and input VAT (1050, debit) accounts for
  * documents dated in [startYmd, endYmd]. Reverse-charge self-assessment posts to the same two
  * accounts, so it is in these balances too.
+ *
+ * Entries of a voided document that was NEVER DECLARED (an old-rule filed return had already left
+ * the sale out, so its later void is not deducted: vat-void-history.ts) are left out, the same
+ * documents the return leaves out. The residue in the accounts is the original in one month and
+ * the reversal in another, which nets to zero over time.
  */
 export async function ledgerVatBalances(tx: Tx, companyId: string, startYmd: string, endYmd: string): Promise<LedgerVatBalances> {
+  const skipDocs = await neverDeclaredVoidedInvoiceIds(tx, companyId, startYmd, endYmd);
+  const skipHistorical = skipDocs.length
+    ? sql`AND NOT (je.source = 'invoice' AND je.source_id IN (${sql.join(skipDocs.map((id) => sql`${id}::uuid`), sql`, `)}))`
+    : sql``;
   const res: any = await tx.execute(sql`
     SELECT a.code, COALESCE(SUM(jl.credit - jl.debit), 0) AS net_credit
       FROM journal_lines jl
@@ -38,6 +48,7 @@ export async function ledgerVatBalances(tx: Tx, companyId: string, startYmd: str
      WHERE je.company_id = ${companyId} AND je.status = 'posted'
        AND je.date::date >= ${startYmd}::date AND je.date::date <= ${endYmd}::date
        AND je.source NOT IN (${sql.join(EXCLUDED_SOURCES.map((s) => sql`${s}`), sql`, `)})
+       ${skipHistorical}
        AND ((a.code = ${ACCOUNT_CODES.VAT_OUTPUT} AND a.type = 'liability') OR (a.code = ${ACCOUNT_CODES.VAT_INPUT} AND a.type = 'asset'))
      GROUP BY a.code`);
   const rows = (res.rows ?? res) as Array<{ code: string; net_credit: string }>;

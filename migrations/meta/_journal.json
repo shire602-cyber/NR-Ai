@@ -673,6 +673,13 @@
    "when": 1781430110000,
    "tag": "0096_vat_return_adjustments",
    "breakpoints": false
+  },
+  {
+   "idx": 96,
+   "version": "7",
+   "when": 1781430120000,
+   "tag": "0097_vat_date_rule_cutover",
+   "breakpoints": false
   }
  ]
 }

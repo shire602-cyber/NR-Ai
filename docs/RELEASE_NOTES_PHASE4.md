@@ -65,6 +65,14 @@ clearer, bilingual "fix this" errors before an invoice can be generated. No prov
   August: August still shows it (so it matches the ledger and can be filed); September shows a negative line, like a credit note
   (a voided credit note comes back positive). One rule for the VAT 201, autopilot, firm workpaper and FAF; the corporate tax pull
   follows the ledger's days. Drafts voided before posting never count. Filed returns still show their snapshot.
+- **Older voids are not deducted twice.** Before this release a return left out an invoice that was already void when the return
+  was prepared. If an invoice was left out of a return filed that way, its later void is not reported as a negative line, because
+  the sale was never declared (a sale that was declared and voided afterwards is still reversed in the month of the void).
+  The VAT ledger check leaves out the same documents, so the month of such a void can still be filed.
+- **System journal entries cannot be reversed from the journal screen.** Only journals you typed in (and their reversals) can be
+  reversed, edited or deleted there; invoice, payment, VAT filing, year-end close, corporate tax and FX entries are refused
+  (409 `SYSTEM_ENTRY_NOT_REVERSIBLE` / `SYSTEM_ENTRY_READ_ONLY`) with a note on how to undo them properly (void the invoice,
+  record an amendment, reopen the year-end close). The Journal and Account Ledger screens hide those buttons.
 - **Manual journals to the VAT accounts appear as adjustments** (output: your emirate's box 1; input: box 9), with journal number
   and description, flowing into boxes 12-14, so return and ledger agree with no hand edit. They need a description when posted.
 - **Journals typed in are always source "manual";** system fields come from the server, never from the request.
@@ -78,6 +86,9 @@ clearer, bilingual "fix this" errors before an invoice can be generated. No prov
   matching record (possible forgeries from before this fix); `scripts/find-suspect-fx-documents.mjs` lists odd FX rates.
 
 ## Database migration
+
+`0097_vat_date_rule_cutover`: a small `system_settings` table and one key, `vat_date_based_voids_from`, set to the time the
+migration ran. VAT returns recorded before that moment count as old-rule returns. Safe to re-run: it never moves the key.
 
 `0096_vat_return_adjustments`: one nullable column (the journals behind a return's adjustments). Safe to re-run.
 

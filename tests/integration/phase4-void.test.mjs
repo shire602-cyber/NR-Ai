@@ -5,6 +5,8 @@
 //   A   manual journals to the VAT accounts are VAT adjustments, not a mismatch
 //   E   a hand edit needs a reason and can never declare less tax than the ledger supports
 //   N   opening-balance invoice numbering gap warning
+//   H   historical voids: a sale an old-rule return left out is never deducted a second time
+//   S   system journal entries cannot be reversed, edited or deleted through the journal routes
 //   BASE_URL=http://localhost:5056 DATABASE_URL=... node tests/integration/phase4-void.test.mjs
 // Prints "N passed, M failed" and exits non-zero on any failure.
 
@@ -173,6 +175,8 @@ async function main() {
     if (want("A")) await sectionA();
     if (want("E")) await sectionE();
     if (want("N")) await sectionN();
+    if (want("H")) await sectionH();
+    if (want("S")) await sectionS();
   } finally {
     await db.end();
   }
@@ -365,6 +369,195 @@ async function sectionV() {
     ok("V4: September: the voided credit note is a POSITIVE +50 line in every engine and in the ledger",
       allEqual(cur.box12, 50) && close((await ledgerVat(K, curStart, curEnd)).output, 50), { b: cur.box12 });
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// H: historical voids. The deciding fact is whether the document was ever DECLARED in a filed
+// return. A return recorded before the date rule took effect (the "cutover", system_settings key
+// vat_date_based_voids_from) was computed by the OLD rule: a void invoice never counted. History is
+// simulated in SQL (the API dates a void today), with times relative to the REAL stored cutover.
+// ═════════════════════════════════════════════════════════════════════════════
+const DAY_MS = 24 * 3600 * 1000;
+const utcDigits = (ms) => new Date(ms).toISOString().slice(0, 23); // timestamp-without-tz digits, UTC
+async function cutoverMs() {
+  const r = await db.query("SELECT value FROM system_settings WHERE key = 'vat_date_based_voids_from'");
+  return r.rows[0] ? Date.parse(r.rows[0].value) : 0;
+}
+/** Test-only: the moment the void really happened (created_at of the reversal entry). */
+async function setVoidInstant(C, invoiceId, ms) {
+  await db.query(
+    `UPDATE journal_entries SET created_at = $3::timestamp, posted_at = $3::timestamp WHERE company_id = $1 AND source = 'invoice' AND source_id = $2 AND reversed_entry_id IS NOT NULL`,
+    [C.cid, invoiceId, utcDigits(ms)]);
+}
+/** Test-only: a return filed before "filed with evidence" existed: status filed, no filing record, recorded at `ms`. */
+async function insertLegacyFiledReturn(C, start, end, ms, { amount = 0, vat = 0 } = {}) {
+  const r = await db.query(
+    `INSERT INTO vat_returns (company_id, created_by, period_start, period_end, due_date, status, submitted_at, created_at, updated_at,
+        box1b_dubai_amount, box1b_dubai_vat, box8_total_amount, box8_total_vat, box11_total_amount, box11_total_vat, box12_total_due_tax, box14_payable_tax)
+     VALUES ($1, $7, $2::timestamp, $3::timestamp, $3::timestamp, 'filed', $4::timestamp, $4::timestamp, $4::timestamp, $5, $6, $5, $6, $5, $6, $6, $6) RETURNING id`,
+    [C.cid, `${start}T00:00:00`, `${end}T00:00:00`, utcDigits(ms), amount, vat, C.userId]).catch(async (e) => {
+    throw new Error("legacy return insert failed: " + e.message);
+  });
+  return r.rows[0].id;
+}
+const repVat = (C, from, to) => api("GET", `/api/companies/${C.cid}/reports/vat-return?from=${from}&to=${to}`, { token: C.token });
+
+async function sectionH() {
+  const cut = await cutoverMs();
+  ok("H: (setup) the cutover is stored in system_settings", cut > 0, cut);
+
+  // ── H1 (case a): July filed by the OLD rule AFTER the void: the invoice was never declared ────
+  {
+    const C = await newCompany("h1never");
+    const x = await C.invoice(twoMid, 1000);
+    await voidInvoice(C, x.id);
+    await dateVoidOn(C, x.id, lastMid);
+    await setVoidInstant(C, x.id, cut - 2 * DAY_MS);
+    await insertLegacyFiledReturn(C, twoStart, twoEnd, cut - 1 * DAY_MS);   // recorded after the void, before the cutover: X was left out
+
+    const aug = await engines(C, lastStart, lastEnd);
+    ok("H1: the return after the void reports NO negative line: VAT 201, autopilot, firm workpaper and FAF all report box 12 = 0", allEqual(aug.box12, 0), aug.box12);
+    ok("H1: box 1 = 0, box 8 VAT = 0, box 14 = 0 on the generated return",
+      close(aug.gen.json?.box1bDubaiAmount, 0) && close(aug.gen.json?.box8TotalVat, 0) && close(aug.gen.json?.box14PayableTax, 0),
+      { b1: aug.gen.json?.box1bDubaiAmount, v: aug.gen.json?.box8TotalVat, b14: aug.gen.json?.box14PayableTax });
+    ok("H1: the FAF supply listing has no line for the invoice", aug.supplies.length === 0, aug.supplies);
+    const rep = await repVat(C, lastStart, lastEnd);
+    ok("H1: the reports VAT summary agrees (supplies 0, VAT 0)", rep.status === 200 && close(rep.json?.box1_standardRatedSupplies, 0) && close(rep.json?.box5_outputVat, 0), { s: rep.status, j: rep.json });
+    const repJul = await repVat(C, twoStart, twoEnd);
+    ok("H1: the earlier month leaves the never-declared invoice out too (its filed return declared 0)", repJul.status === 200 && close(repJul.json?.box5_outputVat, 0), { s: repJul.status, j: repJul.json });
+
+    const filed = await C.file(aug.gen.json?.id);
+    ok("H1: filing the month of the void succeeds (no VAT_LEDGER_MISMATCH)", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+    const bal = await C.balances();
+    ok("H1: across ALL dates the output and input VAT accounts net to zero (+50 in July, -50 in August)", close(bal["2020"] ?? 0, 0) && close(bal["1050"] ?? 0, 0), bal);
+    // reading the returns list gives the legacy return its snapshot (a filing record created TODAY): the decision must still use the return's own time
+    const list = await api("GET", `/api/companies/${C.cid}/vat-returns`, { token: C.token });
+    const legacyRows = (await db.query("SELECT 1 FROM tax_filings f JOIN vat_returns r ON r.id = f.return_id WHERE r.company_id = $1 AND f.snapshot->>'legacy' = 'true'", [C.cid])).rows.length;
+    const repAgain = await repVat(C, lastStart, lastEnd);
+    ok("H1: once the legacy return has its snapshot the decision is unchanged (still no line)", list.status === 200 && legacyRows === 1 && close(repAgain.json?.box5_outputVat, 0), { s: list.status, legacyRows, j: repAgain.json });
+    const f = (await db.query("SELECT settlement_net FROM tax_filings WHERE return_id = $1", [aug.gen.json?.id])).rows[0];
+    ok("H1: nothing is owed or refunded for that month", f && close(f.settlement_net, 0), f);
+    const snapJul = (await db.query("SELECT box12_total_due_tax FROM vat_returns WHERE company_id = $1 AND period_start = $2::timestamp", [C.cid, `${twoStart}T00:00:00`])).rows[0];
+    ok("H1: the already-filed return's figures are untouched", close(snapJul?.box12_total_due_tax, 0), snapJul);
+  }
+
+  // ── H2 (case b): July filed BEFORE the void: the invoice WAS declared, the void is a real -50 ─────
+  {
+    const C = await newCompany("h2declared");
+    const x = await C.invoice(twoMid, 1000);
+    await voidInvoice(C, x.id);
+    await dateVoidOn(C, x.id, lastMid);
+    await setVoidInstant(C, x.id, cut - 2 * DAY_MS);
+    await insertLegacyFiledReturn(C, twoStart, twoEnd, cut - 3 * DAY_MS, { amount: 1000, vat: 50 });   // recorded before the void
+
+    const aug = await engines(C, lastStart, lastEnd);
+    ok("H2: the void is a -50 reversal in every engine", allEqual(aug.box12, -50), aug.box12);
+    ok("H2: box 1 = -1000, VAT -50", close(aug.gen.json?.box1bDubaiAmount, -1000) && close(aug.gen.json?.box8TotalVat, -50), { b1: aug.gen.json?.box1bDubaiAmount, v: aug.gen.json?.box8TotalVat });
+    ok("H2: the FAF supply listing has the negative line", aug.supplies.length === 1 && close(aug.supplies[0].value, -1000) && close(aug.supplies[0].vat, -50), aug.supplies);
+    const filed = await C.file(aug.gen.json?.id);
+    ok("H2: filing the month of the void succeeds", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+  }
+
+  // ── H3 (case c): July filed through the real flow (after the cutover), the invoice voided afterwards ──
+  {
+    const C = await newCompany("h3newrule");
+    const x = await C.invoice(twoMid, 1000);
+    const jul = await C.generate(twoStart, twoEnd);
+    const fJul = await C.file(jul.json?.id);
+    ok("H3: (setup) July is filed through the real flow", fJul.status === 201, { s: fJul.status, t: fJul.text.slice(0, 300) });
+    await voidInvoice(C, x.id);
+    await dateVoidOn(C, x.id, lastMid);
+    const aug = await engines(C, lastStart, lastEnd);
+    ok("H3: the void of a document a new-rule return declared is a -50 reversal in every engine", allEqual(aug.box12, -50), aug.box12);
+    const filed = await C.file(aug.gen.json?.id);
+    ok("H3: filing the month of the void succeeds", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+    const cur = await engines(C, curStart, curEnd);
+    ok("H3: nothing is reported twice: the current month has no line for it", allEqual(cur.box12, 0) && cur.supplies.length === 0, { b: cur.box12, s: cur.supplies });
+  }
+
+  // ── H4: issued and voided in the same month, that month filed: nothing in any later month ──────
+  {
+    const C = await newCompany("h4same");
+    await C.invoice(lastMid, 400);
+    const x = await C.invoice(lastMid, 1000);
+    await voidInvoice(C, x.id);
+    await dateVoidOn(C, x.id, lastEnd.slice(0, 8) + "20");
+    const aug = await engines(C, lastStart, lastEnd);
+    ok("H4: the month itself reports only the surviving invoice (box 12 = 20)", allEqual(aug.box12, 20), aug.box12);
+    const filed = await C.file(aug.gen.json?.id);
+    ok("H4: filing succeeds", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+    const cur = await engines(C, curStart, curEnd);
+    ok("H4: the current month shows nothing for it in any engine", allEqual(cur.box12, 0) && cur.supplies.length === 0, { b: cur.box12, s: cur.supplies });
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// S: system journal entries (source other than manual) are not reversed, edited or deleted through the journal routes
+// ═════════════════════════════════════════════════════════════════════════════
+async function sectionS() {
+  const y1 = now.getUTCFullYear() - 1;
+  const C = await newCompany("ssys");
+  const inv = await C.invoice(lastMid, 1000);
+  const bank = (await C.account("1020")).id;
+  const pay = await api("POST", `/api/companies/${C.cid}/invoices/${inv.id}/payments`, { token: C.token, body: { amount: 1050, date: lastMid, method: "bank_transfer", paymentAccountId: bank } });
+  ok("S: (setup) the invoice is paid", pay.status === 200 || pay.status === 201, { s: pay.status, t: pay.text.slice(0, 200) });
+  const gen = await C.generate(lastStart, lastEnd);
+  const filed = await C.file(gen.json?.id);
+  ok("S: (setup) the month is filed (a clearing journal is posted)", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+
+  const entryOf = async (where, args) => (await db.query(`SELECT id, source, status FROM journal_entries WHERE company_id = $1 AND ${where} ORDER BY created_at LIMIT 1`, [C.cid, ...args])).rows[0];
+  const snapshotLedger = async () => JSON.stringify({ bal: await C.balances(), n: (await db.query("SELECT count(*) FROM journal_entries WHERE company_id = $1", [C.cid])).rows[0].count });
+  const reverse = (id) => api("POST", `/api/journal/${id}/reverse`, { token: C.token, body: { reason: "should not work" } });
+
+  const clearing = await entryOf("source = 'vat_filing'", []);
+  const revenue = await entryOf("source = 'invoice' AND reversed_entry_id IS NULL", []);
+  const payment = await entryOf("source = 'payment'", []);
+  ok("S: (setup) the clearing, invoice and payment entries exist", !!clearing && !!revenue && !!payment, { clearing, revenue, payment });
+
+  const before = await snapshotLedger();
+  const rClear = await reverse(clearing?.id);
+  ok("S: reversing the VAT clearing entry of a filed return -> 409 SYSTEM_ENTRY_NOT_REVERSIBLE naming the amendment", rClear.status === 409 && rClear.json?.code === "SYSTEM_ENTRY_NOT_REVERSIBLE" && /amendment/i.test(rClear.json?.message ?? ""), { s: rClear.status, j: rClear.json });
+  const rInv = await reverse(revenue?.id);
+  ok("S: reversing an invoice revenue entry -> 409 (void the invoice / credit note)", rInv.status === 409 && rInv.json?.code === "SYSTEM_ENTRY_NOT_REVERSIBLE" && /void the invoice|credit note/i.test(rInv.json?.message ?? ""), { s: rInv.status, j: rInv.json });
+  const rPay = await reverse(payment?.id);
+  ok("S: reversing a payment entry -> 409", rPay.status === 409 && rPay.json?.code === "SYSTEM_ENTRY_NOT_REVERSIBLE", { s: rPay.status, j: rPay.json });
+  ok("S: the ledger is unchanged by the refused reversals (balances and entry count)", (await snapshotLedger()) === before, { before, after: await snapshotLedger() });
+
+  // year-end close entry
+  const Y = await newCompany("ssysy");
+  await Y.invoice(`${y1}-03-15`, 500);
+  const close1 = await api("POST", `/api/companies/${Y.cid}/year-end/close`, { token: Y.token, body: { yearStart: `${y1}-01-01` } });
+  const ye = (await db.query("SELECT id FROM journal_entries WHERE company_id = $1 AND source = 'year_end_close'", [Y.cid])).rows[0];
+  ok("S: (setup) a year is closed", close1.status === 201 && !!ye, { s: close1.status, t: close1.text.slice(0, 200) });
+  const yeBefore = (await db.query("SELECT count(*) FROM journal_entries WHERE company_id = $1", [Y.cid])).rows[0].count;
+  const rYe = await api("POST", `/api/journal/${ye?.id}/reverse`, { token: Y.token, body: { reason: "no" } });
+  ok("S: reversing a year-end close entry -> 409 (reopen the year-end close)", rYe.status === 409 && rYe.json?.code === "SYSTEM_ENTRY_NOT_REVERSIBLE" && /reopen/i.test(rYe.json?.message ?? ""), { s: rYe.status, j: rYe.json });
+  ok("S: and posted nothing", (await db.query("SELECT count(*) FROM journal_entries WHERE company_id = $1", [Y.cid])).rows[0].count === yeBefore, null);
+
+  // PUT and DELETE on system entries are refused (posted ones by immutability, system drafts by the source rule)
+  const lines = [{ accountId: bank, debit: 5, credit: 0 }, { accountId: (await C.account("4010")).id, debit: 0, credit: 5 }];
+  const putPosted = await api("PUT", `/api/journal/${revenue?.id}`, { token: C.token, body: { date: lastMid, lines } });
+  const delPosted = await api("DELETE", `/api/journal/${revenue?.id}`, { token: C.token });
+  const putClear = await api("PUT", `/api/journal/${clearing?.id}`, { token: C.token, body: { date: lastMid, lines } });
+  const delClear = await api("DELETE", `/api/journal/${clearing?.id}`, { token: C.token });
+  ok("S: PUT and DELETE on posted system entries are refused (4xx)", [putPosted, delPosted, putClear, delClear].every((r) => r.status >= 400 && r.status < 500), [putPosted.status, delPosted.status, putClear.status, delClear.status]);
+  const sysDraft = await C.journal(curStart, lines, { status: "draft", memo: "will become a system draft" });
+  await db.query("UPDATE journal_entries SET source = 'fx_revaluation' WHERE id = $1", [sysDraft.json?.id]);
+  const putDraft = await api("PUT", `/api/journal/${sysDraft.json?.id}`, { token: C.token, body: { date: curStart, memo: "edited", status: "draft", confirmBackdated: true, lines } });
+  const delDraft = await api("DELETE", `/api/journal/${sysDraft.json?.id}`, { token: C.token });
+  ok("S: PUT and DELETE on a system DRAFT are refused (409 SYSTEM_ENTRY_READ_ONLY)", putDraft.status === 409 && putDraft.json?.code === "SYSTEM_ENTRY_READ_ONLY" && delDraft.status === 409 && delDraft.json?.code === "SYSTEM_ENTRY_READ_ONLY", { p: [putDraft.status, putDraft.json], d: [delDraft.status, delDraft.json] });
+  ok("S: the system draft is still there and unedited", (await db.query("SELECT memo FROM journal_entries WHERE id = $1", [sysDraft.json?.id])).rows[0]?.memo === "will become a system draft", null);
+
+  // a manual journal reverses as before, and so does the reversal of a manual journal
+  const man = await C.journal(curStart, lines, { memo: "manual, to be reversed" });
+  const rMan = await reverse(man.json?.id);
+  ok("S: reversing a MANUAL journal -> 200 as before", man.status === 200 && rMan.status === 200 && !!rMan.json?.reversalId, { m: man.status, s: rMan.status, j: rMan.json });
+  const reRev = await reverse(rMan.json?.reversalId);
+  ok("S: the reversal of a manual journal can itself be reversed (200)", reRev.status === 200, { s: reRev.status, j: reRev.json });
+  const delMan = await C.journal(curStart, lines, { status: "draft", memo: "manual draft" });
+  const delOk = await api("DELETE", `/api/journal/${delMan.json?.id}`, { token: C.token });
+  // (the 5-year FTA retention rule refuses every delete, manual or not; what matters is that the manual draft is not treated as a system entry)
+  ok("S: a manual draft is not refused as a system entry (its delete is decided by the retention rule, as before)", delOk.json?.code !== "SYSTEM_ENTRY_READ_ONLY", { s: delOk.status, j: delOk.json });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

@@ -4924,6 +4924,16 @@ export type EmailIntakeDocument = typeof emailIntakeDocuments.$inferSelect;
 
 
 // ===========================
+// Installation-wide key/value settings (migration 0097). First key:
+// `vat_date_based_voids_from`, the moment the date-based VAT void rule took effect.
+// ===========================
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ===========================
 // Tax filing evidence (Phase 4.1 / 4.2)
 // One filing record per filed VAT / corporate tax return: an immutable snapshot
 // of the figures at the moment of filing (+ SHA-256), evidence files and the

@@ -107,6 +107,29 @@ function isBackdatedConfirmation(error: unknown): boolean {
   return e?.status === 409 && e?.code === BACKDATED_CONFIRMATION_CODE;
 }
 
+// What created a non-manual entry, as a message key (the entry is undone where it was created).
+const SYSTEM_SOURCE_LABEL_KEYS = {
+  vat_filing: "sourceVatFiling",
+  vat_payment: "sourceVatPayment",
+  corporate_tax_filing: "sourceCorporateTaxFiling",
+  corporate_tax_payment: "sourceCorporateTaxPayment",
+  year_end_close: "sourceYearEndClose",
+  year_end_close_reversal: "sourceYearEndClose",
+  opening_balance: "sourceOpeningBalance",
+  opening_balance_reversal: "sourceOpeningBalance",
+  fx_revaluation: "sourceFxRevaluation",
+  fx_revaluation_reversal: "sourceFxRevaluation",
+  bill: "sourceBill",
+  expense_claim: "sourceExpenseClaim",
+  expense_claim_payment: "sourceExpenseClaim",
+  bank_reconciliation: "sourceBankReconciliation",
+  vat_workpaper_row: "sourceVatWorkpaper",
+  invoice: "sourceInvoice",
+  receipt: "sourceReceipt",
+  payment: "sourcePayment",
+  reversal: "sourceReversal",
+} as const;
+
 const getBackdatedCopy = () =>
   ({
     en: {
@@ -669,6 +692,17 @@ export default function Journal() {
             const isPosted = entry.status === "posted";
             const isDraft = entry.status === "draft";
             const isVoid = entry.status === "void";
+            // Only a journal typed in by a user is edited, deleted or reversed here. Entries posted by
+            // invoices, payments, filings, the year-end close ... are undone where they were created.
+            const isManual = !entry.source || entry.source === "manual";
+            const systemSourceLabel = tr(
+              (
+                SYSTEM_SOURCE_LABEL_KEYS as Record<
+                  string,
+                  (typeof SYSTEM_SOURCE_LABEL_KEYS)[keyof typeof SYSTEM_SOURCE_LABEL_KEYS]
+                >
+              )[entry.source] ?? "sourceOther"
+            );
 
             const getStatusBadge = () => {
               if (isPosted) {
@@ -726,6 +760,14 @@ export default function Journal() {
                         <span>{formatDate(entry.date, locale)}</span>
                       </div>
                       {entry.memo && <div className="font-medium">{entry.memo}</div>}
+                      {!isManual && (
+                        <div
+                          className="text-xs text-muted-foreground mt-1"
+                          data-testid={`text-system-entry-${entry.id}`}
+                        >
+                          {tr("createdBySource", { source: systemSourceLabel })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {getStatusBadge()}
@@ -754,47 +796,51 @@ export default function Journal() {
                             <Send className="w-4 h-4 me-2" />
                             {tr("post")}
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditEntry(entry)}
-                            data-testid={`button-edit-journal-${entry.id}`}
-                          >
-                            <Edit className="w-4 h-4 me-2" />
-                            {tr("edit")}
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                data-testid={`button-delete-journal-${entry.id}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{tr("deleteDraftEntry")}</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {tr("thisWillPermanentlyDeleteThisDraft")}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deleteMutation.mutate(entry.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          {isManual && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditEntry(entry)}
+                              data-testid={`button-edit-journal-${entry.id}`}
+                            >
+                              <Edit className="w-4 h-4 me-2" />
+                              {tr("edit")}
+                            </Button>
+                          )}
+                          {isManual && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  data-testid={`button-delete-journal-${entry.id}`}
                                 >
-                                  {tr("delete")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>{tr("deleteDraftEntry")}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {tr("thisWillPermanentlyDeleteThisDraft")}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteMutation.mutate(entry.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    {tr("delete")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                         </>
                       )}
 
-                      {isPosted && (
+                      {isPosted && isManual && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
