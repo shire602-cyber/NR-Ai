@@ -19,6 +19,7 @@ import {
   taxReturnArchive,
   vatReturns,
 } from "../../shared/schema";
+import { openArAmount, openArCondition } from "./invoice-outstanding.db";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -462,10 +463,10 @@ export async function buildFirmValueOps(
   const invoiceRows = (await db
     .select({
       companyId: invoices.companyId,
-      revenue90d: sql<string>`sum(case when ${invoices.status} = 'paid' and ${invoices.date} >= ${ninetyDaysAgo} then ${invoices.total} else 0 end)`,
-      openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
-      overdueAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now} then ${invoices.total} else 0 end)`,
-      overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now})`,
+      revenue90d: sql<string>`sum(case when ${invoices.status} = 'paid' and ${invoices.date} >= ${ninetyDaysAgo} then ${openArAmount} else 0 end)`,
+      openAr: sql<string>`sum(case when ${openArCondition} then ${openArAmount} else 0 end)`,
+      overdueAr: sql<string>`sum(case when ${openArCondition} and ${invoices.dueDate} < ${now} then ${openArAmount} else 0 end)`,
+      overdueCount: sql<string>`count(*) filter (where ${openArCondition} and ${invoices.dueDate} < ${now})`,
       invoiceCount90d: sql<string>`count(*) filter (where ${invoices.date} >= ${ninetyDaysAgo})`,
       lastInvoiceAt: max(invoices.createdAt),
     })
@@ -1450,8 +1451,8 @@ export async function buildClientCfoPack(
       ),
     db
       .select({
-        openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
-        overdueAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now} then ${invoices.total} else 0 end)`,
+        openAr: sql<string>`sum(case when ${openArCondition} then ${openArAmount} else 0 end)`,
+        overdueAr: sql<string>`sum(case when ${openArCondition} and ${invoices.dueDate} < ${now} then ${openArAmount} else 0 end)`,
       })
       .from(invoices)
       .where(eq(invoices.companyId, companyId)),

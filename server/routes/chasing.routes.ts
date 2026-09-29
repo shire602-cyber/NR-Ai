@@ -33,6 +33,9 @@ import {
   computeEffectiveness,
 } from "../services/payment-chasing.service";
 
+import { buildInvoiceBalances } from "../services/invoice-outstanding";
+import { getInvoiceBalance } from "../services/invoice-outstanding.db";
+
 const log = createLogger("chasing");
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -61,7 +64,12 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
     invoiceId: p.invoiceId,
     amount: Number(p.amount) || 0,
   }));
-  return invoices.map((inv) =>
+  // Credit notes reduce what is owed: net them off (shared definition) and
+  // leave the credit-note rows themselves out - they are not receivables.
+  const balances = buildInvoiceBalances(invoices, flatPayments);
+  return invoices
+    .filter((inv) => inv.invoiceType !== "credit_note")
+    .map((inv) =>
     buildAgingRow(
       {
         id: inv.id,
@@ -69,6 +77,7 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
         customerName: inv.customerName,
         currency: inv.currency,
         total: Number(inv.total) || 0,
+        creditedAmount: balances.get(inv.id)?.credited ?? 0,
         dueDate: inv.dueDate,
         status: inv.status,
         contactId: inv.contactId,
@@ -226,8 +235,9 @@ export function registerChasingRoutes(app: Express) {
         company?.locale ??
         "en") as ChaseLanguage;
 
-      // Build aging row from this invoice + payments
+      // Build aging row from this invoice + payments + credit notes
       const payments = await storage.getInvoicePaymentsByInvoiceId(invoice.id);
+      const creditedAmount = (await getInvoiceBalance(invoice.companyId, invoice.id)).credited;
       const row = buildAgingRow(
         {
           id: invoice.id,
@@ -235,6 +245,7 @@ export function registerChasingRoutes(app: Express) {
           customerName: invoice.customerName,
           currency: invoice.currency,
           total: Number(invoice.total) || 0,
+          creditedAmount,
           dueDate: invoice.dueDate,
           status: invoice.status,
           contactId: invoice.contactId,

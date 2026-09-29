@@ -6,6 +6,11 @@ import { storage } from "../storage";
 import { insertJournalEntrySchema, type JournalEntry } from "../../shared/schema";
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import {
+  BACKDATED_CONFIRMATION_CODE,
+  evaluateBackdatedEntry,
+  type BackdatedDecision,
+} from "../services/backdated-entry.service";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 
@@ -24,6 +29,28 @@ async function findJournalEntryForUser(
   if (!entry) return undefined;
   const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
   return hasAccess ? entry : undefined;
+}
+
+async function evaluateBackdatedForCompany(
+  companyId: string,
+  entryDate: Date | string | null | undefined,
+  confirmBackdated: unknown
+): Promise<BackdatedDecision> {
+  const company = await storage.getCompany(companyId);
+  return evaluateBackdatedEntry({
+    entryDate,
+    fiscalYearStartMonth: company?.fiscalYearStartMonth,
+    confirmBackdated,
+  });
+}
+
+function backdatedConfirmationBody(fiscalYearStart: string) {
+  return {
+    code: BACKDATED_CONFIRMATION_CODE,
+    message:
+      "This entry is dated before the current financial year and will change prior-year figures. Resubmit with confirmBackdated: true to post anyway.",
+    fiscalYearStart,
+  };
 }
 
 export function registerJournalRoutes(app: Express) {
@@ -86,7 +113,14 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, status = "draft", description, ...entryData } = req.body;
+      const {
+        lines,
+        date,
+        status = "draft",
+        description,
+        confirmBackdated,
+        ...entryData
+      } = req.body;
       // The client sends `description`; the journal_entries column is `memo`.
       // Without this mapping the narration was silently dropped.
       if (description && !entryData.memo) entryData.memo = description;
@@ -177,6 +211,13 @@ export function registerJournalRoutes(app: Express) {
       // A-4: reject future-dated entries.
       assertNotFutureDate(entryDate);
 
+      // Soft guard: entries dated before the current fiscal year need explicit
+      // confirmation (nothing is period-locked by default).
+      const backdated = await evaluateBackdatedForCompany(companyId, entryDate, confirmBackdated);
+      if (backdated.requiresConfirmation) {
+        return res.status(409).json(backdatedConfirmationBody(backdated.fiscalYearStart));
+      }
+
       // Generate entry number atomically via storage helper
       const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 
@@ -220,6 +261,9 @@ export function registerJournalRoutes(app: Express) {
           totalCredit,
           lineCount: lines.length,
         },
+        extra: backdated.confirmedBackdated
+          ? { confirmedBackdated: true, fiscalYearStart: backdated.fiscalYearStart }
+          : undefined,
         req,
       });
 
@@ -265,7 +309,15 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, description, memo, notes, status: requestedStatus } = req.body;
+      const {
+        lines,
+        date,
+        description,
+        memo,
+        notes,
+        status: requestedStatus,
+        confirmBackdated,
+      } = req.body;
 
       // Tenant-scoped lookup also enforces access.
       const entry = await findJournalEntryForUser(userId, id);
@@ -367,10 +419,19 @@ export function registerJournalRoutes(app: Express) {
       // Block updates that would land in a locked period (either the existing
       // entry date or the requested new date).
       await assertPeriodNotLocked(entry.companyId, entry.date);
+      let backdated: BackdatedDecision = {
+        requiresConfirmation: false,
+        confirmedBackdated: false,
+        fiscalYearStart: "",
+      };
       if (entryDate) {
         await assertPeriodNotLocked(entry.companyId, entryDate);
         // A-4: a re-dated entry must not move into the future.
         assertNotFutureDate(entryDate);
+        backdated = await evaluateBackdatedForCompany(entry.companyId, entryDate, confirmBackdated);
+        if (backdated.requiresConfirmation) {
+          return res.status(409).json(backdatedConfirmationBody(backdated.fiscalYearStart));
+        }
       }
 
       // Whitelist: only safe fields can be edited via this endpoint.
@@ -420,6 +481,9 @@ export function registerJournalRoutes(app: Express) {
         entityId: id,
         before: { entryNumber: entry.entryNumber, status: entry.status },
         after: { totalDebit, totalCredit, lineCount: lines.length, date: entryDate },
+        extra: backdated.confirmedBackdated
+          ? { confirmedBackdated: true, fiscalYearStart: backdated.fiscalYearStart }
+          : undefined,
         req,
       });
 

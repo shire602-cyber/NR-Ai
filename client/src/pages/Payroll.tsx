@@ -175,7 +175,7 @@ const employeeFormSchema = z.object({
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
-  basicSalary: z.coerce.number().min(0, "Basic salary must be >= 0"),
+  basicSalary: z.coerce.number().positive("Basic salary must be greater than 0"),
   housingAllowance: z.coerce.number().min(0).default(0),
   transportAllowance: z.coerce.number().min(0).default(0),
   otherAllowance: z.coerce.number().min(0).default(0),
@@ -370,14 +370,18 @@ export default function Payroll() {
 
   const calculatePayrollMutation = useMutation({
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/calculate`),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
+      const warnings: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
       toast({
         title: "Payroll Calculated",
-        description: "Payroll items have been generated from active employees.",
+        description:
+          warnings.length > 0
+            ? warnings.join(" ")
+            : "Payroll items have been generated from active employees.",
       });
     },
     onError: (error: Error) => {

@@ -36,6 +36,7 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { createLogger } from "../config/logger";
+import { openArAmount, openArCondition } from "../services/invoice-outstanding.db";
 
 const logger = createLogger("firm-analytics-routes");
 
@@ -268,7 +269,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, clientIds),
-            or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+            openArCondition,
             lt(invoices.dueDate, now)
           )
         )

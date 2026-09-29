@@ -27,6 +27,29 @@ function hasPgErrorCode(err: unknown, code: string): boolean {
 }
 
 /**
+ * Message that is safe to return to a client. Drizzle's query errors carry the
+ * full SQL statement and its bound parameters in `message` ("Failed query:
+ * insert into ... params: ..."); those must never leave the server, in any
+ * environment. Use the underlying driver error's message instead (e.g.
+ * "numeric field overflow"), and fall back to a generic text when even that
+ * looks like SQL. The full error is still captured server-side.
+ */
+function safeClientMessage(err: Error): string {
+  const looksLikeSql = (m: string) =>
+    /^\s*failed query/i.test(m) ||
+    /\b(insert\s+into|update\s+"?\w+"?\s+set|delete\s+from|select\s+.+\s+from)\b/i.test(m) ||
+    /\bparams:/i.test(m);
+  const carriesQuery =
+    typeof (err as { query?: unknown }).query === "string" ||
+    Array.isArray((err as { params?: unknown }).params);
+  const message = typeof err.message === "string" ? err.message : "";
+  if (!carriesQuery && !looksLikeSql(message)) return message;
+  const cause = (err as { cause?: { message?: unknown } }).cause;
+  const causeMessage = typeof cause?.message === "string" ? cause.message : "";
+  return causeMessage && !looksLikeSql(causeMessage) ? causeMessage : "Database error";
+}
+
+/**
  * Global error handler middleware.
  * Must be registered AFTER all routes.
  *
@@ -86,6 +109,22 @@ export function globalErrorHandler(
     return;
   }
 
+  // Postgres numeric_value_out_of_range (22003) — a number too large for its
+  // column (e.g. quantity 2e11 into numeric(15,4)). Bad input, not a server
+  // fault, and the response must not carry the statement that failed.
+  if (hasPgErrorCode(err, "22003")) {
+    res.status(400).json(
+      withRequestId(
+        {
+          message: "A numeric value is too large or out of range",
+          code: "AMOUNT_OUT_OF_RANGE",
+        },
+        req
+      )
+    );
+    return;
+  }
+
   // Postgres unique violation (23505) — e.g. creating a cost centre with a
   // code that already exists. A conflict with existing data, not a server
   // fault: answer 409, not 500.
@@ -93,6 +132,19 @@ export function globalErrorHandler(
     res.status(409).json(
       withRequestId(
         { message: "A record with this value already exists", code: "DUPLICATE_VALUE" },
+        req
+      )
+    );
+    return;
+  }
+
+  // Postgres not-null violation (23502) — a required field the route-level
+  // validation missed (e.g. cost centre without `code`). Bad input, not a
+  // server fault: answer 400, not 500.
+  if (hasPgErrorCode(err, "23502")) {
+    res.status(400).json(
+      withRequestId(
+        { message: "A required field is missing", code: "REQUIRED_FIELD_MISSING" },
         req
       )
     );
@@ -132,7 +184,7 @@ export function globalErrorHandler(
   res.status(500).json(
     withRequestId(
       {
-        message: isProduction() && !isAdmin ? "Internal Server Error" : err.message,
+        message: isProduction() && !isAdmin ? "Internal Server Error" : safeClientMessage(err),
         code: "INTERNAL_ERROR",
         ...(isAdmin && isProduction() ? { adminDetail: { name: err.name } } : {}),
       },

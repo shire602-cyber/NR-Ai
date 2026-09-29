@@ -32,6 +32,7 @@ function inv(overrides: Partial<ChaseInvoice> = {}): ChaseInvoice {
     total: overrides.total ?? 1000,
     dueDate: overrides.dueDate ?? "2026-04-01T00:00:00Z",
     status: overrides.status ?? "sent",
+    creditedAmount: overrides.creditedAmount ?? 0,
     contactId: overrides.contactId ?? "contact-1",
     chaseLevel: overrides.chaseLevel ?? 0,
     lastChasedAt: overrides.lastChasedAt ?? null,
@@ -583,5 +584,29 @@ describe("outstandingFor edge cases", () => {
         { invoiceId: "inv-1", amount: 33.33 },
       ])
     ).toBe(0.01);
+  });
+});
+
+// ─── Credit notes reduce what is chased (shared outstanding definition) ──────
+describe("outstandingFor with credit notes", () => {
+  it("nets a partial credit note off the outstanding amount", () => {
+    const i = inv({ total: 1000, creditedAmount: 400 });
+    expect(outstandingFor(i, [])).toBe(600);
+  });
+
+  it("a fully credited invoice has nothing outstanding and is never chaseable", () => {
+    const row = buildAgingRow(inv({ total: 1050, creditedAmount: 1050 }), [], today);
+    expect(row.outstanding).toBe(0);
+    expect(isOverdueAndChaseable(row)).toBe(false);
+  });
+
+  it("the credited status is terminal for chasing", () => {
+    const row = buildAgingRow(inv({ status: "credited" }), [], today);
+    expect(isOverdueAndChaseable(row)).toBe(false);
+  });
+
+  it("payments and credit notes combine", () => {
+    const i = inv({ total: 1000, creditedAmount: 300 });
+    expect(outstandingFor(i, [{ invoiceId: "inv-1", amount: 200 }])).toBe(500);
   });
 });

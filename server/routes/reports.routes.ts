@@ -15,6 +15,14 @@ import {
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
+import { round2 } from "../services/financial-statements";
+import {
+  creditedSql,
+  openReceivableSql,
+  outstandingBaseSql,
+  outstandingSql,
+  paidSql,
+} from "../services/invoice-outstanding.db";
 import {
   buildReportCatalogDiscovery,
   isReportCatalogPersona,
@@ -258,14 +266,14 @@ export function registerReportRoutes(app: Express) {
 
         cashFlowData.push({
           period: periodLabel,
-          operatingInflow,
-          operatingOutflow,
-          investingInflow,
-          investingOutflow,
-          financingInflow,
-          financingOutflow,
-          netCashFlow,
-          endingBalance: runningBalance,
+          operatingInflow: round2(operatingInflow),
+          operatingOutflow: round2(operatingOutflow),
+          investingInflow: round2(investingInflow),
+          investingOutflow: round2(investingOutflow),
+          financingInflow: round2(financingInflow),
+          financingOutflow: round2(financingOutflow),
+          netCashFlow: round2(netCashFlow),
+          endingBalance: round2(runningBalance),
         });
 
         if (periodLength === "month") {
@@ -296,23 +304,14 @@ export function registerReportRoutes(app: Express) {
 
       const [receivableResult, payableResult] = await Promise.all([
         pool.query(
-          `WITH payments AS (
-            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
-            FROM invoice_payments
-            WHERE company_id = $1
-            GROUP BY invoice_id
-          ),
-          open_invoices AS (
+          `WITH open_invoices AS (
             SELECT
               COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
-              GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)
-                * COALESCE(NULLIF(i.exchange_rate, 0), 1) AS open_balance_aed,
+              ${outstandingBaseSql("i")} AS open_balance_aed,
               COALESCE(i.due_date, i.date + INTERVAL '30 days') AS due_date
             FROM invoices i
-            LEFT JOIN payments p ON p.invoice_id = i.id
             WHERE i.company_id = $1
-              AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
-              AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
+              AND ${openReceivableSql("i")}
           )
           SELECT
             name,
@@ -354,19 +353,28 @@ export function registerReportRoutes(app: Express) {
         ),
       ]);
 
+      // Buckets are rounded first; the row total is the sum of the rounded
+      // buckets so a displayed row always adds up.
       const mapAgingRows = (rows: any[], type: "receivable" | "payable") =>
-        rows.map((row) => ({
-          id: `${type}:${row.name}`,
-          name: row.name,
-          type,
-          current: Number(row.current_balance) || 0,
-          days30: Number(row.days_30) || 0,
-          days60: Number(row.days_60) || 0,
-          days90: Number(row.days_90) || 0,
-          over90: Number(row.over_90) || 0,
-          total: Number(row.total) || 0,
-          currency: "AED",
-        }));
+        rows.map((row) => {
+          const current = round2(Number(row.current_balance) || 0);
+          const days30 = round2(Number(row.days_30) || 0);
+          const days60 = round2(Number(row.days_60) || 0);
+          const days90 = round2(Number(row.days_90) || 0);
+          const over90 = round2(Number(row.over_90) || 0);
+          return {
+            id: `${type}:${row.name}`,
+            name: row.name,
+            type,
+            current,
+            days30,
+            days60,
+            days90,
+            over90,
+            total: round2(current + days30 + days60 + days90 + over90),
+            currency: "AED",
+          };
+        });
 
       res.json([
         ...mapAgingRows(receivableResult.rows, "receivable"),
@@ -500,15 +508,15 @@ export function registerReportRoutes(app: Express) {
             accountName: account.nameEn,
             accountCode: account.code,
             accountType: account.type,
-            totalDebit,
-            totalCredit,
-            balance,
+            totalDebit: round2(totalDebit),
+            totalCredit: round2(totalCredit),
+            balance: round2(balance),
             hasForeignLines,
           };
         });
 
-      const sumDebits = rows.reduce((s: number, r) => s + r.totalDebit, 0);
-      const sumCredits = rows.reduce((s: number, r) => s + r.totalCredit, 0);
+      const sumDebits = round2(rows.reduce((s: number, r) => s + r.totalDebit, 0));
+      const sumCredits = round2(rows.reduce((s: number, r) => s + r.totalCredit, 0));
 
       res.json({
         reportCurrency: "AED",
@@ -516,7 +524,7 @@ export function registerReportRoutes(app: Express) {
         totals: {
           sumDebits,
           sumCredits,
-          difference: Math.abs(sumDebits - sumCredits),
+          difference: round2(Math.abs(sumDebits - sumCredits)),
         },
       });
     })
@@ -536,34 +544,32 @@ export function registerReportRoutes(app: Express) {
 
       const [customerResult, vendorResult] = await Promise.all([
         pool.query(
-          `WITH payments AS (
-            SELECT invoice_id, COALESCE(SUM(amount), 0) AS paid_amount
-            FROM invoice_payments
-            WHERE company_id = $1
-            GROUP BY invoice_id
+          `WITH open_inv AS (
+            SELECT i.customer_name, i.currency, i.total, i.due_date, i.exchange_rate,
+                   ${paidSql("i")} AS paid_amount,
+                   ${creditedSql("i")} AS credited_amount,
+                   ${outstandingSql("i")} AS outstanding
+            FROM invoices i
+            WHERE i.company_id = $1
+              AND ${openReceivableSql("i")}
           )
           SELECT
-            i.customer_name,
-            i.currency,
+            customer_name,
+            currency,
             COUNT(*)::int AS invoice_count,
-            COALESCE(SUM(i.total), 0)::float AS total_invoiced,
-            COALESCE(SUM(COALESCE(p.paid_amount, 0)), 0)::float AS paid_amount,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)), 0)::float AS open_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance,
-            COALESCE(SUM(GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) * COALESCE(NULLIF(i.exchange_rate, 0), 1)) FILTER (WHERE i.due_date < NOW()), 0)::float AS overdue_balance_aed,
+            COALESCE(SUM(total), 0)::float AS total_invoiced,
+            COALESCE(SUM(paid_amount), 0)::float AS paid_amount,
+            COALESCE(SUM(credited_amount), 0)::float AS credited_amount,
+            COALESCE(SUM(outstanding), 0)::float AS open_balance,
+            COALESCE(SUM(outstanding * COALESCE(NULLIF(exchange_rate, 0), 1)), 0)::float AS open_balance_aed,
+            COALESCE(SUM(outstanding) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance,
+            COALESCE(SUM(outstanding * COALESCE(NULLIF(exchange_rate, 0), 1)) FILTER (WHERE due_date < NOW()), 0)::float AS overdue_balance_aed,
             MAX(CASE
-              WHEN i.due_date < NOW()
-                AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-              THEN DATE_PART('day', NOW() - i.due_date)
+              WHEN due_date < NOW() THEN DATE_PART('day', NOW() - due_date)
               ELSE 0
             END)::int AS max_days_overdue
-          FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
-          WHERE i.company_id = $1
-            AND i.status NOT IN ('paid', 'draft', 'void', 'cancelled')
-            AND GREATEST(i.total - COALESCE(p.paid_amount, 0), 0) > 0
-          GROUP BY i.customer_name, i.currency
+          FROM open_inv
+          GROUP BY customer_name, currency
           ORDER BY open_balance DESC`,
           [companyId]
         ),
@@ -599,24 +605,25 @@ export function registerReportRoutes(app: Express) {
           name: row.customer_name || "Unknown Customer",
           currency: row.currency || "AED",
           invoiceCount: Number(row.invoice_count) || 0,
-          totalInvoiced: Number(row.total_invoiced) || 0,
-          paidAmount: Number(row.paid_amount) || 0,
-          openBalance: Number(row.open_balance) || 0,
-          openBalanceAed: Number(row.open_balance_aed) || 0,
-          overdueBalance: Number(row.overdue_balance) || 0,
-          overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
+          totalInvoiced: round2(Number(row.total_invoiced) || 0),
+          paidAmount: round2(Number(row.paid_amount) || 0),
+          creditedAmount: round2(Number(row.credited_amount) || 0),
+          openBalance: round2(Number(row.open_balance) || 0),
+          openBalanceAed: round2(Number(row.open_balance_aed) || 0),
+          overdueBalance: round2(Number(row.overdue_balance) || 0),
+          overdueBalanceAed: round2(Number(row.overdue_balance_aed) || 0),
           maxDaysOverdue: Number(row.max_days_overdue) || 0,
         })),
         vendors: vendorResult.rows.map((row: any) => ({
           name: row.vendor_name || "Unknown Vendor",
           currency: row.currency || "AED",
           billCount: Number(row.bill_count) || 0,
-          totalBilled: Number(row.total_billed) || 0,
-          paidAmount: Number(row.paid_amount) || 0,
-          openBalance: Number(row.open_balance) || 0,
-          openBalanceAed: Number(row.open_balance_aed) || 0,
-          overdueBalance: Number(row.overdue_balance) || 0,
-          overdueBalanceAed: Number(row.overdue_balance_aed) || 0,
+          totalBilled: round2(Number(row.total_billed) || 0),
+          paidAmount: round2(Number(row.paid_amount) || 0),
+          openBalance: round2(Number(row.open_balance) || 0),
+          openBalanceAed: round2(Number(row.open_balance_aed) || 0),
+          overdueBalance: round2(Number(row.overdue_balance) || 0),
+          overdueBalanceAed: round2(Number(row.overdue_balance_aed) || 0),
           maxDaysOverdue: Number(row.max_days_overdue) || 0,
         })),
       });
@@ -872,14 +879,14 @@ export function registerReportRoutes(app: Express) {
 
       res.json({
         period: { from, to },
-        box1_standardRatedSupplies: standardRatedSupplies,
-        box2_zeroRatedSupplies: zeroRatedSupplies,
-        box3_exemptSupplies: exemptSupplies,
-        box4_totalSupplies: totalSupplies,
-        box5_outputVat: outputVat,
-        box6_standardRatedExpenses: totalStandardRatedExpenses,
-        box7_inputVatRecoverable: totalInputVat,
-        box8_netVatDue: netVatDue,
+        box1_standardRatedSupplies: round2(standardRatedSupplies),
+        box2_zeroRatedSupplies: round2(zeroRatedSupplies),
+        box3_exemptSupplies: round2(exemptSupplies),
+        box4_totalSupplies: round2(totalSupplies),
+        box5_outputVat: round2(outputVat),
+        box6_standardRatedExpenses: round2(totalStandardRatedExpenses),
+        box7_inputVatRecoverable: round2(totalInputVat),
+        box8_netVatDue: round2(netVatDue),
       });
     })
   );
@@ -1025,7 +1032,15 @@ export function registerReportRoutes(app: Express) {
         },
       ];
 
-      res.json(comparison);
+      res.json(
+        comparison.map((row) => ({
+          ...row,
+          current: round2(row.current),
+          previous: round2(row.previous),
+          change: round2(row.change),
+          changePercent: round2(row.changePercent),
+        }))
+      );
     })
   );
 }

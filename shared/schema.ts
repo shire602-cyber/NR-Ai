@@ -44,6 +44,33 @@ const rate = customType<{ data: number; driverData: string }>({
   },
 });
 
+// Unit prices / unit costs keep 6 decimals (e.g. 3 x 33.333333 = 100.00) so the
+// stored line arithmetic matches the document totals. Line amounts stay `money`.
+const unitPriceType = customType<{ data: number; driverData: string }>({
+  dataType() {
+    return "numeric(19,6)";
+  },
+  fromDriver(value: string): number {
+    return parseFloat(value);
+  },
+  toDriver(value: number) {
+    return String(value);
+  },
+});
+
+// Line quantities: exact decimal (real() is single-precision float and adds noise).
+const quantityType = customType<{ data: number; driverData: string }>({
+  dataType() {
+    return "numeric(15,4)";
+  },
+  fromDriver(value: string): number {
+    return parseFloat(value);
+  },
+  toDriver(value: number) {
+    return String(value);
+  },
+});
+
 // VAT rates (e.g. 0.05 for UAE 5%) need exact decimal storage; real() cannot
 // represent 0.05 exactly in IEEE-754.
 const vatRateType = customType<{ data: number; driverData: string }>({
@@ -918,17 +945,34 @@ export type JournalLine = typeof journalLines.$inferSelect;
 // ===========================
 // Exchange Rates
 // ===========================
-export const exchangeRates = pgTable("exchange_rates", {
-  id: uuid("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  baseCurrency: text("base_currency").notNull().default("AED"),
-  targetCurrency: text("target_currency").notNull(),
-  rate: rate("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
-  date: timestamp("date").notNull().defaultNow(),
-  source: text("source").notNull().default("manual"), // manual | api
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+// CONVENTION: a row means "1 unit of baseCurrency = `rate` units of targetCurrency"
+// (1 CHF = 4.1 AED is base CHF, target AED, rate 4.1). company_id NULL = SYSTEM rate
+// (automated feed only); otherwise the rate belongs to that company alone.
+export const exchangeRates = pgTable(
+  "exchange_rates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+    baseCurrency: text("base_currency").notNull().default("AED"),
+    targetCurrency: text("target_currency").notNull(),
+    rate: rate("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
+    date: timestamp("date").notNull().defaultNow(),
+    source: text("source").notNull().default("manual"), // manual | api | fta
+    // false = pre-0091 row of unknown author/direction; lookups ignore it.
+    isTrusted: boolean("is_trusted").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyPairDateIdx: index("idx_exchange_rates_company_pair_date").on(
+      table.companyId,
+      table.baseCurrency,
+      table.targetCurrency,
+      table.date
+    ),
+  })
+);
 
 export const insertExchangeRateSchema = createInsertSchema(exchangeRates).omit({
   id: true,
@@ -1032,10 +1076,14 @@ export const invoiceLines = pgTable(
       .notNull()
       .references(() => invoices.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull(),
-    unitPrice: money("unit_price").notNull(),
+    quantity: quantityType("quantity").notNull(),
+    unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
     vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
+    // Optional income account for this line's net amount; NULL = default account.
+    revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
@@ -1105,10 +1153,13 @@ export const quoteLines = pgTable(
       .notNull()
       .references(() => quotes.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull(),
-    unitPrice: money("unit_price").notNull(),
+    quantity: quantityType("quantity").notNull(),
+    unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
+    revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     quoteIdIdx: index("idx_quote_lines_quote_id").on(table.quoteId),
@@ -1181,10 +1232,13 @@ export const creditNoteLines = pgTable(
       .notNull()
       .references(() => creditNotes.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull(),
-    unitPrice: money("unit_price").notNull(),
+    quantity: quantityType("quantity").notNull(),
+    unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
+    revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     creditNoteIdIdx: index("idx_credit_note_lines_credit_note_id").on(table.creditNoteId),
@@ -1253,8 +1307,8 @@ export const purchaseOrderLines = pgTable(
       .notNull()
       .references(() => purchaseOrders.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull(),
-    unitPrice: money("unit_price").notNull(),
+    quantity: quantityType("quantity").notNull(),
+    unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
   },
@@ -1777,7 +1831,7 @@ export const products = pgTable(
     nameAr: text("name_ar"),
     sku: text("sku"),
     description: text("description"),
-    unitPrice: money("unit_price").notNull().default(0),
+    unitPrice: unitPriceType("unit_price").notNull().default(0),
     costPrice: money("cost_price").default(0),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     unit: text("unit").notNull().default("pcs"), // pcs, kg, m, hr, etc.
@@ -1816,7 +1870,7 @@ export const inventoryMovements = pgTable(
       .references(() => companies.id, { onDelete: "cascade" }),
     type: text("type").notNull(), // purchase | sale | adjustment | return
     quantity: integer("quantity").notNull(),
-    unitCost: money("unit_cost"),
+    unitCost: unitPriceType("unit_cost"),
     reference: text("reference"), // e.g., "Invoice INV-001" or "Manual adjustment"
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -3964,8 +4018,8 @@ export const serviceInvoiceLines = pgTable(
       .notNull()
       .references(() => serviceInvoices.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull().default(1),
-    unitPrice: money("unit_price").notNull(),
+    quantity: quantityType("quantity").notNull().default(1),
+    unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE 5%
     amount: money("amount").notNull(), // quantity * unitPrice
   },

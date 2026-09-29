@@ -3,8 +3,11 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { ConflictError, NotFoundError, ValidationError } from "../errors";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { assertVatPeriodEnded } from "./vat-period-status.service";
+import { stripLegacyVatReturnFields } from "./vat-return-payload.service";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
+import { classifyVatLineForReturn } from "./vat-supply-type";
 import { buildVatRowJournalLines } from "./vat-workpaper-posting";
 import {
   companies,
@@ -946,16 +949,21 @@ export function mapBooksToVatWorkpaperRows(input: {
     let exemptAmount = 0;
     for (const line of linesByInvoice.get(invoice.id) ?? []) {
       const lineAmount = toMoney(line.quantity * line.unitPrice);
-      const supplyType = line.vatSupplyType || "standard_rated";
-      // Explicit supply type wins; the 0%-rate fallback only catches lines
-      // that weren't tagged (an exempt line also carries a 0% rate).
-      if (supplyType === "exempt") {
-        exemptAmount += lineAmount;
-      } else if (supplyType === "zero_rated" || line.vatRate === 0) {
-        zeroRatedAmount += lineAmount;
-      } else {
-        standardAmount += lineAmount;
-        standardVat += toMoney(lineAmount * (line.vatRate ?? vatRateFallback));
+      // Same rule as the VAT 201 generator and the autopilot: the rate decides
+      // for taxed lines; at 0% out_of_scope is in no box, exempt is Box 5.
+      switch (classifyVatLineForReturn({ rate: line.vatRate, supplyType: line.vatSupplyType })) {
+        case "exempt":
+          exemptAmount += lineAmount;
+          break;
+        case "zero_rated":
+          zeroRatedAmount += lineAmount;
+          break;
+        case "standard":
+          standardAmount += lineAmount;
+          standardVat += toMoney(lineAmount * (line.vatRate ?? vatRateFallback));
+          break;
+        case "excluded":
+          break;
       }
     }
 
@@ -1125,6 +1133,11 @@ export async function updateVatWorkpaperStatus(
     );
   }
   if (status !== "locked" && status !== "filed") await assertWorkpaperEditable(workpaper);
+  // Filing a workpaper for a period that has not ended would record a draft
+  // preview as if it were a final return.
+  if (status === "filed") {
+    assertVatPeriodEnded(workpaper.periodStart, workpaper.periodEnd);
+  }
 
   const update: Record<string, unknown> = { status, updatedAt: new Date() };
   if (data && "reviewerUserId" in data) update.reviewerUserId = data.reviewerUserId ?? null;
@@ -1138,12 +1151,16 @@ export async function updateVatWorkpaperStatus(
   return updated;
 }
 
-export async function generateVatReturnFromWorkpaper(workpaperId: string, actorUserId: string) {
-  const detail = await getVatWorkpaperDetail(workpaperId);
-  const { workpaper, totals } = detail;
-  await assertWorkpaperEditable(workpaper);
-
-  const vatReturnPayload = {
+/**
+ * Canonical VAT 201 values for a return generated from a workpaper. The
+ * legacy 8-box aliases are intentionally not emitted (DB columns default to 0).
+ */
+export function buildVatReturnValuesFromWorkpaper(
+  workpaper: { companyId: string; periodStart: Date; periodEnd: Date; dueDate: Date | null },
+  totals: Vat201Totals,
+  actorUserId: string
+) {
+  return {
     companyId: workpaper.companyId,
     periodStart: workpaper.periodStart,
     periodEnd: workpaper.periodEnd,
@@ -1195,26 +1212,20 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     box12TotalDueTax: totals.box12TotalDueTax,
     box13RecoverableTax: totals.box13RecoverableTax,
     box14PayableTax: totals.box14PayableTax,
-    box1SalesStandard:
-      totals.box1aAbuDhabiAmount +
-      totals.box1bDubaiAmount +
-      totals.box1cSharjahAmount +
-      totals.box1dAjmanAmount +
-      totals.box1eUmmAlQuwainAmount +
-      totals.box1fRasAlKhaimahAmount +
-      totals.box1gFujairahAmount,
-    box2SalesOtherEmirates: 0,
-    box3SalesTaxExempt: totals.box4ZeroRatedAmount,
-    box4SalesExempt: totals.box5ExemptAmount,
-    box5TotalOutputTax: totals.box8TotalVat,
-    box6ExpensesStandard: totals.box9ExpensesAmount,
-    box7ExpensesTouristRefund: totals.box2TouristRefundVat,
-    box8TotalInputTax: totals.box11TotalVat,
-    box9NetTax: totals.box14PayableTax,
     notes: "Generated from NRA VAT Submission Workspace. No FTA submission was performed.",
     createdBy: actorUserId,
     updatedAt: new Date(),
   };
+}
+
+export async function generateVatReturnFromWorkpaper(workpaperId: string, actorUserId: string) {
+  const detail = await getVatWorkpaperDetail(workpaperId);
+  const { workpaper, totals } = detail;
+  await assertWorkpaperEditable(workpaper);
+  // A return can only be generated (persisted) once the period has ended.
+  assertVatPeriodEnded(workpaper.periodStart, workpaper.periodEnd);
+
+  const vatReturnPayload = buildVatReturnValuesFromWorkpaper(workpaper, totals, actorUserId);
 
   let vatReturnId = workpaper.generatedVatReturnId;
   let vatReturn;
@@ -1243,5 +1254,5 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     .where(eq(vatWorkpapers.id, workpaperId))
     .returning();
 
-  return { workpaper: updatedWorkpaper, vatReturn, totals };
+  return { workpaper: updatedWorkpaper, vatReturn: stripLegacyVatReturnFields(vatReturn), totals };
 }

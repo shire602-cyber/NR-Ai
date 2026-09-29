@@ -66,6 +66,7 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
  */
 export type StatusKind =
   | "paid"
+  | "credited"
   | "sent"
   | "draft"
   | "void"
@@ -80,6 +81,7 @@ export type StatusKind =
 
 const STATUS_MAP: Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> = {
   paid: { variant: "success", label: "Paid" },
+  credited: { variant: "neutral", label: "Credited" },
   posted: { variant: "success", label: "Posted" },
   approved: { variant: "success", label: "Approved" },
   active: { variant: "success", label: "Active" },

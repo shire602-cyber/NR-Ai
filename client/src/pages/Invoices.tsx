@@ -51,6 +51,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
+import { PaymentDateField, toDateOnly } from "@/components/PaymentDateField";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -106,7 +107,14 @@ const invoiceLineSchema = z.object({
   quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
   unitPrice: z.coerce.number().min(0.01, "Price must be greater than 0"),
   vatRate: z.coerce.number().default(0.05),
+  // Optional income account for this line (null/empty = the default account).
+  revenueAccountId: z.string().nullable().optional(),
+  // Round-tripped from the server so editing never loses an exempt / out-of-scope tag.
+  vatSupplyType: z.string().nullable().optional(),
 });
+
+// Sentinel for the "Default" option: Radix Select items cannot have an empty value.
+const DEFAULT_REVENUE_ACCOUNT = "__default__";
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
@@ -147,6 +155,7 @@ export default function Invoices() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [invoiceForPayment, setInvoiceForPayment] = useState<Invoice | null>(null);
   const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>("");
+  const [paymentDateForPaid, setPaymentDateForPaid] = useState<Date>(() => new Date());
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [similarInvoices, setSimilarInvoices] = useState<any[]>([]);
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
@@ -173,6 +182,7 @@ export default function Invoices() {
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
+  const [paymentDateForAdd, setPaymentDateForAdd] = useState<Date>(() => new Date());
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
@@ -279,11 +289,14 @@ export default function Invoices() {
       id,
       status,
       paymentAccountId,
+      paymentDate,
     }: {
       id: string;
       status: string;
       paymentAccountId?: string;
-    }) => apiRequest("PATCH", `/api/invoices/${id}/status`, { status, paymentAccountId }),
+      paymentDate?: string;
+    }) =>
+      apiRequest("PATCH", `/api/invoices/${id}/status`, { status, paymentAccountId, paymentDate }),
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -447,6 +460,7 @@ export default function Invoices() {
     if (newStatus === "paid" && invoice.status !== "paid") {
       // Show payment account selection dialog
       setInvoiceForPayment(invoice);
+      setPaymentDateForPaid(new Date());
       setPaymentDialogOpen(true);
     } else {
       // For other status changes, proceed directly
@@ -467,8 +481,12 @@ export default function Invoices() {
       id: invoiceForPayment.id,
       status: "paid",
       paymentAccountId: selectedPaymentAccount,
+      paymentDate: toDateOnly(paymentDateForPaid),
     });
   };
+
+  // Income accounts a line can be posted to (defaults to the standard sales account when unset)
+  const revenueAccounts = accounts.filter((acc) => acc.type === "income" && acc.isActive !== false);
 
   // Get cash and bank accounts for payment selection
   const paymentAccounts = accounts.filter((acc) => {
@@ -531,6 +549,14 @@ export default function Invoices() {
           quantity: Number(line.quantity),
           unitPrice: Number(line.unitPrice),
           vatRate: Number(line.vatRate),
+          revenueAccountId: line.revenueAccountId || null,
+          // The RATE decides the supply type, so a stored type is only
+          // meaningful (and only sent) for 0% lines; sending a stale
+          // exempt / out-of-scope tag on a taxed line is what used to hide its
+          // VAT from the return.
+          ...(line.vatSupplyType && Number(line.vatRate) === 0
+            ? { vatSupplyType: line.vatSupplyType }
+            : {}),
         })),
       };
 
@@ -560,6 +586,7 @@ export default function Invoices() {
         return "bg-success-subtle text-success ";
       case "sent":
         return "bg-info-subtle text-info ";
+      case "credited":
       case "void":
         return "bg-muted text-foreground ";
       default:
@@ -1006,7 +1033,11 @@ export default function Invoices() {
                                   <FormControl>
                                     <Select
                                       value={String(field.value * 100)}
-                                      onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                      onValueChange={(val) => {
+                                        field.onChange(parseFloat(val) / 100);
+                                        // A new rate invalidates the stored supply type.
+                                        form.setValue(`lines.${index}.vatSupplyType`, null);
+                                      }}
                                     >
                                       <SelectTrigger
                                         className="font-mono"
@@ -1017,7 +1048,6 @@ export default function Invoices() {
                                       <SelectContent>
                                         <SelectItem value="0">0%</SelectItem>
                                         <SelectItem value="5">5%</SelectItem>
-                                        <SelectItem value="10">10%</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </FormControl>
@@ -1048,6 +1078,45 @@ export default function Invoices() {
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
                             )}
+                          </div>
+                          <div className="col-span-12">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.revenueAccountId`}
+                              render={({ field }) => (
+                                <FormItem className="flex items-center gap-2 space-y-0">
+                                  <FormLabel className="text-xs text-muted-foreground whitespace-nowrap">
+                                    {t.revenueAccount}
+                                  </FormLabel>
+                                  <Select
+                                    value={field.value || DEFAULT_REVENUE_ACCOUNT}
+                                    onValueChange={(val) =>
+                                      field.onChange(val === DEFAULT_REVENUE_ACCOUNT ? null : val)
+                                    }
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger
+                                        className="h-8 text-xs"
+                                        data-testid={`select-line-revenue-account-${index}`}
+                                      >
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value={DEFAULT_REVENUE_ACCOUNT}>
+                                        {t.revenueAccountDefault}
+                                      </SelectItem>
+                                      {revenueAccounts.map((acc) => (
+                                        <SelectItem key={acc.id} value={acc.id}>
+                                          {acc.code} —{" "}
+                                          {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
                           </div>
                         </div>
                       ))}
@@ -1149,6 +1218,10 @@ export default function Invoices() {
                             <SelectItem value="sent">{t.sent}</SelectItem>
                             <SelectItem value="paid">{t.paid}</SelectItem>
                             <SelectItem value="partial">Partial</SelectItem>
+                            {/* Derived from credit notes: shown, never selectable. */}
+                            <SelectItem value="credited" disabled>
+                              {t.credited}
+                            </SelectItem>
                             <SelectItem value="void">{t.void}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -1250,6 +1323,14 @@ export default function Invoices() {
                                   data-testid={`status-option-partial-${invoice.id}`}
                                 >
                                   Partial
+                                </SelectItem>
+                                {/* Derived from credit notes: shown, never selectable. */}
+                                <SelectItem
+                                  value="credited"
+                                  disabled
+                                  data-testid={`status-option-credited-${invoice.id}`}
+                                >
+                                  {t.credited}
                                 </SelectItem>
                                 <SelectItem
                                   value="void"
@@ -1406,6 +1487,7 @@ export default function Invoices() {
                                   setPaymentMethod("bank");
                                   setPaymentReference("");
                                   setPaymentNotes("");
+                                  setPaymentDateForAdd(new Date());
                                   setAddPaymentDialogOpen(true);
                                 }}
                                 data-testid={`button-add-payment-${invoice.id}`}
@@ -2084,6 +2166,13 @@ export default function Invoices() {
               )}
             </div>
 
+            <PaymentDateField
+              value={paymentDateForAdd}
+              onChange={setPaymentDateForAdd}
+              minDate={invoiceForPaymentDetail ? new Date(invoiceForPaymentDetail.date) : null}
+              testId="button-add-payment-date"
+            />
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Reference (optional)</label>
               <Input
@@ -2121,7 +2210,7 @@ export default function Invoices() {
                     paymentAccountId: paymentAccountForAdd,
                     reference: paymentReference || undefined,
                     notes: paymentNotes || undefined,
-                    date: new Date().toISOString(),
+                    date: toDateOnly(paymentDateForAdd),
                   },
                 });
               }}
@@ -2260,6 +2349,12 @@ export default function Invoices() {
                 </Button>
               </div>
             )}
+            <PaymentDateField
+              value={paymentDateForPaid}
+              onChange={setPaymentDateForPaid}
+              minDate={invoiceForPayment ? new Date(invoiceForPayment.date) : null}
+              testId="button-mark-paid-date"
+            />
           </div>
           <div className="flex gap-3">
             <Button

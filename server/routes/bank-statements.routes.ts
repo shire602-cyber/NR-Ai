@@ -11,7 +11,9 @@ import {
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { ACCOUNT_CODES } from "../constants";
+import { getInvoiceBalance } from "../services/invoice-outstanding.db";
 
 const log = createLogger("bank-statements");
 
@@ -64,6 +66,9 @@ const bankStatementImportSchema = z.object({
 const bankMatchSchema = z.object({
   matchedType: z.enum(["invoice", "receipt", "journal"]),
   matchedId: z.string().uuid("matchedId must be a valid UUID"),
+  // Optional payment date for invoice matches. Defaults to the bank
+  // transaction's own date; may not be in the future or before the invoice date.
+  paymentDate: z.string().min(1).optional().nullable(),
 });
 
 const bankCreateEntrySchema = z.object({
@@ -741,20 +746,37 @@ export function registerBankStatementRoutes(app: Express) {
           return res.status(400).json({ message: "Bank GL account not found" });
         }
 
-        // Match the unpaid remainder (or what the bank says, whichever is smaller).
-        const previouslyPaid = await storage.getInvoicePaidTotal(matchedId);
-        const remaining = Number(invoice.total) - previouslyPaid;
+        // Match the unpaid remainder (or what the bank says, whichever is
+        // smaller). The remainder is total - payments - credit notes (shared
+        // definition): a fully credited invoice owes nothing, so a bank line
+        // cannot be matched to it (409), and a payment never exceeds the balance.
+        const balance = await getInvoiceBalance(companyId, matchedId);
+        const remaining = balance.outstanding;
+        if (remaining <= 0.005 && balance.credited > 0) {
+          return res.status(409).json({
+            message: `Invoice ${invoice.number} has nothing outstanding${balance.isFullyCredited ? " (fully credited)" : ""}; a bank line cannot be matched to it.`,
+            code: "INVOICE_NOTHING_OUTSTANDING",
+          });
+        }
         const bankAbs = Math.abs(Number(txn.amount));
         const paymentAmount = Math.min(remaining, bankAbs);
 
         let journalEntryId: string | null = null;
         if (paymentAmount > 0.005) {
+          // The payment journal posts on the bank line's date unless the caller
+          // supplies a different `paymentDate`. Validated: not in the future
+          // and not in a locked period (a bank date before the invoice date is
+          // a legitimate deposit/prepayment).
+          const { date: paymentDate } = await resolveSettlementDate(companyId, {
+            requested: req.body.paymentDate,
+            fallback: txn.transactionDate,
+          });
           try {
             const result = await storage.recordInvoicePayment({
               invoiceId: matchedId,
               companyId,
               amount: paymentAmount,
-              date: new Date(txn.transactionDate),
+              date: paymentDate,
               method: "bank_reconciliation",
               reference: txn.reference,
               notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
@@ -765,6 +787,9 @@ export function registerBankStatementRoutes(app: Express) {
             });
             journalEntryId = result.journalEntryId;
           } catch (err: any) {
+            if (err?.code === "INVOICE_NOTHING_OUTSTANDING") {
+              return res.status(409).json({ message: err.message, code: err.code });
+            }
             if (
               err?.code === "CURRENCY_MISMATCH" ||
               err?.code === "OVERPAYMENT" ||

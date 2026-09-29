@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -70,6 +71,8 @@ interface VatPeriodSummary {
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  /** Open period: a live draft preview that is never saved or filed. */
+  isDraftPreview?: boolean;
 }
 
 interface DueDateView {
@@ -86,6 +89,9 @@ interface DueDateView {
 interface CalculationResult {
   companyId: string;
   periodId: string | null;
+  /** true when the period has not ended; the period cannot be submitted yet */
+  isDraftPreview?: boolean;
+  previewAsOf?: string | null;
   period: { start: string; end: string; dueDate: string; frequency: "monthly" | "quarterly" };
   boxes: {
     standardRatedSales: number;
@@ -228,7 +234,10 @@ export default function VATAutopilot() {
     ? periodKey({ periodStart: lastCalc.period.start, periodEnd: lastCalc.period.end })
     : null;
   const visibleCalc = lastCalc && selectedPeriodKey === lastCalcPeriodKey ? lastCalc : null;
-  const currentPeriodId = visibleCalc?.periodId ?? selectedPeriod?.id ?? null;
+  // An open period is compute-only: it has no saved row, so no status or
+  // adjustment actions apply until the period has ended and is recalculated.
+  const isPreviewPeriod = visibleCalc ? !!visibleCalc.isDraftPreview : !!selectedPeriod?.isDraftPreview;
+  const currentPeriodId = isPreviewPeriod ? null : (visibleCalc?.periodId ?? selectedPeriod?.id ?? null);
   const currentPeriodStatus: VatPeriodStatus | null = useMemo(() => {
     if (!periodsQuery.data) return null;
     if (currentPeriodId) {
@@ -386,6 +395,8 @@ export default function VATAutopilot() {
         </CardContent>
       </Card>
 
+      {visibleCalc?.isDraftPreview && <DraftPreviewBanner previewAsOf={visibleCalc.previewAsOf} />}
+
       {/* Reconciliation alert */}
       {visibleCalc?.reconciliation.hasDiscrepancy && (
         <Card className="border-warning/30">
@@ -511,7 +522,7 @@ export default function VATAutopilot() {
                   onClick={() =>
                     statusMutation.mutate({ periodId: currentPeriodId, status: "submitted" })
                   }
-                  disabled={statusMutation.isPending}
+                  disabled={statusMutation.isPending || !!visibleCalc?.isDraftPreview}
                   data-testid="button-mark-submitted"
                 >
                   <Send className="h-4 w-4 mr-2" />

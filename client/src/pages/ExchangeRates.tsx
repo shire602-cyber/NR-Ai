@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,9 +37,12 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel, prepareFxGainsLossesForExport } from "@/lib/export";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
-import { Plus, ArrowRightLeft, RefreshCw, Download } from "lucide-react";
+import { Plus, ArrowRightLeft, RefreshCw, Download, Trash2, AlertTriangle } from "lucide-react";
 
 const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "PKR", "EGP", "BHD", "QAR"];
+// A rate is always entered as "1 <foreign currency> = <rate> AED".
+const BASE_CURRENCY = "AED";
+const FOREIGN_CURRENCIES = CURRENCIES.filter((c) => c !== BASE_CURRENCY);
 
 interface ExchangeRate {
   id: string;
@@ -49,6 +52,7 @@ interface ExchangeRate {
   rate: number;
   effectiveDate: string;
   source: string;
+  scope?: "company" | "system";
   createdAt: string;
 }
 
@@ -90,11 +94,11 @@ export default function ExchangeRates() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
+  const tr = (en: string, ar: string) => (locale === "ar" ? ar : en);
 
   // Dialog state
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [formFromCurrency, setFormFromCurrency] = useState("USD");
-  const [formToCurrency, setFormToCurrency] = useState("AED");
   const [formRate, setFormRate] = useState("");
   const [formEffectiveDate, setFormEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
 
@@ -109,6 +113,32 @@ export default function ExchangeRates() {
     queryKey: [`/api/companies/${companyId}/exchange-rates`],
     enabled: !!companyId,
   });
+
+  // Foreign-currency documents the company already has. Invoices and quotes in a
+  // currency with no trusted rate cannot be converted to AED, so tell the user
+  // which currencies still need a rate (see the notice below).
+  const { data: invoiceDocs } = useQuery<Array<{ currency?: string | null }>>({
+    queryKey: [`/api/companies/${companyId}/invoices`],
+    enabled: !!companyId,
+  });
+  const { data: quoteDocs } = useQuery<Array<{ currency?: string | null }>>({
+    queryKey: [`/api/companies/${companyId}/quotes`],
+    enabled: !!companyId,
+  });
+  const currenciesNeedingRate = useMemo(() => {
+    if (!rates) return [];
+    const covered = new Set(
+      rates.filter((r) => r.toCurrency === BASE_CURRENCY).map((r) => r.fromCurrency)
+    );
+    const used = new Set<string>();
+    for (const doc of [...(invoiceDocs ?? []), ...(quoteDocs ?? [])]) {
+      const c = (doc.currency ?? BASE_CURRENCY).toUpperCase();
+      if (c !== BASE_CURRENCY) used.add(c);
+    }
+    return Array.from(used)
+      .filter((c) => !covered.has(c))
+      .sort();
+  }, [rates, invoiceDocs, quoteDocs]);
 
   const { data: fxReport, isLoading: isLoadingFxReport } = useQuery<FxGainsLossesReport>({
     queryKey: [`/api/companies/${companyId}/reports/fx-gains-losses`],
@@ -139,6 +169,25 @@ export default function ExchangeRates() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest("DELETE", `/api/companies/${companyId}/exchange-rates/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/exchange-rates`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/reports/fx-gains-losses`],
+      });
+      toast({ title: tr("Exchange rate deleted", "تم حذف سعر الصرف") });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: tr("Failed to delete rate", "تعذر حذف سعر الصرف"),
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Convert mutation
   const convertMutation = useMutation({
     mutationFn: async () => {
@@ -164,13 +213,10 @@ export default function ExchangeRates() {
       toast({ title: "Please enter a valid rate", variant: "destructive" });
       return;
     }
-    if (formFromCurrency === formToCurrency) {
-      toast({ title: "Currencies must be different", variant: "destructive" });
-      return;
-    }
     createMutation.mutate({
+      // "1 <from> = <rate> AED": the server stores exactly this pair and direction.
       fromCurrency: formFromCurrency,
-      toCurrency: formToCurrency,
+      toCurrency: BASE_CURRENCY,
       rate,
       effectiveDate: formEffectiveDate,
     });
@@ -262,14 +308,30 @@ export default function ExchangeRates() {
         }
       />
 
+      {currenciesNeedingRate.length > 0 && (
+        <div
+          role="alert"
+          data-testid="notice-rates-required"
+          className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning-subtle p-4 text-sm text-foreground"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <p>
+            {tr(
+              `You have documents in ${currenciesNeedingRate.join(", ")} but no exchange rate for ${currenciesNeedingRate.length === 1 ? "it" : "them"}. Rates entered before the latest update are no longer used, so enter today's rate (1 ${currenciesNeedingRate[0]} = ? AED) with "Add Rate". Until then new documents in that currency cannot be created and recurring invoices in it are skipped.`,
+              `لديك مستندات بالعملة ${currenciesNeedingRate.join("، ")} ولا يوجد سعر صرف لها. لم تعد أسعار الصرف المدخلة قبل آخر تحديث مستخدمة، لذا أدخل سعر اليوم (1 ${currenciesNeedingRate[0]} = ؟ درهم) عبر "Add Rate". إلى ذلك الحين لا يمكن إنشاء مستندات جديدة بهذه العملة، وسيتم تخطي الفواتير المتكررة بها.`
+            )}
+          </p>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle>FX Gains and Losses</CardTitle>
             <CardDescription>
               As of {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : "today"} · Source
-              basis: unpaid foreign-currency invoices and unposted foreign-currency receipt
-              expenses remeasured using saved exchange rates. Values are shown in{" "}
+              basis: the outstanding balance of issued foreign-currency invoices and approved
+              foreign-currency vendor bills, remeasured using saved exchange rates. Values are shown in{" "}
               {fxReport?.baseCurrency || "AED"}.
             </CardDescription>
           </div>
@@ -466,7 +528,7 @@ export default function ExchangeRates() {
       <Card>
         <CardHeader>
           <CardTitle>Saved Rates</CardTitle>
-          <CardDescription>All exchange rates configured for your company</CardDescription>
+          <CardDescription>{tr("Rates you entered for your company, plus official rates. Your own rate is used first.", "الأسعار التي أدخلتها لشركتك بالإضافة إلى الأسعار الرسمية. يُستخدم سعرك الخاص أولاً.")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingRates ? (
@@ -485,21 +547,47 @@ export default function ExchangeRates() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead>{tr("Rate", "السعر")}</TableHead>
                   <TableHead>Effective Date</TableHead>
+                  <TableHead>{tr("Applies to", "ينطبق على")}</TableHead>
                   <TableHead>Source</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rates.map((rate) => (
                   <TableRow key={rate.id}>
-                    <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
-                    <TableCell className="font-medium">{rate.toCurrency}</TableCell>
-                    <TableCell className="text-right font-mono">{rate.rate.toFixed(6)}</TableCell>
+                    <TableCell className="font-mono">
+                      1 {rate.fromCurrency} = {Number(rate.rate).toFixed(6)} {rate.toCurrency}
+                    </TableCell>
                     <TableCell>{formatDate(rate.effectiveDate, locale)}</TableCell>
+                    <TableCell>
+                      {rate.scope === "system"
+                        ? tr("All companies (official)", "جميع الشركات (رسمي)")
+                        : tr("Your company", "شركتك")}
+                    </TableCell>
                     <TableCell className="capitalize">{rate.source}</TableCell>
+                    <TableCell className="text-right">
+                      {rate.scope !== "system" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={tr("Delete rate", "حذف السعر")}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                tr("Delete this exchange rate?", "هل تريد حذف سعر الصرف هذا؟")
+                              )
+                            ) {
+                              deleteMutation.mutate(rate.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -514,54 +602,49 @@ export default function ExchangeRates() {
           <DialogHeader>
             <DialogTitle>Add Exchange Rate</DialogTitle>
             <DialogDescription>
-              Add a new currency exchange rate for your company.
+              {tr(
+                "Add an exchange rate for your company. It is used only for your company's documents.",
+                "أضف سعر صرف لشركتك. يُستخدم لمستنداتك فقط."
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>From Currency</Label>
-                <Select value={formFromCurrency} onValueChange={setFormFromCurrency}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>To Currency</Label>
-                <Select value={formToCurrency} onValueChange={setFormToCurrency}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
             <div className="space-y-2">
-              <Label>Rate</Label>
-              <Input
-                type="number"
-                step="0.000001"
-                min="0"
-                placeholder="e.g. 3.6725"
-                value={formRate}
-                onChange={(e) => setFormRate(e.target.value)}
-              />
+              <Label>{tr("Foreign currency", "العملة الأجنبية")}</Label>
+              <div className="flex items-center gap-2" dir="ltr">
+                <span className="font-mono text-sm">1</span>
+                <Select value={formFromCurrency} onValueChange={setFormFromCurrency}>
+                  <SelectTrigger className="w-28" aria-label={tr("Foreign currency", "العملة الأجنبية")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FOREIGN_CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="font-mono text-sm">=</span>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  placeholder="3.6725"
+                  aria-label={tr(
+                    `Rate: how many ${BASE_CURRENCY} for 1 ${formFromCurrency}`,
+                    `السعر: كم درهم مقابل 1 ${formFromCurrency}`
+                  )}
+                  value={formRate}
+                  onChange={(e) => setFormRate(e.target.value)}
+                />
+                <span className="font-mono text-sm">{BASE_CURRENCY}</span>
+              </div>
               <p className="text-xs text-muted-foreground">
-                1 {formFromCurrency} = ? {formToCurrency}
+                {tr(
+                  `Enter how many ${BASE_CURRENCY} you get for 1 ${formFromCurrency}. Example: 1 USD = 3.6725 AED.`,
+                  `أدخل عدد الدراهم مقابل 1 ${formFromCurrency}. مثال: 1 USD = 3.6725 AED.`
+                )}
               </p>
             </div>
             <div className="space-y-2">

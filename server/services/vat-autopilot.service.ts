@@ -17,7 +17,14 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
+import { classifyVatLineForReturn } from "./vat-supply-type";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
+import { AppError } from "../errors";
+import {
+  assertVatPeriodEnded,
+  classifyVatPeriod,
+  vatPeriodPreviewMeta,
+} from "./vat-period-status.service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,6 +136,9 @@ export interface VatPeriodSummary {
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  /** True while the period is still open: figures are a live draft preview,
+   * never a saved/filed snapshot. */
+  isDraftPreview: boolean;
 }
 
 export interface DueDateView {
@@ -320,19 +330,23 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
   for (const line of lines) {
     const lineAmount = (line.quantity || 0) * (line.unitPrice || 0);
     const rate = line.vatRate ?? UAE_VAT_RATE;
-    const supply = line.vatSupplyType || "standard_rated";
-    // Explicit supply type wins over rate-based inference. An exempt supply
-    // with rate 0 must land in the exempt bucket, not zero-rated — they map
-    // to different boxes on the FTA 201 form.
-    if (supply === "out_of_scope") {
-      outOfScopeAmount += lineAmount;
-    } else if (supply === "exempt") {
-      exemptAmount += lineAmount;
-    } else if (supply === "zero_rated" || rate === 0) {
-      zeroRatedAmount += lineAmount;
-    } else {
-      standardRatedAmount += lineAmount;
-      standardRatedVat += lineAmount * rate;
+    // One shared rule for all three VAT engines: the rate decides for taxed
+    // lines; at 0% out_of_scope is excluded from every box, exempt is Box 5,
+    // anything else is zero-rated (Box 4).
+    switch (classifyVatLineForReturn({ rate: line.vatRate, supplyType: line.vatSupplyType })) {
+      case "excluded":
+        outOfScopeAmount += lineAmount;
+        break;
+      case "exempt":
+        exemptAmount += lineAmount;
+        break;
+      case "zero_rated":
+        zeroRatedAmount += lineAmount;
+        break;
+      case "standard":
+        standardRatedAmount += lineAmount;
+        standardRatedVat += lineAmount * rate;
+        break;
     }
   }
   return {
@@ -903,6 +917,84 @@ export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Pro
   return String(res.rows[0].id);
 }
 
+export interface CalculationPersistResult {
+  periodId: string | null;
+  isDraftPreview: boolean;
+  previewAsOf: string | null;
+}
+
+/**
+ * Decide what happens to a fresh calculation. Only a period whose last day is
+ * over may be saved; an open period is compute-only (nothing is written and no
+ * periodId is returned), and a period that has not started is refused.
+ */
+export async function persistCalculation(
+  calc: VatAutopilotCalculation,
+  opts: { persist: boolean; now?: Date }
+): Promise<CalculationPersistResult> {
+  const now = opts.now ?? new Date();
+  const periodClass = classifyVatPeriod(calc.period.start, calc.period.end, now);
+  if (periodClass === "future") {
+    throw new AppError({
+      message: "A VAT return period cannot start in the future.",
+      statusCode: 422,
+      code: "PERIOD_IN_FUTURE",
+    });
+  }
+  const meta = vatPeriodPreviewMeta(calc.period.start, calc.period.end, now);
+  const periodId = periodClass === "closed" && opts.persist ? await upsertCalculatedPeriod(calc) : null;
+  return { periodId, ...meta };
+}
+
+/**
+ * Earlier versions saved snapshots for open periods. Those rows are kept (no
+ * data is deleted) but every read treats them as a draft preview: flagged, and
+ * their stale status/snapshot hidden.
+ */
+export function markStoredPeriodPreview<
+  T extends { status: string; period_start: string | Date; period_end: string | Date },
+>(row: T, now: Date = new Date()): T & { isDraftPreview: boolean } {
+  const isDraftPreview = classifyVatPeriod(row.period_start, row.period_end, now) !== "closed";
+  return isDraftPreview ? { ...row, status: "draft", isDraftPreview } : { ...row, isDraftPreview };
+}
+
+interface StoredPeriodRow {
+  id: string;
+  period_start: string | Date;
+  period_end: string | Date;
+  due_date: string | Date;
+  frequency: string;
+  status: string;
+  output_vat: string | number;
+  input_vat: string | number;
+  net_vat_payable: string | number;
+  calculated_at: string | Date | null;
+}
+
+function storedRowToSummary(
+  row: StoredPeriodRow,
+  companyId: string,
+  fallbackFrequency: VatFrequency,
+  now: Date
+): VatPeriodSummary {
+  const due = new Date(row.due_date);
+  return {
+    id: String(row.id),
+    companyId,
+    periodStart: new Date(row.period_start).toISOString(),
+    periodEnd: new Date(row.period_end).toISOString(),
+    dueDate: due.toISOString(),
+    frequency: (row.frequency as VatFrequency) || fallbackFrequency,
+    status: row.status as VatPeriodStatus,
+    outputVat: Number(row.output_vat) || 0,
+    inputVat: Number(row.input_vat) || 0,
+    netVatPayable: Number(row.net_vat_payable) || 0,
+    calculatedAt: row.calculated_at ? new Date(row.calculated_at).toISOString() : null,
+    deadline: deadlineStatus(due, now),
+    isDraftPreview: false,
+  };
+}
+
 /**
  * List all VAT periods for a company. Recent periods that haven't been
  * persisted yet are generated synthetically so the UI can show a continuous
@@ -931,19 +1023,6 @@ export async function listPeriodsForCompany(
     [companyId, recentCount * 2]
   );
 
-  interface StoredPeriodRow {
-    id: string;
-    period_start: string | Date;
-    period_end: string | Date;
-    due_date: string | Date;
-    frequency: string;
-    status: string;
-    output_vat: string | number;
-    input_vat: string | number;
-    net_vat_payable: string | number;
-    calculated_at: string | Date | null;
-  }
-
   const storedByKey = new Map<string, StoredPeriodRow>();
   for (const row of stored.rows as StoredPeriodRow[]) {
     storedByKey.set(periodKey(row.period_start, row.period_end), row);
@@ -956,8 +1035,11 @@ export async function listPeriodsForCompany(
 
   const summaries: VatPeriodSummary[] = synthetic.map((p) => {
     const key = periodKey(p.start, p.end);
-    const row = storedByKey.get(key);
-    if (row) storedByKey.delete(key);
+    const stored = storedByKey.get(key);
+    if (stored) storedByKey.delete(key);
+    const isDraftPreview = classifyVatPeriod(p.start, p.end, now) !== "closed";
+    // A row saved for a still-open period by an earlier version is ignored.
+    const row = isDraftPreview ? undefined : stored;
     return {
       id: row ? String(row.id) : null,
       companyId,
@@ -971,6 +1053,7 @@ export async function listPeriodsForCompany(
       netVatPayable: Number(row?.net_vat_payable) || 0,
       calculatedAt: row?.calculated_at ? new Date(row.calculated_at).toISOString() : null,
       deadline: deadlineStatus(p.dueDate, now),
+      isDraftPreview,
     };
   });
 
@@ -980,21 +1063,7 @@ export async function listPeriodsForCompany(
     if (periodEnd.getTime() > now.getTime()) continue;
     if (periodEnd.getTime() > oldestSyntheticEnd) continue;
 
-    const due = new Date(row.due_date);
-    summaries.push({
-      id: String(row.id),
-      companyId,
-      periodStart: new Date(row.period_start).toISOString(),
-      periodEnd: periodEnd.toISOString(),
-      dueDate: due.toISOString(),
-      frequency: (row.frequency as VatFrequency) || frequency,
-      status: row.status as VatPeriodStatus,
-      outputVat: Number(row.output_vat) || 0,
-      inputVat: Number(row.input_vat) || 0,
-      netVatPayable: Number(row.net_vat_payable) || 0,
-      calculatedAt: row.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(due, now),
-    });
+    summaries.push(storedRowToSummary(row, companyId, frequency, now));
   }
 
   summaries.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
@@ -1073,11 +1142,16 @@ export async function updatePeriodStatus(input: {
   ftaReferenceNumber?: string;
 }): Promise<VatPeriodSummary | null> {
   const cur = await pool.query(
-    `SELECT id, company_id, status FROM vat_return_periods
+    `SELECT id, company_id, status, period_start, period_end FROM vat_return_periods
      WHERE id = $1 AND company_id = $2`,
     [input.periodId, input.companyId]
   );
   if (cur.rows.length === 0) return null;
+  // An unfinished period is a draft preview: it can never be marked ready,
+  // submitted or accepted. Checked before any write.
+  if (input.newStatus !== "draft") {
+    assertVatPeriodEnded(cur.rows[0].period_start, cur.rows[0].period_end);
+  }
   const currentStatus = cur.rows[0].status as VatPeriodStatus;
   const cur_rank = STATUS_RANK[currentStatus];
   const new_rank = STATUS_RANK[input.newStatus];
@@ -1087,14 +1161,17 @@ export async function updatePeriodStatus(input: {
     throw new Error(`Cannot transition VAT period from '${currentStatus}' to '${input.newStatus}'`);
   }
   const setSubmitted = input.newStatus === "submitted" || input.newStatus === "accepted";
-  await pool.query(
+  const updated = await pool.query(
     `UPDATE vat_return_periods
      SET status = $2,
          submitted_at = CASE WHEN $3::boolean AND submitted_at IS NULL THEN now() ELSE submitted_at END,
          submitted_by = CASE WHEN $3::boolean AND submitted_by IS NULL THEN $4::uuid ELSE submitted_by END,
          fta_reference_number = COALESCE($5, fta_reference_number),
          updated_at = now()
-     WHERE id = $1 AND company_id = $6`,
+     WHERE id = $1 AND company_id = $6 AND status = $7
+     RETURNING id, period_start, period_end, due_date, frequency, status,
+               output_vat::numeric AS output_vat, input_vat::numeric AS input_vat,
+               net_vat_payable::numeric AS net_vat_payable, calculated_at`,
     [
       input.periodId,
       input.newStatus,
@@ -1102,12 +1179,22 @@ export async function updatePeriodStatus(input: {
       input.userId,
       input.ftaReferenceNumber ?? null,
       input.companyId,
+      currentStatus,
     ]
   );
-  // Return refreshed summary
+  if (updated.rows.length === 0) {
+    // Status moved between our read and write: refuse rather than overwrite.
+    throw new Error("VAT period status changed concurrently; reload and try again");
+  }
+  // Return the refreshed summary. The write has already happened, so never
+  // report "not found" here just because the period is outside the recent
+  // listing window: fall back to the row we just updated.
   const companyId = String(cur.rows[0].company_id);
   const summaries = await listPeriodsForCompany(companyId);
-  return summaries.find((s) => s.id === input.periodId) || null;
+  return (
+    summaries.find((s) => s.id === input.periodId) ||
+    storedRowToSummary(updated.rows[0] as StoredPeriodRow, companyId, "quarterly", new Date())
+  );
 }
 
 /**
@@ -1159,6 +1246,8 @@ export async function listDueDates(
     };
 
     for (const stored of storedByCompany.get(cid) ?? []) {
+      // Rows saved for a still-open period by an earlier version are previews.
+      if (stored.period_end && classifyVatPeriod(stored.period_start ?? scheduled.start, stored.period_end, now) !== "closed") continue;
       const storedPeriodKey = periodKey(stored.period_start ?? scheduled.start, stored.period_end);
       if (!syntheticKeys.has(storedPeriodKey)) continue;
       const storedDue = new Date(stored.due_date);

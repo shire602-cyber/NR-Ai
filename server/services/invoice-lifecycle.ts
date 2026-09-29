@@ -47,8 +47,10 @@ export function round2(n: number): number {
 export function evaluateVoidRequest(args: {
   targetStatus: string;
   paidTotal: number;
+  /** Non-void credit notes already issued against this invoice. */
+  creditNoteCount?: number;
 }): Decision {
-  const { targetStatus, paidTotal } = args;
+  const { targetStatus, paidTotal, creditNoteCount = 0 } = args;
   if (targetStatus !== "void" && targetStatus !== "cancelled") return { ok: true };
   if (round2(paidTotal) > 0) {
     return {
@@ -59,6 +61,18 @@ export function evaluateVoidRequest(args: {
         "This invoice has recorded payments and cannot be voided directly. " +
         "Issue a credit note (and a refund if cash was received) so the cash " +
         "already collected is properly accounted for.",
+    };
+  }
+  // Credit notes have already reversed part (or all) of the revenue/VAT/AR;
+  // voiding would negate the whole original entry and reverse that part twice.
+  if (creditNoteCount > 0) {
+    return {
+      ok: false,
+      status: 409,
+      code: "INVOICE_HAS_CREDIT_NOTES",
+      message:
+        "This invoice has credit notes and cannot be voided directly. " +
+        "Void the credit notes first, or issue a final credit note for the remaining balance.",
     };
   }
   return { ok: true };
@@ -226,10 +240,14 @@ export function buildPaymentJournalLines(args: {
  * inside the posting engine). Also asserts the result is balanced.
  *
  * Produces: Dr Revenue (subtotal), Dr VAT (vatAmount, if any), Cr AR (total).
+ * When `revenueSplit` is supplied (invoice lines posted to several revenue
+ * accounts) the revenue debit is split per account so the reversal hits the
+ * SAME accounts the original credited; the split must sum to the subtotal.
  */
 export function buildReversalLines(args: {
   amounts: ReversalAmounts;
   accounts: ReversalAccountRefs;
+  revenueSplit?: Array<{ accountId: string; amount: number }>;
   labels: { revenue: string; vat: string; ar: string };
 }):
   | { ok: true; lines: JournalLine[] }
@@ -239,7 +257,9 @@ export function buildReversalLines(args: {
   const total = round2(args.amounts.total);
   const { accounts, labels } = args;
 
-  if (!accounts.accountsReceivableId || !accounts.salesRevenueId) {
+  const split = args.revenueSplit?.filter((r) => round2(r.amount) > 0);
+  const hasSplit = !!split && split.length > 0;
+  if (!accounts.accountsReceivableId || (!accounts.salesRevenueId && !hasSplit)) {
     return {
       ok: false,
       status: 422,
@@ -260,9 +280,25 @@ export function buildReversalLines(args: {
     };
   }
 
-  const lines: JournalLine[] = [
-    { accountId: accounts.salesRevenueId, debit: subtotal, credit: 0, description: labels.revenue },
-  ];
+  if (hasSplit) {
+    const splitTotal = round2(split!.reduce((s, r) => s + r.amount, 0));
+    if (Math.abs(splitTotal - subtotal) > 0.01) {
+      return {
+        ok: false,
+        status: 500,
+        code: "UNBALANCED_REVERSAL",
+        message: `Revenue split (${splitTotal}) does not add up to the subtotal (${subtotal}).`,
+      };
+    }
+  }
+  const lines: JournalLine[] = hasSplit
+    ? split!.map((r) => ({
+        accountId: r.accountId,
+        debit: round2(r.amount),
+        credit: 0,
+        description: labels.revenue,
+      }))
+    : [{ accountId: accounts.salesRevenueId!, debit: subtotal, credit: 0, description: labels.revenue }];
   if (vatAmount > 0 && accounts.vatPayableId) {
     lines.push({ accountId: accounts.vatPayableId, debit: vatAmount, credit: 0, description: labels.vat });
   }
@@ -279,4 +315,23 @@ export function buildReversalLines(args: {
     };
   }
   return { ok: true, lines };
+}
+
+/**
+ * Of the journal entries whose source is one invoice / credit note, the entry
+ * a void reverses and the reversal that already exists, if any.
+ * The original is the posted entry that does not reverse another entry OF THE
+ * SAME DOCUMENT (an invoice's entry has no reversedEntryId; a credit note's
+ * points at the invoice's entry, which is outside this set). A reversal is a
+ * posted entry pointing at the original. Used under the document lock so a
+ * repeated void can never post a second reversal.
+ */
+export function selectVoidableEntries<T extends { id: string; status: string; reversedEntryId?: string | null }>(
+  entries: T[]
+): { original?: T; reversal?: T } {
+  const posted = entries.filter((e) => e.status === "posted");
+  const ids = new Set(posted.map((e) => e.id));
+  const original = posted.find((e) => !e.reversedEntryId || !ids.has(e.reversedEntryId));
+  const reversal = original ? posted.find((e) => e.reversedEntryId === original.id) : undefined;
+  return { original, reversal };
 }

@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { authCookieBaseOptions } from "../config/cookies";
+import { accessCookieName, refreshCookieName } from "../services/auth-cookies.service";
 
 const log = createLogger("csrf");
 
@@ -28,6 +29,51 @@ const CSRF_BEARER_EXEMPT = [
   // when we most need them.
   /^\/api\/client-errors$/,
 ];
+
+// Public (no-login) state-changing endpoints that are NOT CSRF-exempt. A
+// visitor without credentials legitimately reaches these, so a CSRF failure
+// there stays a 403 rather than being reported as "not logged in".
+const PUBLIC_CSRF_PROTECTED = [
+  /^\/api\/waitlist$/,
+  /^\/api\/referral\/track-signup$/,
+  /^\/api\/invitations\/accept\//,
+  /^\/api\/auth\/logout$/,
+];
+
+const SESSION_COOKIE_NAME = "connect.sid";
+
+function cookieNamesOf(req: Request): Set<string> {
+  const names = new Set<string>();
+  for (const part of (req.headers.cookie ?? "").split(";")) {
+    const name = part.trim().split("=")[0];
+    if (name) names.add(name);
+  }
+  return names;
+}
+
+/** True when the request carries any auth credential (Authorization header, auth/session cookie, or a passport user). */
+export function hasAuthCredentials(req: Request): boolean {
+  if (typeof req.headers.authorization === "string" && req.headers.authorization.trim()) return true;
+  if ((req as any).user) return true;
+  const cookies = cookieNamesOf(req);
+  return (
+    cookies.has(accessCookieName()) ||
+    cookies.has(refreshCookieName()) ||
+    cookies.has(SESSION_COOKIE_NAME)
+  );
+}
+
+/**
+ * Status to return for a failed CSRF check. A request with no credentials at
+ * all to a protected route is simply unauthenticated (401); anything that
+ * carries credentials — or targets a public form — keeps the 403. The request
+ * is rejected either way, so CSRF protection is not weakened.
+ */
+export function csrfFailureStatus(req: Request): 401 | 403 {
+  if (hasAuthCredentials(req)) return 403;
+  if (PUBLIC_CSRF_PROTECTED.some((rx) => rx.test(req.path ?? ""))) return 403;
+  return 401;
+}
 
 function hasBearerAuth(req: Request): boolean {
   const auth = req.headers.authorization;
@@ -118,13 +164,17 @@ export function csrfTokenHandler(req: Request, res: Response): void {
   res.json({ csrfToken: token });
 }
 
-export function csrfErrorHandler(err: any, _req: Request, res: Response, next: NextFunction): void {
+export function csrfErrorHandler(err: any, req: Request, res: Response, next: NextFunction): void {
   if (
     err === invalidCsrfTokenError ||
     err?.code === "EBADCSRFTOKEN" ||
     err?.code === invalidCsrfTokenError.code
   ) {
     log.warn({ msg: err?.message }, "CSRF token validation failed");
+    if (csrfFailureStatus(req) === 401) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
     res.status(403).json({
       message: "Invalid or missing CSRF token",
       code: "CSRF_INVALID",

@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import { formatCurrency, formatDate } from "./format";
+import { formatUnitPrice, formatUnitPriceCurrency } from "@shared/format-unit-price";
 
 export type InvoicePdfTemplate = "standard" | "nra";
 
@@ -274,7 +275,7 @@ async function generateStandardInvoicePDF(data: InvoicePDFData): Promise<jsPDF> 
       });
       doc.text(line.quantity.toString(), pageWidth - col2X, yPosition, { align: "center" });
       doc.text(
-        formatCurrency(line.unitPrice, data.currency, data.locale),
+        formatUnitPriceCurrency(line.unitPrice, data.currency, { locale: data.locale === "ar" ? "ar-AE" : "en-AE" }),
         pageWidth - col3X,
         yPosition,
         { align: "center" }
@@ -289,7 +290,7 @@ async function generateStandardInvoicePDF(data: InvoicePDFData): Promise<jsPDF> 
     } else {
       doc.text(line.description, col1X + 2, yPosition, { maxWidth: 70 });
       doc.text(line.quantity.toString(), col2X, yPosition, { align: "center" });
-      doc.text(formatCurrency(line.unitPrice, data.currency, data.locale), col3X, yPosition, {
+      doc.text(formatUnitPriceCurrency(line.unitPrice, data.currency, { locale: data.locale === "ar" ? "ar-AE" : "en-AE" }), col3X, yPosition, {
         align: "center",
       });
       doc.text(`${vatPercent}%`, col4X, yPosition, { align: "center" });
@@ -574,7 +575,7 @@ function drawNraLineItemsTable(doc: jsPDF, data: InvoicePDFData) {
     });
     doc.text(itemCodeLines, colX[1] + 1.2, rowY);
     doc.text(descriptionLines, colX[2] + 1.2, rowY);
-    doc.text(formatNraPlainAmount(Number(line.unitPrice || 0)), colX[3] + widths[3] - 2, rowY, {
+    doc.text(formatUnitPrice(Number(line.unitPrice || 0), { grouping: true }), colX[3] + widths[3] - 2, rowY, {
       align: "right",
     });
     doc.text(formatNraPlainAmount(amount), colX[4] + widths[4] - 2, rowY, {

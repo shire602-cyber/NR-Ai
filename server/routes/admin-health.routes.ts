@@ -16,6 +16,7 @@ import { createLogger } from "../config/logger";
 import { pool } from "../db";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import * as schema from "../../shared/schema";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 
 const logger = createLogger("admin-health-routes");
 
@@ -155,8 +156,14 @@ export function registerAdminHealthRoutes(app: Express): void {
             // Count overdue invoices (status is not 'paid' or 'void', and invoice date is past 30 days)
             const now = new Date();
             const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            const overdueInvoices = invoices.filter((inv) => {
-              if (inv.status === "paid" || inv.status === "void") return false;
+            // Only invoices that still owe money count (issued, not credit
+            // notes / drafts / paid / credited, outstanding > 0 after payments
+            // and credit notes).
+            const openReceivables = listOpenReceivables(
+              invoices,
+              await storage.getInvoicePaymentsByCompanyId(company.id)
+            );
+            const overdueInvoices = openReceivables.filter(({ invoice: inv }) => {
               const invoiceDate = inv.date ? new Date(inv.date) : null;
               return invoiceDate && invoiceDate < thirtyDaysAgo;
             });

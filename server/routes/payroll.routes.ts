@@ -15,6 +15,13 @@ import { generateSIFFile } from "../services/wps-sif.service";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import {
+  BASIC_SALARY_POSITIVE_MESSAGE,
+  partitionPayrollEligible,
+  validateBasicSalaryInput,
+  parseBasicSalary,
+  parseAllowanceFields,
+} from "../services/payroll-eligibility.service";
 
 const log = createLogger("payroll");
 
@@ -119,7 +126,7 @@ const employeeCreateSchema = z.object({
     (v) => (v === "" || v === null || v === undefined ? undefined : v),
     z.coerce.date().optional()
   ),
-  basicSalary: z.coerce.number().nonnegative().default(0),
+  basicSalary: z.coerce.number().positive(BASIC_SALARY_POSITIVE_MESSAGE),
   housingAllowance: z.coerce.number().nonnegative().default(0),
   transportAllowance: z.coerce.number().nonnegative().default(0),
   otherAllowance: z.coerce.number().nonnegative().default(0),
@@ -399,7 +406,27 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const parsed = employeeCreateSchema.safeParse(req.body);
+      // Money fields must be finite numbers / strict numeric strings; the
+      // parsed numbers (never the raw text) are what zod and SQL see.
+      const moneyBody: Record<string, unknown> = { ...req.body };
+      if (req.body.basicSalary !== undefined) {
+        const salaryError = validateBasicSalaryInput(req.body.basicSalary);
+        if (salaryError) {
+          return res.status(400).json({ message: salaryError, code: "INVALID_BASIC_SALARY" });
+        }
+        moneyBody.basicSalary = parseBasicSalary(req.body.basicSalary)!;
+      }
+      const allowances = parseAllowanceFields(req.body);
+      if (!allowances.ok) {
+        return res.status(400).json({
+          message: allowances.message,
+          code: "INVALID_ALLOWANCE",
+          field: allowances.field,
+        });
+      }
+      Object.assign(moneyBody, allowances.values);
+
+      const parsed = employeeCreateSchema.safeParse(moneyBody);
       if (!parsed.success) {
         return res.status(400).json({
           message: "Validation error",
@@ -472,6 +499,25 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Only a finite number / strict numeric string is accepted, and the
+      // PARSED number (never the raw string) is what reaches SQL below.
+      let basicSalary: number | undefined;
+      if (req.body.basicSalary !== undefined) {
+        const salaryError = validateBasicSalaryInput(req.body.basicSalary);
+        if (salaryError) {
+          return res.status(400).json({ message: salaryError, code: "INVALID_BASIC_SALARY" });
+        }
+        basicSalary = parseBasicSalary(req.body.basicSalary)!;
+      }
+      const allowances = parseAllowanceFields(req.body);
+      if (!allowances.ok) {
+        return res.status(400).json({
+          message: allowances.message,
+          code: "INVALID_ALLOWANCE",
+          field: allowances.field,
+        });
+      }
+
       // Build dynamic SET clause from provided fields
       const allowedFields: Record<string, string> = {
         employeeNumber: "employee_number",
@@ -500,7 +546,19 @@ export function registerPayrollRoutes(app: Express) {
       let paramIndex = 1;
 
       for (const [jsKey, dbCol] of Object.entries(allowedFields)) {
-        if (req.body[jsKey] !== undefined) {
+        if (jsKey === "basicSalary") {
+          if (basicSalary === undefined) continue;
+          setClauses.push(`"${dbCol}" = $${paramIndex}`);
+          values.push(basicSalary);
+          paramIndex++;
+        } else if (jsKey.endsWith("Allowance")) {
+          // Only parsed, supplied allowances reach SQL; blank ones stay unchanged.
+          const parsedValue = (allowances.values as Record<string, number>)[jsKey];
+          if (parsedValue === undefined) continue;
+          setClauses.push(`"${dbCol}" = $${paramIndex}`);
+          values.push(parsedValue);
+          paramIndex++;
+        } else if (req.body[jsKey] !== undefined) {
           setClauses.push(`"${dbCol}" = $${paramIndex}`);
           values.push(req.body[jsKey]);
           paramIndex++;
@@ -509,21 +567,13 @@ export function registerPayrollRoutes(app: Express) {
 
       // Recalculate total salary if any salary field changed
       const basic =
-        req.body.basicSalary !== undefined
-          ? parseFloat(req.body.basicSalary)
-          : parseFloat(employee.basic_salary);
+        basicSalary !== undefined ? basicSalary : parseFloat(employee.basic_salary);
       const housing =
-        req.body.housingAllowance !== undefined
-          ? parseFloat(req.body.housingAllowance)
-          : parseFloat(employee.housing_allowance);
+        allowances.values.housingAllowance ?? parseFloat(employee.housing_allowance);
       const transport =
-        req.body.transportAllowance !== undefined
-          ? parseFloat(req.body.transportAllowance)
-          : parseFloat(employee.transport_allowance);
+        allowances.values.transportAllowance ?? parseFloat(employee.transport_allowance);
       const other =
-        req.body.otherAllowance !== undefined
-          ? parseFloat(req.body.otherAllowance)
-          : parseFloat(employee.other_allowance);
+        allowances.values.otherAllowance ?? parseFloat(employee.other_allowance);
       const totalSalary = basic + housing + transport + other;
 
       setClauses.push(`"total_salary" = $${paramIndex}`);
@@ -756,13 +806,23 @@ export function registerPayrollRoutes(app: Express) {
       );
 
       // Get all active employees for this company
-      const employees = await query(
+      const activeEmployees = await query(
         "SELECT * FROM employees WHERE company_id = $1 AND status = 'active'",
         [run.company_id]
       );
 
+      // Zero-salary employees are excluded (with a warning) rather than
+      // failing the whole run.
+      const { eligible: employees, warnings } = partitionPayrollEligible(activeEmployees);
+
       if (employees.length === 0 && preservedItems.length === 0) {
-        return res.status(400).json({ message: "No active employees found for this company" });
+        return res.status(400).json({
+          message:
+            activeEmployees.length === 0
+              ? "No active employees found for this company"
+              : "No active employees with a basic salary above zero found for this company",
+          warnings,
+        });
       }
 
       let totalBasic = 0;
@@ -880,10 +940,15 @@ export function registerPayrollRoutes(app: Express) {
       );
 
       log.info(
-        { payrollRunId: id, employeeCount, preservedCount: preservedItems.length },
+        {
+          payrollRunId: id,
+          employeeCount,
+          preservedCount: preservedItems.length,
+          excludedCount: warnings.length,
+        },
         "Payroll calculated"
       );
-      res.json(updated);
+      res.json({ ...updated, warnings });
     })
   );
 

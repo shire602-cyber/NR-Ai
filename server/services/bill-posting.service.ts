@@ -30,8 +30,11 @@ export const BILL_JE_SOURCE = "bill";
 export const BILL_PAYMENT_JE_SOURCE = "bill_payment";
 
 /** Fallback expense account for uncategorised bill lines. Created on demand
- * for companies whose chart predates it. */
-const GENERAL_EXPENSE_CODE = "5130";
+ * for companies whose chart predates it.
+ * TD5: was "5130", which collided with "Loss on Asset Disposal" after that
+ * account was added to the default chart — every uncategorised bill posted
+ * as a disposal loss. 5000 is the chart's actual General Expenses account. */
+const GENERAL_EXPENSE_CODE = "5000";
 
 /** Map bill-pay category strings to chart-of-accounts codes. */
 const CATEGORY_ACCOUNT_CODES: Record<string, string> = {

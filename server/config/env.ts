@@ -10,11 +10,16 @@ const sameSiteSchema = z.preprocess(
   z.enum(["strict", "lax", "none"]).optional()
 );
 
-const envSchema = z.object({
+export const envSchema = z.object({
   // === Required ===
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+
+  // === Security ===
+  // bcrypt work factor for password hashing. Existing hashes keep verifying
+  // (the cost is embedded in each hash); only new hashes use this value.
+  BCRYPT_COST: z.coerce.number().int().min(12).max(15).default(12),
 
   // === Server ===
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),

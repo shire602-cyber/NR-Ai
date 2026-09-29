@@ -271,6 +271,7 @@ export const t = {
     draft: "Draft",
     sent: "Sent",
     paid: "Paid",
+    credited: "Credited",
     void: "Void",
     subtotal: "Subtotal",
     vat: "VAT",
@@ -468,6 +469,9 @@ export const t = {
     companySettings: "Company Settings",
     healthDashboard: "Health Dashboard",
     communications: "Communications",
+    paymentDate: "Payment date",
+    revenueAccount: "Revenue account",
+    revenueAccountDefault: "Default",
   },
   ar: {
     // Navigation
@@ -712,6 +716,7 @@ export const t = {
     draft: "مسودة",
     sent: "مرسلة",
     paid: "مدفوعة",
+    credited: "مُسوّاة بإشعار دائن",
     void: "ملغاة",
     subtotal: "المجموع الفرعي",
     vat: "ضريبة القيمة المضافة",
@@ -908,6 +913,9 @@ export const t = {
     companySettings: "إعدادات الشركة",
     healthDashboard: "لوحة الصحة",
     communications: "التواصل",
+    paymentDate: "تاريخ الدفع",
+    revenueAccount: "حساب الإيرادات",
+    revenueAccountDefault: "الافتراضي",
   },
 };
 

@@ -95,3 +95,50 @@ export function uaeDayOfWeek(date: Date): number {
   const shifted = new Date(date.getTime() + UAE_OFFSET_MS);
   return shifted.getUTCDay();
 }
+
+/**
+ * Canonicalise a calendar-date input to 'YYYY-MM-DD' for writing to a
+ * `timestamp without time zone` column via raw SQL.
+ *  - a bare date, or a datetime with NO offset, keeps its own date part;
+ *  - an instant (trailing 'Z' or ±hh:mm offset, or a Date) becomes its UAE
+ *    calendar day — so a browser's `new Date(2026, 8, 29).toISOString()`
+ *    ("2026-09-28T20:00:00.000Z" for a UAE user) is the 29th, not the 28th.
+ */
+export function toCalendarYmd(value: string | Date): string {
+  if (typeof value === "string") {
+    const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+    if (/^\d{4}-\d{2}-\d{2}/.test(value) && !(value.length > 10 && hasOffset)) {
+      return value.slice(0, 10);
+    }
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  const { year, month, day } = uaeYmdParts(d);
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * node-pg parses a `timestamp without time zone` value as SERVER-LOCAL time.
+ * A date-only column written as '2026-09-29' therefore comes back on a UAE
+ * host as 2026-09-28T20:00:00Z — the prior day/month in UTC (and in every
+ * `.toISOString().slice(0,10)` downstream). Drizzle-managed tables (invoices)
+ * treat the same column type as UTC, so this converts a raw-SQL read to that
+ * same convention: the local Y/M/D becomes UTC midnight of the same calendar
+ * day. Identity on a UTC host. Non-Date values pass through unchanged.
+ */
+export function localWallDateToUtcMidnight<T>(value: T): T | Date {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return value;
+  return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+}
+
+/** Apply localWallDateToUtcMidnight to the named columns of a raw-SQL row. */
+export function normalizeCalendarColumns<R extends Record<string, any>>(
+  row: R,
+  columns: readonly string[]
+): R {
+  if (!row) return row;
+  const out: Record<string, any> = { ...row };
+  for (const c of columns) {
+    if (c in out) out[c] = localWallDateToUtcMidnight(out[c]);
+  }
+  return out as R;
+}

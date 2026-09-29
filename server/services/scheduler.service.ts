@@ -10,9 +10,13 @@ import {
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
+import { deriveVatSupplyType } from "./vat-supply-type";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
+import { resolveDocumentExchangeRate } from "./document-fx-rate";
+import { postInvoiceRevenueJournal } from "./invoice-posting.service";
+import { listOpenReceivables } from "./invoice-outstanding";
 
 const log = createLogger("scheduler");
 
@@ -313,10 +317,15 @@ async function scanCompanyPaymentReminders(companyId: string) {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  // Filter to unpaid invoices
-  const unpaid = invoices.filter((inv) => inv.status !== "paid" && inv.status !== "void");
+  // Only invoices that still owe money are chased: issued, not credit notes /
+  // drafts / paid / credited, with total - payments - credit notes > 0 (the
+  // shared definition). The reminder quotes what is actually outstanding, in AED.
+  const openReceivables = listOpenReceivables(
+    invoices,
+    await storage.getInvoicePaymentsByCompanyId(companyId)
+  );
 
-  for (const inv of unpaid) {
+  for (const { invoice: inv, outstandingBase } of openReceivables) {
     const customer = customerByName.get(inv.customerName);
     const paymentTerms = customer?.paymentTerms ?? 30;
     const dueDate = computeDueDate(new Date(inv.date), paymentTerms);
@@ -346,7 +355,7 @@ async function scanCompanyPaymentReminders(companyId: string) {
       const invoiceInfo: InvoiceInfo = {
         id: inv.id,
         number: inv.number,
-        total: inv.total,
+        total: outstandingBase,
         customerName: inv.customerName,
       };
 
@@ -472,6 +481,11 @@ function advanceByInterval(date: Date, interval: string): Date {
   return next;
 }
 
+/** Most loop iterations one run may take (visited templates + failures). */
+export const MAX_RECURRING_ITERATIONS = 500;
+/** Consecutive failures of the due-template query itself before the run gives up. */
+const MAX_UNCLAIMED_FAILURES = 3;
+
 /**
  * Reads the `recurring_invoices` table for active templates whose
  * `next_run_date` has arrived, generates a fresh invoice for each (with the
@@ -488,7 +502,9 @@ function advanceByInterval(date: Date, interval: string): Date {
  * subsystem that the recurring-invoices.routes.ts API never wrote to, so
  * recurring schedules created through the UI were never picked up.
  */
-async function generateDueRecurringInvoices() {
+export async function generateDueRecurringInvoices(
+  opts: { companyId?: string } = {}
+): Promise<{ generated: number; skippedNoRate: number }> {
   // Process one template at a time, holding a row lock per iteration so
   // concurrent cron runners can't pick the same template. SELECT ... FOR
   // UPDATE SKIP LOCKED naturally distributes templates across runners.
@@ -505,12 +521,23 @@ async function generateDueRecurringInvoices() {
   // so the SELECT would re-pick the same row in this same cron tick. Once
   // a template id is in `seen`, we exit the loop when we'd revisit it.
   let processed = 0;
+  let generated = 0;
+  let skippedNoRate = 0;
+  let unclaimedFailures = 0;
+  let iterations = 0;
   const seen = new Set<string>();
 
   while (true) {
+    // Hard safety ceiling: the loop normally ends when no due template is left
+    // (every visited id is excluded); this only guards against a runaway.
+    if (++iterations > MAX_RECURRING_ITERATIONS) {
+      log.error({ iterations: MAX_RECURRING_ITERATIONS }, "Recurring invoice generation hit the iteration ceiling - stopping");
+      break;
+    }
+    const seenBefore = seen.size;
     type ProcessResult =
       | null
-      | { skipped: true }
+      | { skipped: true; noRate?: { template: typeof recurringInvoicesTable.$inferSelect; message: string } }
       | {
           skipped: false;
           template: typeof recurringInvoicesTable.$inferSelect;
@@ -530,6 +557,12 @@ async function generateDueRecurringInvoices() {
         // due" and starves later templates.
         const template = await storage.fetchAndLockNextDueRecurringInvoice(tx, Array.from(seen));
         if (!template) return null;
+        // A scoped run (tests, manual re-run for one company) leaves other
+        // companies' templates untouched.
+        if (opts.companyId && template.companyId !== opts.companyId) {
+          seen.add(template.id);
+          return { skipped: true };
+        }
         // Add to seen BEFORE any risky work — even if the tx rolls back, the
         // seen set persists in the outer scope, so the SQL skips this id on
         // the next iteration.
@@ -552,6 +585,7 @@ async function generateDueRecurringInvoices() {
           unitPrice: number;
           vatRate?: number;
           vatSupplyType?: string;
+          revenueAccountId?: string | null;
         }>;
         try {
           templateLines = JSON.parse(template.linesJson);
@@ -582,7 +616,9 @@ async function generateDueRecurringInvoices() {
           subtotal += lineTotal;
           vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
         }
-        const total = subtotal + vatAmount;
+        subtotal = Math.round(subtotal * 100) / 100;
+        vatAmount = Math.round(vatAmount * 100) / 100;
+        const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
         const invoiceDate = new Date();
         const expectedNextRunDate = new Date(template.nextRunDate);
@@ -599,6 +635,22 @@ async function generateDueRecurringInvoices() {
           );
           return { skipped: true };
         }
+
+        // Foreign-currency templates need the AED rate of the day, resolved
+        // exactly like manual invoice creation (own rate, system rate, inverse).
+        // With no rate the invoice would post at 1 - USD amounts booked as AED -
+        // so this template is skipped for now and stays due; the number is not
+        // allocated, and the failure is reported after the transaction.
+        const fx = await resolveDocumentExchangeRate({
+          currency: template.currency,
+          date: invoiceDate,
+          companyId: template.companyId,
+          hint: `Add one under Exchange Rates; the recurring invoice for ${template.customerName} will then be generated on the next run.`,
+        });
+        if (!fx.ok) {
+          return { skipped: true, noRate: { template, message: fx.message } };
+        }
+        const exchangeRate = fx.rate;
 
         // FTA Article 78 sequential allocator. Safe to use here because SKIP
         // LOCKED guarantees no other runner can pick this template, so the
@@ -619,6 +671,8 @@ async function generateDueRecurringInvoices() {
             customerTrn: template.customerTrn || undefined,
             date: invoiceDate,
             currency: template.currency,
+            exchangeRate,
+            baseCurrencyAmount: Math.round(total * exchangeRate * 100) / 100,
             subtotal,
             vatAmount,
             total,
@@ -627,14 +681,27 @@ async function generateDueRecurringInvoices() {
           } as any)
           .returning();
 
+        // A revenue account chosen on the template may have been deleted or
+        // deactivated since; fall back to the default account rather than
+        // failing the whole run on a foreign-key error.
+        const validRevenueIds = new Set(
+          (await storage.getAccountsByCompanyId(template.companyId))
+            .filter((a) => a.type === "income" && a.isActive !== false)
+            .map((a) => a.id)
+        );
         for (const line of templateLines) {
+          const vatRate = line.vatRate ?? UAE_VAT_RATE;
           await tx.insert(invoiceLinesTable).values({
             invoiceId: insertedInvoice.id,
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
-            vatRate: line.vatRate ?? UAE_VAT_RATE,
-            vatSupplyType: line.vatSupplyType || undefined,
+            vatRate,
+            vatSupplyType: deriveVatSupplyType(vatRate, line.vatSupplyType),
+            revenueAccountId:
+              line.revenueAccountId && validRevenueIds.has(line.revenueAccountId)
+                ? line.revenueAccountId
+                : undefined,
           } as any);
         }
 
@@ -661,28 +728,43 @@ async function generateDueRecurringInvoices() {
         };
       });
     } catch (err) {
-      // Per-template error boundary: a single template's failure (insert
-      // race, allocator error, period-lock state mid-tx, etc.) must not
-      // crash the entire cron tick and starve other due templates. The
-      // failed template's row lock is released by tx rollback; `seen`
-      // already contains its id so we won't loop on it. Surfaces in logs
-      // for follow-up.
-      log.error({ err }, "Recurring invoice tx failed for one template — continuing with others");
+      // Per-template error boundary: one template's failure (insert race,
+      // allocator error, database hiccup, ...) skips THAT template for this
+      // run and the run carries on with the rest. Its id is already in `seen`,
+      // so it is not picked again, and its row lock is released by the
+      // rollback. The template is NOT deactivated: a transient error must not
+      // switch off a customer's billing; it is retried on the next daily run.
+      log.error({ err }, "Recurring invoice tx failed for one template - skipped for this run, continuing with others");
+      // A failure BEFORE a template was claimed (the due-template query itself
+      // failed) leaves `seen` unchanged, so retrying would fail the same way:
+      // give up after a few of those rather than spin.
+      if (seen.size === seenBefore) {
+        unclaimedFailures++;
+        if (unclaimedFailures >= MAX_UNCLAIMED_FAILURES) {
+          log.error({ unclaimedFailures }, "Recurring invoice generation aborted: the due-template query keeps failing");
+          break;
+        }
+      }
       continue;
     }
+    unclaimedFailures = 0;
 
     if (result === null) break; // queue empty (or all locked elsewhere)
     if (result.skipped) {
       processed++;
+      if (result.noRate) {
+        skippedNoRate++;
+        await reportRecurringRateFailure(result.noRate.template, result.noRate.message);
+      }
       continue;
     }
     processed++;
+    generated++;
 
     // After commit (lock released): post the JE in a separate tx.
     // Same atomicity profile as user-driven invoice creation — if JE fails,
     // the invoice exists but is unposted and an admin must post manually.
-    const { template, invoice, total, subtotal, vatAmount, invoiceDate, advancedNextRunDate } =
-      result;
+    const { template, invoice, advancedNextRunDate } = result;
     try {
       const owners = await storage.getCompanyUsersByCompanyId(template.companyId);
       const owner = owners.find((u: any) => u.role === "owner") ?? owners[0];
@@ -692,65 +774,10 @@ async function generateDueRecurringInvoices() {
           "Recurring invoice generated but no company user found for GL attribution — manual posting needed"
         );
       } else {
-        const accounts = await storage.getAccountsByCompanyId(template.companyId);
-        const accountsReceivable = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-        );
-        const salesRevenue = accounts.find(
-          (a) =>
-            a.isSystemAccount &&
-            a.type === "income" &&
-            (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-        );
-        const vatPayable = accounts.find(
-          (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-        );
-
-        if (accountsReceivable && salesRevenue) {
-          const entryNumber = await storage.generateEntryNumber(template.companyId, invoiceDate);
-          const lines: Array<{
-            accountId: string;
-            debit: number;
-            credit: number;
-            description: string;
-          }> = [
-            {
-              accountId: accountsReceivable.id,
-              debit: total,
-              credit: 0,
-              description: `Recurring invoice ${invoice.number}`,
-            },
-            {
-              accountId: salesRevenue.id,
-              debit: 0,
-              credit: subtotal,
-              description: `Recurring revenue ${invoice.number}`,
-            },
-          ];
-          if (vatAmount > 0 && vatPayable) {
-            lines.push({
-              accountId: vatPayable.id,
-              debit: 0,
-              credit: vatAmount,
-              description: `Recurring VAT ${invoice.number}`,
-            });
-          }
-          await storage.createJournalEntry(
-            {
-              companyId: template.companyId,
-              date: invoiceDate,
-              memo: `Recurring sales invoice ${invoice.number} - ${template.customerName}`,
-              entryNumber,
-              status: "posted",
-              source: "invoice",
-              sourceId: invoice.id,
-              createdBy: owner.userId,
-              postedBy: owner.userId,
-              postedAt: invoiceDate,
-            } as any,
-            lines as any
-          );
-        } else {
+        // Same posting as a manually issued invoice: AED at the stored rate,
+        // foreign amounts kept on the lines, revenue split per line account.
+        const posted = await postInvoiceRevenueJournal(invoice as any, owner.userId);
+        if (!posted) {
           log.warn(
             { templateId: template.id, invoiceId: invoice.id },
             "Recurring invoice generated but GL accounts missing — manual posting needed"
@@ -770,5 +797,42 @@ async function generateDueRecurringInvoices() {
     );
   }
 
-  log.info({ processed }, "Recurring invoice generation cycle complete");
+  log.info({ processed, generated, skippedNoRate }, "Recurring invoice generation cycle complete");
+  return { generated, skippedNoRate };
+}
+
+/**
+ * A recurring template could not run because its currency has no AED rate.
+ * The template is left due (it retries on the next run) and the failure is
+ * recorded where the scheduler records errors - the log - and surfaced to the
+ * company as an in-app notification, since the template row has no error field.
+ */
+async function reportRecurringRateFailure(
+  template: typeof recurringInvoicesTable.$inferSelect,
+  message: string
+) {
+  log.error(
+    { templateId: template.id, companyId: template.companyId, currency: template.currency },
+    `Recurring invoice skipped - ${message}`
+  );
+  try {
+    const users = await storage.getCompanyUsersByCompanyId(template.companyId);
+    for (const cu of users) {
+      await storage.createNotification({
+        userId: cu.userId,
+        companyId: template.companyId,
+        type: "recurring_invoice_failed",
+        title: `Recurring invoice not generated: ${template.customerName}`,
+        message,
+        priority: "high",
+        relatedEntityType: "recurring_invoice",
+        relatedEntityId: template.id,
+        actionUrl: "/exchange-rates",
+        isRead: false,
+        isDismissed: false,
+      });
+    }
+  } catch (err) {
+    log.error({ err, templateId: template.id }, "Failed to notify about a skipped recurring invoice");
+  }
 }

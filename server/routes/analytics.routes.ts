@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
 import type { EcommerceIntegration } from "../../shared/schema";
+import { listOpenReceivables } from "../services/invoice-outstanding";
 
 /**
  * Credentials never leave the server once stored — responses carry presence
@@ -244,9 +245,11 @@ export function registerAnalyticsRoutes(app: Express) {
         (sum, rec) => sum + ((rec.amount || 0) + (rec.vatAmount || 0)),
         0
       );
-      const outstanding = invoices
-        .filter((inv) => inv.status !== "paid")
-        .reduce((sum, inv) => sum + (inv.total || 0), 0);
+      // Outstanding = what is still owed after payments and credit notes (shared definition, AED).
+      const outstanding = listOpenReceivables(
+        invoices,
+        await storage.getInvoicePaymentsByCompanyId(companyId as string)
+      ).reduce((sum, r) => sum + r.outstandingBase, 0);
 
       const insights = [];
 
@@ -633,15 +636,18 @@ export function registerAnalyticsRoutes(app: Express) {
         days90plus: 0.3,
       };
       let weightedReceivables = 0;
-      const unpaidInvoices = invoices.filter((inv) => inv.status === "sent");
-      for (const inv of unpaidInvoices) {
+      const unpaidInvoices = listOpenReceivables(
+        invoices,
+        await storage.getInvoicePaymentsByCompanyId(companyId)
+      );
+      for (const { invoice: inv, outstandingBase } of unpaidInvoices) {
         const daysOld = Math.floor((now.getTime() - new Date(inv.date).getTime()) / 86400000);
         let prob: number;
         if (daysOld <= 30) prob = collectionProbability.days0to30;
         else if (daysOld <= 60) prob = collectionProbability.days31to60;
         else if (daysOld <= 90) prob = collectionProbability.days61to90;
         else prob = collectionProbability.days90plus;
-        weightedReceivables += inv.total * prob;
+        weightedReceivables += outstandingBase * prob;
       }
 
       // Outstanding payables (unposted receipts)

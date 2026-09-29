@@ -20,6 +20,7 @@ const STATUS_STYLES: Record<string, string> = {
   paid: "border-success/30 text-success bg-success-subtle",
   sent: "border-info/30 text-info bg-info-subtle",
   partial: "border-warning/30 text-warning bg-warning-subtle",
+  credited: "border-border text-muted-foreground bg-muted",
   draft: "border-border text-muted-foreground",
   void: "border-destructive/30 text-destructive bg-danger-subtle",
 };

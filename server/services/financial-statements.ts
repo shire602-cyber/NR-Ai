@@ -8,8 +8,51 @@
 //          (direct method) instead of summing every account's delta, so the
 //          net cash change ties to the change in bank/cash balances.
 
+import Decimal from "decimal.js";
+
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Round every row to 2dp, then total the ROUNDED rows (exact decimal sum).
+ * Rounding the raw sum separately lets a displayed total differ by 0.01 from
+ * the displayed rows above it.
+ */
+export function roundRowsWithTotal<T extends { amount: number }>(
+  rows: readonly T[]
+): { rows: T[]; total: number } {
+  const rounded = rows.map((r) => ({ ...r, amount: round2(r.amount) }));
+  const total = rounded.reduce((sum, r) => sum.plus(r.amount), new Decimal(0));
+  return { rows: rounded, total: total.toNumber() };
+}
+
+export interface BalanceSheetTotals<T extends { amount: number }> {
+  assets: { rows: T[]; total: number };
+  liabilities: { rows: T[]; total: number };
+  equity: { rows: T[]; total: number };
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+}
+
+/** Rows rounded first; every total (including L+E) is a sum of rounded rows. */
+export function buildBalanceSheetTotals<T extends { amount: number }>(input: {
+  assets: readonly T[];
+  liabilities: readonly T[];
+  equity: readonly T[];
+}): BalanceSheetTotals<T> {
+  const assets = roundRowsWithTotal(input.assets);
+  const liabilities = roundRowsWithTotal(input.liabilities);
+  const equity = roundRowsWithTotal(input.equity);
+  const liabilitiesAndEquity = new Decimal(liabilities.total).plus(equity.total);
+  return {
+    assets,
+    liabilities,
+    equity,
+    totalLiabilitiesAndEquity: liabilitiesAndEquity.toNumber(),
+    // Totals are exact 2dp figures, so any remaining difference is real.
+    isBalanced: new Decimal(assets.total).minus(liabilitiesAndEquity).abs().lessThan(0.005),
+  };
 }
 
 /**

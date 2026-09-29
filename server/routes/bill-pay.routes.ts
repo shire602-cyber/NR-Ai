@@ -6,9 +6,12 @@ import { validate } from "../middleware/validate";
 import { storage } from "../storage";
 import { pool } from "../db";
 import Decimal from "decimal.js";
+import { billQuantitySchema, billUnitPriceSchema, computeBillLines } from "../services/bill-line-math";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { resolveSettlementDate } from "../services/payment-date-guard.service";
+import { normalizeCalendarColumns, toCalendarYmd } from "../utils/date";
 import { recordAudit } from "../services/audit.service";
 import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
 
@@ -25,8 +28,8 @@ const billIsoDate = z
 
 const billLineItemSchema = z.object({
   description: z.string().min(1, "Line description is required").max(500),
-  quantity: z.union([z.number(), z.string()]).optional(),
-  unit_price: z.union([z.number(), z.string()]),
+  quantity: billQuantitySchema.optional(),
+  unit_price: billUnitPriceSchema,
   // UAE VAT: only 0% and 5% exist. Accept percent (5) or decimal (0.05) form.
   vat_rate: z
     .union([z.number(), z.string()])
@@ -78,7 +81,9 @@ const billUpdateSchema = z.object({
 });
 
 const billPaymentSchema = z.object({
-  payment_date: billIsoDate,
+  // Optional: defaults to today. Validated against the bill date, the future
+  // and period locks in the handler.
+  payment_date: billIsoDate.optional().nullable(),
   amount: z
     .union([z.number(), z.string()])
     .transform((v) => (typeof v === "string" ? Number(v) : v))
@@ -88,16 +93,19 @@ const billPaymentSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 });
 
-// Resolve a VAT rate (stored as percent in bill_line_items.vat_rate) honouring
-// explicit zero-rated lines. Only treat null/undefined/non-numeric as missing
-// and fall back to the UAE standard 5%; explicit 0 must remain 0.
-function resolveVatRatePercent(raw: unknown): number {
-  if (raw === null || raw === undefined || raw === "") return 5;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return 5;
-  // Normalise decimal form (0.05) to percent form (5).
-  return n === 0.05 ? 5 : n;
-}
+// bill_date / due_date / payment_date are date-only values held in
+// `timestamp without time zone` columns. node-pg reads those in server-local
+// time, which on a UAE host turns 2026-09-29 into 2026-09-28T20:00Z — a
+// month-boundary trap for period locks and journal dates. Normalise every raw
+// read to UTC midnight of the calendar day, the convention invoices use.
+const BILL_DATE_COLUMNS = ["bill_date", "due_date"] as const;
+const PAYMENT_DATE_COLUMNS = ["payment_date"] as const;
+/** The stored calendar day (UAE) as a UTC-midnight Date, for period-lock checks. */
+const calendarDayToDate = (value: string | Date): Date => new Date(`${toCalendarYmd(value)}T00:00:00Z`);
+const normalizeBill = <R extends Record<string, any>>(row: R): R =>
+  normalizeCalendarColumns(row, BILL_DATE_COLUMNS);
+const normalizePayment = <R extends Record<string, any>>(row: R): R =>
+  normalizeCalendarColumns(row, PAYMENT_DATE_COLUMNS);
 
 export function registerBillPayRoutes(app: Express) {
   // =====================================
@@ -157,7 +165,7 @@ export function registerBillPayRoutes(app: Express) {
 
       // Mark overdue bills
       const now = new Date();
-      const bills = result.rows.map((bill: any) => {
+      const bills = result.rows.map(normalizeBill).map((bill: any) => {
         if (
           bill.due_date &&
           new Date(bill.due_date) < now &&
@@ -188,7 +196,7 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(404).json({ message: "Bill not found" });
       }
 
-      const bill = billResult.rows[0];
+      const bill = normalizeBill(billResult.rows[0]);
 
       const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
       if (!hasAccess) {
@@ -208,7 +216,7 @@ export function registerBillPayRoutes(app: Express) {
       res.json({
         ...bill,
         line_items: linesResult.rows,
-        payments: paymentsResult.rows,
+        payments: paymentsResult.rows.map(normalizePayment),
       });
     })
   );
@@ -255,8 +263,10 @@ export function registerBillPayRoutes(app: Express) {
       }
 
       // Bills post a JE on the bill_date once approved — refuse to even draft
-      // one inside a closed period.
-      await assertPeriodNotLocked(companyId, bill_date);
+      // one inside a closed period. Check the calendar day that is STORED
+      // (UAE day), not the raw instant, which can fall on the previous UTC day.
+      const billCalendarDate = calendarDayToDate(bill_date);
+      await assertPeriodNotLocked(companyId, billCalendarDate);
 
       // Reverse charge is a specific legal treatment (imports of goods and
       // services, designated zones) — it must be chosen, never guessed.
@@ -276,21 +286,16 @@ export function registerBillPayRoutes(app: Express) {
       const billReverseCharge = reverse_charge === true;
       const missingVendorTrn = !vendor_trn;
 
-      // Calculate totals from line items
-      let subtotal = 0;
-      let vatAmount = 0;
-
-      for (const line of line_items) {
-        const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-        const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
-        subtotal += lineAmount;
-        vatAmount += lineVat;
-      }
+      // Totals from exact-decimal line maths (unit price rounded to 6dp and
+      // quantity to 4dp before each line amount is computed).
+      const computed = computeBillLines(line_items);
+      const subtotal = new Decimal(computed.subtotal);
+      const vatAmount = new Decimal(computed.vatAmount);
 
       // For reverse-charge bills the vendor does not charge VAT — the cash payable
       // is just the subtotal. The VAT is still tracked for the VAT return (input
       // and output legs net to zero).
-      const totalAmount = billReverseCharge ? subtotal : subtotal + vatAmount;
+      const totalAmount = billReverseCharge ? subtotal : subtotal.plus(vatAmount);
 
       const billResult = await pool.query(
         `INSERT INTO vendor_bills (
@@ -304,8 +309,8 @@ export function registerBillPayRoutes(app: Express) {
           vendor_name,
           vendor_trn || null,
           bill_number || null,
-          bill_date,
-          due_date || null,
+          toCalendarYmd(bill_date),
+          due_date ? toCalendarYmd(due_date) : null,
           docCurrency,
           subtotal.toFixed(2),
           vatAmount.toFixed(2),
@@ -320,21 +325,21 @@ export function registerBillPayRoutes(app: Express) {
         ]
       );
 
-      const bill = billResult.rows[0];
+      const bill = normalizeBill(billResult.rows[0]);
 
       // Create line items
-      for (const line of line_items) {
-        const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
+      for (const [i, line] of line_items.entries()) {
+        const computedLine = computed.lines[i];
         await pool.query(
           `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             bill.id,
             line.description,
-            Number(line.quantity) || 1,
-            Number(line.unit_price),
-            resolveVatRatePercent(line.vat_rate),
-            lineAmount.toFixed(2),
+            computedLine.quantity,
+            computedLine.unitPrice,
+            computedLine.vatRatePercent,
+            computedLine.amount,
             line.account_id || null,
             billReverseCharge,
           ]
@@ -378,7 +383,7 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(404).json({ message: "Bill not found" });
       }
 
-      const bill = billResult.rows[0];
+      const bill = normalizeBill(billResult.rows[0]);
 
       const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
       if (!hasAccess) {
@@ -402,7 +407,7 @@ export function registerBillPayRoutes(app: Express) {
       // requested new bill_date must both be outside any closed period.
       await assertPeriodNotLocked(bill.company_id, bill.bill_date);
       if (bill_date) {
-        await assertPeriodNotLocked(bill.company_id, bill_date);
+        await assertPeriodNotLocked(bill.company_id, calendarDayToDate(bill_date));
       }
 
       // Build dynamic update
@@ -421,30 +426,22 @@ export function registerBillPayRoutes(app: Express) {
       addUpdate("vendor_name", vendor_name);
       addUpdate("vendor_trn", vendor_trn);
       addUpdate("bill_number", bill_number);
-      addUpdate("bill_date", bill_date);
-      addUpdate("due_date", due_date);
+      addUpdate("bill_date", bill_date ? toCalendarYmd(bill_date) : bill_date);
+      addUpdate("due_date", due_date ? toCalendarYmd(due_date) : due_date);
       addUpdate("currency", currency);
       addUpdate("category", category);
       addUpdate("notes", notes);
       addUpdate("attachment_url", attachment_url);
 
       // If line_items provided, recalculate totals
-      if (line_items && Array.isArray(line_items) && line_items.length > 0) {
-        let subtotal = 0;
-        let vatAmount = 0;
-
-        for (const line of line_items) {
-          const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-          const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
-          subtotal += lineAmount;
-          vatAmount += lineVat;
-        }
-
-        const totalAmount = subtotal + vatAmount;
-
+      const hasNewLines = Array.isArray(line_items) && line_items.length > 0;
+      const computed = hasNewLines ? computeBillLines(line_items) : null;
+      if (computed) {
+        const subtotal = new Decimal(computed.subtotal);
+        const vatAmount = new Decimal(computed.vatAmount);
         addUpdate("subtotal", subtotal.toFixed(2));
         addUpdate("vat_amount", vatAmount.toFixed(2));
-        addUpdate("total_amount", totalAmount.toFixed(2));
+        addUpdate("total_amount", subtotal.plus(vatAmount).toFixed(2));
       }
 
       if (updates.length === 0 && !line_items) {
@@ -458,25 +455,25 @@ export function registerBillPayRoutes(app: Express) {
           `UPDATE vendor_bills SET ${updates.join(", ")} WHERE id = $${paramIdx} RETURNING *`,
           values
         );
-        updatedBill = updateResult.rows[0];
+        updatedBill = normalizeBill(updateResult.rows[0]);
       }
 
       // Replace line items if provided
-      if (line_items && Array.isArray(line_items) && line_items.length > 0) {
+      if (computed) {
         await pool.query("DELETE FROM bill_line_items WHERE bill_id = $1", [id]);
 
-        for (const line of line_items) {
-          const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
+        for (const [i, line] of line_items.entries()) {
+          const computedLine = computed.lines[i];
           await pool.query(
             `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               id,
               line.description,
-              Number(line.quantity) || 1,
-              Number(line.unit_price),
-              resolveVatRatePercent(line.vat_rate),
-              lineAmount.toFixed(2),
+              computedLine.quantity,
+              computedLine.unitPrice,
+              computedLine.vatRatePercent,
+              computedLine.amount,
               line.account_id || null,
             ]
           );
@@ -539,7 +536,7 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(404).json({ message: "Bill not found" });
       }
 
-      const bill = billResult.rows[0];
+      const bill = normalizeBill(billResult.rows[0]);
 
       const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
       if (!hasAccess) {
@@ -569,7 +566,7 @@ export function registerBillPayRoutes(app: Express) {
       );
 
       log.info({ billId: id, approvedBy: userId }, "Vendor bill approved");
-      res.json(updateResult.rows[0]);
+      res.json(normalizeBill(updateResult.rows[0]));
     })
   );
 
@@ -589,19 +586,23 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(404).json({ message: "Bill not found" });
       }
 
-      const bill = billResult.rows[0];
+      const bill = normalizeBill(billResult.rows[0]);
 
       const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { payment_date, amount, payment_method, reference, notes } = req.body;
+      const { payment_date: requestedPaymentDate, amount, payment_method, reference, notes } = req.body;
 
       const paymentAmount = amount;
 
-      // Recording a payment posts a cash JE on payment_date — block if locked.
-      await assertPeriodNotLocked(bill.company_id, payment_date);
+      // Recording a payment posts a cash JE on the payment date. It defaults to
+      // today and is rejected if in the future or inside a locked period (a
+      // payment before the bill date is a legitimate prepayment).
+      const { ymd: payment_date } = await resolveSettlementDate(bill.company_id, {
+        requested: requestedPaymentDate,
+      });
 
       // S-C1: serialize concurrent payments and keep the subledger consistent.
       // Lock the bill row, recompute the paid total from bill_payments UNDER the
@@ -650,7 +651,7 @@ export function registerBillPayRoutes(app: Express) {
             notes || null,
           ]
         );
-        payment = insertRes.rows[0];
+        payment = normalizePayment(insertRes.rows[0]);
         const newPaidD = paidD.plus(amountD);
         newStatus = newPaidD.greaterThanOrEqualTo(totalD.minus("0.005")) ? "paid" : "partial";
         newAmountPaid = newPaidD.toNumber();
@@ -734,7 +735,7 @@ export function registerBillPayRoutes(app: Express) {
       let paymentsPosted = 0;
       const errors: Array<{ billId: string; error: string }> = [];
 
-      for (const bill of billsRes.rows) {
+      for (const bill of billsRes.rows.map(normalizeBill)) {
         try {
           await assertPeriodNotLocked(companyId, bill.bill_date);
           const before = await storage.getJournalEntriesBySource(companyId, "bill", bill.id);
@@ -750,7 +751,7 @@ export function registerBillPayRoutes(app: Express) {
           const paymentsRes = await pool.query(`SELECT * FROM bill_payments WHERE bill_id = $1`, [
             bill.id,
           ]);
-          for (const payment of paymentsRes.rows) {
+          for (const payment of paymentsRes.rows.map(normalizePayment)) {
             const existing = await storage.getJournalEntriesBySource(
               companyId,
               "bill_payment",

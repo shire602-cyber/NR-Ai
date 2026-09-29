@@ -8,6 +8,7 @@ import {
   addDays,
   differenceInCalendarDays,
 } from "date-fns";
+import { parseCalendarDay } from "@/lib/date-safe";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
+import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   FileText,
@@ -68,6 +70,9 @@ interface VATReturn {
   periodEnd: string;
   dueDate: string;
   taxYearEnd: string | null;
+  /** true when computed for a period that has not ended; never persisted or submittable */
+  isDraftPreview?: boolean;
+  previewAsOf?: string | null;
   vatStagger: string | null;
   status: string;
   box1aAbuDhabiAmount: number;
@@ -211,13 +216,22 @@ export default function VATFiling() {
         periodStart,
         periodEnd,
       }),
-    onSuccess: () => {
+    onSuccess: (data: VATReturn) => {
+      setCreateDialogOpen(false);
+      if (data?.isDraftPreview) {
+        // Open period: nothing was saved. Show it read-only with the banner.
+        toast({
+          title: "Draft preview — period not ended",
+          description: "Calculated to date. It cannot be submitted until the period has ended.",
+        });
+        handleViewReturn(data);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
         title: "VAT Return Generated",
         description: "Review the calculated amounts before submitting.",
       });
-      setCreateDialogOpen(false);
     },
     onError: (error: any) => {
       toast({
@@ -300,8 +314,8 @@ export default function VATFiling() {
     const match = returns.find((r) => {
       try {
         return (
-          format(parseISO(r.periodStart), "yyyy-MM") === format(currentQuarter.start, "yyyy-MM") &&
-          format(parseISO(r.periodEnd), "yyyy-MM") === format(currentQuarter.end, "yyyy-MM")
+          format(parseCalendarDay(r.periodStart), "yyyy-MM") === format(currentQuarter.start, "yyyy-MM") &&
+          format(parseCalendarDay(r.periodEnd), "yyyy-MM") === format(currentQuarter.end, "yyyy-MM")
         );
       } catch {
         return false;
@@ -310,12 +324,12 @@ export default function VATFiling() {
     const active =
       match ??
       [...returns].sort(
-        (a, b) => parseISO(b.periodEnd).getTime() - parseISO(a.periodEnd).getTime()
+        (a, b) => parseCalendarDay(b.periodEnd).getTime() - parseCalendarDay(a.periodEnd).getTime()
       )[0];
 
-    const periodStart = active ? parseISO(active.periodStart) : currentQuarter.start;
-    const periodEnd = active ? parseISO(active.periodEnd) : currentQuarter.end;
-    const dueDate = active?.dueDate ? parseISO(active.dueDate) : addDays(periodEnd, 28);
+    const periodStart = active ? parseCalendarDay(active.periodStart) : currentQuarter.start;
+    const periodEnd = active ? parseCalendarDay(active.periodEnd) : currentQuarter.end;
+    const dueDate = active?.dueDate ? parseCalendarDay(active.dueDate) : addDays(periodEnd, 28);
     const daysUntilDue = differenceInCalendarDays(dueDate, new Date());
     const net = active?.box14PayableTax ?? 0;
 
@@ -498,7 +512,7 @@ export default function VATFiling() {
   };
 
   const handleSubmitReturn = () => {
-    if (!selectedReturn) return;
+    if (!selectedReturn || selectedReturn.isDraftPreview) return;
     submitMutation.mutate({ id: selectedReturn.id });
   };
 
@@ -515,7 +529,12 @@ export default function VATFiling() {
     doc.rect(0, 0, pageWidth, 25, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text("VAT RETURN - VAT 201", pageWidth / 2, 12, { align: "center" });
+    doc.text(
+      vatReturn.isDraftPreview ? "DRAFT PREVIEW - VAT 201 (PERIOD NOT ENDED)" : "VAT RETURN - VAT 201",
+      pageWidth / 2,
+      12,
+      { align: "center" }
+    );
     doc.setFontSize(10);
     doc.text("Federal Tax Authority | الهيئة الاتحادية للضرائب", pageWidth / 2, 20, {
       align: "center",
@@ -533,13 +552,13 @@ export default function VATFiling() {
     doc.setFontSize(8);
     doc.text(`TRN: ${company?.trnVatNumber || "N/A"}`, margin, y);
     doc.text(
-      `VAT Period: ${format(parseISO(vatReturn.periodStart), "dd/MM/yyyy")} - ${format(parseISO(vatReturn.periodEnd), "dd/MM/yyyy")}`,
+      `VAT Period: ${format(parseCalendarDay(vatReturn.periodStart), "dd/MM/yyyy")} - ${format(parseCalendarDay(vatReturn.periodEnd), "dd/MM/yyyy")}`,
       pageWidth / 2,
       y
     );
     y += 5;
     doc.text(`Legal Name: ${company?.name || "N/A"}`, margin, y);
-    doc.text(`Due Date: ${format(parseISO(vatReturn.dueDate), "dd/MM/yyyy")}`, pageWidth / 2, y);
+    doc.text(`Due Date: ${format(parseCalendarDay(vatReturn.dueDate), "dd/MM/yyyy")}`, pageWidth / 2, y);
     y += 5;
     doc.text(`Address: ${company?.address || "N/A"}`, margin, y);
     y += 8;
@@ -771,7 +790,7 @@ export default function VATFiling() {
       { align: "center" }
     );
 
-    doc.save(`VAT201-${format(parseISO(vatReturn.periodStart), "yyyy-MM")}.pdf`);
+    doc.save(`VAT201-${format(parseCalendarDay(vatReturn.periodStart), "yyyy-MM")}.pdf`);
 
     toast({
       title: "PDF Exported",
@@ -1119,11 +1138,11 @@ export default function VATFiling() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">
-                                {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                                {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                                {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                                {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Due {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                                Due {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
                               </p>
                             </div>
                             {getStatusBadge(vatReturn.status)}
@@ -1226,11 +1245,11 @@ export default function VATFiling() {
                         {vatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
-                              {format(parseISO(vatReturn.periodStart), "MMM yyyy")} -{" "}
-                              {format(parseISO(vatReturn.periodEnd), "MMM yyyy")}
+                              {format(parseCalendarDay(vatReturn.periodStart), "MMM yyyy")} -{" "}
+                              {format(parseCalendarDay(vatReturn.periodEnd), "MMM yyyy")}
                             </TableCell>
                             <TableCell>
-                              {format(parseISO(vatReturn.dueDate), "dd MMM yyyy")}
+                              {format(parseCalendarDay(vatReturn.dueDate), "dd MMM yyyy")}
                             </TableCell>
                             <TableCell className="text-right font-mono">
                               {formatCurrency(
@@ -1402,12 +1421,15 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy")}
+                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
+          {selectedReturn?.isDraftPreview && (
+            <DraftPreviewBanner previewAsOf={selectedReturn.previewAsOf} />
+          )}
           {selectedReturn && company && (
             <VAT201Form
               data={vatFormData}
@@ -1420,9 +1442,9 @@ export default function VATFiling() {
                 phone: company.phone || undefined,
               }}
               periodInfo={{
-                periodStart: format(parseISO(selectedReturn.periodStart), "dd/MM/yyyy"),
-                periodEnd: format(parseISO(selectedReturn.periodEnd), "dd/MM/yyyy"),
-                dueDate: format(parseISO(selectedReturn.dueDate), "dd/MM/yyyy"),
+                periodStart: format(parseCalendarDay(selectedReturn.periodStart), "dd/MM/yyyy"),
+                periodEnd: format(parseCalendarDay(selectedReturn.periodEnd), "dd/MM/yyyy"),
+                dueDate: format(parseCalendarDay(selectedReturn.dueDate), "dd/MM/yyyy"),
                 taxYearEnd: selectedReturn.taxYearEnd
                   ? format(parseISO(selectedReturn.taxYearEnd), "dd/MM/yyyy")
                   : undefined,
@@ -1458,12 +1480,15 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy")} -{" "}
-                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy")}
+                  {format(parseCalendarDay(selectedReturn.periodStart), "MMM yyyy")} -{" "}
+                  {format(parseCalendarDay(selectedReturn.periodEnd), "MMM yyyy")}
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
+          {selectedReturn?.isDraftPreview && (
+            <DraftPreviewBanner previewAsOf={selectedReturn.previewAsOf} />
+          )}
           {selectedReturn && company && (
             <>
               <VAT201Form
@@ -1477,9 +1502,9 @@ export default function VATFiling() {
                   phone: company.phone || undefined,
                 }}
                 periodInfo={{
-                  periodStart: format(parseISO(selectedReturn.periodStart), "dd/MM/yyyy"),
-                  periodEnd: format(parseISO(selectedReturn.periodEnd), "dd/MM/yyyy"),
-                  dueDate: format(parseISO(selectedReturn.dueDate), "dd/MM/yyyy"),
+                  periodStart: format(parseCalendarDay(selectedReturn.periodStart), "dd/MM/yyyy"),
+                  periodEnd: format(parseCalendarDay(selectedReturn.periodEnd), "dd/MM/yyyy"),
+                  dueDate: format(parseCalendarDay(selectedReturn.dueDate), "dd/MM/yyyy"),
                   taxYearEnd: selectedReturn.taxYearEnd
                     ? format(parseISO(selectedReturn.taxYearEnd), "dd/MM/yyyy")
                     : undefined,
@@ -1505,12 +1530,22 @@ export default function VATFiling() {
             <Button
               variant="secondary"
               onClick={handleSaveReturn}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || !!selectedReturn?.isDraftPreview}
             >
               {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {locale === "ar" ? "حفظ المسودة" : "Save Draft"}
             </Button>
-            <Button onClick={handleSubmitReturn} disabled={submitMutation.isPending}>
+            <Button
+              onClick={handleSubmitReturn}
+              disabled={submitMutation.isPending || !!selectedReturn?.isDraftPreview}
+              title={
+                selectedReturn?.isDraftPreview
+                  ? locale === "ar"
+                    ? "الفترة لم تنتهِ بعد"
+                    : "Period not ended"
+                  : undefined
+              }
+            >
               {submitMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               <Send className="w-4 h-4 mr-2" />
               {locale === "ar" ? "تقديم للمراجعة" : "Submit for Filing"}

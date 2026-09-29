@@ -99,12 +99,43 @@ const journalSchema = z
 
 type JournalFormData = z.infer<typeof journalSchema>;
 
+const BACKDATED_CONFIRMATION_CODE = "BACKDATED_ENTRY_CONFIRMATION_REQUIRED";
+
+function isBackdatedConfirmation(error: unknown): boolean {
+  const e = error as { status?: number; code?: string } | null;
+  return e?.status === 409 && e?.code === BACKDATED_CONFIRMATION_CODE;
+}
+
+const BACKDATED_COPY = {
+  en: {
+    title: "Post a backdated entry?",
+    description:
+      "This entry is dated before the current financial year and will change prior-year figures. Post anyway?",
+    cancel: "Cancel",
+    confirm: "Post anyway",
+  },
+  ar: {
+    title: "ترحيل قيد بتاريخ سابق؟",
+    description:
+      "هذا القيد مؤرخ قبل بداية السنة المالية الحالية وسيغيّر أرقام السنة السابقة. هل تريد الترحيل على أي حال؟",
+    cancel: "إلغاء",
+    confirm: "ترحيل على أي حال",
+  },
+} as const;
+
 export default function Journal() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
+  // Set when the API answers 409 BACKDATED_ENTRY_CONFIRMATION_REQUIRED; holds
+  // the submission to replay with `confirmBackdated: true` once confirmed.
+  const [pendingBackdated, setPendingBackdated] = useState<
+    | { kind: "create"; data: JournalFormData }
+    | { kind: "edit"; id: string; data: JournalFormData }
+    | null
+  >(null);
 
   const { data: accounts } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
@@ -142,7 +173,7 @@ export default function Journal() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: JournalFormData) =>
+    mutationFn: (data: JournalFormData & { confirmBackdated?: boolean }) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/journal`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
@@ -162,7 +193,11 @@ export default function Journal() {
         ],
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
+      if (isBackdatedConfirmation(error)) {
+        setPendingBackdated({ kind: "create", data: variables });
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Failed to post entry",
@@ -172,8 +207,13 @@ export default function Journal() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: JournalFormData }) =>
-      apiRequest("PUT", `/api/journal/${id}`, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: JournalFormData & { confirmBackdated?: boolean };
+    }) => apiRequest("PUT", `/api/journal/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
@@ -192,7 +232,11 @@ export default function Journal() {
         ],
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
+      if (isBackdatedConfirmation(error)) {
+        setPendingBackdated({ kind: "edit", id: variables.id, data: variables.data });
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Failed to update entry",
@@ -308,6 +352,19 @@ export default function Journal() {
       editMutation.mutate({ id: editingEntry.id, data: submitData });
     } else {
       createMutation.mutate(submitData);
+    }
+  };
+
+  const backdatedCopy = BACKDATED_COPY[locale === "ar" ? "ar" : "en"];
+
+  const confirmBackdatedPost = () => {
+    const pending = pendingBackdated;
+    setPendingBackdated(null);
+    if (!pending) return;
+    if (pending.kind === "create") {
+      createMutation.mutate({ ...pending.data, confirmBackdated: true });
+    } else {
+      editMutation.mutate({ id: pending.id, data: { ...pending.data, confirmBackdated: true } });
     }
   };
 
@@ -802,6 +859,28 @@ export default function Journal() {
           </CardContent>
         </Card>
       )}
+      <AlertDialog
+        open={pendingBackdated !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingBackdated(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-backdated-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{backdatedCopy.title}</AlertDialogTitle>
+            <AlertDialogDescription>{backdatedCopy.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{backdatedCopy.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBackdatedPost}
+              data-testid="button-confirm-backdated"
+            >
+              {backdatedCopy.confirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

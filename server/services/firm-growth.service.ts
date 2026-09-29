@@ -9,6 +9,7 @@ import {
   invoices,
   receipts,
 } from "../../shared/schema";
+import { openArAmount, openArCondition } from "./invoice-outstanding.db";
 
 export type GrowthOpportunityStatus = "open" | "accepted" | "snoozed" | "dismissed" | "completed";
 export type GrowthOpportunityPriority = "critical" | "high" | "medium" | "low";
@@ -89,8 +90,8 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
       .select({
         companyId: invoices.companyId,
         invoiceCount: sql<string>`count(*)`,
-        openAr: sql<string>`coalesce(sum(case when ${invoices.status} in ('sent','partial') then ${invoices.total} else 0 end), 0)`,
-        overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent','partial') and ${invoices.dueDate} < now())`,
+        openAr: sql<string>`coalesce(sum(case when ${openArCondition} then ${openArAmount} else 0 end), 0)`,
+        overdueCount: sql<string>`count(*) filter (where ${openArCondition} and ${invoices.dueDate} < now())`,
       })
       .from(invoices)
       .where(inArray(invoices.companyId, companyIds))

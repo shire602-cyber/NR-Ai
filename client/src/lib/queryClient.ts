@@ -8,7 +8,9 @@ import { isOnline, queueForSync } from "./pwa";
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    /** Machine-readable `code` from the JSON error body, when present. */
+    public readonly code?: string
   ) {
     super(message);
     this.name = "ApiError";
@@ -18,11 +20,13 @@ export class ApiError extends Error {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
+    let errorCode: string | undefined;
     try {
       const contentType = res.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const json = await res.json();
         errorMessage = json.message || json.error || JSON.stringify(json);
+        if (typeof json.code === "string") errorCode = json.code;
       } else {
         const text = await res.text();
         // If it's HTML, just use the status
@@ -35,7 +39,7 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status);
+    throw new ApiError(errorMessage, res.status, errorCode);
   }
 }
 

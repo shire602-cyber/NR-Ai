@@ -22,6 +22,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "../db";
+import { runExclusive } from "./document-queue";
 
 /** Stable 32-bit key from a document id (advisory locks take bigints). */
 function lockKey(id: string): number {
@@ -46,14 +47,27 @@ export async function withDocumentLock<T>(
   namespace: number,
   fn: (tx: typeof db) => Promise<T>
 ): Promise<T> {
-  return await db.transaction(async (tx: typeof db) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
-    return await fn(tx);
-  });
+  // Queue same-document callers in-process first, so waiters do not each hold
+  // a pooled connection while the holder needs more (see document-queue.ts).
+  return await runExclusive(`${namespace}:${documentId}`, () =>
+    db.transaction(async (tx: typeof db) => {
+      await acquireDocumentLock(tx, documentId, namespace);
+      return await fn(tx);
+    })
+  );
+}
+
+/**
+ * Take the same transaction-scoped advisory lock inside a transaction the
+ * caller already owns (e.g. to hold several document locks at once).
+ */
+export async function acquireDocumentLock(tx: typeof db, documentId: string, namespace: number): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
 }
 
 /** Lock namespaces — keep distinct so unrelated guards never collide. */
 export const LOCK_NS = {
   INVOICE_POSTING: 1001,
   CREDIT_NOTE: 1002,
+  FX_REVALUATION: 1003,
 } as const;

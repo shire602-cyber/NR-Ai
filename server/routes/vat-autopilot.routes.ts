@@ -14,7 +14,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
 import {
   calculateVatReturn,
-  upsertCalculatedPeriod,
+  persistCalculation,
+  markStoredPeriodPreview,
   listPeriodsForCompany,
   addAdjustment,
   updatePeriodStatus,
@@ -23,6 +24,7 @@ import {
   isValidVat201BoxKey,
   type VatPeriod,
 } from "../services/vat-autopilot.service";
+import { AppError } from "../errors";
 
 function userId(req: Request): string | undefined {
   return (req as any).user?.id;
@@ -94,6 +96,7 @@ function badRequest(res: Response, err: z.ZodError) {
  * it isn't silently masked as a generic "calculation failed" 400.
  */
 function mapCalculationError(err: unknown): { status: number; code: string; message: string } {
+  if (err instanceof AppError) return { status: err.statusCode, code: err.code, message: err.message };
   const message = (err as { message?: string })?.message || "Failed to calculate VAT return";
   if (/TRN/.test(message)) return { status: 400, code: "NO_TRN", message };
   if (/emirate/i.test(message)) return { status: 422, code: "EMIRATE_NOT_SET", message };
@@ -123,13 +126,10 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       try {
         const calc = await calculateVatReturn(companyId, period);
-        // Persist the snapshot so the periods listing reflects it.
-        const persist = query.data.persist !== "false";
-        let periodId: string | null = null;
-        if (persist) {
-          periodId = await upsertCalculatedPeriod(calc);
-        }
-        res.json({ ...calc, periodId });
+        // Only a finished period is saved (so the periods listing reflects
+        // it). An open period is compute-only: nothing is written, no periodId.
+        const persisted = await persistCalculation(calc, { persist: query.data.persist !== "false" });
+        res.json({ ...calc, ...persisted });
       } catch (err) {
         const mapped = mapCalculationError(err);
         res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
@@ -179,7 +179,8 @@ export function registerVATAutopilotRoutes(app: Express) {
         [periodId, companyId]
       );
       if (result.rows.length === 0) return res.status(404).json({ message: "Period not found" });
-      res.json(result.rows[0]);
+      // A row saved for a still-open period by an earlier version is a preview.
+      res.json(markStoredPeriodPreview(result.rows[0]));
     })
   );
 
@@ -244,7 +245,9 @@ export function registerVATAutopilotRoutes(app: Express) {
         if (!summary) return res.status(404).json({ message: "Period not found" });
         res.json(summary);
       } catch (err: any) {
-        res.status(400).json({ message: err?.message || "Could not update status" });
+        res
+          .status(400)
+          .json({ message: err?.message || "Could not update status", code: err?.code });
       }
     })
   );
