@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { scrubForMonitoring, scrubString } from "../../server/services/monitoring-scrub";
 
-const JWT =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+// Built at runtime so no token-shaped literal sits in the repository.
+const b64url = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
+const JWT = [
+  b64url({ alg: "HS256", typ: "JWT" }),
+  b64url({ sub: "fixture-user", note: "not a credential" }),
+  Buffer.from("fixture-signature-not-a-real-mac-0000").toString("base64url"),
+].join(".");
 
 describe("scrubForMonitoring", () => {
   it("redacts sensitive keys case-insensitively at any depth", () => {
