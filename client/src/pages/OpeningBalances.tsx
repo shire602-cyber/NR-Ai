@@ -69,6 +69,12 @@ interface Preview {
   ok: boolean;
   errors: Issue[];
   parsedRows: Array<{ accountCode: string; debit: number; credit: number }> | null;
+  /** Not blocking: for example a jump in the invoice numbering. */
+  warnings?: Array<{
+    code: string;
+    message: string;
+    details?: { importedHighest: number; year: number; nextNumber: string; gap: number; firstUnused: string; lastUnused: string };
+  }>;
   totals: {
     debit: number;
     credit: number;
@@ -578,6 +584,28 @@ export default function OpeningBalances() {
             <ul className="list-disc ps-5">
               {preview.errors.map((e, i) => (
                 <li key={i}>{e.message}</li>
+              ))}
+            </ul>
+          </div>
+        </Alert>
+      )}
+      {preview && preview.warnings && preview.warnings.length > 0 && (
+        <Alert className="border-warning/40" data-testid="alert-opening-warnings">
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold">{c.obWarnTitle}</p>
+            <ul className="list-disc ps-5">
+              {preview.warnings.map((w, i) => (
+                <li key={i} data-testid={`text-opening-warning-${w.code}`}>
+                  {w.code === "INVOICE_NUMBER_GAP" && w.details
+                    ? f("obGapWarning", {
+                        imported: `INV-${w.details.year}-${String(w.details.importedHighest).padStart(5, "0")}`,
+                        next: w.details.nextNumber,
+                        gap: String(w.details.gap),
+                        first: w.details.firstUnused,
+                        last: w.details.lastUnused,
+                      })
+                    : w.message}
+                </li>
               ))}
             </ul>
           </div>

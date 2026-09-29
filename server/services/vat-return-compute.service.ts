@@ -7,12 +7,14 @@
  * (c) building an amendment. Pure read: it never writes.
  */
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { AppError } from "../errors";
-import { companies, invoiceLines as invoiceLinesTable, invoices as invoicesTable, receipts as receiptsTable } from "../../shared/schema";
+import { companies, receipts as receiptsTable } from "../../shared/schema";
 import { round2 } from "./financial-statements";
 import { aggregateReturnSalesLines } from "./vat-sales-lines";
+import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
+import { loadVatJournalAdjustments } from "./vat-adjustments.service";
 import { buildGeneratedVatReturnValues } from "./vat-return-payload.service";
 
 export async function computeVatReturnForPeriod(args: {
@@ -64,7 +66,6 @@ export async function computeVatReturnForPeriod(args: {
   const companyEmirate = company.emirate;
 
   // Calculate VAT from invoices and receipts
-  const invoices: any[] = await ex.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId));
   const receipts: any[] = await ex.select().from(receiptsTable).where(eq(receiptsTable.companyId, companyId));
 
   const startDate = new Date(periodStart);
@@ -75,45 +76,22 @@ export async function computeVatReturnForPeriod(args: {
     endDate.setUTCHours(23, 59, 59, 999);
   }
 
-  // Filter invoices for the period — drafts must be excluded too because
-  // they have not been issued and therefore create no VAT obligation.
-  const periodInvoices = invoices.filter((inv) => {
-    const invDate = new Date(inv.date);
-    return (
-      invDate >= startDate &&
-      invDate <= endDate &&
-      inv.status !== "void" &&
-      inv.status !== "draft" &&
-      inv.status !== "cancelled" &&
-      // Pre-go-live receivables entered as opening balances are not this period's supplies.
-      !(inv as any).isOpeningBalance
-    );
-  });
-
-  // Fetch all invoice lines for categorization by VAT supply type — single
-  // batched fetch instead of one per invoice.
+  // Sales documents by the ONE shared void rule (vat-document-effect.ts): an invoice cancelled in
+  // a LATER period is still a supply of its own period; its cancellation is a negative line in the
+  // period of the void. Drafts and opening-balance receivables (already in the opening balances)
+  // are not this period's supplies. FTA reporting is AED, so lines convert at the invoice's stored
+  // transaction-date rate.
   let standardRatedAmount = 0;
   let standardRatedVat = 0;
   let zeroRatedAmount = 0;
   let exemptAmount = 0;
 
-  const periodInvoiceIds = periodInvoices.map((i) => i.id);
-  const periodLines: any[] =
-    periodInvoiceIds.length === 0
-      ? []
-      : await ex.select().from(invoiceLinesTable).where(inArray(invoiceLinesTable.invoiceId, periodInvoiceIds));
-  // FTA reporting is AED — convert foreign-currency invoice lines at the
-  // invoice's stored transaction-date rate.
-  const rateByInvoiceId = new Map(
-    periodInvoices.map((i) => [
-      i.id,
-      Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1,
-    ])
-  );
+  const sales = await loadPeriodSalesDocuments(ex, companyId, periodStart, periodEnd);
+  const periodInvoices = sales.invoices;
   // Placement of every line is decided by the shared classifyVatLineForReturn
   // rule (also used by the autopilot and the firm workpaper pull), so the
   // three engines cannot disagree: 0% out-of-scope lines land in no box.
-  const salesTotals = aggregateReturnSalesLines(periodLines as any[], rateByInvoiceId);
+  const salesTotals = aggregateReturnSalesLines(sales.lines as any[], sales.rateByInvoiceId);
   standardRatedAmount = salesTotals.standardRatedAmount;
   standardRatedVat = salesTotals.standardRatedVat;
   zeroRatedAmount = salesTotals.zeroRatedAmount;
@@ -320,6 +298,12 @@ export async function computeVatReturnForPeriod(args: {
       break;
   }
 
+  // Manual journals to the VAT accounts dated in the period are VAT adjustments (shared with the
+  // autopilot and the firm workpaper): output side in the adjustment column of the company's own
+  // emirate, input side in box 9, both flowing into boxes 8/11 adjustment and boxes 12-14.
+  const journalAdjustments = await loadVatJournalAdjustments(ex, companyId, periodStart, periodEnd, companyEmirate);
+  (emirateBreakdown as Record<string, number>)[journalAdjustments.outputBox] = journalAdjustments.outputAdjustment;
+
   // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
   // (input, partial-exemption-reduced). Standard input tax (Box 9) is also
   // partial-exemption reduced via `inputTax`.
@@ -349,6 +333,9 @@ export async function computeVatReturnForPeriod(args: {
     totalOutputVat,
     totalInputAmount,
     totalInputVat,
+    outputAdjustment: journalAdjustments.outputAdjustment,
+    inputAdjustment: journalAdjustments.inputAdjustment,
+    vatAdjustments: journalAdjustments.lines,
   });
 
   const metadata = {
@@ -363,7 +350,12 @@ export async function computeVatReturnForPeriod(args: {
     reverseChargeVat,
     reverseChargeVatRecoverable,
     totalInputVat,
-    netVatPayable: round2(totalOutputVat - totalInputVat),
+    netVatPayable: round2(returnValues.box12TotalDueTax - returnValues.box13RecoverableTax),
+    // Manual journals to the VAT accounts in the period, reported as adjustments on the return
+    // (journal number and description, so the accountant can see what each one is).
+    vatAdjustments: journalAdjustments.lines,
+    outputAdjustment: journalAdjustments.outputAdjustment,
+    inputAdjustment: journalAdjustments.inputAdjustment,
     // Input VAT the return does not recover by design (standard input plus the reverse-charge
     // input): what the filing entry expects to find in the ledger beyond box 13.
     expectedIrrecoverableInputVat: round2(irrecoverableInputTax + (reverseChargeVat - reverseChargeVatRecoverable)),

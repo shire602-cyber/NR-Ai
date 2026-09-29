@@ -18,6 +18,18 @@ import {
 import { insertCorporateTaxReturnSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { getFilingByReturn } from "../services/tax-filing.service";
+import { ymdOf } from "../services/tax-filing-core";
+
+/**
+ * Whether a journal entry belongs to the tax period, by CALENDAR DAY exactly as the ledger reads
+ * it (`date::date`). Comparing instants against a period end at midnight dropped every entry
+ * posted later on the last day (a void reversal, for one), so the pulled revenue could differ
+ * from the ledger's revenue for the same period.
+ */
+function entryInTaxPeriod(entryDate: string | Date, periodStart: string | Date, periodEnd: string | Date): boolean {
+  const day = ymdOf(entryDate);
+  return day >= ymdOf(periodStart) && day <= ymdOf(periodEnd);
+}
 import { CT_JOURNAL_SOURCE_FILING, overlayCtReturns, overlayCtSnapshot } from "../services/ct-filing.service";
 
 /**
@@ -415,9 +427,8 @@ export function registerCorporateTaxRoutes(app: Express) {
 
       const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
         // the corporate tax accrual is dated in the tax period but is not part of the profit it taxes
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
+        return entryInTaxPeriod(entry.date, startDate, endDate) && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
       });
 
       const netByAccount = new Map<string, number>();
@@ -508,8 +519,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       // Get all journal entries in the period
       const journalEntries = await storage.getJournalEntriesByCompanyId(companyId, { excludeClosing: true });
       const periodEntries = journalEntries.filter((entry) => {
-        const entryDate = new Date(entry.date);
-        return entryDate >= startDate && entryDate <= endDate && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
+        return entryInTaxPeriod(entry.date, startDate, endDate) && entry.status === "posted" && entry.source !== CT_JOURNAL_SOURCE_FILING;
       });
 
       let totalRevenue = 0;

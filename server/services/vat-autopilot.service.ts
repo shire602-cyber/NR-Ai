@@ -15,7 +15,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { pool } from "../db";
+import { db, pool } from "../db";
+import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
+import { loadVatJournalAdjustments } from "./vat-adjustments.service";
+import { applyJournalAdjustmentsToBoxes, type VatJournalAdjustmentLine } from "./vat-adjustments";
 import { UAE_VAT_RATE } from "../constants";
 import { classifyVatLineForReturn } from "./vat-supply-type";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
@@ -60,6 +63,10 @@ export interface VatBoxBreakdown {
   inputVatIrrecoverable: number;
   reverseChargeVatRecoverable: number;
   totalInputVat: number;
+  // Manual journals to the VAT accounts (already inside totalOutputVat / totalInputVat)
+  outputVatAdjustment?: number;
+  inputVatAdjustment?: number;
+  vatAdjustments?: VatJournalAdjustmentLine[];
   // Net
   netVatPayable: number;
 }
@@ -121,6 +128,17 @@ export interface Vat201BoxValues {
   box12TotalDueTax: number;
   box13RecoverableTax: number;
   box14PayableTax: number;
+  // Adjustment columns (manual VAT journals; absent when there are none)
+  box1aAbuDhabiAdj?: number;
+  box1bDubaiAdj?: number;
+  box1cSharjahAdj?: number;
+  box1dAjmanAdj?: number;
+  box1eUmmAlQuwainAdj?: number;
+  box1fRasAlKhaimahAdj?: number;
+  box1gFujairahAdj?: number;
+  box8TotalAdj?: number;
+  box9ExpensesAdj?: number;
+  box11TotalAdj?: number;
 }
 
 export interface VatPeriodSummary {
@@ -603,8 +621,10 @@ export function applyAdjustments(
   );
   next.box11TotalAmount = round2(next.box9ExpensesAmount + next.box10ReverseChargeAmount);
   next.box11TotalVat = round2(next.box9ExpensesVat + next.box10ReverseChargeVat);
-  next.box12TotalDueTax = next.box8TotalVat;
-  next.box13RecoverableTax = next.box11TotalVat;
+  // Due tax = box 8 VAT + box 8 adjustment; recoverable tax = box 11 VAT + box 11 adjustment
+  // (the adjustment columns carry the manual VAT journals; absent = 0).
+  next.box12TotalDueTax = round2(next.box8TotalVat + (next.box8TotalAdj ?? 0));
+  next.box13RecoverableTax = round2(next.box11TotalVat + (next.box11TotalAdj ?? 0));
   next.box14PayableTax = round2(next.box12TotalDueTax - next.box13RecoverableTax);
   return next;
 }
@@ -691,35 +711,18 @@ export async function calculateVatReturn(
   const resolvedPeriod = period ?? detectFilingPeriod(frequency, company.vatPeriodStartMonth, now);
 
   // ── Sales side ────────────────────────────────────────────────────────────
-  // Pull invoice lines for the period in a single query. We exclude draft,
-  // void, and cancelled invoices because they create no VAT obligation.
-  const invoiceLineRes = await pool.query(
-    `SELECT il.quantity::numeric AS quantity,
-            (il.unit_price::numeric * COALESCE(i.exchange_rate, 1)::numeric) AS unit_price,
-            il.vat_rate::numeric AS vat_rate,
-            il.vat_supply_type AS vat_supply_type,
-            i.id AS invoice_id
-     FROM invoice_lines il
-     JOIN invoices i ON i.id = il.invoice_id
-     WHERE i.company_id = $1
-       AND i.date >= $2 AND i.date <= $3
-       AND i.status NOT IN ('void','draft','cancelled')
-       AND COALESCE(i.is_opening_balance, false) = false`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end]
-  );
-
-  const invoiceIdSet = new Set<string>();
-  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(
-    (row) => {
-      invoiceIdSet.add(String(row.invoice_id));
-      return {
-        quantity: Number(row.quantity) || 0,
-        unitPrice: Number(row.unit_price) || 0,
-        vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
-        vatSupplyType: row.vat_supply_type as InvoiceLineForVat["vatSupplyType"],
-      };
-    }
-  );
+  // Sales documents by the ONE shared void rule (vat-document-effect.ts), the same as the VAT 201
+  // and the firm workpaper: drafts and opening-balance receivables never count, an invoice
+  // cancelled in a LATER period is still a supply of its own period, and a cancellation is a
+  // negative line in the period of the void.
+  const salesDocs = await loadPeriodSalesDocuments(db, companyId, resolvedPeriod.start, resolvedPeriod.end);
+  const invoiceIdSet = new Set<string>(salesDocs.invoices.map((i) => i.id));
+  const lines: InvoiceLineForVat[] = salesDocs.lines.map((l) => ({
+    quantity: Number(l.quantity) || 0,
+    unitPrice: (Number(l.unitPrice) || 0) * (salesDocs.rateByInvoiceId.get(l.invoiceId) ?? 1),
+    vatRate: l.vatRate,
+    vatSupplyType: l.vatSupplyType as InvoiceLineForVat["vatSupplyType"],
+  }));
   const sales = aggregateInvoiceLines(lines);
 
   // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
@@ -808,8 +811,11 @@ export async function calculateVatReturn(
   const partialExemption = applyPartialExemption(inputVatGross, company.exemptSupplyRatio);
   const reverseChargePartial = applyPartialExemption(reverseChargeVat, company.exemptSupplyRatio);
 
-  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat);
-  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable);
+  // Manual journals to the VAT accounts in the period are VAT adjustments (shared with the VAT 201
+  // and the firm workpaper): they are part of the tax due / recoverable, like the ledger.
+  const journalAdjustments = await loadVatJournalAdjustments(db, companyId, resolvedPeriod.start, resolvedPeriod.end, company.emirate);
+  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat + journalAdjustments.outputAdjustment);
+  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable + journalAdjustments.inputAdjustment);
 
   const boxes: VatBoxBreakdown = {
     standardRatedSales: sales.standardRatedAmount,
@@ -825,6 +831,13 @@ export async function calculateVatReturn(
     inputVatIrrecoverable: partialExemption.irrecoverable,
     reverseChargeVatRecoverable: reverseChargePartial.recoverable,
     totalInputVat,
+    ...(journalAdjustments.lines.length > 0
+      ? {
+          outputVatAdjustment: journalAdjustments.outputAdjustment,
+          inputVatAdjustment: journalAdjustments.inputAdjustment,
+          vatAdjustments: journalAdjustments.lines,
+        }
+      : {}),
     netVatPayable: round2(totalOutputVat - totalInputVat),
   };
 
@@ -857,7 +870,7 @@ export async function calculateVatReturn(
     { outputVat: outputLedger, inputVat: inputLedger }
   );
 
-  const vat201 = buildVat201Boxes(
+  const vat201Base = buildVat201Boxes(
     {
       standardRatedAmount: sales.standardRatedAmount,
       standardRatedVat: sales.standardRatedVat,
@@ -871,6 +884,7 @@ export async function calculateVatReturn(
     },
     company.emirate
   );
+  const vat201 = applyJournalAdjustmentsToBoxes(vat201Base, journalAdjustments);
 
   return {
     companyId,

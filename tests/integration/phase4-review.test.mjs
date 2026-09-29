@@ -205,10 +205,14 @@ async function sectionD3() {
   const M = await newCompany("d3mis");
   await M.invoice(prevMid, 1000);
   await M.bill(prevMid, 4000);
-  const je = await api("POST", `/api/companies/${M.cid}/journal`, {
-    token: M.token, body: { date: prevMid, memo: "stray VAT", status: "posted", confirmBackdated: true, lines: [{ accountId: (await M.account("1050")).id, debit: 45, credit: 0 }, { accountId: (await M.account("5000")).id, debit: 0, credit: 45 }] },
-  });
-  ok("D3: (setup) a manual journal put 45 of extra VAT into the input VAT account", je.status === 200, { s: je.status, t: je.text.slice(0, 200) });
+  // (a manual journal to the VAT accounts is now a VAT ADJUSTMENT on the return, see phase4-void.test.mjs; a gap the
+  // return cannot explain has to come from a system posting, so the stray entry is written directly, source 'system')
+  const stray = (await db.query(
+    `INSERT INTO journal_entries (company_id, entry_number, date, memo, status, source, created_by, posted_by, posted_at)
+     VALUES ($1, 'JE-STRAY-1', $2::timestamp, 'stray VAT', 'posted', 'system', $3, $3, now()) RETURNING id`, [M.cid, prevMid, M.userId])).rows[0].id;
+  await db.query(`INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, 45, 0), ($1, $3, 0, 45)`,
+    [stray, (await M.account("1050")).id, (await M.account("5000")).id]);
+  ok("D3: (setup) a system posting put 45 of extra VAT into the input VAT account", !!stray, null);
   const genM = await M.generate();
   const refused = await M.file(genM.json?.id);
   ok("D3: a 45 gap between ledger and return is refused with 422 VAT_LEDGER_MISMATCH",
@@ -271,16 +275,18 @@ async function sectionD5() {
   bal = await H.balances();
   ok("D5 hand-edited draft: with recomputed figures box 12 = 50 and the VAT accounts are cleared", close(s2?.boxes?.box12TotalDueTax, 50) && close(bal["2020"] ?? 0, 0) && close(bal["2025"], -50), { box12: s2?.boxes?.box12TotalDueTax, bal });
 
-  // the user insists on the stored (edited) figures
+  // the user insists on the stored (edited) figures: box 12 was edited DOWN from 50 to 5. That used to be
+  // written off to the expense account (VAT charged to customers booked as a gain); it is now refused
+  // as an under-declaration (phase4-void.test.mjs covers the full rules).
   const E2 = await editDraft("d5keep");
   r = await E2.H.file(E2.rid, { acceptFigures: "stored" });
-  ok("D5 hand-edited draft: acceptFigures=stored files the user's figures (201) because the gap is explained by the recorded edit",
-    r.status === 201 && !r.json?.recomputedAtFiling, { s: r.status, t: r.text.slice(0, 300) });
+  ok("D5 hand-edited draft: acceptFigures=stored on a figure LOWERED below the ledger is refused (422 VAT_UNDER_DECLARED)",
+    r.status === 422 && r.json?.code === "VAT_UNDER_DECLARED", { s: r.status, t: r.text.slice(0, 300) });
+  ok("D5 stored figures: the refusal shows the ledger (50) against the return (5)",
+    close(r.json?.details?.ledger?.outputVat, 50) && close(r.json?.details?.returned?.outputVat, 5), r.json?.details);
   bal = await E2.H.balances();
-  ok("D5 stored figures: output VAT clears to zero, control holds the 5 filed, the 45 gap is posted to the adjustment expense line",
-    close(bal["2020"] ?? 0, 0) && close(bal["2025"], -5) && close(bal["5160"], -45), bal);
-  const memo = (await db.query(`SELECT jl.description FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND je.source = 'vat_filing' AND a.code = '5160'`, [E2.H.cid])).rows;
-  ok("D5 stored figures: the adjustment line carries the user's reason", memo.some((m) => /Client-agreed correction/.test(m.description ?? "")), memo);
+  const nothing2 = (await db.query("SELECT (SELECT count(*) FROM tax_filings WHERE return_id = $1)::int AS f, (SELECT count(*) FROM journal_entries WHERE company_id = $2 AND source = 'vat_filing')::int AS j", [E2.rid, E2.H.cid])).rows[0];
+  ok("D5 stored figures: nothing was filed or posted (2020 untouched at 50)", nothing2.f === 0 && nothing2.j === 0 && close(bal["2020"], -50), { nothing2, bal });
 
   // stored figures with an UNEXPLAINED gap (books changed, not the edit) are still refused
   const E3 = await editDraft("d5gap");

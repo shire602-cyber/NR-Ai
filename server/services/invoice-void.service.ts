@@ -34,6 +34,7 @@ import { resolveInvoiceFx } from "./invoice-fx";
 import { acquireDocumentLock, LOCK_NS } from "./document-lock";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { syncInvoiceStatusFromBalance } from "./invoice-credit-status";
+import { uaeCalendarDate } from "../utils/date";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("invoice-void");
@@ -75,7 +76,11 @@ export async function voidOrCancelInvoice(args: {
   const vatPayable = accounts.find(
     (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
   );
-  const reversalDate = new Date();
+  // The reversal is dated the UAE calendar day of the void (UTC midnight of that day, the way the
+  // ledger reads dates), because that date decides which VAT period reports the cancellation
+  // (vat-document-effect.ts). postedAt stays the real instant.
+  const postedAtNow = new Date();
+  const reversalDate = uaeCalendarDate(postedAtNow);
   // Block reversal posting into a locked period - without this we could flip
   // status without writing the offsetting JE. Only needed when a JE will be
   // posted (an unposted draft has nothing to reverse).
@@ -192,7 +197,7 @@ export async function voidOrCancelInvoice(args: {
           reversalReason: `Invoice ${targetStatus}`,
           createdBy: userId,
           postedBy: userId,
-          postedAt: reversalDate,
+          postedAt: postedAtNow,
         } as any,
         reversalLines as any,
         { tx }

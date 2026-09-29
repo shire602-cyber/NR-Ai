@@ -48,13 +48,12 @@ export async function ledgerVatBalances(tx: Tx, companyId: string, startYmd: str
   };
 }
 
-/** Irrecoverable VAT Expense (5160): created from the default template for a chart that lacks it. */
-export async function resolveIrrecoverableAccount(tx: Tx, companyId: string): Promise<AccountRef> {
-  const code = VAT_ACCOUNT_CODES.IRRECOVERABLE_EXPENSE;
+/** An expense account created from the default template for a chart that lacks it (5160, 5165). */
+async function resolveExpenseAccountFromTemplate(tx: Tx, companyId: string, code: string, label: string): Promise<AccountRef> {
   const existing = await findAccountByCode(tx, companyId, code, ["expense"]);
   if (existing) return existing;
   const template = defaultChartOfAccounts.find((a) => a.code === code);
-  if (!template) throw missingAccountError("Irrecoverable VAT Expense", code, "expense");
+  if (!template) throw missingAccountError(label, code, "expense");
   const [created] = await tx
     .insert(accounts)
     .values({
@@ -75,6 +74,14 @@ export async function resolveIrrecoverableAccount(tx: Tx, companyId: string): Pr
   return created;
 }
 
+/** Irrecoverable VAT Expense (5160): created from the default template for a chart that lacks it. */
+export const resolveIrrecoverableAccount = (tx: Tx, companyId: string) =>
+  resolveExpenseAccountFromTemplate(tx, companyId, VAT_ACCOUNT_CODES.IRRECOVERABLE_EXPENSE, "Irrecoverable VAT Expense");
+
+/** VAT Adjustments (5165): created from the default template for a chart that lacks it. */
+export const resolveVatAdjustmentsAccount = (tx: Tx, companyId: string) =>
+  resolveExpenseAccountFromTemplate(tx, companyId, VAT_ACCOUNT_CODES.ADJUSTMENTS, "VAT Adjustments");
+
 export interface ClearingPlan {
   lines: JournalLineInput[];
   irrecoverable: number;
@@ -94,7 +101,7 @@ export async function planVatClearing(args: {
   controlId: string;
   label: string;
 }): Promise<ClearingPlan> {
-  const symbolic = { outputId: "output", inputId: "input", controlId: "control", irrecoverableId: "irrecoverable" };
+  const symbolic = { outputId: "output", inputId: "input", controlId: "control", irrecoverableId: "irrecoverable", adjustmentsId: "adjustments" };
   const result = buildClearingLines(args.ledger, args.figures, symbolic, args.label);
   if (!result.ok) {
     throw new AppError({ message: result.message, statusCode: 422, code: result.code, details: result.details });
@@ -112,6 +119,7 @@ export async function planVatClearing(args: {
     ids.input = a.id;
   }
   if (used.has("irrecoverable")) ids.irrecoverable = (await resolveIrrecoverableAccount(args.tx, args.companyId)).id;
+  if (used.has("adjustments")) ids.adjustments = (await resolveVatAdjustmentsAccount(args.tx, args.companyId)).id;
   return {
     lines: result.lines.map((l) => ({ ...l, accountId: ids[l.accountId] })),
     irrecoverable: result.irrecoverable,

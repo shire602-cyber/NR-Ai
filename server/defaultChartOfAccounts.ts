@@ -656,6 +656,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     vatType: null,
     isSystemAccount: true,
   },
+  {
+    code: "5165",
+    nameEn: "VAT Adjustments",
+    nameAr: "تسويات ضريبة القيمة المضافة",
+    description: "Difference posted when a VAT return declares MORE tax than the ledger supports (a manual edit with a written reason), kept apart from irrecoverable VAT",
+    type: "expense",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
 ];
 
 export function createDefaultAccountsForCompany(

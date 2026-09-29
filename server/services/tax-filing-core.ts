@@ -153,39 +153,105 @@ export function assessDraftFigures(input: {
 
 // ─── Manual box edits on a draft ─────────────────────────────────────────────
 
+/** A written reason for a manual edit must be at least this long (after trimming). */
+export const MIN_MANUAL_EDIT_REASON = 10;
+
+export interface ManualEditEntry {
+  at: string;
+  by: string | null;
+  reason: string;
+  boxes: string[];
+}
+
 export interface ManualEdits {
   boxes: Record<string, { from: number; to: number }>;
   at: string;
   by: string | null;
+  /**
+   * One entry per edit: who, when, WHY and which boxes. Edits recorded before reasons were
+   * required have no log; their boxes count as edited without a reason.
+   */
+  log?: ManualEditEntry[];
+}
+
+const hasValidReason = (reason: string | null | undefined): boolean => (reason ?? "").trim().length >= MIN_MANUAL_EDIT_REASON;
+
+/** Boxes of the edit log that no valid written reason covers (the LAST entry that touched a box decides). */
+function boxesWithoutReason(edits: ManualEdits | null | undefined): string[] {
+  const log = edits?.log ?? [];
+  return Object.keys(edits?.boxes ?? {}).filter((box) => {
+    for (let i = log.length - 1; i >= 0; i--) {
+      if (log[i].boxes.includes(box)) return !hasValidReason(log[i].reason);
+    }
+    return true;
+  });
+}
+
+/** Canonical boxes (and the adjustment amount) whose value a PATCH would change on the stored row. */
+export function editedFigureKeys(existingRow: Record<string, unknown>, patch: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  for (const key of Object.keys(patch)) {
+    const isBox = BOX_KEY.test(key) && !LEGACY.has(key);
+    if (!isBox && key !== "adjustmentAmount") continue;
+    if (toFils(Number(existingRow[key] ?? 0)) !== toFils(Number(patch[key] ?? 0))) keys.push(key);
+  }
+  return keys;
+}
+
+/**
+ * The manual edits that lack a written reason of at least MIN_MANUAL_EDIT_REASON characters, or
+ * null when every one has it. Filing on the stored (hand-edited) figures is refused while any
+ * edit lacks its reason.
+ */
+export function manualEditReasonProblem(
+  edits: ManualEdits | null | undefined,
+  ret: { adjustmentAmount?: unknown; adjustmentReason?: string | null }
+): { boxes: string[] } | null {
+  const missing = boxesWithoutReason(edits);
+  if (toFils(Number(ret.adjustmentAmount ?? 0)) !== 0 && !hasValidReason(ret.adjustmentReason)) missing.push("adjustmentAmount");
+  return missing.length > 0 ? { boxes: missing } : null;
 }
 
 /**
  * The edit log after a PATCH: every canonical box whose value now differs from what it was when
  * the log started keeps { from (first value), to (latest) }; a box put back to its original
- * value drops out. Returns null when nothing has been edited (so a clean draft stays clean).
- * Legacy aliases are not user-editable and are ignored.
+ * value drops out. Each edit adds a log entry with its reason, user and time. A PATCH that changes
+ * no box but brings a valid reason gives that reason to the boxes that still lack one. Returns
+ * null when nothing has been edited (so a clean draft stays clean). Legacy aliases are not
+ * user-editable and are ignored.
  */
 export function mergeManualEdits(
   existingEdits: ManualEdits | null | undefined,
   existingRow: Record<string, unknown>,
   patch: Record<string, unknown>,
-  ctx: { userId: string | null; now?: Date }
+  ctx: { userId: string | null; now?: Date; reason?: string | null }
 ): ManualEdits | null {
   const boxes: Record<string, { from: number; to: number }> = { ...(existingEdits?.boxes ?? {}) };
-  let touched = false;
+  const changed: string[] = [];
   for (const key of Object.keys(patch)) {
     if (!BOX_KEY.test(key) || LEGACY.has(key)) continue;
     const before = toFils(Number(existingRow[key] ?? 0));
     const after = toFils(Number(patch[key] ?? 0));
     if (before === after) continue;
-    touched = true;
+    changed.push(key);
     const from = boxes[key] ? toFils(boxes[key].from) : before;
     if (from === after) delete boxes[key];
     else boxes[key] = { from: fromFils(from), to: fromFils(after) };
   }
-  if (!touched) return existingEdits && Object.keys(existingEdits.boxes ?? {}).length > 0 ? existingEdits : null;
-  if (Object.keys(boxes).length === 0) return null;
-  return { boxes, at: (ctx.now ?? new Date()).toISOString(), by: ctx.userId };
+  const reason = (ctx.reason ?? "").trim();
+  const uncovered = hasValidReason(reason)
+    ? boxesWithoutReason({ ...(existingEdits as ManualEdits), boxes, at: "", by: null }).filter((k) => !changed.includes(k))
+    : [];
+  const stillEdited = Object.keys(boxes).length > 0;
+  if (changed.length === 0 && uncovered.length === 0) {
+    return existingEdits && Object.keys(existingEdits.boxes ?? {}).length > 0 ? existingEdits : null;
+  }
+  if (!stillEdited) return null;
+  const at = (ctx.now ?? new Date()).toISOString();
+  const entryBoxes = [...changed.filter((k) => k in boxes), ...uncovered];
+  const log = [...(existingEdits?.log ?? [])];
+  if (entryBoxes.length > 0) log.push({ at, by: ctx.userId, reason, boxes: entryBoxes });
+  return { boxes, at, by: ctx.userId, log };
 }
 
 /** Signed change (stored minus computed) the log records on box 12 and box 13. */

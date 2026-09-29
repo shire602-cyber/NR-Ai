@@ -231,6 +231,8 @@ export default function VATFiling() {
   const [newPeriodStart, setNewPeriodStart] = useState("");
   const [newPeriodEnd, setNewPeriodEnd] = useState("");
   const [notes, setNotes] = useState("");
+  // Written reason for changing a figure by hand (the server requires 10+ characters with any figure edit).
+  const [editReason, setEditReason] = useState("");
   const [vatFormData, setVatFormData] = useState<VatWorksheetData>(DEFAULT_VAT_DATA);
 
   const { data: company } = useQuery<Company>({
@@ -550,6 +552,7 @@ export default function VATFiling() {
       box10ReverseChargeVat: vatReturn.box10ReverseChargeVat || 0,
     });
     setNotes(vatReturn.notes || "");
+    setEditReason("");
     setEditDialogOpen(true);
   };
 
@@ -557,7 +560,7 @@ export default function VATFiling() {
     if (!selectedReturn) return;
     updateMutation.mutate({
       id: selectedReturn.id,
-      data: { ...vatFormData, notes },
+      data: { ...vatFormData, notes, ...(editReason.trim() ? { adjustmentReason: editReason.trim() } : {}) },
     });
   };
 
@@ -1666,6 +1669,20 @@ export default function VATFiling() {
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={locale === "ar" ? "أضف ملاحظات..." : "Add notes..."}
                   className="min-h-20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{locale === "ar" ? "سبب تعديل الأرقام يدوياً" : "Reason for changing figures by hand"}</Label>
+                <Textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder={
+                    locale === "ar"
+                      ? "مطلوب عند تغيير أي رقم (10 أحرف على الأقل). لا يمكن تقليل الضريبة عن دفاتر الحسابات."
+                      : "Required when you change any figure (at least 10 characters). The return can never declare less tax than the books support."
+                  }
+                  className="min-h-16"
+                  data-testid="input-edit-reason"
                 />
               </div>
             </>

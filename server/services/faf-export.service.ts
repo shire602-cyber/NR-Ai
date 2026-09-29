@@ -19,6 +19,7 @@
 
 import { pool } from "../db";
 import { classifyVatLineForReturn, type VatReturnClass } from "./vat-supply-type";
+import { VOID_DATE_LATERAL_SQL, invoiceEffectForPeriod } from "./vat-document-effect";
 import { UAE_VAT_RATE } from "../constants";
 import {
   FAF_BLOCKS,
@@ -372,16 +373,20 @@ async function* supplyBatches(companyId: string, from: string, to: string): Asyn
   let cursorDate = "-infinity";
   let cursorId = NIL_UUID;
   for (;;) {
+    // Invoices dated in the range, plus older ones whose void (cancellation) falls inside it. The
+    // ledger holds the original in its own period and the reversal in the void's period, so the
+    // listing follows the same shared rule as the VAT return (vat-document-effect.ts).
     const inv = await pool.query(
-      `SELECT id, number, to_char(date, 'YYYY-MM-DD') AS d, date, customer_name, customer_trn,
-              currency, exchange_rate, reverse_charge
-         FROM invoices
-        WHERE company_id = $1
-          AND date >= $2::date AND date < ($3::date + 1)
-          AND status NOT IN ('draft', 'void', 'cancelled')
-          AND COALESCE(is_opening_balance, false) = false
-          AND (date, id) > ($4::timestamp, $5::uuid)
-        ORDER BY date, id
+      `SELECT i.id, i.number, to_char(i.date, 'YYYY-MM-DD') AS d, i.date, i.status, i.customer_name, i.customer_trn,
+              i.currency, i.exchange_rate, i.reverse_charge, to_char(rev.d, 'YYYY-MM-DD') AS voided_on
+         FROM invoices i ${VOID_DATE_LATERAL_SQL}
+        WHERE i.company_id = $1
+          AND i.status <> 'draft'
+          AND COALESCE(i.is_opening_balance, false) = false
+          AND ( (i.date >= $2::date AND i.date < ($3::date + 1))
+             OR (i.status IN ('void', 'cancelled') AND rev.d >= $2::date AND rev.d <= $3::date) )
+          AND (i.date, i.id) > ($4::timestamp, $5::uuid)
+        ORDER BY i.date, i.id
         LIMIT ${DOC_BATCH}`,
       [companyId, from, to, cursorDate, cursorId]
     );
@@ -397,17 +402,21 @@ async function* supplyBatches(companyId: string, from: string, to: string): Asyn
 
     const rows: FafSupplyRow[] = [];
     for (const d of inv.rows) {
+      const effect = invoiceEffectForPeriod({ id: d.id, date: d.d, status: d.status, voidedOn: d.voided_on }, from, to);
+      if (effect !== "include" && effect !== "reverse_in_period") continue;
+      // a cancellation from an earlier period is a negative line dated the day of the void
+      const sign = effect === "reverse_in_period" ? -1 : 1;
       const rate = rateOf(d.exchange_rate);
       const foreign = fcy(d.currency);
       (byInvoice.get(d.id) ?? []).forEach((l, index) => {
-        const docValue = num(l.quantity) * num(l.unit_price);
+        const docValue = sign * num(l.quantity) * num(l.unit_price);
         const vatRate = l.vat_rate == null ? UAE_VAT_RATE : num(l.vat_rate);
         const klass = classifyVatLineForReturn({ rate: l.vat_rate, supplyType: l.vat_supply_type });
         const docVat = klass === "standard" ? docValue * vatRate : 0;
         rows.push({
           customerName: d.customer_name ?? "",
           customerTrn: d.customer_trn ?? null,
-          invoiceDate: d.d,
+          invoiceDate: effect === "reverse_in_period" ? d.voided_on : d.d,
           invoiceNumber: d.number,
           lineNumber: index + 1,
           description: l.description ?? "",

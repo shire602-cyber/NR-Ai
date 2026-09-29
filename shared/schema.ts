@@ -3273,6 +3273,10 @@ export const vatReturns = pgTable(
     // Server-owned: recorded by PATCH, read by filing (which will not silently discard them).
     manualEdits: jsonb("manual_edits"),
 
+    // The manual VAT journals behind the adjustment columns (entry number, description, box, amount).
+    // Server-owned: written when the return is generated / re-computed at filing.
+    vatAdjustments: jsonb("vat_adjustments"),
+
     // Declaration
     declarantName: text("declarant_name"),
     declarantPosition: text("declarant_position"),

@@ -66,12 +66,15 @@ export const CT_ACCOUNT_CODES = {
 
 /**
  * VAT settlement accounts outside the input/output pair. "Irrecoverable VAT Expense" receives
- * the input VAT a return does not recover, VAT rounding (<= AED 1.00) and recorded manual
- * adjustments when the VAT accounts are cleared at filing. Created on demand for older charts.
+ * the input VAT a return does not recover and VAT rounding (<= AED 1.00) when the VAT accounts
+ * are cleared at filing; "VAT Adjustments" receives the difference of a hand edit that declares
+ * more tax than the ledger. Both are created on demand for older charts.
  */
 export const VAT_ACCOUNT_CODES = {
   /** Irrecoverable VAT Expense (expense). */
   IRRECOVERABLE_EXPENSE: "5160",
+  /** VAT Adjustments (expense): a hand edit that declares MORE tax than the ledger, with its reason. */
+  ADJUSTMENTS: "5165",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildClearingLines, VAT_ROUNDING_TOLERANCE_FILS } from "../../server/services/tax-settlement";
 
-const A = { outputId: "out", inputId: "in", controlId: "ctl", irrecoverableId: "irr" };
+const A = { outputId: "out", inputId: "in", controlId: "ctl", irrecoverableId: "irr", adjustmentsId: "adj" };
 const net = (lines: Array<{ accountId: string; debit: number; credit: number }>, id: string) =>
   Math.round(lines.filter((l) => l.accountId === id).reduce((s, l) => s + l.debit - l.credit, 0) * 100) / 100;
 const total = (lines: Array<{ debit: number; credit: number }>, k: "debit" | "credit") =>
@@ -125,28 +125,121 @@ describe("buildClearingLines: ledger balances against the return", () => {
     ok(buildClearingLines({ outputVat: 1234.57, inputVat: 233.34 }, { outputVat: 1234.57, inputVat: 233.33, net: 1001.24 }, A));
   });
 
-  it("manual adjustment recorded on the return explains a gap and carries the reason", () => {
-    // box 12 hand-edited from 50 to 5; ledger still holds 50
+  it("a hand edit that DECLARES MORE output tax than the ledger is allowed: posted to VAT adjustments, not to 5160, with the reason", () => {
+    // box 12 hand-edited from 50 to 65; the ledger holds 50
     const r = ok(
       buildClearingLines(
         { outputVat: 50, inputVat: 0 },
-        { outputVat: 5, inputVat: 0, net: 5, manual: { outputVat: -45, inputVat: 0, reason: "Client-agreed correction" } },
+        { outputVat: 65, inputVat: 0, net: 65, manual: { outputVat: 15, inputVat: 0, reason: "Supply omitted from the books, disclosed" } },
         A
       )
     );
     expect(net(r.lines, "out")).toBe(50);
-    expect(net(r.lines, "ctl")).toBe(-5);
-    expect(net(r.lines, "irr")).toBe(-45);
-    expect(r.manualAdjustment).toBe(-45);
-    expect(r.lines.find((l) => l.accountId === "irr")?.description).toMatch(/Client-agreed correction/);
+    expect(net(r.lines, "ctl")).toBe(-65);
+    expect(net(r.lines, "adj")).toBe(15);
+    expect(net(r.lines, "irr")).toBe(0);
+    expect(r.manualAdjustment).toBe(15);
+    expect(r.lines.find((l) => l.accountId === "adj")?.description).toMatch(/Supply omitted from the books/);
+    expect(r.lines.find((l) => l.accountId === "adj")?.description).toMatch(/VAT adjustment/i);
   });
 
-  it("a manual adjustment that does not explain the gap is still refused", () => {
+  it("a hand edit that REDUCES the recoverable input tax (declares more tax) is allowed too", () => {
+    const r = ok(
+      buildClearingLines(
+        { outputVat: 100, inputVat: 40 },
+        { outputVat: 100, inputVat: 30, net: 70, manual: { outputVat: 0, inputVat: -10, reason: "Blocked input tax on entertainment" } },
+        A
+      )
+    );
+    expect(net(r.lines, "in")).toBe(-40);
+    expect(net(r.lines, "adj")).toBe(10);
+    expect(net(r.lines, "ctl")).toBe(-70);
+  });
+
+  it("rounding keeps its own line on the irrecoverable account even next to a manual adjustment", () => {
+    const r = ok(
+      buildClearingLines(
+        { outputVat: 50.01, inputVat: 0 },
+        { outputVat: 65, inputVat: 0, net: 65, manual: { outputVat: 15, inputVat: 0, reason: "Disclosed omitted supply" } },
+        A
+      )
+    );
+    expect(net(r.lines, "adj")).toBe(15);
+    expect(net(r.lines, "irr")).toBe(-0.01);
+    expect(r.rounding).toBe(-0.01);
+  });
+
+  it("the scenario that booked VAT as income: box 12 edited from 500 to 0 is REFUSED as an under-declaration", () => {
     const res = buildClearingLines(
-      { outputVat: 50, inputVat: 0 },
-      { outputVat: 5, inputVat: 0, net: 5, manual: { outputVat: -10, inputVat: 0, reason: "x" } },
+      { outputVat: 500, inputVat: 0 },
+      { outputVat: 0, inputVat: 0, net: 0, manual: { outputVat: -500, inputVat: 0, reason: "Client says so" } },
       A
     );
     expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe("VAT_UNDER_DECLARED");
+    expect(res.details.ledger).toEqual({ outputVat: 500, inputVat: 0 });
+    expect(res.details.returned).toMatchObject({ outputVat: 0, inputVat: 0 });
+    expect(res.details.differences).toMatchObject({ outputVat: 500 });
+    expect(res.message).toMatch(/500\.00/);
+  });
+
+  it("a smaller reduction (45 of 50) is an under-declaration as well", () => {
+    const res = buildClearingLines(
+      { outputVat: 50, inputVat: 0 },
+      { outputVat: 5, inputVat: 0, net: 5, manual: { outputVat: -45, inputVat: 0, reason: "Client-agreed correction" } },
+      A
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VAT_UNDER_DECLARED");
+  });
+
+  it("recoverable input tax raised above the ledger's input tax is an under-declaration", () => {
+    const res = buildClearingLines(
+      { outputVat: 100, inputVat: 20 },
+      { outputVat: 100, inputVat: 35, net: 65, manual: { outputVat: 0, inputVat: 15, reason: "Supplier invoice found later" } },
+      A
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe("VAT_UNDER_DECLARED");
+    expect(res.details.differences).toMatchObject({ inputVat: -15 });
+  });
+
+  it("recoverable input tax raised but still inside what the ledger holds (partial exemption) is not an under-declaration", () => {
+    const r = ok(
+      buildClearingLines(
+        { outputVat: 50, inputVat: 200 },
+        { outputVat: 50, inputVat: 180, net: -130, expectedIrrecoverable: 40, manual: { outputVat: 0, inputVat: 20, reason: "Exempt ratio was overstated" } },
+        A
+      )
+    );
+    expect(net(r.lines, "in")).toBe(-200);
+    // the whole 40 irrecoverable is still expensed; 20 of it is given back on the adjustment line
+    expect(net(r.lines, "irr")).toBe(40);
+    expect(net(r.lines, "adj")).toBe(-20);
+  });
+
+  it("a reduction backed by posted documents is NOT under-declared: credit note / void / VAT journal are in the ledger AND the return", () => {
+    // the ledger already holds 450 (500 less a 50 credit note) and the return computed from the books says 450
+    const r = ok(buildClearingLines({ outputVat: 450, inputVat: 0 }, { outputVat: 450, inputVat: 0, net: 450 }, A));
+    expect(net(r.lines, "out")).toBe(450);
+    expect(net(r.lines, "ctl")).toBe(-450);
+    expect(net(r.lines, "adj")).toBe(0);
+  });
+
+  it("a hand edit whose gap to the ledger it does not explain is still a mismatch, not silently adjusted", () => {
+    const res = buildClearingLines(
+      { outputVat: 50, inputVat: 0 },
+      { outputVat: 5, inputVat: 0, net: 5, manual: { outputVat: -10, inputVat: 0, reason: "not enough to explain" } },
+      A
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("VAT_LEDGER_MISMATCH");
+  });
+
+  it("under-declaration of no more than the AED 1.00 rounding tolerance is rounding, not a refusal", () => {
+    const r = ok(buildClearingLines({ outputVat: 100.5, inputVat: 0 }, { outputVat: 100, inputVat: 0, net: 100 }, A));
+    expect(r.rounding).toBe(-0.5);
   });
 });

@@ -8,7 +8,7 @@ import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.servi
 import { pool } from "../db";
 import { round2 } from "../services/financial-statements";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
-import { mergeManualEdits } from "../services/tax-filing-core";
+import { MIN_MANUAL_EDIT_REASON, editedFigureKeys, mergeManualEdits } from "../services/tax-filing-core";
 import {
   assertVatPeriodEnded,
   classifyVatPeriod,
@@ -699,13 +699,27 @@ export function registerVATRoutes(app: Express) {
           .json({ message: decision.message, code: decision.code });
       }
 
+      // Every manual edit of a figure needs a written reason, given in the same request
+      // (adjustmentReason, at least MIN_MANUAL_EDIT_REASON characters). It is stored in the edit
+      // log with the user and the time; filing on the stored figures needs it for every edit.
+      const reason =
+        typeof (cleanUpdate as any).adjustmentReason === "string" ? (cleanUpdate as any).adjustmentReason.trim() : "";
+      const editedKeys = editedFigureKeys(existing as any, cleanUpdate as any);
+      if (editedKeys.length > 0 && reason.length < MIN_MANUAL_EDIT_REASON) {
+        return res.status(422).json({
+          message: `Changing a figure of the return by hand needs a written reason (at least ${MIN_MANUAL_EDIT_REASON} characters): say why the books' figure is being overridden. Nothing was saved.`,
+          code: "MANUAL_EDIT_REASON_REQUIRED",
+          details: { boxes: editedKeys },
+        });
+      }
+
       // Record which boxes were changed by hand: filing recomputes the return from the
       // books and must not silently throw these away (VAT_RETURN_STALE).
       const manualEdits = mergeManualEdits(
         (existing as any).manualEdits ?? null,
         existing as any,
         cleanUpdate as any,
-        { userId }
+        { userId, reason }
       );
       const patchData: any = { ...cleanUpdate };
       if (manualEdits || (existing as any).manualEdits) patchData.manualEdits = manualEdits;

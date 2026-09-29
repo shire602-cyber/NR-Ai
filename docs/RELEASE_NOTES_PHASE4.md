@@ -59,7 +59,27 @@ clearer, bilingual "fix this" errors before an invoice can be generated. No prov
 - **Returns filed before filing records existed** get a frozen snapshot on first read (flagged legacy, no journal posted; drift
   and amendment work as usual). A filing record can no longer be deleted, except with its company.
 
+## Voids, VAT journals and hand edits (second review round)
+
+- **A void is reported in the period of the void.** An invoice issued in August and cancelled in September was a real supply in
+  August: August still shows it (so it matches the ledger and can be filed); September shows a negative line, like a credit note
+  (a voided credit note comes back positive). One rule for the VAT 201, autopilot, firm workpaper and FAF; the corporate tax pull
+  follows the ledger's days. Drafts voided before posting never count. Filed returns still show their snapshot.
+- **Manual journals to the VAT accounts appear as adjustments** (output: your emirate's box 1; input: box 9), with journal number
+  and description, flowing into boxes 12-14, so return and ledger agree with no hand edit. They need a description when posted.
+- **Journals typed in are always source "manual";** system fields come from the server, never from the request.
+- **A hand edit needs a written reason** (10+ characters, saved with who and when); filing on hand-edited figures is refused (422
+  `MANUAL_EDIT_REASON_REQUIRED`) without it. **A return can never declare less tax than the ledger supports:** lowering output VAT
+  below the ledger, or raising recoverable input VAT above it, is refused (422 `VAT_UNDER_DECLARED`); credit notes, voids and VAT
+  journals are already in the ledger, so they are fine. Declaring MORE tax is allowed with a reason and goes to the new account
+  "VAT Adjustments" (5165), apart from irrecoverable VAT (5160).
+- **Opening invoice numbers:** the preview warns when an imported number leaves a gap in the sequence; posting logs the jump.
+- **Read-only scripts** (they change nothing): `scripts/find-suspect-journal-sources.mjs` lists system-source journals with no
+  matching record (possible forgeries from before this fix); `scripts/find-suspect-fx-documents.mjs` lists odd FX rates.
+
 ## Database migration
+
+`0096_vat_return_adjustments`: one nullable column (the journals behind a return's adjustments). Safe to re-run.
 
 `0095_filing_review_fixes`: a column for hand-edited VAT boxes and a trigger that refuses deleting filing records. Safe to re-run.
 
@@ -69,7 +89,7 @@ filing is protected by a database trigger against edits.
 
 ## Behaviour changes to know about
 
-- New companies get three more accounts (2060, 5150, 5160). Bills and receipts still post all input VAT to 1050; the irrecoverable
+- New companies get four more accounts (2060, 5150, 5160, 5165). Bills and receipts still post all input VAT to 1050; the irrecoverable
   part moves to 5160 when the return is filed.
 - Marking a VAT or corporate tax return "filed" by editing its status no longer works: use Record filing (reference and date are required).
   The old submit-with-reference call now also needs a filing date.

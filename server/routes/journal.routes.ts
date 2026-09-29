@@ -7,6 +7,13 @@ import { insertJournalEntrySchema, type JournalEntry } from "../../shared/schema
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import {
+  VAT_JOURNAL_DESCRIPTION_REQUIRED,
+  buildManualJournalInsert,
+  buildManualJournalUpdate,
+  manualJournalMemo,
+  vatJournalDescriptionProblem,
+} from "../services/manual-journal-input";
+import {
   BACKDATED_CONFIRMATION_CODE,
   evaluateBackdatedEntry,
   type BackdatedDecision,
@@ -113,17 +120,9 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const {
-        lines,
-        date,
-        status = "draft",
-        description,
-        confirmBackdated,
-        ...entryData
-      } = req.body;
-      // The client sends `description`; the journal_entries column is `memo`.
-      // Without this mapping the narration was silently dropped.
-      if (description && !entryData.memo) entryData.memo = description;
+      // Only these fields are read from the body; everything else (source, sourceId, reversedEntryId,
+      // postedBy, createdBy, entryNumber, companyId, ...) belongs to the system and is ignored.
+      const { lines, date, status = "draft", confirmBackdated } = req.body;
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -218,6 +217,17 @@ export function registerJournalRoutes(app: Express) {
         return res.status(409).json(backdatedConfirmationBody(backdated.fiscalYearStart));
       }
 
+      // A journal that posts to a VAT account is a VAT adjustment on the return: it must say what it corrects.
+      const vatProblem = vatJournalDescriptionProblem({
+        isPosting: status === "posted",
+        memo: manualJournalMemo(req.body),
+        lines,
+        accountsById: new Map(companyAccounts.map((a) => [a.id, a])),
+      });
+      if (vatProblem) {
+        return res.status(400).json({ message: vatProblem, code: VAT_JOURNAL_DESCRIPTION_REQUIRED });
+      }
+
       // Generate entry number atomically via storage helper
       const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 
@@ -226,18 +236,8 @@ export function registerJournalRoutes(app: Express) {
 
       // Create journal entry + lines atomically (storage validates balance & wraps in transaction)
       const entry = await storage.createJournalEntry(
-        {
-          ...entryData,
-          date: entryDate,
-          companyId,
-          createdBy: userId,
-          entryNumber,
-          status: isPosting ? "posted" : "draft",
-          source: entryData.source || "manual",
-          sourceId: entryData.sourceId || null,
-          postedBy: isPosting ? userId : null,
-          postedAt: isPosting ? new Date() : null,
-        },
+        // Explicit allow-list: a journal typed in by a user is always source "manual".
+        buildManualJournalInsert(req.body, { companyId, userId, entryNumber, date: entryDate, status }),
         lines.map((line: any) => ({
           accountId: line.accountId,
           costCenterId: line.costCenterId || null,
@@ -312,10 +312,6 @@ export function registerJournalRoutes(app: Express) {
       const {
         lines,
         date,
-        description,
-        memo,
-        notes,
-        status: requestedStatus,
         confirmBackdated,
       } = req.body;
 
@@ -434,29 +430,24 @@ export function registerJournalRoutes(app: Express) {
         }
       }
 
-      // Whitelist: only safe fields can be edited via this endpoint.
-      // Block changes to companyId, entryNumber, postedBy, source, sourceId, etc.
-      // status may only transition between 'draft' and 'posted' (post path also
-      // exists at /post; we permit 'posted' here for forms that submit-and-post).
-      const safeUpdate: Record<string, any> = {
-        date: entryDate,
-        updatedBy: userId,
-        updatedAt: new Date(),
-      };
-      if (description !== undefined) safeUpdate.description = description;
-      if (memo !== undefined) safeUpdate.memo = memo;
-      if (notes !== undefined) safeUpdate.notes = notes;
-      if (requestedStatus !== undefined) {
-        if (requestedStatus !== "draft" && requestedStatus !== "posted") {
-          return res.status(400).json({
-            message: `Invalid status '${requestedStatus}' — only 'draft' or 'posted' are accepted`,
-          });
-        }
-        safeUpdate.status = requestedStatus;
-        if (requestedStatus === "posted") {
-          safeUpdate.postedBy = userId;
-          safeUpdate.postedAt = new Date();
-        }
+      // Posting a journal that touches a VAT account needs a description (it is a VAT adjustment).
+      const putProblem = vatJournalDescriptionProblem({
+        isPosting: req.body.status === "posted",
+        memo: manualJournalMemo(req.body) ?? entry.memo,
+        lines,
+        accountsById: new Map(companyAccounts.map((a) => [a.id, a])),
+      });
+      if (putProblem) {
+        return res.status(400).json({ message: putProblem, code: VAT_JOURNAL_DESCRIPTION_REQUIRED });
+      }
+
+      // Whitelist: only date, memo and draft/posted can be edited via this endpoint; source,
+      // sourceId, entryNumber, companyId, postedBy, ... are never taken from the body.
+      let safeUpdate: Record<string, any>;
+      try {
+        safeUpdate = buildManualJournalUpdate(req.body, { userId, date: entryDate });
+      } catch (err) {
+        return res.status(400).json({ message: (err as Error).message });
       }
 
       // Update journal entry + replace lines atomically (validates balance & wraps in transaction)
@@ -532,6 +523,17 @@ export function registerJournalRoutes(app: Express) {
 
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
         return res.status(400).json({ message: "Cannot post: Debits must equal credits" });
+      }
+
+      // A journal that posts to a VAT account is a VAT adjustment: it needs a description.
+      const postProblem = vatJournalDescriptionProblem({
+        isPosting: true,
+        memo: entry.memo,
+        lines,
+        accountsById: new Map((await storage.getAccountsByCompanyId(entry.companyId)).map((a) => [a.id, a])),
+      });
+      if (postProblem) {
+        return res.status(400).json({ message: postProblem, code: VAT_JOURNAL_DESCRIPTION_REQUIRED });
       }
 
       // Cannot post into a locked period.

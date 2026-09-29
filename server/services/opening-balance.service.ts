@@ -23,7 +23,7 @@ import {
 } from "../../shared/schema";
 import { ACCOUNT_CODES } from "../constants";
 import { assertPeriodNotLocked } from "./period-lock.service";
-import { advanceSequencePast } from "./invoice-numbering.service";
+import { advanceSequencePast, previewSequenceJumps, type SequenceJump } from "./invoice-numbering.service";
 import { recordAudit } from "./audit.service";
 import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, postSettlementJournal, type FilingActor } from "./tax-filing.service";
@@ -179,6 +179,8 @@ export interface OpeningPreview {
   errors: OpeningIssue[];
   parsedRows: OpeningRowInput[] | null;
   asOfDate: string | null;
+  /** Things worth knowing that do not block posting (for example a jump in the invoice numbering). */
+  warnings: Array<{ code: "INVOICE_NUMBER_GAP"; message: string; details: SequenceJump }>;
   totals: {
     debit: number;
     credit: number;
@@ -247,7 +249,12 @@ export async function previewOpeningBalance(companyId: string, input: OpeningInp
     if (!tie.ok) errors.push(...tie.errors);
   }
 
-  return { ok: errors.length === 0, errors, parsedRows, asOfDate: dateCheck.ok ? dateCheck.date : null, totals };
+  // A number in the sequence's own format moves the company's counter past it: say so, because UAE
+  // tax invoices need sequential numbering. Numbering itself is unchanged.
+  const jumps = await previewSequenceJumps(db, companyId, "invoice", inv.docs.map((d) => d.number));
+  const warnings = jumps.map((j) => ({ code: "INVOICE_NUMBER_GAP" as const, message: j.message, details: j }));
+
+  return { ok: errors.length === 0, errors, parsedRows, asOfDate: dateCheck.ok ? dateCheck.date : null, warnings, totals };
 }
 
 async function ensureOpeningBalanceEquity(tx: Tx, companyId: string): Promise<{ id: string }> {
@@ -312,7 +319,11 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
   const invDocs = cleanDocs("invoice", args.input.invoices, openingDate).docs;
   const billDocs = cleanDocs("bill", args.input.bills, openingDate).docs;
 
+  // Gaps the imported invoice numbers open in the sequence, read inside the transaction BEFORE the
+  // opening invoices are inserted (afterwards they would count as "existing"); recorded in the audit log below.
+  let sequenceJumps: SequenceJump[] = [];
   const result = await db.transaction(async (tx: Tx) => {
+    sequenceJumps = await previewSequenceJumps(tx, companyId, "invoice", invDocs.map((d) => d.number));
     const equity = await ensureOpeningBalanceEquity(tx, companyId);
     const [ob] = await tx
       .insert(openingBalances)
@@ -384,10 +395,30 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
     action: "opening_balance.post",
     entityType: "opening_balance",
     entityId: result.id,
-    after: { asOfDate: openingDate, journalEntryId: result.journalEntryId, accounts: grid.rows.length, invoices: invDocs.length, bills: billDocs.length },
+    after: {
+      asOfDate: openingDate,
+      journalEntryId: result.journalEntryId,
+      accounts: grid.rows.length,
+      invoices: invDocs.length,
+      bills: billDocs.length,
+      ...(sequenceJumps.length > 0 ? { invoiceNumberJumps: sequenceJumps } : {}),
+    },
     req: args.req,
   });
-  return { ...result, asOfDate: openingDate, totals: preview.totals };
+  // The jump in the invoice numbering is its own audit record: it has to be explainable later.
+  for (const jump of sequenceJumps) {
+    await recordAudit({
+      userId: user.id,
+      companyId,
+      action: "invoice_sequence.jump",
+      entityType: "invoice_number_sequence",
+      entityId: result.id,
+      after: jump,
+      extra: { reason: "opening_balance", openingBalanceId: result.id },
+      req: args.req,
+    });
+  }
+  return { ...result, asOfDate: openingDate, totals: preview.totals, warnings: preview.warnings };
 }
 
 /**

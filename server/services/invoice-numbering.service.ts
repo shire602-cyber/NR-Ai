@@ -69,6 +69,82 @@ export function sequenceAdvancesFromNumbers(
   return [...byYear.entries()].sort((a, b) => a[0] - b[0]).map(([year, value]) => ({ year, value }));
 }
 
+// ── Gaps that an imported number opens ───────────────────────────────────────
+
+export interface SequenceJump {
+  year: number;
+  /** Highest counter in use before the import (0 when none). */
+  highestExisting: number;
+  /** Highest imported counter in the sequence's own format for that year. */
+  importedHighest: number;
+  /** The number the next invoice will get after the import. */
+  nextNumber: string;
+  /** How many numbers are skipped for good. */
+  gap: number;
+  firstUnused: string;
+  lastUnused: string;
+  /** Plain-language warning for the owner and the accountant. */
+  message: string;
+}
+
+/**
+ * Where an import would move a sequence forward by more than 1 beyond the highest number in use
+ * (pure). UAE tax invoices are numbered in sequence: a jump that can be explained is defensible, a
+ * silent one is not. Never changes the numbering, only describes what will happen.
+ */
+export function sequenceJumps(
+  docType: InvoiceDocType,
+  numbers: string[],
+  highestExistingByYear: Map<number, number>
+): SequenceJump[] {
+  const importedByYear = new Map<number, Set<number>>();
+  for (const number of numbers) {
+    const parsed = parseSequenceNumber(docType, number);
+    if (!parsed) continue;
+    const set = importedByYear.get(parsed.year) ?? new Set<number>();
+    set.add(parsed.value);
+    importedByYear.set(parsed.year, set);
+  }
+  const out: SequenceJump[] = [];
+  for (const [year, imported] of [...importedByYear.entries()].sort((a, b) => a[0] - b[0])) {
+    const highestImported = Math.max(...imported);
+    const existing = highestExistingByYear.get(year) ?? 0;
+    if (highestImported - existing <= 1) continue;
+    // Numbers between the highest one in use and the highest imported one that nothing will ever carry
+    // (the imported numbers themselves fill part of the run and are not a gap).
+    let gap = 0;
+    let firstUnused = 0;
+    let lastUnused = 0;
+    for (let v = existing + 1; v < highestImported; v++) {
+      if (imported.has(v)) continue;
+      gap += 1;
+      if (firstUnused === 0) firstUnused = v;
+      lastUnused = v;
+    }
+    if (gap < 1) continue;
+    const f = (n: number) => formatInvoiceNumber(docType, year, n);
+    const nextNumber = f(highestImported + 1);
+    const still =
+      existing > 0
+        ? `Your highest number so far is ${f(existing)}, so `
+        : `You have not issued a number in this format for ${year} yet, so `;
+    out.push({
+      year,
+      highestExisting: existing,
+      importedHighest: highestImported,
+      nextNumber,
+      gap,
+      firstUnused: f(firstUnused),
+      lastUnused: f(lastUnused),
+      message:
+        `${f(highestImported)} is in your invoice numbering format, so the next invoice you issue will be ${nextNumber}. ` +
+        `${still}the numbers between ${f(firstUnused)} and ${f(lastUnused)} that you did not import (${gap} in all) will never be issued. ` +
+        `UAE tax invoices must be numbered in sequence: keep a note of why (for example, those numbers were used in your previous system).`,
+    });
+  }
+  return out;
+}
+
 // Drizzle executor type — accepts the global db handle or any nested tx so that
 // callers can include allocation in a wider transaction. Using `typeof db`
 // matches the convention already in use in storage.ts (createJournalEntry,
@@ -194,6 +270,42 @@ export async function advanceSequencePast(
                       updated_at = now()`);
   }
   return advances;
+}
+
+/** Highest counter in use per year: the larger of the sequence counter and the highest number on a document. */
+async function highestExistingByYear(
+  executor: Executor,
+  companyId: string,
+  docType: InvoiceDocType,
+  years: number[]
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const table = sql.raw(NUMBER_TABLE[docType]);
+  for (const year of years) {
+    const prefix = `${PREFIX[docType]}-${year}-`;
+    const pattern = `^${prefix}([0-9]{1,9})$`;
+    const seq: any = await executor.execute(sql`
+      SELECT last_value FROM invoice_number_sequences WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}`);
+    const used: any = await executor.execute(sql`
+      SELECT COALESCE(MAX(substring(number from ${pattern}::text)::bigint), 0) AS n
+        FROM ${table} WHERE company_id = ${companyId} AND number LIKE ${prefix + "%"} AND number ~ ${pattern}`);
+    const counter = Number(((seq.rows ?? seq) as Array<{ last_value: string | number }>)[0]?.last_value ?? 0);
+    const highest = Number(((used.rows ?? used) as Array<{ n: string | number }>)[0]?.n ?? 0);
+    out.set(year, Math.max(counter, highest));
+  }
+  return out;
+}
+
+/** The gaps an import of these numbers would open in the sequence (read-only; see sequenceJumps). */
+export async function previewSequenceJumps(
+  executor: Executor,
+  companyId: string,
+  docType: InvoiceDocType,
+  numbers: string[]
+): Promise<SequenceJump[]> {
+  const years = sequenceAdvancesFromNumbers(docType, numbers).map((a) => a.year);
+  if (years.length === 0) return [];
+  return sequenceJumps(docType, numbers, await highestExistingByYear(executor, companyId, docType, years));
 }
 
 // Peek the next number without allocating it (for UI display before save).

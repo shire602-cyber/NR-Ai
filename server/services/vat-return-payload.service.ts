@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { insertVatReturnSchema } from "../../shared/schema";
 import { classifyVatPeriod } from "./vat-period-status.service";
+import { round2 } from "./tax-filing-core";
 
 export const LEGACY_VAT_RETURN_FIELDS = [
   "box1SalesStandard",
@@ -49,10 +50,20 @@ export interface GeneratedVatReturnInput {
   totalOutputVat: number;
   totalInputAmount: number;
   totalInputVat: number;
+  /** Net effect of manual VAT journals on the output tax (box 8 adjustment); 0 when there are none. */
+  outputAdjustment?: number;
+  /** Net effect of manual VAT journals on the recoverable tax (box 9 / box 11 adjustment). */
+  inputAdjustment?: number;
+  /** The journals behind those adjustments (entry number, description, box, amount). */
+  vatAdjustments?: unknown[];
 }
 
 /** Canonical VAT 201 values for a generated (draft) return. */
 export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
+  const outputAdj = input.outputAdjustment ?? 0;
+  const inputAdj = input.inputAdjustment ?? 0;
+  const dueTax = round2(input.totalOutputVat + outputAdj);
+  const recoverableTax = round2(input.totalInputVat + inputAdj);
   return {
     companyId: input.companyId,
     periodStart: input.periodStart,
@@ -82,11 +93,11 @@ export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
     // Box 8: Total output amounts and VAT
     box8TotalAmount: input.totalOutputAmount,
     box8TotalVat: input.totalOutputVat,
-    box8TotalAdj: 0,
+    box8TotalAdj: outputAdj,
     // Box 9: Standard rated expenses (input VAT recovery)
     box9ExpensesAmount: input.totalExpenses,
     box9ExpensesVat: input.inputTax,
-    box9ExpensesAdj: 0,
+    box9ExpensesAdj: inputAdj,
     // Box 10: Reverse charge on imports (input side) — buyer claims back the
     // self-assessed VAT, reduced by partial-exemption ratio when applicable.
     box10ReverseChargeAmount: input.reverseChargeAmount,
@@ -94,11 +105,13 @@ export function buildGeneratedVatReturnValues(input: GeneratedVatReturnInput) {
     // Box 11: Total input amounts and VAT
     box11TotalAmount: input.totalInputAmount,
     box11TotalVat: input.totalInputVat,
-    box11TotalAdj: 0,
+    box11TotalAdj: inputAdj,
     // Box 12-14: VAT calculations
-    box12TotalDueTax: input.totalOutputVat,
-    box13RecoverableTax: input.totalInputVat,
-    box14PayableTax: input.totalOutputVat - input.totalInputVat,
+    // Due tax = box 8 VAT + box 8 adjustment; recoverable tax = box 11 VAT + box 11 adjustment.
+    box12TotalDueTax: dueTax,
+    box13RecoverableTax: recoverableTax,
+    box14PayableTax: round2(dueTax - recoverableTax),
+    vatAdjustments: input.vatAdjustments ?? [],
     createdBy: input.userId,
   };
 }
@@ -143,6 +156,8 @@ export const vatReturnPatchSchema = insertVatReturnSchema
     isAmendment: true,
     // The manual-edit log is written by this endpoint, never by the client.
     manualEdits: true,
+    // The manual VAT journals behind the adjustment columns are written by the server too.
+    vatAdjustments: true,
   })
   .extend({
     ...moneyOverrides,

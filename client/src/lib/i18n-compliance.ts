@@ -224,6 +224,9 @@ const en = {
   obChecking: "Checking…",
   obPosting: "Posting…",
   obCheckOk: "Everything checks out. You can post the opening balances.",
+  obWarnTitle: "Worth knowing before you post",
+  obGapWarning:
+    "{imported} is in your invoice numbering format, so the next invoice you issue will be {next}. The numbers between {first} and {last} that you did not import ({gap} in all) will never be issued. UAE tax invoices must be numbered in sequence: keep a note of why (for example, those numbers were used in your previous system). Posting is still allowed.",
   obFixFirst: "Fix these before posting",
   obPosted: "Opening balances posted",
   obPostFailed: "Could not post the opening balances",
@@ -455,6 +458,9 @@ const ar: Record<ComplianceKey, string> = {
   obChecking: "جارٍ الفحص…",
   obPosting: "جارٍ الترحيل…",
   obCheckOk: "كل شيء سليم. يمكنك ترحيل الأرصدة الافتتاحية.",
+  obWarnTitle: "أمور تستحق الانتباه قبل الترحيل",
+  obGapWarning:
+    "الرقم {imported} بنفس صيغة ترقيم فواتيرك، لذلك ستكون الفاتورة التالية التي تصدرها {next}. الأرقام الواقعة بين {first} و{last} التي لم تستوردها (وعددها {gap}) لن تُصدر أبداً. يجب ترقيم الفواتير الضريبية في دولة الإمارات بتسلسل متصل: احتفظ بملاحظة تشرح السبب (مثلاً أن هذه الأرقام استُخدمت في نظامك السابق). لا يزال الترحيل مسموحاً.",
   obFixFirst: "صحّح هذه الأمور قبل الترحيل",
   obPosted: "تم ترحيل الأرصدة الافتتاحية",
   obPostFailed: "تعذّر ترحيل الأرصدة الافتتاحية",

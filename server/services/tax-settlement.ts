@@ -116,25 +116,29 @@ export interface ClearingAccounts {
   outputId: string;
   inputId: string;
   controlId: string;
-  /** "Irrecoverable VAT expense": also carries rounding and manual adjustments. */
+  /** "Irrecoverable VAT expense": carries irrecoverable input VAT and rounding. */
   irrecoverableId: string;
+  /** "VAT adjustments": carries the declared-more-tax difference of a hand edit (with its reason). */
+  adjustmentsId: string;
 }
 
 /** A ledger/return gap above AED 1.00 (in fils) is investigated, not written off. */
 export const VAT_ROUNDING_TOLERANCE_FILS = 100;
 
+export interface ClearingRefusalDetails {
+  ledger: LedgerVatBalances;
+  returned: { outputVat: number; inputVat: number; net: number; expectedIrrecoverable: number; manualOutputVat: number; manualInputVat: number };
+  differences: { outputVat: number; inputVat: number; unexplained: number };
+  toleranceAed: number;
+}
+
 export type ClearingResult =
   | { ok: true; lines: JournalLineInput[]; irrecoverable: number; rounding: number; manualAdjustment: number }
   | {
       ok: false;
-      code: "VAT_LEDGER_MISMATCH";
+      code: "VAT_LEDGER_MISMATCH" | "VAT_UNDER_DECLARED";
       message: string;
-      details: {
-        ledger: LedgerVatBalances;
-        returned: { outputVat: number; inputVat: number; net: number; expectedIrrecoverable: number; manualOutputVat: number; manualInputVat: number };
-        differences: { outputVat: number; inputVat: number; unexplained: number };
-        toleranceAed: number;
-      };
+      details: ClearingRefusalDetails;
     };
 
 /**
@@ -143,7 +147,14 @@ export type ClearingResult =
  *   output ledger  -> debited in full          input ledger -> credited in full
  *   FTA control    -> the return's net (credit if payable, debit if refundable)
  *   expense        -> whatever is left, split into three explained lines:
- *                     irrecoverable input VAT, manual adjustment, rounding
+ *                     irrecoverable input VAT, rounding (both on "Irrecoverable VAT expense"),
+ *                     and a hand edit that declares MORE tax than the ledger ("VAT adjustments",
+ *                     with the reason). A return may never declare LESS tax than the ledger
+ *                     supports: a hand edit that lowers output VAT below the ledger, or raises
+ *                     recoverable input VAT above it, is refused (VAT_UNDER_DECLARED) instead of
+ *                     being written off to an expense / income account. Credit notes, void
+ *                     reversals and VAT adjustment journals are in the ledger AND in the
+ *                     computed return, so they never trigger it.
  * For an amendment pass the DIFFERENCES (ledger now - already cleared, return now - base).
  */
 export function buildClearingLines(
@@ -169,8 +180,24 @@ export function buildClearingLines(
   const unexplained = inGap - outGap;
 
   const tooBig = (v: number) => Math.abs(v) > VAT_ROUNDING_TOLERANCE_FILS;
+  const scale = (v: number) => fromFils(v);
+  const refusal = (): { ledger: LedgerVatBalances; details: ClearingRefusalDetails } => ({
+    ledger: { outputVat: scale(lOut), inputVat: scale(lIn) },
+    details: {
+      ledger: { outputVat: scale(lOut), inputVat: scale(lIn) },
+      returned: {
+        outputVat: scale(rOut),
+        inputVat: scale(rIn),
+        net: scale(rNet),
+        expectedIrrecoverable: scale(expIrr),
+        manualOutputVat: scale(manOut),
+        manualInputVat: scale(manIn),
+      },
+      differences: { outputVat: scale(lOut - rOut), inputVat: scale(lIn - rIn), unexplained: scale(unexplained) },
+      toleranceAed: VAT_ROUNDING_TOLERANCE_FILS / 100,
+    },
+  });
   if (tooBig(outGap) || tooBig(inGap) || tooBig(unexplained)) {
-    const scale = (v: number) => fromFils(v);
     return {
       ok: false,
       code: "VAT_LEDGER_MISMATCH",
@@ -178,19 +205,29 @@ export function buildClearingLines(
         `The VAT accounts and the return disagree: output VAT in the ledger is ${scale(lOut).toFixed(2)} against ${scale(rOut).toFixed(2)} on the return, ` +
         `input VAT ${scale(lIn).toFixed(2)} against ${scale(rIn).toFixed(2)}. ` +
         `Differences above AED ${(VAT_ROUNDING_TOLERANCE_FILS / 100).toFixed(2)} that are not explained by partial exemption or a recorded adjustment must be investigated before filing. Nothing was posted.`,
-      details: {
-        ledger: { outputVat: scale(lOut), inputVat: scale(lIn) },
-        returned: {
-          outputVat: scale(rOut),
-          inputVat: scale(rIn),
-          net: scale(rNet),
-          expectedIrrecoverable: scale(expIrr),
-          manualOutputVat: scale(manOut),
-          manualInputVat: scale(manIn),
-        },
-        differences: { outputVat: scale(lOut - rOut), inputVat: scale(lIn - rIn), unexplained: scale(unexplained) },
-        toleranceAed: VAT_ROUNDING_TOLERANCE_FILS / 100,
-      },
+      details: refusal().details,
+    };
+  }
+
+  // The return may never declare less tax than the ledger supports. At this point every
+  // difference above the rounding tolerance is explained by a hand edit, and a hand edit that
+  // lowers output VAT below the ledger, or raises recoverable input VAT above it, hides tax.
+  if (lOut - rOut > VAT_ROUNDING_TOLERANCE_FILS || rIn - lIn > VAT_ROUNDING_TOLERANCE_FILS) {
+    const parts: string[] = [];
+    if (lOut - rOut > VAT_ROUNDING_TOLERANCE_FILS) {
+      parts.push(`output VAT in the ledger is ${scale(lOut).toFixed(2)} but the return declares ${scale(rOut).toFixed(2)}`);
+    }
+    if (rIn - lIn > VAT_ROUNDING_TOLERANCE_FILS) {
+      parts.push(`the return recovers ${scale(rIn).toFixed(2)} of input VAT but the ledger holds ${scale(lIn).toFixed(2)}`);
+    }
+    return {
+      ok: false,
+      code: "VAT_UNDER_DECLARED",
+      message:
+        `The return declares less tax than the books support: ${parts.join("; ")}. ` +
+        `A hand edit cannot lower the tax due or raise the tax recovered below what the ledger holds: that difference would be written off as income. ` +
+        `Correct the books with a credit note or a VAT adjustment journal (with a description), or restore the computed figures. Nothing was posted.`,
+      details: refusal().details,
     };
   }
 
@@ -205,7 +242,8 @@ export function buildClearingLines(
     // payable => credit the control account, refundable => debit it
     signedLine(accts.controlId, -rNet, `VAT due to / (from) the FTA - ${label}`),
     signedLine(accts.irrecoverableId, expIrr, `Irrecoverable input VAT - ${label}`),
-    signedLine(accts.irrecoverableId, manualExpense, `VAT manual adjustment - ${label}${why}`),
+    // a hand edit that declares MORE tax than the ledger: its own account, never 5160, with the reason
+    signedLine(accts.adjustmentsId, manualExpense, `VAT adjustment (manual edit) - ${label}${why}`),
     signedLine(accts.irrecoverableId, rounding, `VAT rounding - ${label}`),
   ]);
   return {

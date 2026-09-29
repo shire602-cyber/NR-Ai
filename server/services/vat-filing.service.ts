@@ -41,6 +41,7 @@ import {
   diffBoxes,
   fromFils,
   hasRecordedManualEdits,
+  manualEditReasonProblem,
   manualSettlementDelta,
   monthEndsInRange,
   snapshotHash,
@@ -283,10 +284,26 @@ export async function recordVatFiling(args: {
         }
         await tx
           .update(vatReturns)
-          .set({ ...boxValues, manualEdits: null, updatedAt: new Date() } as any)
+          .set({ ...boxValues, manualEdits: null, vatAdjustments: (returnValues as any).vatAdjustments ?? [], updatedAt: new Date() } as any)
           .where(eq(vatReturns.id, ret.id));
       }
       const [fresh] = await tx.select().from(vatReturns).where(eq(vatReturns.id, ret.id));
+      // Filing on hand-edited figures needs the written reason of EVERY edit (recorded when it was made).
+      if (!useRecomputed) {
+        const noReason = manualEditReasonProblem(manualEdits, {
+          adjustmentAmount: fresh.adjustmentAmount,
+          adjustmentReason: fresh.adjustmentReason,
+        });
+        if (noReason) {
+          throw new AppError({
+            message:
+              "The draft has figures that were changed by hand without a written reason. Add a reason for each edit (at least 10 characters) before filing, or file the figures computed from the books.",
+            statusCode: 422,
+            code: "MANUAL_EDIT_REASON_REQUIRED",
+            details: { boxes: noReason.boxes },
+          });
+        }
+      }
       const snapshotBase = buildVatSnapshot(fresh as unknown as Record<string, unknown>);
 
       let figures: ReturnType<typeof settlementFigures>;
@@ -361,6 +378,8 @@ export async function recordVatFiling(args: {
       snapshot = {
         ...snapshot,
         clearing,
+        // the manual VAT journals behind the adjustment columns, as filed
+        vatAdjustments: (fresh as any).vatAdjustments ?? [],
         recompute: { action: assessment.action, differences: assessment.differences },
       };
 
