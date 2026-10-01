@@ -431,6 +431,7 @@ export const t = {
     // New modules
     payroll: "Payroll & WPS",
     billPay: "Bill Pay",
+    vendorCredits: "Vendor Credits",
     fixedAssets: "Fixed Assets",
     budgeting: "Budgets",
     expenseClaims: "Expense Claims",
@@ -878,6 +879,7 @@ export const t = {
     // New modules
     payroll: "الرواتب والحماية",
     billPay: "دفع الفواتير",
+    vendorCredits: "إشعارات دائنة من الموردين",
     fixedAssets: "الأصول الثابتة",
     budgeting: "الميزانيات",
     expenseClaims: "مطالبات المصروفات",

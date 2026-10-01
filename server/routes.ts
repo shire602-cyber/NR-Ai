@@ -52,6 +52,7 @@ import { registerRecurringInvoiceRoutes } from "./routes/recurring-invoices.rout
 import { registerInventoryRoutes } from "./routes/inventory.routes";
 import { registerPayrollRoutes } from "./routes/payroll.routes";
 import { registerBillPayRoutes } from "./routes/bill-pay.routes";
+import { registerVendorCreditRoutes } from "./routes/vendor-credits.routes";
 import { registerFixedAssetRoutes } from "./routes/fixed-assets.routes";
 import { registerBudgetRoutes } from "./routes/budgets.routes";
 import { registerExpenseClaimRoutes } from "./routes/expense-claims.routes";
@@ -62,7 +63,9 @@ import { registerAIGLRoutes } from "./routes/ai-gl.routes";
 import { registerMonthEndRoutes } from "./routes/month-end.routes";
 import { registerComplianceDashboardRoutes } from "./routes/compliance-dashboard.routes";
 import { registerQuoteRoutes } from "./routes/quotes.routes";
+import { registerStatementRoutes } from "./routes/statements.routes";
 import { registerCreditNoteRoutes } from "./routes/credit-notes.routes";
+import { registerCustomerRefundRoutes } from "./routes/customer-refunds.routes";
 import { registerPurchaseOrderRoutes } from "./routes/purchase-orders.routes";
 import { registerCostCenterRoutes } from "./routes/cost-centers.routes";
 import { registerFinancialStatementRoutes } from "./routes/financial-statements.routes";
@@ -117,6 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Accounts Payable ───────────────────────────────────
   registerBillPayRoutes(app);
+  registerVendorCreditRoutes(app);
 
   // ─── Asset Management ───────────────────────────────────
   registerFixedAssetRoutes(app);
@@ -134,7 +138,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMonthEndRoutes(app);
   registerComplianceDashboardRoutes(app);
   registerQuoteRoutes(app);
+  registerStatementRoutes(app);
   registerCreditNoteRoutes(app);
+  registerCustomerRefundRoutes(app);
   registerPurchaseOrderRoutes(app);
   registerCostCenterRoutes(app);
   registerFinancialStatementRoutes(app);

@@ -56,6 +56,7 @@ export const messages = defineMessages(
     status: "Status",
     actions: "Actions",
     downloadPdf: "Download PDF",
+    refund: "Refund",
     noCreditNotesYet: "No credit notes yet",
     issueACreditNoteToCorrect:
       "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
@@ -114,6 +115,7 @@ export const messages = defineMessages(
     status: "الحالة",
     actions: "الإجراءات",
     downloadPdf: "تنزيل PDF",
+    refund: "استرداد",
     noCreditNotesYet: "لا توجد إشعارات دائنة بعد",
     issueACreditNoteToCorrect:
       "أصدر إشعارًا دائنًا لتصحيح فاتورة أو رد قيمتها — يُرحَّل تلقائيًا إلى دفتر الأستاذ وإقرار ضريبة القيمة المضافة.",

@@ -168,6 +168,10 @@ export const messages = defineMessages(
     createBankCashAccount: "Create Bank/Cash Account",
     processing: "Processing...",
     markAsPaid: "Mark as Paid",
+    lineProduct: "Product",
+    lineProductManual: "Manual line (no product)",
+    deliveryNote: "Delivery note",
+    deliveryNoteFailed: "Could not create the delivery note",
   },
   {
     descriptionIsRequired: "الوصف مطلوب",
@@ -329,5 +333,9 @@ export const messages = defineMessages(
     createBankCashAccount: "إنشاء حساب بنكي / نقدي",
     processing: "جارٍ المعالجة...",
     markAsPaid: "تعليم كمدفوعة",
+    lineProduct: "المنتج",
+    lineProductManual: "بند يدوي (بدون منتج)",
+    deliveryNote: "مذكرة تسليم",
+    deliveryNoteFailed: "تعذر إنشاء مذكرة التسليم",
   }
 );

@@ -2,9 +2,11 @@ import { motion, useInView, useScroll, useTransform } from "framer-motion";
 import {
   ArrowRight,
   ArrowUpRight,
+  Banknote,
   Building2,
   Check,
   ChevronRight,
+  ClipboardCheck,
   Cpu,
   FileCheck,
   FileText,
@@ -14,13 +16,13 @@ import {
   RefreshCw,
   Shield,
   Sparkles,
-  TrendingUp,
   Wallet,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { messages as pageMessages } from "./MuhasibLanding.i18n";
+import { PLAN_IDS, PLAN_PRICES, TRIAL_DAYS, type PlanId } from "@/lib/plan-catalog";
 import { useTranslation } from "@/lib/i18n";
 import { CALENDAR_DATE_SHORT_FORMAT, formatDate } from "@/lib/format";
 
@@ -168,6 +170,12 @@ function HeroProductMock() {
             >
               {tr("appMuhasibAiDashboard")}
             </span>
+            <span
+              className="ms-auto text-[9px] font-semibold uppercase tracking-wider"
+              style={{ color: C.muted }}
+            >
+              {tr("sampleData")}
+            </span>
           </div>
 
           {/* Body */}
@@ -275,13 +283,13 @@ function HeroProductMock() {
                   style={{ borderColor: C.hairline }}
                 >
                   <span className="text-[11px] font-semibold" style={{ color: C.ink }}>
-                    {tr("todayAutoCategorised")}
+                    {tr("todayCategorised")}
                   </span>
                   <span
                     className="text-[9px] font-medium uppercase tracking-wider"
                     style={{ color: C.muted }}
                   >
-                    {tr("ai992Confidence")}
+                    {tr("aiSuggestedYouApprove")}
                   </span>
                 </div>
                 {[
@@ -346,14 +354,14 @@ function HeroProductMock() {
             className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
             style={{ background: C.emeraldSoft, color: C.ink }}
           >
-            <span className="font-semibold">AED 48,210</span> {tr("due28OctoberDown34")}
+            <span className="font-semibold">AED 48,210</span> {tr("chatAnswer")}
             <div className="mt-2 flex gap-1.5">
               <span
                 dir="ltr"
                 className="rounded-full bg-card px-2 py-0.5 font-mono text-[9px]"
                 style={{ color: C.emerald }}
               >
-                {tr("draftReturn")}
+                {tr("openVat201")}
               </span>
               <span
                 dir="ltr"
@@ -378,7 +386,7 @@ function HeroProductMock() {
             className="text-[10px] font-semibold uppercase tracking-wider"
             style={{ color: C.ink }}
           >
-            {tr("vat201ReviewReadyExport")}
+            {tr("vat201FromTheLedgerRibbon")}
           </span>
         </div>
       </Reveal>
@@ -428,10 +436,12 @@ function FtaTicker() {
   const updates = [
     ["VAT 201", tr("outputTaxInputTaxAndNet")],
     [tr("corporateTax"), tr("annualWorkpaperScheduleWithRevenueAnd")],
-    ["e-Invoicing", tr("pintAeXmlGenerationAndValidation")],
+    [tr("eInvoice"), tr("pintAeXmlGenerationAndValidation")],
     [tr("emarataxHandoff"), tr("exportFiguresForOfficialChannelFiling")],
     [tr("evidence"), tr("receiptsInvoicesAndBankLinesTied")],
+    [tr("periodLock"), tr("periodLockBody")],
     [tr("monthEnd"), tr("closeChecklistBeforeVatAndCt")],
+    [tr("payroll"), tr("payrollTickerBody")],
   ];
   // Duplicate for seamless loop.
   const stream = [...updates, ...updates];
@@ -488,12 +498,12 @@ function CapabilityBento() {
   const { locale } = useTranslation();
 
   return (
-    <div className="grid gap-4 md:grid-cols-6 md:grid-rows-2">
+    <div className="grid gap-4 md:grid-cols-6">
       {/* Receipt OCR — wide */}
       <BentoCard className="md:col-span-3 md:row-span-1">
         <BentoHeader
           icon={Receipt}
-          eyebrow={tr("receiptVision")}
+          eyebrow={tr("receiptCapture")}
           title={tr("photographItWeDoTheRest")}
         />
         <BentoBody>{tr("vendorVatTotalCurrencyIbanExtracted")}</BentoBody>
@@ -578,8 +588,8 @@ function CapabilityBento() {
           style={{ borderColor: C.hairline, background: C.hairline }}
         >
           {[
-            [tr("box1aStandardRated"), "AED 824,000"],
-            [tr("box1aOutputVat"), "AED 41,200"],
+            [tr("box1bStandardRated"), "AED 824,000"],
+            [tr("box1bOutputVat"), "AED 41,200"],
             [tr("box9InputVat"), "AED 14,820"],
             [tr("netPayable"), "AED 26,380"],
           ].map(([k, v], i) => (
@@ -647,8 +657,8 @@ function CapabilityBento() {
       <BentoCard className="md:col-span-2">
         <BentoHeader
           icon={RefreshCw}
-          eyebrow={tr("bankImports2")}
-          title={tr("reconciledWithoutLiveFeeds")}
+          eyebrow={tr("bankStatements")}
+          title={tr("importedMatchedApproved")}
         />
         <BentoBody>{tr("importCsvOrPdfStatementsFrom")}</BentoBody>
         <div
@@ -683,8 +693,8 @@ function CapabilityBento() {
 
       {/* Multi-currency */}
       <BentoCard className="md:col-span-2">
-        <BentoHeader icon={Wallet} eyebrow={tr("multiCurrency")} title={tr("aedHome150Rails")} />
-        <BentoBody>{tr("liveFxRatesAutomaticGainLoss")}</BentoBody>
+        <BentoHeader icon={Wallet} eyebrow={tr("multiCurrency")} title={tr("aedHomeAnyCurrency")} />
+        <BentoBody>{tr("recordForeignCurrencyDocuments")}</BentoBody>
         <div className="mt-5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
           {[
             ["USD", "3.6730", "+0.01"],
@@ -713,6 +723,53 @@ function CapabilityBento() {
           ))}
         </div>
       </BentoCard>
+
+      {/* Payroll */}
+      <BentoCard className="md:col-span-3">
+        <BentoHeader icon={Banknote} eyebrow={tr("payrollEyebrow")} title={tr("payrollTitle")} />
+        <BentoBody>{tr("payrollBody")}</BentoBody>
+        <MockChecklist
+          rows={[
+            [tr("payrollRunOctober"), tr("done")],
+            [tr("wpsSifFile"), tr("ready")],
+            [tr("payslipsPdf"), tr("ready")],
+          ]}
+        />
+      </BentoCard>
+
+      {/* Close */}
+      <BentoCard className="md:col-span-3">
+        <BentoHeader icon={ClipboardCheck} eyebrow={tr("closeEyebrow")} title={tr("closeTitle")} />
+        <BentoBody>{tr("closeBody")}</BentoBody>
+        <MockChecklist
+          rows={[
+            [tr("openingBalances"), tr("done")],
+            [tr("monthEnd"), tr("done")],
+            [tr("yearEndClose"), tr("ready")],
+          ]}
+        />
+      </BentoCard>
+    </div>
+  );
+}
+
+function MockChecklist({ rows }: { rows: string[][] }) {
+  return (
+    <div
+      className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-card p-3"
+      style={{ borderColor: C.hairline }}
+    >
+      {rows.map(([label, status]) => (
+        <div key={label} className="flex items-center justify-between text-[11px]">
+          <span style={{ color: C.ink }}>{label}</span>
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase"
+            style={{ background: C.emeraldSoft, color: C.emerald }}
+          >
+            {status}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -769,82 +826,128 @@ function BentoBody({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── 7. Comparison strip ──────────────────────────────────────────────────────
-function ComparisonTable() {
+// ── 7. What is included (and what is not) ────────────────────────────────────
+// Describes this product only. There is deliberately no competitor comparison:
+// it made unverified claims about named products. Do not re-add one unless every
+// cell is backed by a dated screenshot of the competitor's own public docs.
+function IncludedSection() {
   const tr = pageMessages.useT();
 
-  const rows = [
-    [tr("vat201WorkpaperExport"), true, false, false, false],
-    [tr("arabicEnglishUi"), true, false, false, true],
-    ["e-Invoicing PINT AE (2026)", true, false, false, false],
-    [tr("uaeBankCsvImports"), true, false, false, false],
-    [tr("receiptOcrArabicEnglish"), true, true, false, false],
-    [tr("uaeCorporateTaxWorkpapers"), true, false, false, false],
-    [tr("pricingInAed"), true, false, false, true],
+  const included = [
+    tr("inc1"),
+    tr("inc2"),
+    tr("inc3"),
+    tr("inc4"),
+    tr("inc5"),
+    tr("inc6"),
+    tr("inc7"),
+    tr("inc8"),
+    tr("inc9"),
+    tr("inc10"),
+    tr("inc11"),
+    tr("inc12"),
   ];
-  const cols = ["Muhasib", "QuickBooks", "Xero", tr("zohoBooks")];
+  const straightTalk = [tr("talk1"), tr("talk2"), tr("talk3"), tr("talk4")];
+
   return (
     <Reveal>
-      <div
-        className="overflow-hidden rounded-2xl border bg-card"
-        style={{ borderColor: C.hairline }}
-      >
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div
-          className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ borderColor: C.hairline, color: C.muted }}
+          className="rounded-2xl border bg-card p-7"
+          style={{ borderColor: C.hairline }}
         >
-          <div className="px-5 py-4">{tr("uaeBuiltFeature")}</div>
-          {cols.map((c, i) => (
-            <div
-              key={c}
-              className="border-s px-4 py-4 text-center"
-              style={{
-                borderColor: C.hairline,
-                background: i === 0 ? C.emeraldSoft : "transparent",
-                color: i === 0 ? C.emerald : C.muted,
-              }}
-            >
-              {c}
-            </div>
-          ))}
-        </div>
-        {rows.map(([label, ...vals], r) => (
           <div
-            key={r}
-            className="grid grid-cols-[1.6fr_repeat(4,1fr)] items-center border-b text-sm last:border-0"
-            style={{ borderColor: C.hairline }}
+            className="mb-5 text-[10px] font-bold uppercase tracking-[0.22em]"
+            style={{ color: C.emerald }}
           >
-            <div className="px-5 py-3.5 font-medium" style={{ color: C.ink }}>
-              {label}
-            </div>
-            {(vals as boolean[]).map((v, i) => (
+            {tr("included")}
+          </div>
+          <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {included.map((item) => (
+              <li key={item} className="flex items-start gap-2.5 text-sm" style={{ color: C.ink }}>
+                <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: C.emerald }} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div
+          className="rounded-2xl border p-7"
+          style={{ borderColor: C.hairline, background: C.goldSoft }}
+        >
+          <div
+            className="mb-5 text-[10px] font-bold uppercase tracking-[0.22em]"
+            style={{ color: "#7B6228" }}
+          >
+            {tr("straightTalk")}
+          </div>
+          <ul className="space-y-3">
+            {straightTalk.map((item) => (
+              <li key={item} className="text-sm leading-relaxed" style={{ color: C.ink }}>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+// ── 8. Pricing teaser (prices come from the same catalog as /pricing) ────────
+function PricingTeaser() {
+  const tr = pageMessages.useT();
+
+  const planNames: Record<PlanId, string> = {
+    free: tr("planFree"),
+    starter: tr("planStarter"),
+    professional: tr("planProfessional"),
+    enterprise: tr("planEnterprise"),
+  };
+
+  return (
+    <Reveal>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {PLAN_IDS.map((id) => {
+          const price = PLAN_PRICES[id].monthly;
+          return (
+            <div
+              key={id}
+              className="rounded-2xl border bg-card p-6"
+              style={{ borderColor: C.hairline }}
+            >
               <div
-                key={i}
-                className="border-s px-4 py-3.5 text-center"
-                style={{
-                  borderColor: C.hairline,
-                  background: i === 0 ? C.emeraldSoft : "transparent",
-                }}
+                className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                style={{ color: C.muted }}
               >
-                {v ? (
-                  <Check
-                    className="mx-auto h-4 w-4"
-                    style={{ color: i === 0 ? C.emerald : C.ink }}
-                  />
+                {planNames[id]}
+              </div>
+              <div className="mt-3 font-serif text-4xl tracking-tight" style={{ color: C.ink }}>
+                {price === 0 ? (
+                  tr("planFree")
                 ) : (
-                  <span
-                    dir="ltr"
-                    className="font-mono text-base"
-                    style={{ color: "rgba(15,20,25,0.2)" }}
-                  >
-                    —
-                  </span>
+                  <>
+                    <span dir="ltr">AED {price}</span>
+                    <span className="ms-1 font-sans text-sm" style={{ color: C.muted }}>
+                      {tr("perMonth")}
+                    </span>
+                  </>
                 )}
               </div>
-            ))}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
+      <p className="mt-5 max-w-2xl text-sm leading-relaxed" style={{ color: C.muted }}>
+        {tr("pricingNote", { days: TRIAL_DAYS })}
+      </p>
+      <Link
+        href="/pricing"
+        className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em]"
+        style={{ color: C.emerald }}
+      >
+        {tr("seeFullPricing")} <ArrowUpRight className="h-3.5 w-3.5" />
+      </Link>
     </Reveal>
   );
 }
@@ -900,28 +1003,28 @@ function Workflow() {
     {
       n: "01",
       t: tr("capture"),
-      d: "Photo, email forward, or CSV import.",
+      d: tr("stepCaptureBody"),
       op: s1Op,
       border: s1Border,
     },
     {
       n: "02",
       t: tr("categorise"),
-      d: "AI assigns COA, VAT code, project, cost centre.",
+      d: tr("stepCategoriseBody"),
       op: s2Op,
       border: s2Border,
     },
     {
       n: "03",
       t: tr("reconcile"),
-      d: "Matched against imported bank movements.",
+      d: tr("stepReconcileBody"),
       op: s3Op,
       border: s3Border,
     },
     {
       n: "04",
-      t: tr("export"),
-      d: "VAT 201 figures exported for official-channel filing.",
+      t: tr("file"),
+      d: tr("stepFileBody"),
       op: s4Op,
       border: s4Border,
     },
@@ -937,7 +1040,7 @@ function Workflow() {
     { label: tr("receiptCaptured"), body: tr("carrefourAed45371"), op: p1Op, tick: t1, bg: b1 },
     { label: tr("categorised"), body: tr("officeSuppliesVat5"), op: p2Op, tick: t2, bg: b2 },
     { label: tr("reconciled"), body: tr("matchedAdcb0119"), op: p3Op, tick: t3, bg: b3 },
-    { label: tr("vat201Queued"), body: tr("q32026ReviewReady"), op: p4Op, tick: t4, bg: b4 },
+    { label: tr("vat201Updated"), body: tr("q32026ReadyForReview"), op: p4Op, tick: t4, bg: b4 },
   ];
 
   return (
@@ -957,13 +1060,13 @@ function Workflow() {
           >
             {tr("fromReceiptTo")}
             <span className="italic" style={{ color: C.emerald }}>
-              {tr("reviewReady")}
+              {tr("filingReady")}
             </span>
             .<br />
             {tr("withControls")}
           </h2>
           <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
-            {tr("snapAReceiptForwardAnInvoice")}
+            {tr("snapAReceiptEnterAnInvoice")}
           </p>
 
           <div className="mt-10 space-y-5">
@@ -998,7 +1101,7 @@ function Workflow() {
               style={{ color: C.muted }}
             >
               <Cpu className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              {tr("livePipeline")}
+              {tr("examplePipeline")}
             </div>
 
             <div className="space-y-3">
@@ -1080,7 +1183,7 @@ export default function MuhasibLanding() {
             {[
               [tr("product"), "#capabilities"],
               [tr("compliance"), "#compliance"],
-              [tr("compare"), "#compare"],
+              [tr("whatsIncluded"), "#included"],
               [tr("demo"), "/demo"],
               [tr("pricing"), "/pricing"],
             ].map(([l, h]) => (
@@ -1132,7 +1235,7 @@ export default function MuhasibLanding() {
               {[
                 [tr("product"), "#capabilities"],
                 [tr("compliance"), "#compliance"],
-                [tr("compare"), "#compare"],
+                [tr("whatsIncluded"), "#included"],
                 [tr("demo"), "/demo"],
                 [tr("pricing"), "/pricing"],
               ].map(([l, h]) => (
@@ -1199,7 +1302,7 @@ export default function MuhasibLanding() {
                   className="mt-7 max-w-xl text-base leading-relaxed md:text-lg"
                   style={{ color: C.muted }}
                 >
-                  {tr("aiNativeAccountingForUaeBusinesses")}
+                  {tr("heroSubhead")}
                 </p>
               </Reveal>
 
@@ -1211,7 +1314,7 @@ export default function MuhasibLanding() {
                       className="group flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                       style={{ background: C.emerald }}
                     >
-                      {tr("start14DayTrial")}
+                      {tr("start14DayTrial", { days: TRIAL_DAYS })}
                       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   </Link>
@@ -1234,17 +1337,17 @@ export default function MuhasibLanding() {
                 >
                   <div className="flex items-center gap-1.5">
                     <FileCheck className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    {tr("ftaVat201")}
+                    {tr("vat201FromTheLedger")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    {tr("officialChannelHandoff")}
+                    {tr("youFileOnEmaratax")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <FileText className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    {tr("eInvoicingRoadmap")}
+                    {tr("eInvoiceReadyPintAe")}
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
@@ -1271,13 +1374,12 @@ export default function MuhasibLanding() {
       {/* ─── Numbers ──────────────────────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
         <Reveal>
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
             {(
               [
-                { value: 4, label: tr("migrationPathsPrepared") },
-                { value: 5, label: tr("mobileWorkflowsChecked") },
-                { value: 2, label: tr("vatAndCtExportWorkbooks") },
-                { value: 0, label: tr("directFilingClaimsMade") },
+                { value: TRIAL_DAYS, label: tr("statTrialDays") },
+                { value: 2, label: tr("statLanguages") },
+                { value: 1, label: tr("statLedger") },
               ] as Array<{ value: number; label: string; suffix?: string; prefix?: string }>
             ).map((s) => (
               <div key={s.label}>
@@ -1317,7 +1419,7 @@ export default function MuhasibLanding() {
               {tr("everyUaeAccountingWorkflow")}
               <br />
               <span className="italic" style={{ color: C.emerald }}>
-                {tr("quietlyAutomated")}
+                {tr("inOneLedger")}
               </span>
             </h2>
           </div>
@@ -1334,8 +1436,8 @@ export default function MuhasibLanding() {
         <Workflow />
       </section>
 
-      {/* ─── Compare ─────────────────────────────────────────────────── */}
-      <section id="compare" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
+      {/* ─── What is included ────────────────────────────────────────── */}
+      <section id="included" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
         <Reveal>
           <div className="mb-14 max-w-3xl">
             <div
@@ -1343,91 +1445,51 @@ export default function MuhasibLanding() {
               style={{ color: C.emerald }}
             >
               <span className="h-px w-8" style={{ background: C.emerald }} />
-              {tr("compare")}
+              {tr("whatsIncluded")}
             </div>
             <h2
               className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
               style={{ color: C.ink }}
             >
-              {tr("otherToolsWereBuilt")}
+              {tr("includedHeadingA")}
               <br />
               <span className="italic" style={{ color: C.emerald }}>
-                {tr("somewhereElse")}
+                {tr("includedHeadingB")}
               </span>
             </h2>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed" style={{ color: C.muted }}>
-              {tr("quickbooksWasBuiltForTheUs")}
-            </p>
           </div>
         </Reveal>
-        <ComparisonTable />
+        <IncludedSection />
+      </section>
+
+      {/* ─── Pricing ─────────────────────────────────────────────────── */}
+      <section id="pricing" className="mx-auto max-w-7xl px-6 pb-24 lg:pb-32">
+        <Reveal>
+          <div className="mb-10 max-w-3xl">
+            <div
+              className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+              style={{ color: C.emerald }}
+            >
+              <span className="h-px w-8" style={{ background: C.emerald }} />
+              {tr("pricing")}
+            </div>
+            <h2
+              className="font-serif text-3xl tracking-tight md:text-5xl"
+              style={{ color: C.ink }}
+            >
+              {tr("pricingHeading")}
+            </h2>
+          </div>
+        </Reveal>
+        <PricingTeaser />
       </section>
 
       {/* Testimonial section removed: fabricated quote from a named individual/company
           on a pre-launch product with zero customers. Do not re-add a testimonial
           until it is real, attributable, and the customer has approved the wording. */}
 
-      {/* ─── Insight rail ────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-6 py-24">
-        <Reveal>
-          <div className="flex items-end justify-between gap-6">
-            <div>
-              <div
-                className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
-                style={{ color: C.emerald }}
-              >
-                <span className="h-px w-8" style={{ background: C.emerald }} />
-                {tr("insights")}
-              </div>
-              <h2
-                className="font-serif text-3xl tracking-tight md:text-5xl"
-                style={{ color: C.ink }}
-              >
-                {tr("fromTheDesk")}
-              </h2>
-            </div>
-            <a
-              href="#"
-              className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex"
-              style={{ color: C.muted }}
-            >
-              {tr("allInsights")} <ArrowUpRight className="h-3.5 w-3.5" />
-            </a>
-          </div>
-        </Reveal>
-
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
-          {[
-            [tr("ftaDecision52025"), tr("aPracticalGuideToTheNew"), tr("n8MinRead")],
-            [tr("corporateTax2"), tr("whenTheAed3mSmallBusiness"), tr("n6MinRead")],
-            ["e-Invoicing", tr("pintAeInPlainArabicWhat"), tr("n11MinRead")],
-          ].map(([eyebrow, title, meta], i) => (
-            <Reveal key={i} delay={i * 0.08}>
-              <article
-                className="group relative h-full overflow-hidden rounded-2xl border bg-card p-7 transition-shadow hover:shadow-[0_12px_36px_-18px_rgba(15,20,25,0.18)]"
-                style={{ borderColor: C.hairline }}
-              >
-                <div
-                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
-                  style={{ color: C.emerald }}
-                >
-                  {eyebrow}
-                </div>
-                <h3 className="mt-3 font-serif text-2xl leading-tight" style={{ color: C.ink }}>
-                  {title}
-                </h3>
-                <div
-                  className="mt-8 flex items-center justify-between text-[11px] font-medium"
-                  style={{ color: C.muted }}
-                >
-                  <span>{meta}</span>
-                  <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-                </div>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      {/* Insight rail removed: three article cards that linked to nothing (invented
+          titles and read times). Do not re-add until the articles exist. */}
 
       {/* ─── Final CTA ───────────────────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
@@ -1443,23 +1505,23 @@ export default function MuhasibLanding() {
                 style={{ color: C.emerald }}
               >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
-                {tr("n14DayTrialNoCard")}
+                {tr("trialNoCard", { days: TRIAL_DAYS })}
               </div>
               <h2
                 className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
                 style={{ color: C.ink }}
               >
-                {tr("handTheLedgerToAn")}
+                {tr("getYourBooks")}
                 <br />
                 <span className="italic" style={{ color: C.emerald }}>
-                  {tr("agentThatNeverSleeps")}
+                  {tr("filingReadyAccent")}
                 </span>
               </h2>
               <p
                 className="mx-auto mt-7 max-w-xl text-base leading-relaxed"
                 style={{ color: C.muted }}
               >
-                {tr("useGuidedMigrationTemplatesForYour")}
+                {tr("finalBody")}
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <Link href="/register">
@@ -1467,7 +1529,7 @@ export default function MuhasibLanding() {
                     className="group flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                     style={{ background: C.emerald }}
                   >
-                    {tr("start14DayTrial")}
+                    {tr("start14DayTrial", { days: TRIAL_DAYS })}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 </Link>
@@ -1477,6 +1539,13 @@ export default function MuhasibLanding() {
                   style={{ borderColor: C.hairlineStrong, color: C.ink }}
                 >
                   {tr("exploreDemo")}
+                </Link>
+                <Link
+                  href="/migration-guides"
+                  className="rounded-full border px-7 py-3.5 text-sm font-semibold"
+                  style={{ borderColor: C.hairlineStrong, color: C.ink }}
+                >
+                  {tr("migrationGuides")}
                 </Link>
               </div>
             </div>
@@ -1504,7 +1573,7 @@ export default function MuhasibLanding() {
                 </span>
               </div>
               <p className="mt-5 max-w-md text-sm" style={{ color: C.muted }}>
-                {tr("aiNativeAccountingBuiltInDubai")}
+                {tr("builtInDubaiFooter")}
               </p>
               <div className="mt-6 flex items-center gap-2 text-[11px]" style={{ color: C.muted }}>
                 <Building2 className="h-3.5 w-3.5" />
@@ -1515,11 +1584,11 @@ export default function MuhasibLanding() {
             <FooterCol
               title={tr("product")}
               links={[
-                [tr("receipts"), "#"],
-                ["VAT 201", "#"],
-                [tr("bankImports2"), "#"],
+                [tr("receipts"), "#capabilities"],
+                ["VAT 201", "#capabilities"],
+                [tr("bankStatements"), "#capabilities"],
                 [tr("demoWorkspace"), "/demo"],
-                [tr("bilingualInvoices"), "#"],
+                [tr("bilingualInvoices"), "#capabilities"],
                 [tr("pricing"), "/pricing"],
               ]}
             />
@@ -1531,6 +1600,7 @@ export default function MuhasibLanding() {
                 [tr("privacy"), "/privacy"],
                 [tr("terms"), "/terms"],
                 [tr("cookies"), "/cookies"],
+                [tr("trustSecurity"), "/trust"],
               ]}
             />
           </div>
@@ -1541,10 +1611,6 @@ export default function MuhasibLanding() {
           >
             <div>
               {tr("muhasibAiDifcDubaiUnitedArab", { getFullYear: new Date().getFullYear() })}
-            </div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-              {tr("allSystemsNormal")}
             </div>
           </div>
         </div>

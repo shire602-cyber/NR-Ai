@@ -16,9 +16,15 @@ const REVERSAL_SOURCE = "reversal";
 
 const UNDO_HINTS: Record<string, string> = {
   invoice: "Void the invoice, or issue a credit note against it.",
+  inventory_cogs: "Void the invoice, or issue a credit note with restock against it.",
+  inventory_movement: "Record an opposite stock movement (for example an adjustment) on the product.",
+  inventory_opening: "Adjust the product stock, or record a stock adjustment movement.",
   payment: "Delete or edit the payment on the invoice or bill it settles.",
   receipt: "Change or delete the receipt it was posted from.",
+  customer_refund: "Void the refund on the credit note it was paid against.",
   bill: "Void the bill, or record a supplier credit note.",
+  vendor_credit_note: "Void the vendor credit note (only possible while it is not applied to a bill).",
+  vendor_credit_fx: "It follows the credit note application; the credit cannot be voided once applied to a bill.",
   expense_claim: "Reject or amend the expense claim.",
   expense_claim_payment: "Amend the expense claim payment.",
   vat_filing: "A filed VAT return cannot be undone here. Record an amendment (voluntary disclosure) for that period.",

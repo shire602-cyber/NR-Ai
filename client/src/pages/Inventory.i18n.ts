@@ -55,6 +55,10 @@ export const messages = defineMessages(
     type: "Type",
     quantity: "Quantity",
     unitCost: "Unit Cost",
+    movementPurchaseLedgerHelp:
+      "When inventory posting is on, a purchase books the stock to Inventory (1070) and credits Goods Received Not Invoiced (2015). Code the supplier's bill to account 2015 to clear it, so the purchase is not counted twice.",
+    movementLedgerHelp:
+      "When inventory posting is on, adjustments book to Inventory Adjustments (5210) and manual sales and returns to Cost of Goods Sold (5200), always at the average cost.",
     reference: "Reference",
     notes: "Notes",
     editProduct: "Edit Product",
@@ -93,6 +97,10 @@ export const messages = defineMessages(
     productsInInventory_few: "{count} products in inventory",
     productsInInventory_many: "{count} products in inventory",
     productsInInventory_other: "{count} products in inventory",
+    averageCost: "Avg. cost",
+    trackInventory: "Track inventory",
+    trackInventoryHint:
+      "Invoices that sell this product reduce its stock and post cost of goods sold (needs the company setting).",
   },
   {
     productNameIsRequired: "اسم المنتج مطلوب",
@@ -146,6 +154,10 @@ export const messages = defineMessages(
     type: "النوع",
     quantity: "الكمية",
     unitCost: "تكلفة الوحدة",
+    movementPurchaseLedgerHelp:
+      "عند تفعيل ترحيل المخزون، تُسجَّل المشتريات في المخزون (1070) وتُقيَّد دائنة على حساب بضاعة مستلمة لم تتم فوترتها (2015). اربط فاتورة المورد بالحساب 2015 لتصفيته حتى لا تُحتسب المشتريات مرتين.",
+    movementLedgerHelp:
+      "عند تفعيل ترحيل المخزون، تُسجَّل التسويات في حساب تسويات المخزون (5210) والمبيعات والمرتجعات اليدوية في تكلفة البضاعة المباعة (5200)، دائماً بمتوسط التكلفة.",
     reference: "المرجع",
     notes: "ملاحظات",
     editProduct: "تعديل المنتج",
@@ -184,5 +196,9 @@ export const messages = defineMessages(
     productsInInventory_few: "{count} منتجات في المخزون",
     productsInInventory_many: "{count} منتجًا في المخزون",
     productsInInventory_other: "{count} منتج في المخزون",
+    averageCost: "متوسط التكلفة",
+    trackInventory: "تتبّع المخزون",
+    trackInventoryHint:
+      "الفواتير التي تبيع هذا المنتج تخفض مخزونه وتسجّل تكلفة البضاعة المباعة (تتطلب إعداد الشركة).",
   }
 );

@@ -69,6 +69,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { getAuthHeaders } from "@/lib/auth";
+import { downloadPdf } from "@/lib/download-pdf";
 import { apiUrl } from "@/lib/api";
 import { messages as pageMessages } from "./Payroll.i18n";
 
@@ -532,6 +533,18 @@ export default function Payroll() {
     updatePayrollItemMutation.mutate({ id: editingItemId, data });
   };
 
+  const handleDownloadPayslip = async (runId: string, itemId: string) => {
+    try {
+      await downloadPdf(`/api/payroll-runs/${runId}/payslips/${itemId}/pdf`, "payslip.pdf");
+    } catch (err: any) {
+      toast({
+        title: tr("payslipFailed"),
+        description: err?.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDownloadSIF = async (runId: string) => {
     try {
       const response = await fetch(apiUrl(`/api/payroll-runs/${runId}/generate-sif`), {
@@ -820,6 +833,18 @@ export default function Payroll() {
                           </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
                           <TableCell className="text-end">
+                            {(viewingRun.status === "calculated" ||
+                              viewingRun.status === "approved") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDownloadPayslip(viewingRun.id, item.id)}
+                                title={tr("payslip")}
+                                data-testid={`button-payslip-${item.id}`}
+                              >
+                                <FileText className="w-4 h-4" />
+                              </Button>
+                            )}
                             {viewingRun.status !== "approved" && (
                               <Button
                                 variant="ghost"

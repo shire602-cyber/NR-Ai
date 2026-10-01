@@ -257,7 +257,7 @@ export async function previewOpeningBalance(companyId: string, input: OpeningInp
   return { ok: errors.length === 0, errors, parsedRows, asOfDate: dateCheck.ok ? dateCheck.date : null, warnings, totals };
 }
 
-async function ensureOpeningBalanceEquity(tx: Tx, companyId: string): Promise<{ id: string }> {
+export async function ensureOpeningBalanceEquity(tx: Tx, companyId: string): Promise<{ id: string }> {
   const rows: Array<{ id: string; code: string; nameEn: string; type: string }> = await tx
     .select({ id: accounts.id, code: accounts.code, nameEn: accounts.nameEn, type: accounts.type })
     .from(accounts)

@@ -114,6 +114,7 @@ export const messages = defineMessages(
     invoicesLinkedToTheseContacts_few: "{count} invoices are linked to these contacts.",
     invoicesLinkedToTheseContacts_many: "{count} invoices are linked to these contacts.",
     invoicesLinkedToTheseContacts_other: "{count} invoices are linked to these contacts.",
+    statement: "Statement",
   },
   {
     name: "الاسم *",
@@ -226,5 +227,6 @@ export const messages = defineMessages(
     invoicesLinkedToTheseContacts_few: "ترتبط {count} فواتير بجهات الاتصال هذه.",
     invoicesLinkedToTheseContacts_many: "ترتبط {count} فاتورة بجهات الاتصال هذه.",
     invoicesLinkedToTheseContacts_other: "ترتبط {count} فاتورة بجهات الاتصال هذه.",
+    statement: "كشف حساب",
   }
 );

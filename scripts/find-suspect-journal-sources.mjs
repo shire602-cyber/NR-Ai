@@ -65,12 +65,17 @@ export const RULES = {
     `SELECT 1 FROM journal_entries o WHERE o.id = je.reversed_entry_id AND o.source = 'fx_revaluation' AND o.company_id = je.company_id`
   ),
   invoice: LINKED_BY_RECORD(`SELECT 1 FROM invoices d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
+  inventory_cogs: LINKED_BY_RECORD(`SELECT 1 FROM invoices d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
+  inventory_movement: LINKED_BY_RECORD(`SELECT 1 FROM inventory_movements d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
+  inventory_opening: LINKED_BY_RECORD(`SELECT 1 FROM companies c WHERE c.id = je.source_id AND c.id = je.company_id`),
   payment: LINKED_BY_RECORD(`SELECT 1 FROM invoices d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   receipt: LINKED_BY_RECORD(`SELECT 1 FROM receipts d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
+  customer_refund: LINKED_BY_RECORD(`SELECT 1 FROM customer_refunds d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   bill: LINKED_BY_RECORD(`SELECT 1 FROM vendor_bills d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   bill_payment: LINKED_BY_RECORD(
     `SELECT 1 FROM bill_payments d JOIN vendor_bills b ON b.id = d.bill_id WHERE d.id = je.source_id AND b.company_id = je.company_id`
   ),
+  vendor_credit_fx: LINKED_BY_RECORD(`SELECT 1 FROM vendor_credit_applications d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   expense_claim: LINKED_BY_RECORD(`SELECT 1 FROM expense_claims d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   expense_claim_payment: LINKED_BY_RECORD(`SELECT 1 FROM expense_claims d WHERE d.id = je.source_id AND d.company_id = je.company_id`),
   reversal: LINKED_BY_RECORD(`SELECT 1 FROM journal_entries o WHERE o.id = je.reversed_entry_id AND o.company_id = je.company_id`),

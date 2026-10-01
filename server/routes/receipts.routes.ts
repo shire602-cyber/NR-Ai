@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { checkUsageLimit } from "../middleware/featureGate";
 import { validate } from "../middleware/validate";
 import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
 import { saveReceiptImage, deleteReceiptImage, readReceiptImage } from "../services/fileStorage";
@@ -179,6 +180,7 @@ export function registerReceiptRoutes(app: Express) {
     "/api/companies/:companyId/receipts",
     authMiddleware,
     requireCustomer,
+    checkUsageLimit("receipts"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;

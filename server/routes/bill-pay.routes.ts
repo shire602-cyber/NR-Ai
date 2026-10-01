@@ -13,6 +13,7 @@ import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { normalizeCalendarColumns, toCalendarYmd } from "../utils/date";
 import { recordAudit } from "../services/audit.service";
+import { asOfParams, billAgingBucketsAsOfSql, parseAgingAsOf } from "../services/aging-as-of.service";
 import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
 
 const log = createLogger("bill-pay");
@@ -398,6 +399,22 @@ export function registerBillPayRoutes(app: Express) {
         });
       }
 
+      // Only a bill that has not hit the books can be edited. An approved bill has its payable posted;
+      // payments and applied credits settle it. Editing amounts or the vendor underneath those would
+      // leave the ledger, the payments and the credits describing different bills.
+      const settlement = await pool.query(
+        `SELECT (SELECT COUNT(*)::int FROM bill_payments WHERE bill_id = $1)
+              + (SELECT COUNT(*)::int FROM vendor_credit_applications WHERE bill_id = $1) AS n`,
+        [id]
+      );
+      if (!["pending", "draft"].includes(String(bill.status)) || Number(settlement.rows[0]?.n) > 0 || Number(bill.amount_paid) > 0) {
+        return res.status(409).json({
+          message:
+            "This bill has been approved, paid or credited and can no longer be edited. Void it, or record a supplier credit note, and enter a corrected bill.",
+          code: "BILL_NOT_EDITABLE",
+        });
+      }
+
       const {
         vendor_name,
         vendor_trn,
@@ -520,6 +537,19 @@ export function registerBillPayRoutes(app: Express) {
         { createdAt: bill.created_at, retentionExpiresAt: bill.retention_expires_at },
         "Vendor bill"
       );
+
+      // A bill a vendor credit note has been applied to cannot disappear: the
+      // application (and the credit's remaining balance) would silently vanish.
+      const applied = await pool.query(
+        "SELECT 1 FROM vendor_credit_applications WHERE bill_id = $1 LIMIT 1",
+        [id]
+      );
+      if (applied.rows.length > 0) {
+        return res.status(409).json({
+          message: "A vendor credit note has been applied to this bill and it cannot be deleted.",
+          code: "BILL_HAS_CREDIT_APPLICATIONS",
+        });
+      }
 
       // Cascade delete will handle line_items and payments
       await pool.query("DELETE FROM vendor_bills WHERE id = $1", [id]);
@@ -647,7 +677,9 @@ export function registerBillPayRoutes(app: Express) {
           [id]
         );
         const sumRes = await client.query(
-          "SELECT COALESCE(SUM(amount), 0) AS paid FROM bill_payments WHERE bill_id = $1",
+          // Vendor credit notes applied to the bill settle it just like cash does.
+          `SELECT COALESCE((SELECT SUM(amount) FROM bill_payments WHERE bill_id = $1), 0)
+                + COALESCE((SELECT SUM(amount) FROM vendor_credit_applications WHERE bill_id = $1), 0) AS paid`,
           [id]
         );
         const totalD = new Decimal(lockRes.rows[0]?.total_amount ?? bill.total_amount ?? 0);
@@ -862,11 +894,23 @@ export function registerBillPayRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Optional as-of day (aging-as-of.service.ts); without it the card is up to the moment.
+      const parsedAsOf = parseAgingAsOf(req.query.asOf);
+      if (!parsedAsOf.ok) {
+        return res.status(400).json({ message: parsedAsOf.message, code: parsedAsOf.code });
+      }
+
       const result = await pool.query(
-        `SELECT
+        parsedAsOf.asOf
+          ? billAgingBucketsAsOfSql()
+          : `SELECT
         COALESCE(SUM(total_amount - amount_paid) FILTER (
           WHERE due_date >= NOW() OR due_date IS NULL
-        ), 0) AS current_amount,
+        ), 0)
+          -- approved, unapplied vendor credits reduce what is owed (A/P holds them from their date)
+          - COALESCE((SELECT SUM(remaining_amount) FROM vendor_credit_notes
+                       WHERE company_id = $1 AND status = 'approved' AND remaining_amount > 0 AND "date" <= NOW()), 0)
+          AS current_amount,
         COUNT(*) FILTER (
           WHERE due_date >= NOW() OR due_date IS NULL
         ) AS current_count,
@@ -896,7 +940,7 @@ export function registerBillPayRoutes(app: Express) {
         ) AS days_90_plus_count
       FROM vendor_bills
       WHERE company_id = $1 AND status NOT IN ('paid')`,
-        [companyId]
+        parsedAsOf.asOf ? asOfParams(companyId, parsedAsOf.asOf) : [companyId]
       );
 
       const aging = result.rows[0];

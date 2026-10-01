@@ -8,6 +8,16 @@ import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { insertProductSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
+import { db } from "../db";
+import { and, eq, sql } from "drizzle-orm";
+import { products, inventoryMovements } from "../../shared/schema";
+import { AppError } from "../errors";
+import {
+  applyMovementInTx,
+  isCostingEnabled,
+  postInventoryOpeningInTx,
+  resetProductValueInTx,
+} from "../services/inventory-costing.service";
 
 const log = createLogger("inventory");
 
@@ -32,6 +42,8 @@ const productCreateSchema = z.object({
   currentStock: z.number().int().optional(),
   lowStockThreshold: z.number().int().nonnegative().optional().nullable(),
   isActive: z.boolean().optional(),
+  // Only tracked products consume stock and post cost of goods sold when an invoice is issued.
+  trackInventory: z.boolean().optional(),
 });
 
 const productUpdateSchema = productCreateSchema.partial();
@@ -120,11 +132,26 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // S-M1: allowlist body fields, then pin the tenant scope.
-      const product = await storage.createProduct({
-        ...pickAllowed(req.body, insertProductSchema, ["companyId"]),
-        companyId,
-      } as any);
+      // S-M1: allowlist body fields, then pin the tenant scope. The running average cost is
+      // derived, never client-supplied: it starts at the cost price (if any) and then follows
+      // the purchase movements (inventory-costing.service).
+      // A tracked product created with stock on hand brings that stock in at its cost price; with
+      // costing on, the opening stock is journalled (Dr 1070 / Cr Opening Balance Equity).
+      const product = await db.transaction(async (tx: typeof db) => {
+        const [created] = await tx
+          .insert(products)
+          .values({
+            ...pickAllowed(req.body, insertProductSchema, ["companyId", "averageCost", "inventoryValue"]),
+            averageCost: Number(req.body.costPrice) > 0 ? Number(req.body.costPrice) : 0,
+            companyId,
+          } as any)
+          .returning();
+        if (!created.trackInventory) return created;
+        await resetProductValueInTx(tx, companyId, created.id);
+        if (await isCostingEnabled(tx, companyId)) await postInventoryOpeningInTx(tx, companyId, userId);
+        const [fresh] = await tx.select().from(products).where(eq(products.id, created.id));
+        return fresh;
+      });
 
       log.info({ productId: product.id, companyId }, "Product created");
       res.json(product);
@@ -151,7 +178,19 @@ export function registerInventoryRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateProduct(id, req.body);
+      // Stock figure or tracking changed outside a movement: re-derive the stock value and, with
+      // costing on, journal the difference so Inventory (1070) keeps equal to the stock values.
+      const stockOrTrackingChanged =
+        (req.body.currentStock !== undefined && req.body.currentStock !== product.currentStock) ||
+        (req.body.trackInventory !== undefined && req.body.trackInventory !== product.trackInventory);
+      const updated = await db.transaction(async (tx: typeof db) => {
+        const [row] = await tx.update(products).set(req.body).where(eq(products.id, id)).returning();
+        if (!stockOrTrackingChanged) return row;
+        await resetProductValueInTx(tx, product.companyId, id);
+        if (await isCostingEnabled(tx, product.companyId)) await postInventoryOpeningInTx(tx, product.companyId, userId);
+        const [fresh] = await tx.select().from(products).where(eq(products.id, id));
+        return fresh;
+      });
       log.info({ productId: id }, "Product updated");
       res.json(updated);
     })
@@ -174,6 +213,20 @@ export function registerInventoryRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, product.companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      // A product with stock history is part of the books (its movements, and the value that sits in
+      // Inventory 1070): deactivate it instead, so voiding an invoice can still return its stock.
+      const [{ n }] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(inventoryMovements)
+        .where(and(eq(inventoryMovements.productId, id), eq(inventoryMovements.companyId, product.companyId)));
+      if (n > 0 || Number(product.inventoryValue) !== 0) {
+        throw new AppError({
+          message: "This product has stock movements and cannot be deleted. Deactivate it instead.",
+          statusCode: 409,
+          code: "PRODUCT_HAS_MOVEMENTS",
+        });
       }
 
       await storage.deleteProduct(id);
@@ -212,51 +265,41 @@ export function registerInventoryRoutes(app: Express) {
       // refuse if today falls inside a closed period.
       await assertPeriodNotLocked(product.companyId, new Date());
 
-      // Create the movement
-      const movement = await storage.createInventoryMovement({
-        productId: id,
-        companyId: product.companyId,
-        type,
-        quantity,
-        unitCost: unitCost || null,
-        reference: reference || null,
-        notes: notes || null,
-      });
-
-      // Update product stock based on movement type
-      let stockChange = 0;
-      switch (type) {
-        case "purchase":
-        case "return":
-          stockChange = Math.abs(quantity);
-          break;
-        case "sale":
-          stockChange = -Math.abs(quantity);
-          break;
-        case "adjustment":
-          stockChange = quantity; // Can be positive or negative
-          break;
+      // One transaction: lock the product row, check stock, record the movement, re-average the
+      // cost and update stock together (no movement is left behind by a refused sale).
+      const outcome = await db.transaction((tx: typeof db) =>
+        applyMovementInTx(tx, {
+          productId: id,
+          companyId: product.companyId,
+          type,
+          quantity,
+          unitCost: unitCost || null,
+          reference: reference || null,
+          notes: notes || null,
+          userId,
+        })
+      );
+      if (!outcome.productFound) {
+        return res.status(404).json({ message: "Product not found" });
       }
-
-      const newStock = product.currentStock + stockChange;
 
       // You cannot sell stock you do not hold. Selling 999 units of a product
       // with 10 on hand used to return 200 and leave currentStock at -989 —
       // which then flows into inventory valuation and cost of goods sold as a
       // negative asset. An explicit stock-take correction is what `adjustment`
       // is for, so only that type may drive the balance negative.
-      if (newStock < 0 && type !== "adjustment") {
+      if (!outcome.ok) {
         return res.status(422).json({
-          message: `Insufficient stock: ${product.currentStock} on hand, ${Math.abs(stockChange)} requested. Record a stock adjustment if the on-hand figure is wrong.`,
+          message: `Insufficient stock: ${outcome.onHand} on hand, ${outcome.requested} requested. Record a stock adjustment if the on-hand figure is wrong.`,
           code: "INSUFFICIENT_STOCK",
-          details: { onHand: product.currentStock, requested: Math.abs(stockChange) },
+          details: { onHand: outcome.onHand, requested: outcome.requested },
         });
       }
-
-      await storage.updateProduct(id, { currentStock: newStock });
+      const { newStock } = outcome;
+      const movement = { id: outcome.movementId, productId: id, type, quantity, unitCost: unitCost || null };
 
       log.info({ productId: id, type, quantity, newStock }, "Inventory movement recorded");
-      res.json({ movement, newStock });
+      res.json({ movement, newStock, averageCost: outcome.averageCost });
     })
   );
 

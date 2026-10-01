@@ -32,6 +32,12 @@ export const ACCOUNT_CODES = {
   BANK: "1020",
   /** Inventory (current asset). */
   INVENTORY: "1070",
+  /** Goods Received Not Invoiced (current liability): credited by a stock purchase movement, cleared by coding the vendor bill to it. */
+  GRNI: "2015",
+  /** Inventory Adjustments (expense): stock-take corrections; created on demand for older charts. */
+  INVENTORY_ADJUSTMENTS: "5210",
+  /** Cost of Goods Sold (expense): weighted-average cost of inventory sold; created on demand for older charts. */
+  COGS: "5200",
   /** Office equipment (fixed asset). */
   EQUIPMENT: "1210",
   /** Zero-rated sales (income). */

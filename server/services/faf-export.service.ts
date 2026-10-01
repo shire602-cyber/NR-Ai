@@ -522,6 +522,82 @@ async function* billBatches(companyId: string, from: string, to: string): AsyncG
   }
 }
 
+/** Approved vendor credit notes: negative purchase rows, so the listing still ties to the VAT return. */
+async function* vendorCreditBatches(companyId: string, from: string, to: string): AsyncGenerator<FafPurchaseRow[]> {
+  let cursorDate = "-infinity";
+  let cursorId = NIL_UUID;
+  for (;;) {
+    let credits;
+    try {
+      credits = await pool.query(
+        `SELECT id, vendor_name, vendor_trn, number, to_char("date", 'YYYY-MM-DD') AS d, "date",
+                currency, subtotal, vat_amount, reverse_charge, COALESCE(exchange_rate, 1) AS rate
+           FROM vendor_credit_notes
+          WHERE company_id = $1
+            AND "date" >= $2::date AND "date" <= $3::date
+            AND status = 'approved'
+            AND ("date", id) > ($4::date, $5::uuid)
+          ORDER BY "date", id
+          LIMIT ${DOC_BATCH}`,
+        [companyId, from, to, cursorDate, cursorId]
+      );
+    } catch (err) {
+      if ((err as { code?: string })?.code === "42P01") return;
+      throw err;
+    }
+    if (credits.rows.length === 0) return;
+    const ids = credits.rows.map((r: any) => r.id);
+    const items = await pool.query(
+      `SELECT credit_note_id, description, line_total
+         FROM vendor_credit_note_lines WHERE credit_note_id = ANY($1::uuid[]) ORDER BY credit_note_id, created_at, id`,
+      [ids]
+    );
+    const byCredit = new Map<string, any[]>();
+    for (const l of items.rows) byCredit.set(l.credit_note_id, [...(byCredit.get(l.credit_note_id) ?? []), l]);
+
+    const rows: FafPurchaseRow[] = [];
+    for (const c of credits.rows) {
+      const rate = rateOf(c.rate);
+      const foreign = fcy(c.currency);
+      const subtotal = num(c.subtotal);
+      const vat = num(c.vat_amount);
+      const lines = byCredit.get(c.id) ?? [];
+      let amounts = lines.map((l) => num(l.line_total));
+      let descriptions = lines.map((l) => l.description ?? "");
+      if (lines.length === 0) {
+        amounts = [subtotal];
+        descriptions = ["Vendor credit note"];
+      } else {
+        const diff = round2(subtotal - amounts.reduce((s, a) => s + a, 0));
+        if (diff !== 0) amounts[amounts.length - 1] = round2(amounts[amounts.length - 1] + diff);
+      }
+      const docVats = allocate(vat, amounts);
+      amounts.forEach((amount, index) => {
+        rows.push({
+          supplierName: c.vendor_name ?? "",
+          supplierTrn: c.vendor_trn ?? null,
+          invoiceDate: c.d,
+          invoiceNumber: c.number,
+          permitNumber: null,
+          lineNumber: index + 1,
+          description: `Credit note: ${descriptions[index]}`,
+          valueAed: -round2(amount * rate),
+          vatAed: -round2(docVats[index] * rate),
+          taxCode: fafPurchaseTaxCode({ reverseCharge: c.reverse_charge === true, isImport: false, vat: docVats[index] }),
+          fcyCode: foreign,
+          valueFcy: foreign ? -round2(amount) : null,
+          vatFcy: foreign ? -round2(docVats[index]) : null,
+        });
+      });
+    }
+    yield rows;
+    const last = credits.rows[credits.rows.length - 1];
+    cursorDate = last.d;
+    cursorId = last.id;
+    if (credits.rows.length < DOC_BATCH) return;
+  }
+}
+
 async function* receiptBatches(companyId: string, from: string, to: string): AsyncGenerator<FafPurchaseRow[]> {
   let cursorDate = "-infinity";
   let cursorId = NIL_UUID;
@@ -665,6 +741,7 @@ export function createDbFafSource(companyId: string, from: string, to: string): 
   return {
     async *purchases() {
       yield* billBatches(companyId, from, to);
+      yield* vendorCreditBatches(companyId, from, to);
       yield* receiptBatches(companyId, from, to);
       yield* claimBatches(companyId, from, to);
     },

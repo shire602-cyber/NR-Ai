@@ -75,6 +75,9 @@ export const messages = defineMessages(
     language: "Language",
     english: "English",
     usedForInvoiceTemplatesAndThe: "Used for invoice templates and the UI.",
+    postInventoryToLedgerCogs: "Post inventory to ledger (COGS)",
+    postInventoryToLedgerCogsHint:
+      "When an invoice is issued, stock of tracked products is reduced and cost of goods sold is posted at weighted-average cost (Dr 5200 / Cr 1070).",
     addressContact: "Address & Contact",
     usedOnInvoicesStatementsAndTax: "Used on invoices, statements, and tax filings.",
     streetAddress: "Street Address",
@@ -166,6 +169,9 @@ export const messages = defineMessages(
     language: "اللغة",
     english: "الإنجليزية",
     usedForInvoiceTemplatesAndThe: "تُستخدم لقوالب الفواتير والواجهة.",
+    postInventoryToLedgerCogs: "ترحيل المخزون إلى دفتر الأستاذ (تكلفة البضاعة المباعة)",
+    postInventoryToLedgerCogsHint:
+      "عند إصدار الفاتورة يُخفَّض مخزون المنتجات المتتبَّعة وتُرحَّل تكلفة البضاعة المباعة بمتوسط التكلفة المرجّح (مدين 5200 / دائن 1070).",
     addressContact: "العنوان وبيانات الاتصال",
     usedOnInvoicesStatementsAndTax: "تُستخدم في الفواتير وكشوف الحساب والإقرارات الضريبية.",
     streetAddress: "عنوان الشارع",

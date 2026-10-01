@@ -12,6 +12,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { db } from "../db";
 import { generateSIFFile } from "../services/wps-sif.service";
+import { generatePayslipPDF } from "../services/pdf-payslip.service";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
@@ -1351,6 +1352,86 @@ export function registerPayrollRoutes(app: Express) {
       );
 
       res.json(items);
+    })
+  );
+
+  // Payslip PDF for one employee of a calculated or approved run
+  app.get(
+    "/api/payroll-runs/:id/payslips/:itemId/pdf",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id, itemId } = req.params;
+      const userId = (req as any).user.id;
+
+      const run = await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]);
+      if (!run) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, run.company_id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (run.status !== "calculated" && run.status !== "approved") {
+        return res.status(409).json({
+          message: "Payslips are available once the payroll run has been calculated.",
+          code: "PAYROLL_RUN_NOT_CALCULATED",
+        });
+      }
+
+      const row = await queryOne(
+        `SELECT pi.*, e.full_name, e.full_name_ar, e.employee_number, e.designation, e.iban
+           FROM payroll_items pi
+           JOIN employees e ON e.id = pi.employee_id
+          WHERE pi.id = $1 AND pi.payroll_run_id = $2`,
+        [itemId, id]
+      );
+      if (!row) {
+        return res.status(404).json({ message: "Payroll item not found" });
+      }
+
+      const company = await storage.getCompany(run.company_id);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+
+      const pdf = await generatePayslipPDF({
+        company,
+        employee: {
+          id: row.employee_id,
+          fullName: row.full_name,
+          fullNameAr: row.full_name_ar,
+          employeeNumber: row.employee_number,
+          designation: row.designation,
+          iban: row.iban,
+        },
+        periodMonth: run.period_month,
+        periodYear: run.period_year,
+        payDate: run.approved_at ?? null,
+        item: {
+          basicSalary: row.basic_salary,
+          housingAllowance: row.housing_allowance,
+          transportAllowance: row.transport_allowance,
+          otherAllowance: row.other_allowance,
+          overtime: row.overtime,
+          deductions: row.deductions,
+          deductionNotes: row.deduction_notes,
+          pensionEmployee: row.pension_employee,
+          pensionEmployer: row.pension_employer,
+          gratuityAccrual: row.gratuity_accrual,
+          netSalary: row.net_salary,
+        },
+      });
+
+      const fileKey = String(row.employee_number ?? row.employee_id).replace(/[^A-Za-z0-9_-]/g, "_");
+      res.set({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="payslip-${run.period_year}-${String(run.period_month).padStart(2, "0")}-${fileKey}.pdf"`,
+        "Content-Length": pdf.length.toString(),
+      });
+      res.send(pdf);
     })
   );
 

@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { checkUsageLimit } from "../middleware/featureGate";
 import {
   insertInvoiceSchema,
   type Invoice,
@@ -12,6 +13,7 @@ import {
   type JournalLine,
 } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
+import { generateDeliveryNotePDF } from "../services/pdf-delivery-note.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
 import { resolveEInvoiceContext } from "../services/einvoice-context";
 import { getEInvoiceProvider } from "../services/einvoice-provider";
@@ -42,6 +44,13 @@ import {
   selectVoidableEntries,
 } from "../services/invoice-lifecycle";
 import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
+import {
+  checkProductsForCompany,
+  creditNoteRestockTag,
+  postCogsForInvoice,
+  restockInvoiceInTx,
+  restockRequestFromCreditLines,
+} from "../services/inventory-costing.service";
 import { syncInvoiceStatusFromBalance } from "../services/invoice-credit-status";
 import { getInvoiceBalance, loadInvoiceBalances } from "../services/invoice-outstanding.db";
 import { invoiceBalanceFields } from "../services/invoice-outstanding";
@@ -77,6 +86,22 @@ import { assertRetentionExpired } from "../services/retention.service";
 import { resolveDocumentExchangeRate } from "../services/document-fx-rate";
 
 const log = createLogger("invoices");
+
+// The issue could not complete after stock was consumed: return it and reverse the COGS journal.
+async function undoIssueCogs(invoice: Invoice, userId: string): Promise<void> {
+  const now = new Date();
+  await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, (tx: typeof db) =>
+    restockInvoiceInTx(tx, {
+      invoice,
+      userId,
+      requested: null,
+      reversalDate: invoice.date instanceof Date ? invoice.date : new Date(invoice.date),
+      postedAt: now,
+      source: { id: invoice.id, label: `Issue of Invoice ${invoice.number} not completed` },
+      reason: "Issue not completed",
+    })
+  );
+}
 
 // Walk the user's companies to find the invoice. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
@@ -121,6 +146,9 @@ const invoiceLineObject = z.object({
     .nullable(),
   // Optional income account for this line's net amount (null = default account).
   revenueAccountId: z.string().uuid("revenueAccountId must be a valid UUID").optional().nullable(),
+  // Optional product sold on this line. With "Post inventory to ledger" on, issuing the invoice
+  // consumes its stock and posts cost of goods sold (inventory-costing.service).
+  productId: z.string().uuid("productId must be a valid UUID").optional().nullable(),
 });
 
 // The RATE decides the supply type (deriveVatSupplyType): a taxed line is
@@ -369,6 +397,7 @@ export function registerInvoiceRoutes(app: Express) {
     "/api/companies/:companyId/invoices",
     authMiddleware,
     requireCustomer,
+    checkUsageLimit("invoices"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -390,6 +419,10 @@ export function registerInvoiceRoutes(app: Express) {
       );
       if (!revenueCheck.ok) {
         return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+      }
+      const productCheck = await checkProductsForCompany(companyId, parsedLines.map((l) => l.productId));
+      if (!productCheck.ok) {
+        return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
       }
 
       // Calculate totals using decimal.js to avoid binary-float drift on
@@ -575,6 +608,8 @@ export function registerInvoiceRoutes(app: Express) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
           const posted = await postInvoiceRevenueJournal(invoice as any, userId);
           if (posted) {
+            // Idempotent: consumes stock / posts COGS only if the issue never did.
+            await postCogsForInvoice(invoice as any, userId);
             return res.json({ message: "Revenue recognition entry created", count: 1 });
           }
           return res.status(422).json({
@@ -640,6 +675,10 @@ export function registerInvoiceRoutes(app: Express) {
       );
       if (!revenueCheck.ok) {
         return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+      }
+      const productCheck = await checkProductsForCompany(invoice.companyId, parsedLines.map((l) => l.productId));
+      if (!productCheck.ok) {
+        return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
       }
 
       // Recompute totals from lines using decimal.js for precise money math.
@@ -965,7 +1004,18 @@ export function registerInvoiceRoutes(app: Express) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
           // A-4: do not recognise revenue with a future invoice date.
           assertNotFutureDate(invoice.date);
-          const posted = await postInvoiceRevenueJournal(invoice as any, userId);
+          // Inventory first: stock is checked and consumed (and COGS posted) in one transaction
+          // BEFORE revenue is recognised, so a short-stock invoice is refused with 422
+          // INSUFFICIENT_STOCK and nothing has been posted. If revenue then cannot post, the
+          // stock effect is undone below.
+          const cogs = await postCogsForInvoice(invoice as any, userId);
+          let posted: boolean;
+          try {
+            posted = await postInvoiceRevenueJournal(invoice as any, userId);
+          } catch (err) {
+            if (cogs.consumed) await undoIssueCogs(invoice as any, userId);
+            throw err;
+          }
           const existing = await storage.getJournalEntriesBySource(
             invoice.companyId,
             "invoice",
@@ -974,6 +1024,7 @@ export function registerInvoiceRoutes(app: Express) {
           // postInvoiceRevenueJournal returns false both for "already posted"
           // (fine) and "missing accounts" (NOT fine) — distinguish via the GL.
           if (!posted && !existing.some((e) => e.status === "posted")) {
+            if (cogs.consumed) await undoIssueCogs(invoice as any, userId);
             return res.status(422).json({
               message:
                 "Cannot issue invoice: revenue accounts are missing from the chart of accounts. Seed the default chart first (POST /api/companies/:id/seed-accounts).",
@@ -1283,11 +1334,17 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
-      const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+      const isDeliveryNote = req.query.variant === "delivery";
+      if (isDeliveryNote && invoice.invoiceType === "credit_note") {
+        return res.status(400).json({ message: "A delivery note cannot be created from a credit note" });
+      }
+      const pdfBuffer = isDeliveryNote
+        ? await generateDeliveryNotePDF(invoice, lines, company)
+        : await generateInvoicePDF(invoice, lines, company);
 
       res.set({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="invoice-${invoice.number}.pdf"`,
+        "Content-Disposition": `attachment; filename="${isDeliveryNote ? "delivery-note" : "invoice"}-${invoice.number}.pdf"`,
         "Content-Length": pdfBuffer.length.toString(),
       });
       res.send(pdfBuffer);
@@ -1609,6 +1666,12 @@ export function registerInvoiceRoutes(app: Express) {
           return res
             .status(creditRevenueCheck.status)
             .json({ message: creditRevenueCheck.message, code: creditRevenueCheck.code });
+        }
+        const creditProductCheck = await checkProductsForCompany(companyId, creditLines.map((l) => l.productId));
+        if (!creditProductCheck.ok) {
+          return res
+            .status(creditProductCheck.status)
+            .json({ message: creditProductCheck.message, code: creditProductCheck.code });
         }
         creditAmounts = calculateInvoiceTotals(creditLines);
         if (!Number.isFinite(creditAmounts.total) || Math.abs(creditAmounts.total) > MAX_DOCUMENT_TOTAL) {
@@ -2045,6 +2108,8 @@ export function registerInvoiceRoutes(app: Express) {
             companyId,
             number,
             customerName: original.customerName,
+            // The credit note belongs to the same customer contact, so statements and refunds find it.
+            contactId: original.contactId ?? null,
             customerTrn: original.customerTrn || undefined,
             date: cnDate,
             currency: original.currency,
@@ -2095,6 +2160,24 @@ export function registerInvoiceRoutes(app: Express) {
         // unpaid invoice becomes 'credited'; credit + payments that settle it
         // make it 'paid'.
         await syncInvoiceStatusFromBalance(tx, companyId, invoiceId);
+
+        // Restocking credit note: only with `restock: true` does the stock come back (and COGS
+        // reverse) - the goods are not assumed to be returned otherwise. Explicit credit lines
+        // restock the products of the original lines they name (`originalLineId`), whole or
+        // part quantities up to what was sold and not yet returned; a full credit note
+        // (no `lines`) restocks everything still out.
+        if ((req.body as any)?.restock === true) {
+          await restockInvoiceInTx(tx, {
+            invoice: original as any,
+            userId,
+            requested: restockRequestFromCreditLines(creditLines, originalLines as any[]),
+            reversalDate: cnDate,
+            postedAt: cnDate,
+            source: { id: insertedCreditNote.id, label: `Credit Note ${number}` },
+            reason: "Credit note restock",
+            movementNotes: creditNoteRestockTag(insertedCreditNote.id),
+          });
+        }
 
         return { cnNumber: number, creditNote: insertedCreditNote };
       };

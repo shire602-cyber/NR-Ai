@@ -59,7 +59,7 @@ export async function loadRevaluationItems(companyId: string, asOf: Date): Promi
   }
 
   // Payables: approved foreign vendor bills dated on/before the as-of date, with
-  // payments counted only up to that date. A reverse-charge bill owes the
+  // payments and applied vendor credits counted only up to that date. A reverse-charge bill owes the
   // vendor its subtotal only (the VAT leg is self-assessed), which is what its
   // A/P credit carried.
   const billRows = (
@@ -67,7 +67,9 @@ export async function loadRevaluationItems(companyId: string, asOf: Date): Promi
       `SELECT b.id, b.bill_number, b.vendor_name, b.currency, b.exchange_rate::float8 AS exchange_rate,
               (CASE WHEN b.reverse_charge THEN b.subtotal ELSE b.total_amount END)::float8 AS basis,
               COALESCE((SELECT json_agg(json_build_object('amount', bp.amount::float8, 'date', bp.payment_date))
-                          FROM bill_payments bp WHERE bp.bill_id = b.id), '[]'::json) AS payments
+                          FROM bill_payments bp WHERE bp.bill_id = b.id), '[]'::json) AS payments,
+              COALESCE((SELECT json_agg(json_build_object('amount', vca.amount::float8, 'date', vca.applied_at))
+                          FROM vendor_credit_applications vca WHERE vca.bill_id = b.id), '[]'::json) AS credits
          FROM vendor_bills b
         WHERE b.company_id = $1 AND b.currency <> 'AED'
           AND b.status IN ${BILL_SCOPE_SQL} AND b.bill_date <= $2::timestamp`,
@@ -75,7 +77,10 @@ export async function loadRevaluationItems(companyId: string, asOf: Date): Promi
     )
   ).rows;
   for (const row of billRows) {
-    const { outstanding } = balanceAsOf({ total: row.basis, payments: row.payments, creditNotes: [] }, asOf);
+    // Vendor credits applied to the bill settle it like cash does (same as aging-as-of.service),
+    // each from the day it was applied.
+    const settlements = [...row.payments, ...row.credits];
+    const { outstanding } = balanceAsOf({ total: row.basis, payments: settlements, creditNotes: [] }, asOf);
     if (outstanding <= 0.005) continue;
     items.push({
       id: row.id,
