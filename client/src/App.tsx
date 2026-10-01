@@ -95,6 +95,7 @@ const FixedAssets = lazyWithReload(() => import("@/pages/FixedAssets"));
 const Budgets = lazyWithReload(() => import("@/pages/Budgets"));
 const DocumentVault = lazyWithReload(() => import("@/pages/DocumentVault"));
 const BillPay = lazyWithReload(() => import("@/pages/BillPay"));
+const VendorCredits = lazyWithReload(() => import("@/pages/VendorCredits"));
 const ExpenseClaims = lazyWithReload(() => import("@/pages/ExpenseClaims"));
 const Inventory = lazyWithReload(() => import("@/pages/Inventory"));
 const Quotes = lazyWithReload(() => import("@/pages/Quotes"));
@@ -624,6 +625,7 @@ function Router() {
             <Route path="/exchange-rates" component={ExchangeRates} />
             <Route path="/payroll" component={Payroll} />
             <Route path="/bill-pay" component={BillPay} />
+            <Route path="/vendor-credits" component={VendorCredits} />
             <Route path="/fixed-assets" component={FixedAssets} />
             <Route path="/budgets" component={Budgets} />
             <Route path="/expense-claims" component={ExpenseClaims} />

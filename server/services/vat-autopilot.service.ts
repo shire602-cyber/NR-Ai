@@ -805,6 +805,34 @@ export async function calculateVatReturn(
     if ((err as { code?: string })?.code !== "42P01") throw err;
   }
 
+  // Approved vendor credit notes (supplier credits) dated in the period reduce the
+  // purchases above by their net and VAT — same date rule and exchange-rate
+  // conversion as the bills, same tolerance for a missing table.
+  try {
+    const creditRes = await pool.query(
+      `SELECT
+         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
+       FROM vendor_credit_notes
+       WHERE company_id = $1
+         AND "date" >= $2::date AND "date" <= $3::date
+         AND status = 'approved'`,
+      [
+        companyId,
+        resolvedPeriod.start.toISOString().slice(0, 10),
+        resolvedPeriod.end.toISOString().slice(0, 10),
+      ]
+    );
+    billReverseChargeAmount -= Number(creditRes.rows[0]?.rc_amount || 0);
+    billReverseChargeVat -= Number(creditRes.rows[0]?.rc_vat || 0);
+    totalExpenses -= Number(creditRes.rows[0]?.std_amount || 0);
+    inputVatGross -= Number(creditRes.rows[0]?.std_vat || 0);
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "42P01") throw err;
+  }
+
   const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
   const reverseChargeVat = receiptReverseChargeVat + billReverseChargeVat;
 

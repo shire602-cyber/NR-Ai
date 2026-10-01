@@ -51,21 +51,30 @@ import {
   Bot,
   Gem,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollReveal, StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
 import { messages as pageMessages } from "./Pricing.i18n";
+import {
+  FEATURE_MIN_PLAN,
+  PLAN_LIMITS,
+  PLAN_PRICES,
+  TRIAL_DAYS,
+  UNLIMITED,
+  planIncludes,
+  type GatedFeature,
+  type PlanId,
+  type PlanLimits,
+} from "@/lib/plan-catalog";
 
 // ── Pricing Data ───────────────────────────────────────────────────────
 
 interface PricingTier {
-  id: string;
+  id: PlanId;
   icon: React.ElementType;
   monthlyPrice: number;
   yearlyPrice: number;
-  companies: string;
-  users: string;
   badge?: string;
   badgeVariant?: "default" | "secondary" | "outline";
   ctaVariant: "outline" | "default";
@@ -74,14 +83,14 @@ interface PricingTier {
   iconColor: string;
 }
 
+// Prices come from the shared plan catalog, so the landing page can never show
+// a different number from this page.
 const tiers: PricingTier[] = [
   {
     id: "free",
     icon: Zap,
-    monthlyPrice: 0,
-    yearlyPrice: 0,
-    companies: "1",
-    users: "1",
+    monthlyPrice: PLAN_PRICES.free.monthly,
+    yearlyPrice: PLAN_PRICES.free.yearly,
     ctaVariant: "outline",
     highlight: false,
     gradient: "from-slate-500/10 to-slate-600/5",
@@ -90,10 +99,8 @@ const tiers: PricingTier[] = [
   {
     id: "starter",
     icon: Rocket,
-    monthlyPrice: 49,
-    yearlyPrice: 39,
-    companies: "1",
-    users: "3",
+    monthlyPrice: PLAN_PRICES.starter.monthly,
+    yearlyPrice: PLAN_PRICES.starter.yearly,
     badge: "recommended",
     badgeVariant: "secondary",
     ctaVariant: "default",
@@ -104,10 +111,8 @@ const tiers: PricingTier[] = [
   {
     id: "professional",
     icon: Crown,
-    monthlyPrice: 149,
-    yearlyPrice: 119,
-    companies: "3",
-    users: "10",
+    monthlyPrice: PLAN_PRICES.professional.monthly,
+    yearlyPrice: PLAN_PRICES.professional.yearly,
     badge: "mostPopular",
     badgeVariant: "default",
     ctaVariant: "default",
@@ -118,10 +123,8 @@ const tiers: PricingTier[] = [
   {
     id: "enterprise",
     icon: Building2,
-    monthlyPrice: 299,
-    yearlyPrice: 239,
-    companies: "unlimited",
-    users: "unlimited",
+    monthlyPrice: PLAN_PRICES.enterprise.monthly,
+    yearlyPrice: PLAN_PRICES.enterprise.yearly,
     ctaVariant: "outline",
     highlight: false,
     gradient: "from-purple-500/10 to-purple-600/5",
@@ -129,149 +132,81 @@ const tiers: PricingTier[] = [
   },
 ];
 
-// Feature matrix: true = included, false = not included
-type FeatureKey = string;
-interface FeatureRow {
-  key: FeatureKey;
-  free: boolean;
-  starter: boolean;
-  professional: boolean;
-  enterprise: boolean;
+// Comparison rows. Every row is either a usage limit read from PLAN_LIMITS or a
+// feature the server really gates (FEATURE_MIN_PLAN), so the table cannot claim
+// more than the code enforces. Sales-led terms (account manager, support terms)
+// are the only rows not backed by a code gate.
+type LimitKey = keyof PlanLimits;
+type MessageKey = keyof typeof pageMessages.tables.en;
+
+type MatrixRow =
+  | { kind: "limit"; labelKey: MessageKey; limit: LimitKey }
+  | { kind: "feature"; labelKey: MessageKey; feature: GatedFeature }
+  | { kind: "terms"; labelKey: MessageKey; plans: readonly PlanId[] };
+
+interface MatrixCategory {
+  categoryKey: MessageKey;
+  rows: MatrixRow[];
 }
 
-interface FeatureCategory {
-  categoryKey: string;
-  features: FeatureRow[];
-}
-
-const featureMatrix: FeatureCategory[] = [
+const featureMatrix: MatrixCategory[] = [
   {
-    categoryKey: "coreAccounting",
-    features: [
-      { key: "invoicing", free: true, starter: true, professional: true, enterprise: true },
-      { key: "receiptScanning", free: true, starter: true, professional: true, enterprise: true },
-      {
-        key: "bankReconciliation",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "vatFiling", free: true, starter: true, professional: true, enterprise: true },
-      {
-        key: "recurringInvoices",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "billPay", free: false, starter: true, professional: true, enterprise: true },
-      {
-        key: "inventoryManagement",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "monthEndClose", free: false, starter: false, professional: true, enterprise: true },
-      { key: "fixedAssets", free: false, starter: false, professional: true, enterprise: true },
-      { key: "budgeting", free: false, starter: false, professional: true, enterprise: true },
-      { key: "expenseClaims", free: false, starter: false, professional: true, enterprise: true },
+    categoryKey: "usageLimits",
+    rows: [
+      { kind: "limit", labelKey: "rowCompanies", limit: "maxCompanies" },
+      { kind: "limit", labelKey: "rowUsers", limit: "maxUsers" },
+      { kind: "limit", labelKey: "rowInvoices", limit: "maxInvoicesPerMonth" },
+      { kind: "limit", labelKey: "rowReceipts", limit: "maxReceiptsPerMonth" },
     ],
   },
   {
-    categoryKey: "aiIntelligence",
-    features: [
-      {
-        key: "basicAICategorization",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "aiOCR", free: false, starter: true, professional: true, enterprise: true },
-      { key: "autonomousGL", free: false, starter: false, professional: true, enterprise: true },
-      { key: "aiCFO", free: false, starter: false, professional: true, enterprise: true },
-      {
-        key: "aiAnomalyDetection",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "aiCashFlowForecast",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "smartReconciliation",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "priorityAI", free: false, starter: false, professional: false, enterprise: true },
+    categoryKey: "coreAccounting",
+    rows: [
+      { kind: "feature", labelKey: "bankImportReconciliation", feature: "bankImport" },
+      { kind: "feature", labelKey: "quotes", feature: "quotes" },
+      { kind: "feature", labelKey: "creditNotes", feature: "creditNotes" },
+      { kind: "feature", labelKey: "invoiceTemplates", feature: "invoiceTemplates" },
+      { kind: "feature", labelKey: "recurringInvoices", feature: "recurringInvoices" },
+      { kind: "feature", labelKey: "multiCurrency", feature: "multiCurrency" },
+      { kind: "feature", labelKey: "purchaseOrders", feature: "purchaseOrders" },
+      { kind: "feature", labelKey: "bulkOperations", feature: "bulkOps" },
+      { kind: "feature", labelKey: "costCentres", feature: "costCenters" },
+      { kind: "feature", labelKey: "fixedAssetsDepreciation", feature: "fixedAssets" },
     ],
+  },
+  {
+    categoryKey: "reporting",
+    rows: [{ kind: "feature", labelKey: "financialStatements", feature: "advancedReports" }],
   },
   {
     categoryKey: "hrPayroll",
-    features: [
-      { key: "payrollWPS", free: false, starter: false, professional: true, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "uaeCompliance",
-    features: [
-      {
-        key: "vatFilingCompliance",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "corporateTax", free: false, starter: false, professional: true, enterprise: true },
-      { key: "eInvoicing", free: false, starter: false, professional: true, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "communication",
-    features: [
-      { key: "clientPortal", free: false, starter: false, professional: true, enterprise: true },
-    ],
+    rows: [{ kind: "feature", labelKey: "payrollWpsPayslips", feature: "payroll" }],
   },
   {
     categoryKey: "platform",
-    features: [
-      { key: "multiCompany", free: false, starter: false, professional: true, enterprise: true },
-      {
-        key: "dedicatedManager",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      {
-        key: "customIntegrations",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      { key: "slaGuarantee", free: false, starter: false, professional: false, enterprise: true },
-      {
-        key: "advancedAnalytics",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      { key: "multiBranch", free: false, starter: false, professional: false, enterprise: true },
-      { key: "apiAccess", free: false, starter: false, professional: false, enterprise: true },
+    rows: [
+      { kind: "feature", labelKey: "outboundWebhooks", feature: "apiAccess" },
+      { kind: "terms", labelKey: "dedicatedAccountManager2", plans: ["enterprise"] },
+      { kind: "terms", labelKey: "enterpriseSupportTerms2", plans: ["enterprise"] },
     ],
   },
+];
+
+// What is true on every plan today (the server does not gate any of it).
+const includedOnEveryPlan: MessageKey[] = [
+  "vat201Evidence",
+  "ftaAuditFile",
+  "corporateTaxWorkpaper",
+  "openingBalancesYearEnd",
+  "arabicEnglishDocuments",
+  "eInvoiceReady",
+  "aiBookkeeping",
+  "customerStatements",
+  "vendorBillsCredits",
+  "inventoryCogs",
+  "expenseClaimsBudgets",
+  "aiInsights",
+  "csvExport",
 ];
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -285,6 +220,33 @@ export default function Pricing() {
 
   const toggleLanguage = () => {
     setLocale(locale === "en" ? "ar" : "en");
+  };
+
+  // ── Limit and feature labels (all read from the shared plan catalog) ──
+
+  const companiesLabel = (n: number) =>
+    n === UNLIMITED
+      ? tr("unlimitedCompanies")
+      : n === 1
+        ? tr("oneCompany")
+        : tr("nCompanies", { count: n });
+  const usersLabel = (n: number) =>
+    n === UNLIMITED ? tr("unlimitedUsers") : n === 1 ? tr("oneUser") : tr("nUsers", { count: n });
+  const invoicesLabel = (n: number) =>
+    n === UNLIMITED ? tr("unlimitedInvoices") : tr("nInvoicesMonth", { count: n });
+  const receiptsLabel = (n: number) =>
+    n === UNLIMITED ? tr("unlimitedReceipts") : tr("nReceiptsMonth", { count: n });
+
+  /** Labels of the gated features that first unlock on `plan`. */
+  const featuresFirstIncludedOn = (plan: PlanId): string[] =>
+    featureMatrix
+      .flatMap((category) => category.rows)
+      .filter((row) => row.kind === "feature" && FEATURE_MIN_PLAN[row.feature] === plan)
+      .map((row) => tr(row.labelKey));
+
+  const limitCell = (plan: PlanId, limit: LimitKey): string => {
+    const n = PLAN_LIMITS[plan][limit];
+    return n === UNLIMITED ? tr("unlimited") : String(n);
   };
 
   // ── Translations ────────────────────────────────────────────────────
@@ -308,7 +270,7 @@ export default function Pricing() {
       starter: {
         name: tr("starter"),
         description: tr("forSmallBusinessesScalingUp"),
-        cta: tr("start14DayTrial"),
+        cta: tr("getStarter"),
       },
       professional: {
         name: tr("professional"),
@@ -325,171 +287,58 @@ export default function Pricing() {
       recommended: tr("recommended"),
       mostPopular: tr("mostPopular"),
     },
-    limits: {
-      companies: tr("company"),
-      companiesPlural: tr("companies"),
-      users: tr("user"),
-      usersPlural: tr("users"),
-      unlimited: tr("unlimited"),
-      invoicesMonth: tr("invoicesMo"),
-      receiptsMonth: tr("receiptsMo"),
-    },
     tierFeatures: {
       free: {
-        features:
-          locale === "en"
-            ? [
-                tr("n1Company1User"),
-                tr("n50InvoicesMonth"),
-                tr("n20ReceiptsMonth"),
-                tr("basicAiCategorization"),
-                tr("vatFiling"),
-                tr("bankReconciliationManual"),
-              ]
-            : [
-                "شركة واحدة، مستخدم واحد",
-                "50 فاتورة/شهر",
-                "20 إيصال/شهر",
-                "تصنيف ذكي أساسي",
-                "تقديم ضريبة القيمة المضافة",
-                "تسوية بنكية (يدوية)",
-              ],
+        features: [
+          companiesLabel(PLAN_LIMITS.free.maxCompanies),
+          usersLabel(PLAN_LIMITS.free.maxUsers),
+          invoicesLabel(PLAN_LIMITS.free.maxInvoicesPerMonth),
+          receiptsLabel(PLAN_LIMITS.free.maxReceiptsPerMonth),
+          tr("everyPlanFeaturesNote"),
+        ],
       },
       starter: {
-        features:
-          locale === "en"
-            ? [
-                tr("n1Company3Users"),
-                tr("n200InvoicesMonth"),
-                tr("n100ReceiptsMonth"),
-                tr("aiOcrScanning"),
-                tr("aiCategorization"),
-                tr("recurringInvoices"),
-                tr("billPay"),
-                tr("inventoryManagement"),
-              ]
-            : [
-                "شركة واحدة، 3 مستخدمين",
-                "200 فاتورة/شهر",
-                "100 إيصال/شهر",
-                "مسح OCR بالذكاء الاصطناعي",
-                "تصنيف ذكي",
-                "فواتير متكررة",
-                "دفع الفواتير",
-                "إدارة المخزون",
-              ],
+        header: tr("everythingInFreePlus"),
+        features: [
+          companiesLabel(PLAN_LIMITS.starter.maxCompanies),
+          usersLabel(PLAN_LIMITS.starter.maxUsers),
+          invoicesLabel(PLAN_LIMITS.starter.maxInvoicesPerMonth),
+          receiptsLabel(PLAN_LIMITS.starter.maxReceiptsPerMonth),
+          ...featuresFirstIncludedOn("starter"),
+        ],
       },
       professional: {
         header: tr("everythingInStarterPlus"),
-        features:
-          locale === "en"
-            ? [
-                tr("n3Companies10Users"),
-                tr("unlimitedInvoices"),
-                tr("unlimitedReceipts"),
-                tr("autonomousGlAiAutoPosting"),
-                tr("aiCfoFinancialAdvisor"),
-                tr("aiAnomalyDetection"),
-                tr("aiCashFlowForecast"),
-                tr("smartReconciliation"),
-                tr("monthEndCloseAutomation"),
-                tr("payrollWps"),
-                tr("fixedAssetsDepreciation"),
-                tr("budgetingVariance"),
-                tr("expenseClaims"),
-                tr("corporateTax9"),
-                tr("eInvoicingPintAe"),
-                tr("clientPortal"),
-              ]
-            : [
-                "3 شركات، 10 مستخدمين",
-                "فواتير غير محدودة",
-                "إيصالات غير محدودة",
-                "قيود تلقائية بالذكاء الاصطناعي",
-                "مستشار مالي ذكي",
-                "كشف الحالات الشاذة",
-                "توقعات التدفق النقدي",
-                "تسوية ذكية",
-                "أتمتة إقفال نهاية الشهر",
-                "الرواتب وحماية الأجور",
-                "الأصول الثابتة والإهلاك",
-                "الميزانيات والتحليل",
-                "مطالبات المصروفات",
-                "ضريبة الشركات (9%)",
-                "الفوترة الإلكترونية (PINT AE)",
-                "بوابة العميل",
-              ],
+        features: [
+          companiesLabel(PLAN_LIMITS.professional.maxCompanies),
+          usersLabel(PLAN_LIMITS.professional.maxUsers),
+          invoicesLabel(PLAN_LIMITS.professional.maxInvoicesPerMonth),
+          receiptsLabel(PLAN_LIMITS.professional.maxReceiptsPerMonth),
+          ...featuresFirstIncludedOn("professional"),
+        ],
       },
       enterprise: {
         header: tr("everythingInProfessionalPlus"),
-        features:
-          locale === "en"
-            ? [
-                tr("unlimitedCompaniesUnlimitedUsers"),
-                tr("priorityAiProcessing"),
-                tr("dedicatedAccountManager"),
-                tr("customIntegrations"),
-                tr("enterpriseSupportTerms"),
-                tr("advancedAnalytics"),
-                tr("multiBranchSupport"),
-                tr("apiAccess"),
-              ]
-            : [
-                "شركات ومستخدمين غير محدودين",
-                "أولوية معالجة الذكاء الاصطناعي",
-                "مدير حساب مخصص",
-                "تكاملات مخصصة",
-                "شروط دعم المؤسسات",
-                "تحليلات متقدمة",
-                "دعم متعدد الفروع",
-                "وصول API",
-              ],
+        features: [
+          tr("unlimitedCompaniesUnlimitedUsers"),
+          ...featuresFirstIncludedOn("enterprise"),
+          tr("dedicatedAccountManager"),
+          tr("enterpriseSupportTerms"),
+        ],
       },
     },
     comparison: {
       title: tr("completeFeatureComparison"),
       subtitle: tr("everyFeatureAcrossEveryPlan"),
     },
-    featureCategories: {
-      coreAccounting: tr("coreAccounting"),
-      aiIntelligence: tr("aiIntelligence"),
-      hrPayroll: tr("hrPayroll"),
-      uaeCompliance: tr("uaeCompliance"),
-      communication: tr("communication"),
-      platform: tr("platform"),
+    included: {
+      title: tr("includedOnEveryPlan"),
+      subtitle: tr("includedOnEveryPlanSubtitle"),
+      items: includedOnEveryPlan.map((key) => tr(key)),
     },
-    featureNames: {
-      invoicing: tr("invoicing"),
-      receiptScanning: tr("receiptScanning"),
-      bankReconciliation: tr("bankReconciliation"),
-      vatFiling: tr("vatFiling2"),
-      recurringInvoices: tr("recurringInvoices2"),
-      billPay: tr("billPay2"),
-      inventoryManagement: tr("inventoryManagement2"),
-      monthEndClose: tr("monthEndClose"),
-      fixedAssets: tr("fixedAssetsDepreciation"),
-      budgeting: tr("budgetingVariance"),
-      expenseClaims: tr("expenseClaims"),
-      basicAICategorization: tr("basicAiCategorization2"),
-      aiOCR: tr("aiOcrScanning2"),
-      autonomousGL: tr("autonomousGlAutoPosting"),
-      aiCFO: tr("aiCfoFinancialAdvisor"),
-      aiAnomalyDetection: tr("aiAnomalyDetection"),
-      aiCashFlowForecast: tr("aiCashFlowForecast"),
-      smartReconciliation: tr("smartReconciliation"),
-      priorityAI: tr("priorityAiProcessing2"),
-      payrollWPS: tr("payrollWps"),
-      vatFilingCompliance: tr("vatFiling5"),
-      corporateTax: tr("corporateTax9"),
-      eInvoicing: tr("eInvoicingPintAe"),
-      clientPortal: tr("clientPortal"),
-      multiCompany: tr("multiCompany"),
-      dedicatedManager: tr("dedicatedAccountManager2"),
-      customIntegrations: tr("customIntegrations2"),
-      slaGuarantee: tr("enterpriseSupportTerms2"),
-      advancedAnalytics: tr("advancedAnalytics2"),
-      multiBranch: tr("multiBranchSupport2"),
-      apiAccess: tr("apiAccess2"),
+    notes: {
+      pricesExVat: tr("pricesExVat"),
+      trialBanner: tr("trialBanner", { days: TRIAL_DAYS }),
     },
     faq: {
       title: tr("frequentlyAskedQuestions"),
@@ -501,7 +350,7 @@ export default function Pricing() {
         },
         {
           q: tr("isThereAFreeTrial"),
-          a: tr("yesWeOfferA14Day"),
+          a: tr("yesWeOfferA14Day", { days: TRIAL_DAYS }),
         },
         {
           q: tr("whatPaymentMethodsDoYouAccept"),
@@ -522,7 +371,7 @@ export default function Pricing() {
       subtitle: tr("startWithGuidedOnboardingVatReady"),
       startFree: tr("startFree"),
       bookDemo: tr("bookADemo"),
-      guarantee: tr("n14DayFreeTrialNoCredit"),
+      guarantee: tr("trialNoCardNote", { days: TRIAL_DAYS }),
     },
     nav: {
       home: tr("home"),
@@ -653,6 +502,10 @@ export default function Pricing() {
               </AnimatePresence>
             </div>
           </ScrollReveal>
+          <ScrollReveal delay={0.4}>
+            <p className="mt-6 text-sm text-muted-foreground">{t.notes.trialBanner}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t.notes.pricesExVat}</p>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -741,9 +594,7 @@ export default function Pricing() {
                         </div>
                         {price > 0 && isYearly && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            {locale === "en"
-                              ? `Billed AED ${price * 12}/year`
-                              : `يُفوتر ${price * 12} درهم/سنة`}
+                            {tr("billedYearly", { amount: price * 12 })}
                           </p>
                         )}
                       </CardHeader>
@@ -800,6 +651,28 @@ export default function Pricing() {
         </div>
       </section>
 
+      {/* ── Included on every plan ───────────────────────────────────── */}
+      <section className="pb-20 px-4">
+        <div className="container mx-auto max-w-5xl">
+          <ScrollReveal>
+            <div className="text-center mb-10">
+              <h2 className="text-3xl md:text-4xl font-bold mb-3">{t.included.title}</h2>
+              <p className="text-muted-foreground text-lg">{t.included.subtitle}</p>
+            </div>
+          </ScrollReveal>
+          <ScrollReveal delay={0.1}>
+            <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              {t.included.items.map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm">
+                  <Check className="h-4 w-4 mt-0.5 shrink-0 text-success" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </ScrollReveal>
+        </div>
+      </section>
+
       {/* ── Feature Comparison Table ─────────────────────────────────── */}
       <section className="py-20 px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
@@ -839,33 +712,38 @@ export default function Pricing() {
                   </TableHeader>
                   <TableBody>
                     {featureMatrix.map((category) => (
-                      <>
+                      <Fragment key={category.categoryKey}>
                         {/* Category header row */}
-                        <TableRow key={category.categoryKey} className="bg-muted/20">
+                        <TableRow className="bg-muted/20">
                           <TableCell
                             colSpan={5}
                             className="font-semibold text-sm text-foreground py-3"
                           >
-                            {
-                              t.featureCategories[
-                                category.categoryKey as keyof typeof t.featureCategories
-                              ]
-                            }
+                            {tr(category.categoryKey)}
                           </TableCell>
                         </TableRow>
-                        {/* Feature rows */}
-                        {category.features.map((feature) => (
-                          <TableRow key={feature.key}>
-                            <TableCell className="text-sm">
-                              {t.featureNames[feature.key as keyof typeof t.featureNames]}
-                            </TableCell>
-                            <TableCell>{renderCheckOrDash(feature.free)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.starter)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.professional)}</TableCell>
-                            <TableCell>{renderCheckOrDash(feature.enterprise)}</TableCell>
+                        {/* Rows: usage limits, gated features, sales-led terms */}
+                        {category.rows.map((row) => (
+                          <TableRow key={row.labelKey}>
+                            <TableCell className="text-sm">{tr(row.labelKey)}</TableCell>
+                            {tiers.map((tier) => (
+                              <TableCell key={tier.id}>
+                                {row.kind === "limit" ? (
+                                  <div className="text-center text-sm">
+                                    {limitCell(tier.id, row.limit)}
+                                  </div>
+                                ) : (
+                                  renderCheckOrDash(
+                                    row.kind === "feature"
+                                      ? planIncludes(tier.id, row.feature)
+                                      : row.plans.includes(tier.id)
+                                  )
+                                )}
+                              </TableCell>
+                            ))}
                           </TableRow>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -969,8 +847,6 @@ export default function Pricing() {
           <div className="flex items-center gap-4">
             <Lock className="h-3.5 w-3.5" />
             <span>{tr("tlsSecuredAccess")}</span>
-            <span className="text-muted-foreground/40">|</span>
-            <span>{tr("uaeHosted")}</span>
           </div>
         </div>
       </footer>

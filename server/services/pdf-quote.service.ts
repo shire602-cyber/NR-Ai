@@ -10,15 +10,17 @@ import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
 export async function generateQuotePDF(
   quote: Quote,
   lines: QuoteLine[],
-  company: Company
+  company: Company,
+  options: { variant?: "quote" | "proforma" } = {}
 ): Promise<Buffer> {
+  const isProforma = options.variant === "proforma";
   return new Promise((resolve, reject) => {
     try {
       const doc = createPdfDocument({
         size: "A4",
         margin: 50,
         info: {
-          Title: `Quotation ${quote.number}`,
+          Title: `${isProforma ? "Proforma Invoice" : "Quotation"} ${quote.number}`,
           Author: company.name,
         },
       });
@@ -40,14 +42,23 @@ export async function generateQuotePDF(
       doc.text(company.name, margin, 30, { width: contentWidth * 0.6, align: "left" });
 
       // Quote Type Label
-      const quoteLabel = "QUOTATION";
+      const quoteLabel = isProforma ? "PROFORMA INVOICE" : "QUOTATION";
       doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text(quoteLabel, margin, 35, {
         width: contentWidth,
         align: "right",
       });
       doc.fontSize(11).fillColor("#DBEAFE").font("Helvetica");
-      doc.text("عرض سعر", margin, 57, { width: contentWidth, align: "right" });
+      doc.text(isProforma ? "فاتورة مبدئية" : "عرض سعر", margin, 57, { width: contentWidth, align: "right" });
+
+      if (isProforma) {
+        doc.fontSize(9).fillColor("#B91C1C").font("Helvetica-Bold");
+        doc.text("This is not a tax invoice", margin, 103, { width: contentWidth / 2, align: "left" });
+        doc.text("هذه ليست فاتورة ضريبية", margin + contentWidth / 2, 103, {
+          width: contentWidth / 2,
+          align: "right",
+        });
+      }
 
       // --- Quote Details Box ---
       let y = 120;
@@ -55,7 +66,7 @@ export async function generateQuotePDF(
       doc.rect(margin, y, contentWidth, detailBoxHeight).fill("#F9FAFB").stroke("#E5E7EB");
 
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text("Quote #:", margin + 10, y + 12);
+      doc.text(isProforma ? "Proforma #:" : "Quote #:", margin + 10, y + 12);
       doc.font("Helvetica").text(quote.number, margin + 75, y + 12);
 
       doc.font("Helvetica-Bold").text("Date:", margin + 10, y + 30);
@@ -227,12 +238,16 @@ export async function generateQuotePDF(
       // --- Footer ---
       const footerY = 770;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text("This quotation is valid for the period specified above.", margin, footerY, {
-        width: contentWidth,
-        align: "center",
-      });
+      doc.text(
+        isProforma
+          ? "A tax invoice will be issued on supply or payment."
+          : "This quotation is valid for the period specified above.",
+        margin,
+        footerY,
+        { width: contentWidth, align: "center" }
+      );
 
-      if (isVATRegistered) {
+      if (isVATRegistered && !isProforma) {
         doc.fontSize(7);
         doc.text("All amounts are inclusive of applicable VAT where stated", margin, footerY + 12, {
           width: contentWidth,

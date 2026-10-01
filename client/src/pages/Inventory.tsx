@@ -51,6 +51,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -75,6 +76,7 @@ const productFormSchema = z.object({
   vatRate: z.coerce.number().min(0).max(1, pageMessages.marker("vatRateMustBeBetween0")),
   unit: z.string().min(1, pageMessages.marker("unitIsRequired")),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
+  trackInventory: z.boolean(),
 });
 
 type ProductFormData = z.infer<typeof productFormSchema>;
@@ -132,6 +134,7 @@ export default function Inventory() {
       vatRate: 0.05,
       unit: "pcs",
       lowStockThreshold: 10,
+      trackInventory: false,
     },
   });
 
@@ -225,6 +228,7 @@ export default function Inventory() {
       vatRate: 0.05,
       unit: "pcs",
       lowStockThreshold: 10,
+      trackInventory: false,
     });
     setProductDialogOpen(true);
   };
@@ -241,6 +245,7 @@ export default function Inventory() {
       vatRate: product.vatRate,
       unit: product.unit,
       lowStockThreshold: product.lowStockThreshold || 10,
+      trackInventory: product.trackInventory ?? false,
     });
     setProductDialogOpen(true);
   };
@@ -402,6 +407,7 @@ export default function Inventory() {
                         <TableHead>SKU</TableHead>
                         <TableHead className="text-end">{tr("unitPrice")}</TableHead>
                         <TableHead className="text-end">{tr("costPrice")}</TableHead>
+                        <TableHead className="text-end">{tr("averageCost")}</TableHead>
                         <TableHead className="text-end">{tr("stock")}</TableHead>
                         <TableHead>{tr("unit")}</TableHead>
                         <TableHead>{tr("status")}</TableHead>
@@ -431,6 +437,11 @@ export default function Inventory() {
                             </TableCell>
                             <TableCell className="text-end">
                               {formatCurrency(product.costPrice || 0, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-end" data-testid={`text-average-cost-${product.id}`}>
+                              {product.trackInventory
+                                ? formatCurrency(product.averageCost || 0, "AED", locale)
+                                : "-"}
                             </TableCell>
                             <TableCell className="text-end">
                               <div className="flex items-center justify-end gap-2">
@@ -752,6 +763,26 @@ export default function Inventory() {
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={productForm.control}
+                  name="trackInventory"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2 flex items-center justify-between rounded-md border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>{tr("trackInventory")}</FormLabel>
+                        <p className="text-xs text-muted-foreground">{tr("trackInventoryHint")}</p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-track-inventory"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
@@ -810,6 +841,12 @@ export default function Inventory() {
                   </FormItem>
                 )}
               />
+
+              <p className="text-xs text-muted-foreground" data-testid="text-movement-ledger-help">
+                {movementForm.watch("type") === "purchase"
+                  ? tr("movementPurchaseLedgerHelp")
+                  : tr("movementLedgerHelp")}
+              </p>
 
               <FormField
                 control={movementForm.control}

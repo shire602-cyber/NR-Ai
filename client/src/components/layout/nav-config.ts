@@ -63,6 +63,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     icon: ShoppingCart,
     items: [
       { titleKey: "billPay", url: "/bill-pay" },
+      { titleKey: "vendorCredits", url: "/vendor-credits" },
       { titleKey: "expenseClaims", url: "/expense-claims" },
       { titleKey: "purchaseOrders", url: "/purchase-orders" },
       { titleKey: "receipts", url: "/receipts" },

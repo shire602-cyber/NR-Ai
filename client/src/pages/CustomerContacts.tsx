@@ -19,6 +19,7 @@ import {
   Link2,
   Copy,
   ExternalLink,
+  FileText,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { CustomerStatementDialog } from "@/components/CustomerStatementDialog";
 import { messages as pageMessages } from "./CustomerContacts.i18n";
 
 interface ImportResult {
@@ -245,6 +247,7 @@ export default function CustomerContacts() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [editContact, setEditContact] = useState<CustomerContact | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [statementContact, setStatementContact] = useState<CustomerContact | null>(null);
   const [portalLinkDialog, setPortalLinkDialog] = useState<{
     open: boolean;
     url: string;
@@ -664,7 +667,7 @@ export default function CustomerContacts() {
                     {
                       key: "actions",
                       header: tr("actions"),
-                      width: "170px",
+                      width: "210px",
                       cell: (contact) => (
                         <div className="flex items-center gap-1">
                           <Button
@@ -681,6 +684,15 @@ export default function CustomerContacts() {
                             data-testid={`button-portal-link-${contact.id}`}
                           >
                             <Link2 className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title={tr("statement")}
+                            onClick={() => setStatementContact(contact)}
+                            data-testid={`button-statement-${contact.id}`}
+                          >
+                            <FileText className="w-4 h-4" />
                           </Button>
                           <Button
                             size="icon"
@@ -912,6 +924,14 @@ export default function CustomerContacts() {
           )}
         </DialogContent>
       </Dialog>
+
+      {companyId && (
+        <CustomerStatementDialog
+          companyId={companyId}
+          contact={statementContact}
+          onClose={() => setStatementContact(null)}
+        />
+      )}
 
       {/* Portal Link Dialog */}
       <Dialog

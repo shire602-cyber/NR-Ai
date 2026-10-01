@@ -13,7 +13,8 @@ import { ensureSubscription } from "../services/billing-trial.service";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
-import { ensureCriticalSchema } from "../db";
+import { ensureCriticalSchema, db } from "../db";
+import { postInventoryOpeningInTx } from "../services/inventory-costing.service";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
@@ -397,6 +398,16 @@ export function registerCompanyRoutes(app: Express) {
       const updateData: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(validated)) {
         if (value !== undefined) updateData[key] = value;
+      }
+
+      // Switching "Post inventory to ledger" on journals the stock already on hand (Dr Inventory /
+      // Cr Opening Balance Equity) so account 1070 starts equal to the stock values. Done first: a
+      // locked period refuses the whole change.
+      if (updateData.inventoryCostingEnabled === true) {
+        const before = await storage.getCompany(id);
+        if (before && !before.inventoryCostingEnabled) {
+          await db.transaction((tx: typeof db) => postInventoryOpeningInTx(tx, id, userId));
+        }
       }
 
       const company = await storage.updateCompany(id, updateData as any);

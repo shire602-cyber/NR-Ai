@@ -42,6 +42,7 @@ import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { evidenceSectionHref, evidenceSourceHref } from "@/lib/evidenceLinks";
+import { exportToCsv } from "@/lib/export-csv";
 import {
   type ExportData,
   exportToExcel,
@@ -2453,6 +2454,11 @@ export default function Reports() {
   const search = useSearch();
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  // Aging as of a past day (YYYY-MM-DD); empty = up to today.
+  const [agingAsOf, setAgingAsOf] = useState("");
+  const agingAsOfQuery = agingAsOf ? `?asOf=${agingAsOf}` : "";
+  const agingAsOfSuffix = agingAsOf ? `_as_of_${agingAsOf}` : "";
+  const todayYmd = format(new Date(), "yyyy-MM-dd");
   const [ledgerDetailPage, setLedgerDetailPage] = useState(1);
   const [reportAutomationHealthHistory, setReportAutomationHealthHistory] = useState(() =>
     getReportAutomationHealthHistory()
@@ -3741,13 +3747,13 @@ export default function Reports() {
   });
 
   const { data: agingReport = [], isLoading: agingReportLoading } = useQuery<AgingReportItem[]>({
-    queryKey: ["/api/reports", selectedCompanyId, "aging"],
+    queryKey: ["/api/reports", selectedCompanyId, `aging${agingAsOfQuery}`],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("ar-aging"),
   });
 
   const { data: billAgingReport, isLoading: billAgingLoading } = useQuery<BillAgingReport>({
-    queryKey: ["/api/companies", selectedCompanyId, "bills", "aging"],
+    queryKey: ["/api/companies", selectedCompanyId, "bills", `aging${agingAsOfQuery}`],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("ap-aging"),
   });
@@ -4776,6 +4782,37 @@ export default function Reports() {
   const payableAgingExportSheets = useMemo(
     () => agingExportSheets.filter((sheet) => sheet.sheetName === "A/P Aging"),
     [agingExportSheets]
+  );
+
+  // "As of" day for the A/R and A/P aging cards and their exports.
+  const agingAsOfControl = (
+    <div className="flex items-end gap-2">
+      <div className="space-y-1">
+        <Label htmlFor="aging-as-of" className="text-xs text-muted-foreground">
+          {tr("agingAsOfDate")}
+        </Label>
+        <Input
+          id="aging-as-of"
+          type="date"
+          dir="ltr"
+          className="h-9 w-40"
+          max={todayYmd}
+          value={agingAsOf}
+          onChange={(event) => setAgingAsOf(event.target.value)}
+          data-testid="input-aging-as-of"
+        />
+      </div>
+      {agingAsOf ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setAgingAsOf("")}
+          data-testid="button-aging-as-of-clear"
+        >
+          {tr("agingAsOfToday")}
+        </Button>
+      ) : null}
+    </div>
   );
 
   const consolidatedStatementsReport = useMemo(
@@ -11730,72 +11767,75 @@ export default function Reports() {
     }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = (kind: "xlsx" | "csv" = "xlsx") => {
+    const exportRows = kind === "csv" ? exportToCsv : exportToExcel;
+    const notify: typeof toast = (opts) =>
+      toast(kind === "csv" ? { ...opts, description: tr("exportedToCsv") } : opts);
     const dateRangeStr =
       dateRange.from && dateRange.to
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
         : "";
 
     if (activeTab === "pl" && profitLoss) {
-      exportToExcel([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
-      toast({ title: tr("exportSuccessful"), description: tr("profitLossExportedToExcel") });
+      exportRows([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
+      notify({ title: tr("exportSuccessful"), description: tr("profitLossExportedToExcel") });
     } else if (activeTab === "bs" && balanceSheet) {
-      exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
-      toast({ title: tr("exportSuccessful"), description: tr("balanceSheetExportedToExcel") });
+      exportRows([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
+      notify({ title: tr("exportSuccessful"), description: tr("balanceSheetExportedToExcel") });
     } else if (activeTab === "vat" && vatSummary) {
-      exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
-      toast({ title: tr("exportSuccessful"), description: tr("vatSummaryExportedToExcel") });
+      exportRows([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
+      notify({ title: tr("exportSuccessful"), description: tr("vatSummaryExportedToExcel") });
     } else if (activeTab === "tax" && corporateTaxEstimate) {
-      exportToExcel(
+      exportRows(
         prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
         `corporate_tax_estimate${dateRangeStr}`
       );
-      toast({
+      notify({
         title: tr("exportSuccessful"),
         description: tr("corporateTaxEstimateExportedToExcel"),
       });
     } else if (activeTab === "trial" && trialBalance) {
-      exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
-      toast({ title: tr("exportSuccessful"), description: tr("trialBalanceExportedToExcel") });
+      exportRows([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
+      notify({ title: tr("exportSuccessful"), description: tr("trialBalanceExportedToExcel") });
     } else if (activeTab === "sales") {
       if (selectedReportId === "ar-aging") {
-        exportToExcel(receivableAgingExportSheets, `ar_aging${dateRangeStr}`);
-        toast({ title: tr("exportSuccessful"), description: tr("aRAgingExportedToExcel") });
+        exportRows(receivableAgingExportSheets, `ar_aging${agingAsOfSuffix}${dateRangeStr}`);
+        notify({ title: tr("exportSuccessful"), description: tr("aRAgingExportedToExcel") });
       } else {
-        exportToExcel(
+        exportRows(
           prepareInvoiceStatusForExport(invoiceStatusReport),
           `invoice_status${dateRangeStr}`
         );
-        toast({ title: tr("exportSuccessful"), description: tr("invoiceStatusExportedToExcel") });
+        notify({ title: tr("exportSuccessful"), description: tr("invoiceStatusExportedToExcel") });
       }
     } else if (activeTab === "balances") {
       if (selectedReportId === "ap-aging") {
-        exportToExcel(payableAgingExportSheets, `ap_aging${dateRangeStr}`);
-        toast({ title: tr("exportSuccessful"), description: tr("aPAgingExportedToExcel") });
+        exportRows(payableAgingExportSheets, `ap_aging${agingAsOfSuffix}${dateRangeStr}`);
+        notify({ title: tr("exportSuccessful"), description: tr("aPAgingExportedToExcel") });
       } else {
-        exportToExcel(
+        exportRows(
           prepareBalanceSummaryReportsForExport(balanceReport),
           `balance_reports${dateRangeStr}`
         );
-        toast({ title: tr("exportSuccessful"), description: tr("balanceReportsExportedToExcel") });
+        notify({ title: tr("exportSuccessful"), description: tr("balanceReportsExportedToExcel") });
       }
     } else if (activeTab === "expenses") {
-      exportToExcel(
+      exportRows(
         prepareExpenseReportsForExport(expenseReport),
         `expense_reports${dateRangeStr}`
       );
-      toast({ title: tr("exportSuccessful"), description: tr("expenseReportsExportedToExcel") });
+      notify({ title: tr("exportSuccessful"), description: tr("expenseReportsExportedToExcel") });
     } else if (activeTab === "payroll") {
-      exportToExcel(
+      exportRows(
         preparePayrollReportsForExport(payrollReport),
         `payroll_reports${dateRangeStr}`
       );
-      toast({ title: tr("exportSuccessful"), description: tr("payrollReportsExportedToExcel") });
+      notify({ title: tr("exportSuccessful"), description: tr("payrollReportsExportedToExcel") });
     } else if (activeTab === "ledger") {
-      exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
-      toast({ title: tr("exportSuccessful"), description: tr("generalLedgerExportedToExcel") });
+      exportRows(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
+      notify({ title: tr("exportSuccessful"), description: tr("generalLedgerExportedToExcel") });
     } else if (activeTab === "close") {
-      exportToExcel(
+      exportRows(
         [
           ...prepareMonthEndCloseStatusForExport(monthEndCloseExportReport),
           ...prepareAuditTrailForExport(auditTrailReport),
@@ -11803,16 +11843,16 @@ export default function Reports() {
         ],
         `close_reports_${monthEndPeriod}${dateRangeStr}`
       );
-      toast({
+      notify({
         title: tr("exportSuccessful"),
         description: tr("closeReportsExportedToExcel"),
       });
     } else if (activeTab === "planning") {
-      exportToExcel(
+      exportRows(
         preparePlanningReportsForExport(planningReport),
         `planning_reports${dateRangeStr}`
       );
-      toast({ title: tr("exportSuccessful"), description: tr("planningReportsExportedToExcel") });
+      notify({ title: tr("exportSuccessful"), description: tr("planningReportsExportedToExcel") });
     }
   };
 
@@ -11959,9 +11999,13 @@ export default function Reports() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                <DropdownMenuItem onClick={() => handleExportExcel()} data-testid="menu-export-excel">
                   <FileSpreadsheet className="w-4 h-4 me-2" />
                   {tr("exportToExcel")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportExcel("csv")} data-testid="menu-export-csv">
+                  <FileText className="w-4 h-4 me-2" />
+                  {tr("exportToCsv")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleExportGoogleSheets}
@@ -18808,9 +18852,12 @@ export default function Reports() {
                       <CardTitle>{tr("aRAging")}</CardTitle>
                       <CardDescription>{tr("openCustomerInvoicesAgedFromDue")}</CardDescription>
                     </div>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href="/payment-chasing">{tr("openCollections")}</Link>
-                    </Button>
+                    <div className="flex flex-wrap items-end gap-2">
+                      {agingAsOfControl}
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/payment-chasing">{tr("openCollections")}</Link>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -19295,9 +19342,12 @@ export default function Reports() {
                       <CardTitle>{tr("aPAging")}</CardTitle>
                       <CardDescription>{tr("openVendorBillsAgedFromDue")}</CardDescription>
                     </div>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href="/bill-pay?tab=summary">{tr("openBillPay")}</Link>
-                    </Button>
+                    <div className="flex flex-wrap items-end gap-2">
+                      {agingAsOfControl}
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/bill-pay?tab=summary">{tr("openBillPay")}</Link>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

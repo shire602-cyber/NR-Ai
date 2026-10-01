@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
+import { PLAN_PRICES, PLAN_PRICE_CURRENCY, type PlanPriceId } from "../../shared/plan-prices";
 import { createLogger } from "../config/logger";
 import { ensureSubscription } from "../services/billing-trial.service";
+import { countMonthlyUsage, type CountedResource } from "../services/usage-counts.service";
 import {
   parseGrandfatherDate,
   resolveEffectivePlan,
@@ -278,98 +280,63 @@ export function requireTier(minimumTier: string) {
 }
 
 /**
- * Middleware: Check and increment usage limit.
- * Call this BEFORE the route handler — it increments the counter.
+ * Middleware: refuse a creation once the company's plan cap for the month is used up.
+ *
+ * Wired on invoice and receipt creation (the monthly caps in TIER_LIMITS). Policy, like the
+ * feature gates: it only BLOCKS when BILLING_ENFORCEMENT=true; otherwise a request that would
+ * have been blocked is flagged with `X-Billing-Would-Block: usage:<resource>` and goes through.
+ * Usage is counted from the rows created this calendar month (usage-counts.service), so there is
+ * no stored counter to drift or reset. Any failure while resolving the plan or counting fails
+ * OPEN: accounting a quota must never stop real work.
  */
-export function checkUsageLimit(resource: "invoices" | "receipts" | "aiCredits") {
+export function checkUsageLimit(resource: CountedResource) {
+  const limitKey = resource === "invoices" ? "maxInvoicesPerMonth" : "maxReceiptsPerMonth";
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!billingEnforced()) {
-      next();
-      return;
-    }
-    const plan = await getRequestPlan(req);
-    const subscription = plan?.subscription ?? null;
-    const planId = plan?.effective.planId || "free";
-    const limits = TIER_LIMITS[planId] || TIER_LIMITS.free;
+    try {
+      const plan = await getRequestPlan(req);
+      const companyId = req.params.companyId || req.body?.companyId;
+      if (!plan || !companyId) {
+        next();
+        return;
+      }
 
-    // Map resource to limit key and usage field
-    const resourceMap: Record<
-      string,
-      { limitKey: string; usageField: string; incrementFn: string }
-    > = {
-      invoices: {
-        limitKey: "maxInvoicesPerMonth",
-        usageField: "invoicesCreatedThisMonth",
-        incrementFn: "incrementInvoiceCount",
-      },
-      receipts: {
-        limitKey: "maxReceiptsPerMonth",
-        usageField: "receiptsCreatedThisMonth",
-        incrementFn: "incrementReceiptCount",
-      },
-      aiCredits: {
-        limitKey: "aiCreditsPerMonth",
-        usageField: "aiCreditsUsedThisMonth",
-        incrementFn: "decrementAiCredits",
-      },
-    };
+      const planId = plan.effective.planId;
+      const limit = (TIER_LIMITS[planId] || TIER_LIMITS.free)[limitKey];
+      if (limit === -1) {
+        next();
+        return;
+      }
 
-    const mapping = resourceMap[resource];
-    if (!mapping) {
-      next();
-      return;
-    }
+      // Never describe another tenant's usage: a caller without access falls through to the
+      // route's own 403.
+      const userId = (req as any).user?.id;
+      if (!userId || !(await storage.hasCompanyAccess(userId, companyId))) {
+        next();
+        return;
+      }
 
-    const limit = limits[mapping.limitKey];
+      const currentUsage = await countMonthlyUsage(companyId, resource);
+      if (currentUsage < limit) {
+        next();
+        return;
+      }
 
-    // -1 means unlimited
-    if (limit === -1) {
-      next();
-      return;
-    }
+      if (!billingEnforced()) {
+        flagWouldBlock(req, res, `usage:${resource}`, plan.effective);
+        next();
+        return;
+      }
 
-    // Check current usage
-    const currentUsage =
-      (subscription?.[mapping.usageField as keyof typeof subscription] as number) || 0;
-
-    if (currentUsage >= limit) {
       res.status(403).json({
-        message: `Monthly ${resource} limit reached. Upgrade your plan for more.`,
-        code: "LIMIT_REACHED",
-        resource,
-        currentUsage,
-        limit,
-        currentTier: planId,
+        message: `Your ${planId} plan allows ${limit} ${resource} per month and ${currentUsage} have been created this month. Upgrade your plan for more.`,
+        code: "USAGE_LIMIT_REACHED",
+        details: { resource, limit, currentUsage, planId },
+        ...(plan.effective.state === "trial_expired" ? { reason: "TRIAL_EXPIRED" } : {}),
       });
-      return;
+    } catch (error) {
+      log.warn({ error }, "Usage limit check failed open");
+      next();
     }
-
-    // Register post-response increment so the counter only advances when the
-    // handler actually succeeds (2xx). Pre-incrementing caused quota loss on
-    // any handler failure and made race conditions immediately destructive.
-    const companyId = req.params.companyId || req.body?.companyId;
-    if (companyId && subscription) {
-      res.on("finish", () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          const doIncrement = async () => {
-            try {
-              if (resource === "invoices") {
-                await (storage as any).incrementInvoiceCount?.(companyId);
-              } else if (resource === "receipts") {
-                await (storage as any).incrementReceiptCount?.(companyId);
-              } else if (resource === "aiCredits") {
-                await (storage as any).decrementAiCredits?.(companyId);
-              }
-            } catch (error) {
-              log.error({ error, companyId, resource }, "Failed to increment usage counter");
-            }
-          };
-          doIncrement();
-        }
-      });
-    }
-
-    next();
   };
 }
 
@@ -476,11 +443,7 @@ export function getAllPlanDefinitions() {
 }
 
 function getPlanPricing(planId: string) {
-  const pricing: Record<string, { monthly: number; yearly: number; currency: string }> = {
-    free: { monthly: 0, yearly: 0, currency: "AED" },
-    starter: { monthly: 49, yearly: 39, currency: "AED" },
-    professional: { monthly: 129, yearly: 99, currency: "AED" },
-    enterprise: { monthly: 299, yearly: 249, currency: "AED" },
-  };
-  return pricing[planId] || pricing.free;
+  // Same numbers the public pricing page shows: shared/plan-prices.ts.
+  const price = PLAN_PRICES[planId as PlanPriceId] ?? PLAN_PRICES.free;
+  return { ...price, currency: PLAN_PRICE_CURRENCY };
 }

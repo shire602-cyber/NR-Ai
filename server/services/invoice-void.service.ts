@@ -34,7 +34,9 @@ import { resolveInvoiceFx } from "./invoice-fx";
 import { acquireDocumentLock, LOCK_NS } from "./document-lock";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { syncInvoiceStatusFromBalance } from "./invoice-credit-status";
+import { countLiveRefunds } from "./customer-refund.service";
 import { uaeCalendarDate } from "../utils/date";
+import { restockForVoidInTx, undoCreditNoteRestockInTx } from "./inventory-costing.service";
 import { createLogger } from "../config/logger";
 
 const log = createLogger("invoice-void");
@@ -107,6 +109,16 @@ export async function voidOrCancelInvoice(args: {
     }
     if (!canTransition(invoice.status, targetStatus)) {
       return fail(422, "INVALID_TRANSITION", `Invalid invoice status transition: ${invoice.status} → ${targetStatus}`);
+    }
+
+    // Cash already paid back against a credit note must be voided first: voiding the credit note
+    // underneath a standing refund would leave the customer's credit and the cash out of step.
+    if (invoice.invoiceType === "credit_note" && (await countLiveRefunds(tx, invoiceId)) > 0) {
+      return fail(
+        409,
+        "CREDIT_NOTE_HAS_REFUNDS",
+        "This credit note has refunds paid against it. Void the refunds first, then void the credit note."
+      );
     }
 
     // A-1: refuse to void/cancel an invoice that has recorded payments (the
@@ -204,6 +216,28 @@ export async function voidOrCancelInvoice(args: {
       );
       reversalEntryId = entry.id;
       log.info({ invoiceId, originalEntryId: original.id, entryNumber: entry.entryNumber }, "Void reversal journal entry created");
+    }
+
+    // Stock sold on this invoice comes back at the cost it left at and its COGS journal is
+    // reversed (same transaction, same period lock as the revenue reversal). No-op when the
+    // invoice consumed no stock.
+    if (invoice.invoiceType !== "credit_note") {
+      await restockForVoidInTx(tx, {
+        invoice: invoice as any,
+        userId,
+        reversalDate,
+        postedAt: postedAtNow,
+        targetStatus,
+      });
+    } else {
+      // A credit note that restocked brings that stock back out and re-posts the COGS it reversed
+      // (409 STOCK_ALREADY_CONSUMED when the units were sold again; the throw rolls everything back).
+      await undoCreditNoteRestockInTx(tx, {
+        creditNote: invoice as any,
+        userId,
+        reversalDate,
+        postedAt: postedAtNow,
+      });
     }
 
     await tx

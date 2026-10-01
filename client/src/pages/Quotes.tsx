@@ -57,6 +57,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { downloadPdf } from "@/lib/download-pdf";
 import {
   Plus,
   CalendarIcon,
@@ -745,6 +746,24 @@ export default function Quotes() {
                             >
                               <Download className="w-4 h-4 me-2" />
                               {tr("downloadPdf")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                downloadPdf(
+                                  `/api/quotes/${quote.id}/pdf?variant=proforma`,
+                                  `proforma-${quote.number}.pdf`
+                                ).catch((err: Error) =>
+                                  toast({
+                                    title: tr("proformaFailed"),
+                                    description: err.message,
+                                    variant: "destructive",
+                                  })
+                                )
+                              }
+                              data-testid={`menu-proforma-${quote.id}`}
+                            >
+                              <FileText className="w-4 h-4 me-2" />
+                              {tr("downloadProforma")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"

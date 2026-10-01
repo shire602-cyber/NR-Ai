@@ -1,0 +1,173 @@
+import { useState } from "react";
+import { Download, Loader2, Mail } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, ApiError } from "@/lib/queryClient";
+import { downloadPdf } from "@/lib/download-pdf";
+import { messages } from "./CustomerStatementDialog.i18n";
+
+interface StatementContact {
+  id: string;
+  name: string;
+  email?: string | null;
+}
+
+interface Props {
+  companyId: string;
+  contact: StatementContact | null;
+  onClose: () => void;
+}
+
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const defaultFrom = () => {
+  const d = new Date();
+  return isoDay(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 2, 1)));
+};
+
+/** Pick a period, then download the customer's statement PDF or email it. */
+export function CustomerStatementDialog({ companyId, contact, onClose }: Props) {
+  const tr = messages.useT();
+  const { toast } = useToast();
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(() => isoDay(new Date()));
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState<"pdf" | "email" | null>(null);
+
+  const validPeriod = !!from && !!to && from <= to;
+  const base = contact ? `/api/companies/${companyId}/contacts/${contact.id}/statement` : "";
+
+  const handlePdf = async () => {
+    if (!contact || !validPeriod) return;
+    setBusy("pdf");
+    try {
+      await downloadPdf(`${base}/pdf?from=${from}&to=${to}`, `statement-${to}.pdf`);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: tr("pdfFailed"), description: err?.message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleEmail = async () => {
+    if (!contact || !validPeriod) return;
+    setBusy("email");
+    try {
+      const result = await apiRequest("POST", `${base}/email`, {
+        from,
+        to,
+        ...(recipient.trim() ? { recipient: recipient.trim() } : {}),
+      });
+      toast({ title: tr("sent"), description: result?.message });
+      onClose();
+    } catch (err: any) {
+      const notConfigured = err instanceof ApiError && err.code === "EMAIL_NOT_CONFIGURED";
+      toast({
+        variant: "destructive",
+        title: tr("sendFailed"),
+        description: notConfigured ? tr("emailNotConfigured") : err?.message,
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Dialog open={!!contact} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle>
+            {tr("title")}
+            {contact ? ` - ${contact.name}` : ""}
+          </DialogTitle>
+          <DialogDescription>{tr("description")}</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="statement-from">{tr("from")}</Label>
+            <Input
+              id="statement-from"
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)}
+              data-testid="input-statement-from"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="statement-to">{tr("to")}</Label>
+            <Input
+              id="statement-to"
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)}
+              data-testid="input-statement-to"
+            />
+          </div>
+        </div>
+        {!validPeriod && <p className="text-sm text-destructive">{tr("invalidPeriod")}</p>}
+
+        <div className="space-y-1">
+          <Label htmlFor="statement-recipient">{tr("recipient")}</Label>
+          <Input
+            id="statement-recipient"
+            type="email"
+            dir="ltr"
+            placeholder={contact?.email ?? ""}
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            data-testid="input-statement-recipient"
+          />
+          <p className="text-xs text-muted-foreground">{tr("recipientHint")}</p>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={onClose}>
+            {tr("close")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleEmail}
+            disabled={!validPeriod || busy !== null}
+            data-testid="button-statement-email"
+          >
+            {busy === "email" ? (
+              <>
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                {tr("sending")}
+              </>
+            ) : (
+              <>
+                <Mail className="w-4 h-4 me-2" />
+                {tr("sendEmail")}
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={handlePdf}
+            disabled={!validPeriod || busy !== null}
+            data-testid="button-statement-pdf"
+          >
+            {busy === "pdf" ? (
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 me-2" />
+            )}
+            {tr("downloadPdf")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

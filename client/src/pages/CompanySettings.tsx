@@ -23,6 +23,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -125,6 +126,7 @@ export default function CompanySettings() {
       logoUrl: "",
       dateFormat: "DD/MM/YYYY",
       locale: "en",
+      inventoryCostingEnabled: false,
     },
   });
 
@@ -147,6 +149,7 @@ export default function CompanySettings() {
       logoUrl: company.logoUrl ?? "",
       dateFormat: (company.dateFormat as FormValues["dateFormat"]) ?? "DD/MM/YYYY",
       locale: (company.locale as FormValues["locale"]) ?? "en",
+      inventoryCostingEnabled: company.inventoryCostingEnabled ?? false,
     });
     if (company.logoUrl) setLogoPreview(company.logoUrl);
   }, [company, form]);
@@ -497,6 +500,26 @@ export default function CompanySettings() {
                       </Select>
                       <FormDescription>{tr("usedForInvoiceTemplatesAndThe")}</FormDescription>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="inventoryCostingEnabled"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2 flex items-center justify-between rounded-md border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>{tr("postInventoryToLedgerCogs")}</FormLabel>
+                        <FormDescription>{tr("postInventoryToLedgerCogsHint")}</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value ?? false}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-inventory-costing"
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

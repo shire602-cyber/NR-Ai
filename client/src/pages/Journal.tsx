@@ -120,13 +120,18 @@ const SYSTEM_SOURCE_LABEL_KEYS = {
   fx_revaluation: "sourceFxRevaluation",
   fx_revaluation_reversal: "sourceFxRevaluation",
   bill: "sourceBill",
+  vendor_credit_fx: "sourceBill",
   expense_claim: "sourceExpenseClaim",
   expense_claim_payment: "sourceExpenseClaim",
   bank_reconciliation: "sourceBankReconciliation",
   vat_workpaper_row: "sourceVatWorkpaper",
   invoice: "sourceInvoice",
+  inventory_cogs: "sourceInvoice", // stock cost posted by an invoice
+  inventory_movement: "sourceInventory", // manual stock movement
+  inventory_opening: "sourceInventory", // opening stock when inventory costing is switched on
   receipt: "sourceReceipt",
   payment: "sourcePayment",
+  customer_refund: "sourceCustomerRefund",
   reversal: "sourceReversal",
 } as const;
 

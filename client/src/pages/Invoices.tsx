@@ -102,6 +102,7 @@ import { SiGooglesheets } from "react-icons/si";
 import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
+import { downloadPdf } from "@/lib/download-pdf";
 import { messages as pageMessages } from "./Invoices.i18n";
 
 const invoiceLineSchema = z.object({
@@ -111,12 +112,16 @@ const invoiceLineSchema = z.object({
   vatRate: z.coerce.number().default(0.05),
   // Optional income account for this line (null/empty = the default account).
   revenueAccountId: z.string().nullable().optional(),
+  // Optional product sold on this line (drives stock and cost of goods sold when tracked).
+  productId: z.string().nullable().optional(),
   // Round-tripped from the server so editing never loses an exempt / out-of-scope tag.
   vatSupplyType: z.string().nullable().optional(),
 });
 
 // Sentinel for the "Default" option: Radix Select items cannot have an empty value.
 const DEFAULT_REVENUE_ACCOUNT = "__default__";
+// Sentinel for "no product" (a manual line).
+const MANUAL_LINE = "__manual__";
 
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
@@ -196,6 +201,12 @@ export default function Invoices() {
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+    enabled: !!selectedCompanyId,
+  });
+
+  // Products for the line editor's picker (same cache key as the Inventory page).
+  const { data: pickerProducts = [] } = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
     enabled: !!selectedCompanyId,
   });
 
@@ -557,6 +568,7 @@ export default function Invoices() {
           unitPrice: Number(line.unitPrice),
           vatRate: Number(line.vatRate),
           revenueAccountId: line.revenueAccountId || null,
+          productId: line.productId || null,
           // The RATE decides the supply type, so a stored type is only
           // meaningful (and only sent) for 0% lines; sending a stale
           // exempt / out-of-scope tag on a taxed line is what used to hide its
@@ -1090,6 +1102,69 @@ export default function Invoices() {
                               </Button>
                             )}
                           </div>
+                          {pickerProducts.length > 0 && (
+                            <div className="col-span-12">
+                              <FormField
+                                control={form.control}
+                                name={`lines.${index}.productId`}
+                                render={({ field }) => (
+                                  <FormItem className="flex items-center gap-2 space-y-0">
+                                    <FormLabel className="text-xs text-muted-foreground whitespace-nowrap">
+                                      {tr("lineProduct")}
+                                    </FormLabel>
+                                    <Select
+                                      value={field.value || MANUAL_LINE}
+                                      onValueChange={(val) => {
+                                        if (val === MANUAL_LINE) {
+                                          field.onChange(null);
+                                          return;
+                                        }
+                                        const picked = pickerProducts.find((p) => p.id === val);
+                                        field.onChange(val);
+                                        if (!picked) return;
+                                        // Fill the line from the product; the user can still edit it.
+                                        form.setValue(
+                                          `lines.${index}.description`,
+                                          locale === "ar" && picked.nameAr ? picked.nameAr : picked.name
+                                        );
+                                        form.setValue(
+                                          `lines.${index}.unitPrice`,
+                                          Number(picked.unitPrice) || 0
+                                        );
+                                        form.setValue(
+                                          `lines.${index}.vatRate`,
+                                          Number(picked.vatRate) === 0 ? 0 : 0.05
+                                        );
+                                        form.setValue(`lines.${index}.vatSupplyType`, null);
+                                      }}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger
+                                          className="h-8 text-xs"
+                                          data-testid={`select-line-product-${index}`}
+                                        >
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value={MANUAL_LINE}>
+                                          {tr("lineProductManual")}
+                                        </SelectItem>
+                                        {pickerProducts
+                                          .filter((p) => p.isActive !== false)
+                                          .map((p) => (
+                                            <SelectItem key={p.id} value={p.id}>
+                                              {p.sku ? `${p.sku} — ` : ""}
+                                              {locale === "ar" && p.nameAr ? p.nameAr : p.name}
+                                            </SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          )}
                           <div className="col-span-12">
                             <FormField
                               control={form.control}
@@ -1407,6 +1482,28 @@ export default function Invoices() {
                                 <Download className="w-4 h-4 me-2" />
                                 PDF
                               </Button>
+                              {invoice.invoiceType !== "credit_note" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    downloadPdf(
+                                      `/api/invoices/${invoice.id}/pdf?variant=delivery`,
+                                      `delivery-note-${invoice.number}.pdf`
+                                    ).catch((err: Error) =>
+                                      toast({
+                                        title: tr("deliveryNoteFailed"),
+                                        description: err.message,
+                                        variant: "destructive",
+                                      })
+                                    )
+                                  }
+                                  data-testid={`button-delivery-note-${invoice.id}`}
+                                >
+                                  <FileText className="w-4 h-4 me-2" />
+                                  {tr("deliveryNote")}
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"

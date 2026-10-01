@@ -680,6 +680,34 @@
    "when": 1781430120000,
    "tag": "0097_vat_date_rule_cutover",
    "breakpoints": false
+  },
+  {
+   "idx": 97,
+   "version": "7",
+   "when": 1781430130000,
+   "tag": "0098_vendor_credit_notes",
+   "breakpoints": false
+  },
+  {
+   "idx": 98,
+   "version": "7",
+   "when": 1781430140000,
+   "tag": "0099_inventory_costing",
+   "breakpoints": false
+  },
+  {
+   "idx": 99,
+   "version": "7",
+   "when": 1781430150000,
+   "tag": "0100_customer_refunds",
+   "breakpoints": false
+  },
+  {
+   "idx": 100,
+   "version": "7",
+   "when": 1781430160000,
+   "tag": "0101_inventory_ledger_tie_out",
+   "breakpoints": false
   }
  ]
 }

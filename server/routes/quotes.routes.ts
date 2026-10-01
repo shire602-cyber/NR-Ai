@@ -13,12 +13,21 @@ import { checkRevenueAccountsForCompany } from "../services/revenue-account-guar
 import { deriveVatSupplyType } from "../services/vat-supply-type";
 import { UAE_VAT_RATE } from "../constants";
 import { normalizeDocumentLines } from "../services/document-line-limits";
+import { checkProductsForCompany } from "../services/inventory-costing.service";
 
 // Quote lines are stored as the client sent them, so normalise the supply
 // type (0% lines are zero-rated, never the column default) on the way in.
 function withSupplyType(line: any) {
   const rate = Number(line?.vatRate ?? UAE_VAT_RATE);
-  return { ...line, vatSupplyType: deriveVatSupplyType(rate === 5 ? UAE_VAT_RATE : rate, line?.vatSupplyType) };
+  const productId =
+    typeof line?.productId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(line.productId)
+      ? line.productId
+      : null;
+  return {
+    ...line,
+    productId,
+    vatSupplyType: deriveVatSupplyType(rate === 5 ? UAE_VAT_RATE : rate, line?.vatSupplyType),
+  };
 }
 
 const logger = createLogger("quotes-routes");
@@ -119,6 +128,10 @@ export function registerQuoteRoutes(app: Express) {
         if (!revenueCheck.ok) {
           return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
         }
+        const productCheck = await checkProductsForCompany(companyId, lines.map((l: any) => withSupplyType(l).productId));
+        if (!productCheck.ok) {
+          return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
+        }
       }
 
       const totals = calculateDocumentTotals(lines);
@@ -167,6 +180,10 @@ export function registerQuoteRoutes(app: Express) {
         );
         if (!revenueCheck.ok) {
           return res.status(revenueCheck.status).json({ message: revenueCheck.message, code: revenueCheck.code });
+        }
+        const productCheck = await checkProductsForCompany(quote.companyId, lines.map((l: any) => withSupplyType(l).productId));
+        if (!productCheck.ok) {
+          return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
         }
       }
 
@@ -297,6 +314,7 @@ export function registerQuoteRoutes(app: Express) {
           // quote line must not survive the conversion.
           vatSupplyType: deriveVatSupplyType(Number(line.vatRate), line.vatSupplyType),
           revenueAccountId: line.revenueAccountId,
+          productId: (line as any).productId ?? null,
         });
       }
 
@@ -337,11 +355,14 @@ export function registerQuoteRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
-      const pdfBuffer = await generateQuotePDF(quote, lines, company);
+      const isProforma = req.query.variant === "proforma";
+      const pdfBuffer = await generateQuotePDF(quote, lines, company, {
+        variant: isProforma ? "proforma" : "quote",
+      });
 
       res.set({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="quote-${quote.number}.pdf"`,
+        "Content-Disposition": `attachment; filename="${isProforma ? "proforma" : "quote"}-${quote.number}.pdf"`,
         "Content-Length": pdfBuffer.length.toString(),
       });
       res.send(pdfBuffer);

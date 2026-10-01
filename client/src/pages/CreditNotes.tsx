@@ -61,12 +61,14 @@ import {
   CalendarIcon,
   Trash2,
   Download,
+  Banknote,
   MoreHorizontal,
   FileText,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CreditNoteRefunds, type RefundableCreditNote } from "@/components/CreditNoteRefunds";
 import { messages as pageMessages } from "./CreditNotes.i18n";
 
 const creditNoteLineSchema = z.object({
@@ -122,6 +124,7 @@ export default function CreditNotes() {
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCreditNote, setEditingCreditNote] = useState<CreditNote | null>(null);
+  const [refundTarget, setRefundTarget] = useState<RefundableCreditNote | null>(null);
 
   const { data: creditNotes, isLoading } = useQuery<CreditNote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
@@ -694,6 +697,22 @@ export default function CreditNotes() {
                                 FX and journal entries stay unified. Showing
                                 four un-clickable items was pure noise, so they
                                 are removed rather than left greyed out. */}
+                            {creditNote.status === "issued" ? (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setRefundTarget({
+                                    id: creditNote.id,
+                                    number: creditNote.number,
+                                    customerName: creditNote.customerName,
+                                    currency: creditNote.currency || "AED",
+                                  })
+                                }
+                                data-testid={`menu-refund-${creditNote.id}`}
+                              >
+                                <Banknote className="w-4 h-4 me-2" />
+                                {tr("refund")}
+                              </DropdownMenuItem>
+                            ) : null}
                             <DropdownMenuItem
                               onClick={() =>
                                 window.open(`/api/credit-notes/${creditNote.id}/pdf`, "_blank")
@@ -730,6 +749,14 @@ export default function CreditNotes() {
           </div>
         </Card>
       )}
+
+      <CreditNoteRefunds
+        companyId={selectedCompanyId ?? ""}
+        creditNote={refundTarget}
+        onOpenChange={(open) => {
+          if (!open) setRefundTarget(null);
+        }}
+      />
     </div>
   );
 }

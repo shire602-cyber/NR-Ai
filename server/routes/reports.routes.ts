@@ -18,6 +18,12 @@ import { uaeDayStart, uaeDayEnd } from "../utils/date";
 import { UAE_VAT_RATE } from "../constants";
 import { round2 } from "../services/financial-statements";
 import {
+  asOfParams,
+  parseAgingAsOf,
+  payableAgingAsOfSql,
+  receivableAgingAsOfSql,
+} from "../services/aging-as-of.service";
+import {
   creditedSql,
   openReceivableSql,
   outstandingBaseSql,
@@ -303,7 +309,20 @@ export function registerReportRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const [receivableResult, payableResult] = await Promise.all([
+      // Optional as-of day: the books as they stood at the end of that UAE calendar day
+      // (aging-as-of.service.ts). Without it the report is computed to the moment of the request.
+      const parsedAsOf = parseAgingAsOf(req.query.asOf);
+      if (!parsedAsOf.ok) {
+        return res.status(400).json({ message: parsedAsOf.message, code: parsedAsOf.code });
+      }
+      const agingAsOf = parsedAsOf.asOf;
+
+      const [receivableResult, payableResult] = agingAsOf
+        ? await Promise.all([
+            pool.query(receivableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
+            pool.query(payableAgingAsOfSql(), asOfParams(companyId, agingAsOf)),
+          ])
+        : await Promise.all([
         pool.query(
           `WITH open_invoices AS (
             SELECT
@@ -338,6 +357,14 @@ export function registerReportRoutes(app: Express) {
             WHERE company_id = $1
               AND COALESCE(status, 'pending') NOT IN ('paid', 'void', 'cancelled')
               AND GREATEST(total_amount - COALESCE(amount_paid, 0), 0) > 0
+            -- approved, unapplied vendor credits are negative payables (A/P holds them from their date)
+            UNION ALL
+            SELECT
+              COALESCE(NULLIF(TRIM(vendor_name), ''), 'Unknown Vendor') AS name,
+              -remaining_amount * COALESCE(NULLIF(exchange_rate, 0), 1) AS open_balance_aed,
+              NULL::timestamp AS due_date
+            FROM vendor_credit_notes
+            WHERE company_id = $1 AND status = 'approved' AND remaining_amount > 0 AND "date" <= NOW()
           )
           SELECT
             name,

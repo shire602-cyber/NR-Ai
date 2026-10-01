@@ -65,6 +65,8 @@ export const messages = defineMessages(
     noQuotesYet: "No quotes yet",
     sendAProfessionalQuoteInMinutes:
       "Send a professional quote in minutes — accepted quotes convert to invoices with one click.",
+    downloadProforma: "Download proforma invoice",
+    proformaFailed: "Could not create the proforma invoice",
   },
   {
     descriptionIsRequired: "الوصف مطلوب",
@@ -129,5 +131,7 @@ export const messages = defineMessages(
     noQuotesYet: "لا توجد عروض أسعار بعد",
     sendAProfessionalQuoteInMinutes:
       "أرسل عرض سعر احترافيًا في دقائق — تتحول العروض المقبولة إلى فواتير بنقرة واحدة.",
+    downloadProforma: "تنزيل فاتورة مبدئية",
+    proformaFailed: "تعذر إنشاء الفاتورة المبدئية",
   }
 );

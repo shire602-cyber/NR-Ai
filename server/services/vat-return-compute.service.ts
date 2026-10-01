@@ -181,6 +181,32 @@ export async function computeVatReturnForPeriod(args: {
     if (args.executor) throw err;
   }
 
+  // Approved vendor credit notes dated in the period reduce the bill purchases above by
+  // their net and VAT (same date rule and rate conversion; Box 9 drops by the credit).
+  try {
+    const fromDay = startDate.toISOString().slice(0, 10);
+    const toDay = endDate.toISOString().slice(0, 10);
+    const creditRes = rowsOf(
+      await ex.execute(sql`
+        SELECT
+          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
+        FROM vendor_credit_notes
+        WHERE company_id = ${companyId}
+          AND "date" >= ${fromDay}::date
+          AND "date" <= ${toDay}::date
+          AND status = 'approved'`)
+    );
+    reverseChargeAmount -= Number(creditRes[0]?.rc_amount || 0);
+    reverseChargeVatGross -= Number(creditRes[0]?.rc_vat || 0);
+    totalExpenses -= Number(creditRes[0]?.std_amount || 0);
+    inputTaxGross -= Number(creditRes[0]?.std_vat || 0);
+  } catch (err) {
+    if (args.executor) throw err;
+  }
+
   // Expense claims — TD5 (found by blind-accountant audit): approval posts
   // net→expense and VAT→input VAT (1050) to the GL, but the return never
   // read them, so box 9/13 under-claimed recoverable input VAT and the GL

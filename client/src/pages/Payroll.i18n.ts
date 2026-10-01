@@ -179,6 +179,8 @@ export const messages = defineMessages(
     payrollRunsCount_few: "{count} payroll runs",
     payrollRunsCount_many: "{count} payroll runs",
     payrollRunsCount_other: "{count} payroll runs",
+    payslip: "Payslip",
+    payslipFailed: "Could not create the payslip",
   },
   {
     fullNameIsRequired: "الاسم الكامل مطلوب",
@@ -356,5 +358,7 @@ export const messages = defineMessages(
     payrollRunsCount_few: "{count} مسيّرات رواتب",
     payrollRunsCount_many: "{count} مسيّر رواتب",
     payrollRunsCount_other: "{count} مسيّر رواتب",
+    payslip: "قسيمة الراتب",
+    payslipFailed: "تعذر إنشاء قسيمة الراتب",
   }
 );

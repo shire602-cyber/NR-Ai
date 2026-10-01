@@ -614,3 +614,22 @@ export async function sendEmail(
     fromName,
   });
 }
+
+/** A customer statement of account as a PDF attachment. Never throws; check `sent`. */
+export async function sendStatementEmail(args: {
+  to: string;
+  subject: string;
+  message: string;
+  fromName?: string;
+  pdf: Buffer;
+  filename: string;
+}): Promise<SendEmailResult> {
+  return deliver({
+    to: args.to,
+    subject: args.subject,
+    html: wrapPlainTextInHtml(args.message, args.fromName),
+    text: args.message,
+    fromName: args.fromName,
+    attachments: [{ filename: args.filename, content: args.pdf, contentType: "application/pdf" }],
+  });
+}

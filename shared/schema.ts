@@ -359,6 +359,10 @@ export const companies = pgTable("companies", {
   vatAutoCalculate: boolean("vat_auto_calculate").notNull().default(true),
   vatPeriodStartMonth: integer("vat_period_start_month").notNull().default(1),
 
+  // Phase 6: when true, issuing an invoice also posts cost of goods sold (Dr 5200 / Cr 1070)
+  // for lines sold from products that track inventory, at weighted-average cost.
+  inventoryCostingEnabled: boolean("inventory_costing_enabled").notNull().default(false),
+
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),
   isActive: boolean("is_active").notNull().default(true),
@@ -433,6 +437,7 @@ export const companyPreferencesSchema = z.object({
   logoUrl: z.string().optional().nullable(),
   dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
   locale: z.enum(["en", "ar"]).optional(),
+  inventoryCostingEnabled: z.boolean().optional(),
 });
 
 export type CompanyPreferences = z.infer<typeof companyPreferencesSchema>;
@@ -1091,6 +1096,8 @@ export const invoiceLines = pgTable(
     revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, {
       onDelete: "set null",
     }),
+    // Optional product sold on this line; drives stock movement and COGS when tracked.
+    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
   },
   (table) => ({
     invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
@@ -1167,6 +1174,7 @@ export const quoteLines = pgTable(
     revenueAccountId: uuid("revenue_account_id").references((): any => accounts.id, {
       onDelete: "set null",
     }),
+    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
   },
   (table) => ({
     quoteIdIdx: index("idx_quote_lines_quote_id").on(table.quoteId),
@@ -1727,6 +1735,47 @@ export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
 
 // ===========================
+// Customer refunds (cash paid back against a credit note; migration 0100)
+// ===========================
+export const customerRefunds = pgTable(
+  "customer_refunds",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references((): any => customerContacts.id, { onDelete: "set null" }),
+    creditNoteId: uuid("credit_note_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    amount: money("amount").notNull(), // credit-note currency
+    currency: text("currency").notNull().default("AED"),
+    exchangeRate: rate("exchange_rate").notNull().default(1), // AED per unit on the refund date (cash side)
+    refundDate: date("refund_date", { mode: "string" }).notNull(),
+    bankAccountId: uuid("bank_account_id")
+      .notNull()
+      .references(() => accounts.id),
+    reference: text("reference"),
+    notes: text("notes"),
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+    createdBy: uuid("created_by").references(() => users.id),
+    voidedAt: timestamp("voided_at"),
+    voidJournalEntryId: uuid("void_journal_entry_id").references(() => journalEntries.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdIdx: index("idx_customer_refunds_company_id").on(table.companyId),
+    creditNoteIdIdx: index("idx_customer_refunds_credit_note_id").on(table.creditNoteId),
+    contactIdIdx: index("idx_customer_refunds_contact_id").on(table.contactId),
+  })
+);
+
+export type CustomerRefund = typeof customerRefunds.$inferSelect;
+
+// ===========================
 // Recurring Invoices
 // ===========================
 export const recurringInvoices = pgTable(
@@ -1843,6 +1892,13 @@ export const products = pgTable(
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     unit: text("unit").notNull().default("pcs"), // pcs, kg, m, hr, etc.
     currentStock: integer("current_stock").notNull().default(0),
+    // Phase 6: only tracked products consume stock and post COGS when an invoice is issued.
+    trackInventory: boolean("track_inventory").notNull().default(false),
+    // Running weighted-average unit cost, 6 dp (see services/inventory-costing.service.ts).
+    averageCost: unitPriceType("average_cost").notNull().default(0),
+    // What the ledger's Inventory account holds for this product (value in at cost, out at the
+    // average, last unit takes the remainder). Account 1070 equals the sum over tracked products.
+    inventoryValue: money("inventory_value").notNull().default(0),
     lowStockThreshold: integer("low_stock_threshold").default(10),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1878,7 +1934,13 @@ export const inventoryMovements = pgTable(
     type: text("type").notNull(), // purchase | sale | adjustment | return
     quantity: integer("quantity").notNull(),
     unitCost: unitPriceType("unit_cost"),
+    // Exact value that moved in or out with this movement (2 dp); the journal posts this amount.
+    totalCost: money("total_cost"),
     reference: text("reference"), // e.g., "Invoice INV-001" or "Manual adjustment"
+    // Set when the movement was generated by invoicing (issue, void, restocking credit note).
+    sourceInvoiceId: uuid("source_invoice_id").references((): any => invoices.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
