@@ -764,9 +764,14 @@ export interface IStorage {
     data: Partial<CorporateTaxReturn>
   ): Promise<CorporateTaxReturn>;
 
-  // Team Management
-  updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
-  deleteCompanyUser(id: string): Promise<void>;
+  // Team Management — membership rows are always addressed as (id, companyId)
+  // so a caller authorised for one company can never touch another's rows.
+  updateCompanyUser(
+    id: string,
+    companyId: string,
+    data: Partial<InsertCompanyUser>
+  ): Promise<CompanyUser | undefined>;
+  deleteCompanyUser(id: string, companyId: string): Promise<boolean>;
   getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
 
   // Admin Stats
@@ -4167,17 +4172,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Team Management
-  async updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
+  async updateCompanyUser(
+    id: string,
+    companyId: string,
+    data: Partial<InsertCompanyUser>
+  ): Promise<CompanyUser | undefined> {
+    // Never let a caller re-home a membership row to another company.
+    const { companyId: _ignored, ...safeData } = data;
     const [companyUser] = await db
       .update(companyUsers)
-      .set(data)
-      .where(eq(companyUsers.id, id))
+      .set(safeData)
+      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
       .returning();
     return companyUser;
   }
 
-  async deleteCompanyUser(id: string): Promise<void> {
-    await db.delete(companyUsers).where(eq(companyUsers.id, id));
+  async deleteCompanyUser(id: string, companyId: string): Promise<boolean> {
+    const deleted = await db
+      .delete(companyUsers)
+      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
+      .returning({ id: companyUsers.id });
+    return deleted.length > 0;
   }
 
   async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
