@@ -26,6 +26,10 @@ import {
   remainingApplicable,
 } from "./vendor-credit-posting";
 import { toCalendarYmd, uaeCalendarDate } from "../utils/date";
+import { resolveVendor, type VendorWarning } from "./vendor-contact.service";
+import { db } from "../db";
+import { applyVendorCreditStockInTx, assertProductsOfCompany, restoreVendorCreditStockInTx } from "./purchase-stock.service";
+import { ensureSystemAccount } from "./inventory-costing.service";
 
 const log = createLogger("vendor-credit");
 
@@ -43,9 +47,11 @@ export interface VendorCreditLineInput {
   unit_price: number | string;
   vat_rate?: number | string | null;
   account_id?: string | null;
+  product_id?: string | null;
 }
 
 export interface VendorCreditInput {
+  vendor_id?: string | null;
   vendor_name?: string;
   vendor_trn?: string | null;
   bill_id?: string | null;
@@ -87,6 +93,7 @@ async function inTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise
 }
 
 async function validateLineAccounts(companyId: string, lines: VendorCreditLineInput[]): Promise<void> {
+  await assertProductsOfCompany(companyId, lines.map((l) => l.product_id));
   const ids = Array.from(new Set(lines.map((l) => l.account_id).filter((v): v is string => !!v)));
   if (ids.length === 0) return;
   const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -96,6 +103,8 @@ async function validateLineAccounts(companyId: string, lines: VendorCreditLineIn
 }
 
 interface ResolvedHeader {
+  vendor_id: string | null;
+  warnings: VendorWarning[];
   vendor_name: string;
   vendor_trn: string | null;
   bill_id: string | null;
@@ -108,6 +117,7 @@ interface ResolvedHeader {
 async function resolveHeader(companyId: string, input: VendorCreditInput): Promise<ResolvedHeader> {
   let vendorName = input.vendor_name?.trim() || "";
   let vendorTrn = input.vendor_trn ?? null;
+  let vendorId: string | null = input.vendor_id ?? null;
   let currency = (input.currency || "AED").toUpperCase();
   let rate = Number(input.exchange_rate) > 0 ? Number(input.exchange_rate) : 1;
   let reverseCharge = input.reverse_charge === true;
@@ -115,12 +125,14 @@ async function resolveHeader(companyId: string, input: VendorCreditInput): Promi
 
   if (input.bill_id) {
     const res = await pool.query(
-      `SELECT vendor_name, vendor_trn, currency, exchange_rate, reverse_charge
+      `SELECT vendor_id, vendor_name, vendor_trn, currency, exchange_rate, reverse_charge
          FROM vendor_bills WHERE id = $1 AND company_id = $2`,
       [input.bill_id, companyId]
     );
     const bill = res.rows[0];
     if (!bill) throw err(404, "BILL_NOT_FOUND", "The referenced vendor bill was not found.");
+    // The credit inherits the bill's vendor unless a vendor (by id or by name) was given.
+    if (!vendorId && !vendorName) vendorId = bill.vendor_id ?? null;
     vendorName = vendorName || bill.vendor_name;
     vendorTrn = vendorTrn ?? bill.vendor_trn ?? null;
     currency = String(bill.currency || "AED").toUpperCase();
@@ -129,11 +141,12 @@ async function resolveHeader(companyId: string, input: VendorCreditInput): Promi
     reverseCharge = bill.reverse_charge === true;
   }
 
-  if (!vendorName) throw err(422, "VENDOR_REQUIRED", "Vendor name is required.");
+  if (!vendorName && !vendorId) throw err(422, "VENDOR_REQUIRED", "Vendor name is required.");
   if (currency !== "AED" && !rateGiven) {
     throw err(422, "NO_EXCHANGE_RATE", `Foreign-currency credit notes require exchange_rate (${currency}→AED).`);
   }
-  return { vendor_name: vendorName, vendor_trn: vendorTrn, bill_id: input.bill_id ?? null, currency, exchange_rate: rate, reverse_charge: reverseCharge };
+  const vendor = await resolveVendor(companyId, { vendorId, vendorName: vendorId ? undefined : vendorName, vendorTrn });
+  return { vendor_id: vendor.vendorId, warnings: vendor.warnings, vendor_name: vendor.vendorName, vendor_trn: vendor.vendorTrn, bill_id: input.bill_id ?? null, currency, exchange_rate: rate, reverse_charge: reverseCharge };
 }
 
 async function insertLines(client: PoolClient, creditId: string, input: VendorCreditInput, totals: ReturnType<typeof computeCreditTotals>) {
@@ -141,9 +154,9 @@ async function insertLines(client: PoolClient, creditId: string, input: VendorCr
     const c = totals.lines[i];
     await client.query(
       `INSERT INTO vendor_credit_note_lines
-         (credit_note_id, description, quantity, unit_price, vat_rate, vat_supply_type, account_id, line_total)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [creditId, line.description, c.quantity, c.unitPrice, c.vatRatePercent, c.vatRatePercent > 0 ? "standard" : "zero_rated", line.account_id || null, c.amount]
+         (credit_note_id, description, quantity, unit_price, vat_rate, vat_supply_type, account_id, line_total, product_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [creditId, line.description, c.quantity, c.unitPrice, c.vatRatePercent, c.vatRatePercent > 0 ? "standard" : "zero_rated", line.account_id || null, c.amount, line.product_id || null]
     );
   }
 }
@@ -167,20 +180,23 @@ export async function createVendorCredit(companyId: string, userId: string, inpu
     const ins = await client.query(
       `INSERT INTO vendor_credit_notes
          (company_id, vendor_name, vendor_trn, bill_id, number, vendor_reference, "date", currency, exchange_rate,
-          subtotal, vat_amount, total, reverse_charge, status, remaining_amount, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',0,$14,$15)
+          subtotal, vat_amount, total, reverse_charge, status, remaining_amount, notes, created_by, vendor_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',0,$14,$15,$16)
        RETURNING id`,
       [
         companyId, header.vendor_name, header.vendor_trn, header.bill_id, number,
         input.vendor_reference || null, ymd, header.currency, header.exchange_rate,
         totals.subtotal, totals.vatAmount, totals.total, header.reverse_charge,
-        input.notes || null, userId,
+        input.notes || null, userId, header.vendor_id,
       ]
     );
     await insertLines(client, ins.rows[0].id, input, totals);
     log.info({ companyId, number }, "Vendor credit note drafted");
     return ins.rows[0].id as string;
-  }).then((id) => getVendorCredit(companyId, id));
+  }).then(async (id) => {
+    const created = await getVendorCredit(companyId, id);
+    return created && header.warnings.length > 0 ? { ...created, warnings: header.warnings } : created;
+  });
 }
 
 export async function updateVendorCredit(companyId: string, id: string, input: Partial<VendorCreditInput>) {
@@ -188,7 +204,10 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
   if (!current) throw err(404, "NOT_FOUND", "Vendor credit note not found.");
   if (current.status !== "draft") throw err(409, "NOT_DRAFT", "Only draft credit notes can be edited.");
 
+  // A vendor given by id wins; a vendor given by name alone is re-resolved by name; otherwise the link stays.
+  const keepVendorLink = input.vendor_id === undefined && input.vendor_name === undefined;
   const merged: VendorCreditInput = {
+    vendor_id: input.vendor_id !== undefined ? input.vendor_id : keepVendorLink ? current.vendor_id ?? null : null,
     vendor_name: input.vendor_name ?? current.vendor_name,
     vendor_trn: input.vendor_trn === undefined ? current.vendor_trn : input.vendor_trn,
     bill_id: input.bill_id === undefined ? current.bill_id : input.bill_id,
@@ -206,6 +225,7 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
         unit_price: l.unit_price,
         vat_rate: l.vat_rate,
         account_id: l.account_id,
+        product_id: l.product_id,
       })),
   };
   await validateLineAccounts(companyId, merged.line_items);
@@ -223,12 +243,12 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
     await client.query(
       `UPDATE vendor_credit_notes SET vendor_name=$1, vendor_trn=$2, bill_id=$3, vendor_reference=$4, "date"=$5,
               currency=$6, exchange_rate=$7, subtotal=$8, vat_amount=$9, total=$10, reverse_charge=$11,
-              notes=$12, updated_at=NOW()
+              notes=$12, vendor_id=$15, updated_at=NOW()
         WHERE id=$13 AND company_id=$14`,
       [
         header.vendor_name, header.vendor_trn, header.bill_id, merged.vendor_reference || null, ymd,
         header.currency, header.exchange_rate, totals.subtotal, totals.vatAmount, totals.total,
-        header.reverse_charge, merged.notes || null, id, companyId,
+        header.reverse_charge, merged.notes || null, id, companyId, header.vendor_id,
       ]
     );
     await client.query(`DELETE FROM vendor_credit_note_lines WHERE credit_note_id = $1`, [id]);
@@ -294,7 +314,8 @@ export async function approveVendorCredit(companyId: string, id: string, userId:
     );
     if (lock.rows[0]?.status !== "draft") throw err(409, "NOT_DRAFT", "Only draft credit notes can be approved.");
 
-    const journalId = await postCreditJournal(companyId, credit, userId, creditDate);
+    // Goods returned to the supplier leave stock in the same transaction that books the credit (purchase-stock.service).
+    const journalId = await db.transaction((stockTx: any) => postCreditJournal(companyId, credit, userId, creditDate, stockTx));
     await client.query(
       `UPDATE vendor_credit_notes
           SET status='approved', remaining_amount=total, journal_entry_id=$1, approved_by=$2,
@@ -307,7 +328,7 @@ export async function approveVendorCredit(companyId: string, id: string, userId:
   return getVendorCredit(companyId, id);
 }
 
-async function postCreditJournal(companyId: string, credit: any, userId: string, creditDate: Date): Promise<string> {
+async function postCreditJournal(companyId: string, credit: any, userId: string, creditDate: Date, stockTx?: any): Promise<string> {
   // Idempotent: a retried approval (journal posted, status update lost) reuses the entry.
   const existing = await storage.getJournalEntriesBySource(companyId, VENDOR_CREDIT_JE_SOURCE, credit.id);
   const original = existing.find((e) => e.status === "posted" && !e.reversedEntryId);
@@ -326,7 +347,33 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
   }
 
   const lines = [];
+  // Returned stock: out of the stock record at the credit's value, and 1070 is credited for exactly what left.
+  const returned = stockTx
+    ? await applyVendorCreditStockInTx(
+        stockTx,
+        { id: credit.id, company_id: companyId, number: credit.number, date: credit.date, exchange_rate: credit.exchange_rate },
+        credit.lines,
+        userId
+      )
+    : new Map<string, { left: number; lineAed: number }>();
+  const stockAdjustments: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
   for (const line of credit.lines) {
+    const moved = returned.get(line.id);
+    if (moved) {
+      const inventory = await ensureSystemAccount(stockTx, companyId, ACCOUNT_CODES.INVENTORY, "asset");
+      lines.push({ accountId: inventory.id, amount: Number(line.line_total), description: line.description });
+      // The credit may be worth more or less than the stock's value: the difference is an inventory adjustment.
+      const diff = Math.round((moved.lineAed - moved.left) * 100) / 100;
+      if (diff !== 0) {
+        const adj = await ensureSystemAccount(stockTx, companyId, ACCOUNT_CODES.INVENTORY_ADJUSTMENTS, "expense");
+        const label = `Vendor credit ${credit.number} - ${line.description} (difference to stock value)`.slice(0, 255);
+        const amount = Math.abs(diff);
+        // Credit worth more than the stock (diff > 0): 1070 gives back what the credit over-credited, 5210 takes the gain.
+        stockAdjustments.push({ accountId: inventory.id, debit: diff > 0 ? amount : 0, credit: diff > 0 ? 0 : amount, description: label });
+        stockAdjustments.push({ accountId: adj.id, debit: diff > 0 ? 0 : amount, credit: diff > 0 ? amount : 0, description: label });
+      }
+      continue;
+    }
     const accountId = await resolveLineAccount(
       accounts,
       companyId,
@@ -347,7 +394,7 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
     vendorName: credit.vendor_name,
   });
 
-  const entryNumber = await storage.generateEntryNumber(companyId, creditDate);
+  const entryNumber = stockTx ? "PENDING" : await storage.generateEntryNumber(companyId, creditDate);
   const entry = await storage.createJournalEntry(
     {
       companyId,
@@ -361,7 +408,8 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
       postedBy: userId,
       postedAt: creditDate,
     } as any,
-    posting
+    [...posting, ...stockAdjustments] as any,
+    stockTx ? { tx: stockTx } : undefined
   );
   return entry.id;
 }
@@ -534,7 +582,13 @@ export async function voidVendorCredit(companyId: string, id: string, userId: st
     }
 
     let reversalId: string | null = null;
-    if (status === "approved") reversalId = await postReversal(companyId, credit, userId, reason);
+    if (status === "approved") {
+      // The returned goods come back into stock in the transaction that posts the reversing entry.
+      reversalId = await db.transaction(async (stockTx: any) => {
+        await restoreVendorCreditStockInTx(stockTx, { id: credit.id, company_id: companyId, number: credit.number, date: credit.date }, userId);
+        return postReversal(companyId, credit, userId, reason, stockTx);
+      });
+    }
     await client.query(
       `UPDATE vendor_credit_notes
           SET status='void', remaining_amount=0, void_journal_entry_id=$1, voided_at=NOW(), updated_at=NOW()
@@ -546,7 +600,7 @@ export async function voidVendorCredit(companyId: string, id: string, userId: st
   return getVendorCredit(companyId, id);
 }
 
-async function postReversal(companyId: string, credit: any, userId: string, reason?: string | null): Promise<string> {
+async function postReversal(companyId: string, credit: any, userId: string, reason?: string | null, stockTx?: any): Promise<string> {
   const entries = await storage.getJournalEntriesBySource(companyId, VENDOR_CREDIT_JE_SOURCE, credit.id);
   const reversed = entries.find((e) => e.status === "posted" && e.reversedEntryId);
   if (reversed) return reversed.id;
@@ -561,7 +615,7 @@ async function postReversal(companyId: string, credit: any, userId: string, reas
     description: `Reversal: ${l.description || ""}`.slice(0, 255),
   }));
   const date = calendarDayToDate(credit.date);
-  const entryNumber = await storage.generateEntryNumber(companyId, date);
+  const entryNumber = stockTx ? "PENDING" : await storage.generateEntryNumber(companyId, date);
   const entry = await storage.createJournalEntry(
     {
       companyId,
@@ -577,7 +631,8 @@ async function postReversal(companyId: string, credit: any, userId: string, reas
       postedBy: userId,
       postedAt: new Date(),
     } as any,
-    reversalLines as any
+    reversalLines as any,
+    stockTx ? { tx: stockTx } : undefined
   );
   return entry.id;
 }

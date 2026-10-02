@@ -16,6 +16,14 @@ export const messages = defineMessages(
     void: "Void",
     draft: "Draft",
     inactive: "Inactive",
+    partial: "Partially paid",
+    cancelled: "Cancelled",
+    open: "Open",
+    closed: "Closed",
+    accepted: "Accepted",
+    declined: "Declined",
+    expired: "Expired",
+    issued: "Issued",
   },
   {
     paid: "مدفوعة",
@@ -31,5 +39,13 @@ export const messages = defineMessages(
     void: "ملغاة",
     draft: "مسودة",
     inactive: "غير نشط",
+    partial: "مدفوعة جزئيًا",
+    cancelled: "ملغاة",
+    open: "مفتوحة",
+    closed: "مغلقة",
+    accepted: "مقبولة",
+    declined: "مرفوضة",
+    expired: "منتهية",
+    issued: "صادرة",
   }
 );

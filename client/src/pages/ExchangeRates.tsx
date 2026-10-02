@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { todayYmd } from "@/lib/calendar-date";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,7 +104,7 @@ export default function ExchangeRates() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [formFromCurrency, setFormFromCurrency] = useState("USD");
   const [formRate, setFormRate] = useState("");
-  const [formEffectiveDate, setFormEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [formEffectiveDate, setFormEffectiveDate] = useState(todayYmd());
 
   // Converter state
   const [convertFrom, setConvertFrom] = useState("USD");

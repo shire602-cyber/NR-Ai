@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useTranslation } from "@/lib/i18n";
 import { messages as pageMessages } from "./VAT201Form.i18n";
+import { vat201TotalsForScreen, type Vat201Totals } from "@/lib/vat201-totals";
+import VatJournalLineRows, { type VatReturnJournalLine } from "./vat/VatJournalLineRows";
 
 interface VAT201Data {
   box1aAbuDhabiAmount: number;
@@ -71,6 +73,10 @@ interface Props {
     vatStagger?: string;
   };
   readOnly?: boolean;
+  /** The manual VAT journals and taxable journal sales behind the boxes (the return's vatAdjustments), shown under the boxes they affect. */
+  journalLines?: VatReturnJournalLine[] | null;
+  /** The stored return's own totals (boxes 8, 11, 12-14): shown as they are until a box is changed on screen. */
+  storedTotals?: Vat201Totals | null;
 }
 
 const EMIRATES = [
@@ -89,6 +95,8 @@ export default function VAT201Form({
   companyInfo,
   periodInfo,
   readOnly = false,
+  journalLines,
+  storedTotals,
 }: Props) {
   const tr = pageMessages.useT();
 
@@ -111,39 +119,20 @@ export default function VAT201Form({
     onChange(newData);
   };
 
-  const calculateTotalSalesAmount = () => {
-    return (
-      EMIRATES.reduce((sum, e) => sum + (data as any)[`${e.prefix}Amount`], 0) +
-      data.box2TouristRefundAmount +
-      data.box3ReverseChargeAmount +
-      data.box4ZeroRatedAmount +
-      data.box5ExemptAmount +
-      data.box6ImportsAmount +
-      data.box7ImportsAdjAmount
-    );
-  };
-
-  const calculateTotalSalesVat = () => {
-    return (
-      EMIRATES.reduce((sum, e) => sum + (data as any)[`${e.prefix}Vat`], 0) +
-      data.box2TouristRefundVat +
-      data.box3ReverseChargeVat +
-      data.box6ImportsVat +
-      data.box7ImportsAdjVat
-    );
-  };
-
-  const calculateTotalSalesAdj = () => {
-    return EMIRATES.reduce((sum, e) => sum + (data as any)[`${e.prefix}Adj`], 0);
-  };
-
-  const calculateTotalInputVat = () => {
-    return data.box9ExpensesVat + data.box10ReverseChargeVat;
-  };
-
-  const calculateNetVat = () => {
-    return calculateTotalSalesVat() - calculateTotalInputVat();
-  };
+  // The boxes as they were when this return was opened: while they are unchanged the screen shows the stored return's
+  // totals; once a preparer edits a box the totals follow the edit, adjustments included (vat201-totals.ts).
+  const storedKey = JSON.stringify(storedTotals ?? null);
+  const baseline = useMemo(() => JSON.stringify(data), [storedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totals = vat201TotalsForScreen(data as any, storedTotals, JSON.stringify(data) === baseline);
+  const calculateTotalSalesAmount = () => totals.box8Amount;
+  const calculateTotalSalesVat = () => totals.box8Vat;
+  const calculateTotalSalesAdj = () => totals.box8Adj;
+  const calculateTotalInputVat = () => totals.box11Vat;
+  const calculateTotalInputAdj = () => totals.box11Adj;
+  const calculateTotalInputAmount = () => totals.box11Amount;
+  const calculateDueTax = () => totals.box12;
+  const calculateRecoverableTax = () => totals.box13;
+  const calculateNetVat = () => totals.box14;
 
   return (
     <div className="space-y-5 text-sm tabular-nums">
@@ -277,7 +266,8 @@ export default function VAT201Form({
             </TableHeader>
             <TableBody>
               {EMIRATES.map((emirate) => (
-                <TableRow key={emirate.key}>
+                <Fragment key={emirate.key}>
+                <TableRow>
                   <TableCell>
                     <span className="font-medium">{emirate.key}</span>{" "}
                     {tr("standardRatedSuppliesIn", { en: emirate.en })}
@@ -335,6 +325,8 @@ export default function VAT201Form({
                     />
                   </TableCell>
                 </TableRow>
+                <VatJournalLineRows lines={journalLines} boxes={[`${emirate.prefix}Amount`, `${emirate.prefix}Adj`]} />
+                </Fragment>
               ))}
 
               <TableRow>
@@ -594,6 +586,7 @@ export default function VAT201Form({
                   />
                 </TableCell>
               </TableRow>
+              <VatJournalLineRows lines={journalLines} boxes={["box9ExpensesAmount", "box9ExpensesAdj"]} />
 
               <TableRow>
                 <TableCell>
@@ -635,10 +628,10 @@ export default function VAT201Form({
                   </span>
                 </TableCell>
                 <TableCell className="text-end">
-                  {formatNumber(data.box9ExpensesAmount + data.box10ReverseChargeAmount)}
+                  {formatNumber(calculateTotalInputAmount())}
                 </TableCell>
                 <TableCell className="text-end">{formatNumber(calculateTotalInputVat())}</TableCell>
-                <TableCell className="text-end">{formatNumber(data.box9ExpensesAdj)}</TableCell>
+                <TableCell className="text-end">{formatNumber(calculateTotalInputAdj())}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -663,8 +656,8 @@ export default function VAT201Form({
                     إجمالي قيمة الضريبة المستحقة للفترة
                   </span>
                 </TableCell>
-                <TableCell className="text-end text-lg font-bold">
-                  {formatNumber(calculateTotalSalesVat())}
+                <TableCell className="text-end text-lg font-bold" data-testid="vat201-box12">
+                  {formatNumber(calculateDueTax())}
                 </TableCell>
               </TableRow>
               <TableRow>
@@ -675,8 +668,8 @@ export default function VAT201Form({
                     إجمالي قيمة الضريبة القابلة للاسترداد
                   </span>
                 </TableCell>
-                <TableCell className="text-end text-lg font-bold">
-                  {formatNumber(calculateTotalInputVat())}
+                <TableCell className="text-end text-lg font-bold" data-testid="vat201-box13">
+                  {formatNumber(calculateRecoverableTax())}
                 </TableCell>
               </TableRow>
               <TableRow className="bg-success-subtle ">
@@ -689,6 +682,7 @@ export default function VAT201Form({
                 </TableCell>
                 <TableCell
                   className={`text-end text-xl font-bold ${calculateNetVat() >= 0 ? "text-destructive" : "text-success"}`}
+                  data-testid="vat201-box14"
                 >
                   {calculateNetVat() >= 0 ? "" : "("}
                   {formatNumber(Math.abs(calculateNetVat()))}
@@ -705,18 +699,7 @@ export default function VAT201Form({
       </Card>
 
       <div className="text-xs text-muted-foreground text-center p-4 border-t">
-        {/* i18n-ignore: bilingual heading copied from the official FTA VAT 201 form */}
-        <p>www.tax.gov.ae | @uaetax</p>
-        {/* i18n-ignore: bilingual heading copied from the official FTA VAT 201 form */}
-        <p className="mt-1">Federal Authority | هيئة اتحادية</p>
-        <p className="mt-2">
-          {tr("thisIsASystemGeneratedDocument")}
-          <br />
-          <span dir="rtl">
-            هذه وثيقة تم إنشاؤها بواسطة النظام ولا تحتاج إلى التوقيع. دافع الضرائب هو المسؤول الوحيد
-            عن استخدام هذه الوثيقة.
-          </span>
-        </p>
+        <p data-testid="vat201-worksheet-notice">{tr("thisIsASystemGeneratedDocument")}</p>
       </div>
     </div>
   );

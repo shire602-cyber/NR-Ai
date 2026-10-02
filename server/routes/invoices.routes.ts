@@ -1,17 +1,11 @@
 import { Router, type Express, type Request, type Response } from "express";
 import crypto from "crypto";
-import Decimal from "decimal.js";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { checkUsageLimit } from "../middleware/featureGate";
-import {
-  insertInvoiceSchema,
-  type Invoice,
-  type JournalEntry,
-  type JournalLine,
-} from "../../shared/schema";
+import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateDeliveryNotePDF } from "../services/pdf-delivery-note.service";
 import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
@@ -28,80 +22,63 @@ import {
 } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
 import { db } from "../db";
-import {
-  invoices as invoicesTable,
-  invoiceLines as invoiceLinesTable,
-  journalEntries as journalEntriesTable,
-  journalLines as journalLinesTable,
-} from "../../shared/schema";
-import { and, eq, inArray } from "drizzle-orm";
-import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
+import { invoices as invoicesTable, journalEntries as journalEntriesTable } from "../../shared/schema";
+import { and, eq } from "drizzle-orm";
+import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { resolveSettlementDate } from "../services/payment-date-guard.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
-import {
-  evaluateCreditNoteRequest,
-  buildReversalLines,
-  selectVoidableEntries,
-} from "../services/invoice-lifecycle";
 import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
+import { issueInvoice } from "../services/invoice-issue.service";
 import {
   checkProductsForCompany,
-  creditNoteRestockTag,
   postCogsForInvoice,
-  restockInvoiceInTx,
-  restockRequestFromCreditLines,
 } from "../services/inventory-costing.service";
-import { syncInvoiceStatusFromBalance } from "../services/invoice-credit-status";
 import { getInvoiceBalance, loadInvoiceBalances } from "../services/invoice-outstanding.db";
 import { invoiceBalanceFields } from "../services/invoice-outstanding";
 import { voidOrCancelInvoice, alreadyTerminalOutcome } from "../services/invoice-void.service";
 import { checkRevenueAccountsForCompany } from "../services/revenue-account-guard.service";
-import { allocateRevenueCredits } from "../services/revenue-allocation.service";
-import { deriveVatSupplyType } from "../services/vat-supply-type";
-import { resolveInvoiceFx, toBaseCurrencyAmount } from "../services/invoice-fx";
+import { resolveInvoiceFx } from "../services/invoice-fx";
 import { checkPostedInvoiceEdit } from "../services/posted-invoice-lock.service";
-import { normalizeUnitPrice } from "../services/document-line-limits";
-import {
-  bucketLines,
-  compareBuckets,
-  effectiveRevenueAccountId,
-  findBucketExcess,
-  remainderBuckets,
-  remainingByAccount,
-  remainingLines,
-  remainingVatBuckets,
-  resolveCreditLineAccount,
-  reverseToZero,
-  type RevenueCtx,
-} from "../services/credit-note-remainder.service";
-import { requiredQuantity, requiredUnitPrice } from "../services/document-line-limits";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
-import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
-import {
-  allocateInvoiceNumber,
-  peekNextInvoiceNumber,
-} from "../services/invoice-numbering.service";
+import { ACCOUNT_CODES } from "../constants";
+import { allocateInvoiceNumber, peekNextInvoiceNumber } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { resolveDocumentExchangeRate } from "../services/document-fx-rate";
+import {
+  INVOICE_WRITABLE_FIELDS,
+  documentDiscountSchema,
+  pickWritable,
+} from "../services/sales-input";
+import {
+  accountIdForDerived,
+  checkContactForCompany,
+  itemsSubtotalOf,
+  loadAdvanceDeductions,
+  replaceInvoiceLines,
+  resolveSalesAccounts,
+  type SalesLineSource,
+} from "../services/sales-lines.service";
+import { deriveSalesLines } from "../../shared/sales-line-math";
+import { AppError } from "../errors";
+import { parseCalendarDay } from "../utils/date";
+import { parseEmirateInput } from "../utils/emirate";
+import { checkPriceListsForCompany } from "../services/price-list.service";
+import { projectsBelongToCompany } from "../services/project.service";
+import { loadAdvanceApplicationsForInvoice } from "../services/customer-advance.service";
+import { refreshAdvanceStatus } from "../services/advance-ledger.service";
+import { assertSalesOrderQuantitiesForEdit } from "../services/sales-order.service";
+import { pdfFieldsFor } from "../services/custom-fields.service";
+import { onlinePaymentView } from "../services/payment-gateway/checkout.service";
+import { issueCreditNote, revenueContextOf } from "../services/credit-note-issue.service";
+import { creditedQuantityByLine } from "../services/credit-note-remainder.service";
+import {
+  MAX_DOCUMENT_TOTAL,
+  invoiceLinesInputSchema,
+  type InvoiceLineInput,
+} from "../services/invoice-line-schemas";
 
 const log = createLogger("invoices");
-
-// The issue could not complete after stock was consumed: return it and reverse the COGS journal.
-async function undoIssueCogs(invoice: Invoice, userId: string): Promise<void> {
-  const now = new Date();
-  await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, (tx: typeof db) =>
-    restockInvoiceInTx(tx, {
-      invoice,
-      userId,
-      requested: null,
-      reversalDate: invoice.date instanceof Date ? invoice.date : new Date(invoice.date),
-      postedAt: now,
-      source: { id: invoice.id, label: `Issue of Invoice ${invoice.number} not completed` },
-      reason: "Issue not completed",
-    })
-  );
-}
 
 // Walk the user's companies to find the invoice. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
@@ -116,81 +93,40 @@ async function findInvoiceForUser(userId: string, invoiceId: string): Promise<In
   return hasAccess ? invoice : undefined;
 }
 
-// The document total must fit numeric(15,2) (largest value 9,999,999,999,999.99)
-// with room for the VAT uplift. Per-line quantity / unit-price limits live in
-// document-line-limits (shared with quotes, credit notes, POs, recurring).
-const MAX_DOCUMENT_TOTAL = 9_000_000_000_000; // 9 trillion
-
-const invoiceLineObject = z.object({
-  description: z.string().trim().min(1, "Line description is required").max(1000),
-  quantity: requiredQuantity,
-  unitPrice: requiredUnitPrice,
-  // UAE has exactly two VAT rates: 0% (zero-rated/exempt lines) and 5%
-  // (standard). Accept either decimal (0.05) or percent (5) form — a typo
-  // like 0.5 must be rejected, not silently baked into a tax invoice.
-  vatRate: z.coerce
-    .number()
-    .finite()
-    .transform((v) => (v === 5 ? UAE_VAT_RATE : v))
-    .pipe(
-      z.number().refine((v) => v === 0 || v === UAE_VAT_RATE, {
-        message: "VAT rate must be 0% or 5% (UAE)",
-      })
-    )
-    .default(UAE_VAT_RATE),
-  // Optional: standard_rated | zero_rated | exempt | out_of_scope. Normalised
-  // below so a 0% line is never stored as standard-rated by default.
-  vatSupplyType: z
-    .enum(["standard_rated", "zero_rated", "exempt", "out_of_scope"])
-    .optional()
-    .nullable(),
-  // Optional income account for this line's net amount (null = default account).
-  revenueAccountId: z.string().uuid("revenueAccountId must be a valid UUID").optional().nullable(),
-  // Optional product sold on this line. With "Post inventory to ledger" on, issuing the invoice
-  // consumes its stock and posts cost of goods sold (inventory-costing.service).
-  productId: z.string().uuid("productId must be a valid UUID").optional().nullable(),
-});
-
-// The RATE decides the supply type (deriveVatSupplyType): a taxed line is
-// always standard-rated, whatever type was sent.
-const withDerivedSupplyType = <T extends { vatRate: number; vatSupplyType?: string | null }>(
-  line: T
-) => ({
-  ...line,
-  vatSupplyType: deriveVatSupplyType(line.vatRate, line.vatSupplyType),
-});
-
-const invoiceLineInputSchema = invoiceLineObject.transform(withDerivedSupplyType);
-
-// A credit-note line may name the original invoice line it credits, so the
-// revenue account is resolved from that id instead of matching descriptions.
-const creditNoteLineInputSchema = invoiceLineObject
-  .extend({ originalLineId: z.string().uuid("originalLineId must be a valid UUID").optional().nullable() })
-  .transform(withDerivedSupplyType);
-
-const invoiceLinesInputSchema = z
-  .array(invoiceLineInputSchema)
-  .min(1, "At least one invoice line is required");
-
-type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
-type CreditNoteLineInput = z.infer<typeof creditNoteLineInputSchema>;
-
-function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
-  let subtotalD = new Decimal(0);
-  let vatAmountD = new Decimal(0);
-
-  for (const line of lines) {
-    const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
-    subtotalD = subtotalD.plus(lineTotal);
-    vatAmountD = vatAmountD.plus(lineTotal.times(line.vatRate ?? UAE_VAT_RATE));
-  }
-
-  return {
-    subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
-    vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
-    total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
-  };
+// Client lines -> the input of the line derivation (shared/sales-line-math.ts). A shipping line that names no
+// VAT rate takes the dominant item rate, so the zod default (5%) must not be mistaken for a choice.
+function toSalesInputs(parsed: InvoiceLineInput[], raw?: unknown): SalesLineSource[] {
+  const rawLines: any[] = Array.isArray(raw) ? raw : [];
+  return parsed.map((l, i) => {
+    const rawRate = rawLines[i]?.vatRate;
+    const noRate = l.lineKind === "shipping" && (rawRate === undefined || rawRate === null || rawRate === "");
+    return {
+      kind: l.lineKind === "shipping" ? "shipping" : "item",
+      description: l.description,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      vatRate: (noRate ? undefined : l.vatRate) as number,
+      vatSupplyType: l.vatSupplyType,
+      discountType: l.lineKind === "shipping" ? null : (l.discountType ?? null),
+      discountValue: l.lineKind === "shipping" ? null : (l.discountValue ?? null),
+      revenueAccountId: l.revenueAccountId ?? null,
+      productId: l.productId ?? null,
+      priceListId: l.lineKind === "shipping" ? null : ((l as any).priceListId ?? null),
+      salesOrderLineId: (l as any).salesOrderLineId ?? null,
+      // undefined (not sent) is kept distinct from null (cleared): an update carries the old line's project over.
+      projectId: (l as any).projectId,
+    };
+  });
 }
+
+// What the Phase 8 lines store besides the derived columns: the price list a unit price came from, and the sales
+// order line a line bills (the latter only on an invoice that was made from that order).
+// `previousProjects` (an update) holds the project of each old client line by position, used when a line sends none.
+const lineExtras = (allowSalesOrderLine: boolean, previousProjects: Array<string | null> = []) => (source: SalesLineSource, index = 0) => ({
+  priceListId: source.priceListId ?? null,
+  salesOrderLineId: allowSalesOrderLine ? (source.salesOrderLineId ?? null) : null,
+  projectId: (source as any).projectId !== undefined ? ((source as any).projectId ?? null) : (previousProjects[index] ?? null),
+});
 
 function normalizeOptionalInvoiceDateField(
   data: Record<string, any>,
@@ -202,56 +138,12 @@ function normalizeOptionalInvoiceDateField(
     return { ok: true };
   }
 
-  const parsed = data[field] instanceof Date ? data[field] : new Date(data[field]);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseCalendarDay(data[field]);
+  if (!parsed) {
     return { ok: false, message: `Invalid invoice ${field}` };
   }
   data[field] = parsed;
   return { ok: true };
-}
-
-const round2Num = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-
-type JournalLineLike = Record<string, any> & {
-  accountId: string;
-  debit: number;
-  credit: number;
-  description: string;
-};
-
-// Default / zero-rated income accounts of a chart: what a line with no revenue
-// account of its own posts to (see invoice-posting.service). Undefined when the
-// chart has no default revenue account.
-function revenueContextOf(
-  accounts: Array<{ id: string; type: string; code: string; isSystemAccount?: boolean | null }>
-): RevenueCtx | undefined {
-  const defaultAccount = accounts.find(
-    (a) =>
-      a.isSystemAccount &&
-      a.type === "income" &&
-      (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-  );
-  if (!defaultAccount) return undefined;
-  const zeroRated = accounts.find(
-    (a) => a.type === "income" && a.code === ACCOUNT_CODES.ZERO_RATED_SALES
-  );
-  return { defaultAccountId: defaultAccount.id, zeroRatedAccountId: zeroRated?.id ?? null };
-}
-
-// Foreign-currency invoices keep the document-currency amount on the AR leg of
-// a reversal, like the original posting did (the ledger amounts stay AED).
-function withForeignReceivable(
-  lines: JournalLineLike[],
-  receivableId: string,
-  fx: { currency: string; rate: number; isForeign: boolean },
-  docAmount: number
-): JournalLineLike[] {
-  if (!fx.isForeign) return lines;
-  return lines.map((l) =>
-    l.accountId === receivableId && l.credit > 0
-      ? { ...l, foreignCurrency: fx.currency, exchangeRate: fx.rate, foreignCredit: docAmount }
-      : l
-  );
 }
 
 export function registerInvoiceRoutes(app: Express) {
@@ -306,7 +198,32 @@ export function registerInvoiceRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(id);
       const balance = await getInvoiceBalance(invoice.companyId, id);
 
-      res.json({ ...invoice, ...invoiceBalanceFields(invoice, balance), lines });
+      const advanceApplications = await loadAdvanceApplicationsForInvoice(invoice.companyId, id);
+      // Quantity already credited per line by LIVE credit notes only (a voided credit note credits nothing).
+      let creditedByLine: Record<string, number> = {};
+      if (invoice.invoiceType !== "credit_note") {
+        const notes = (
+          await db
+            .select()
+            .from(invoicesTable)
+            .where(and(eq(invoicesTable.companyId, invoice.companyId), eq(invoicesTable.originalInvoiceId, id), eq(invoicesTable.invoiceType, "credit_note")))
+        ).filter((c: any) => c.status !== "void" && c.status !== "cancelled");
+        if (notes.length > 0) {
+          const ctx = revenueContextOf(await storage.getAccountsByCompanyId(invoice.companyId));
+          if (ctx) {
+            const creditedLines = (await Promise.all(notes.map((c: any) => storage.getInvoiceLinesByInvoiceId(c.id)))).flat();
+            creditedByLine = creditedQuantityByLine({ originalLines: lines as any[], creditedLines: creditedLines as any[], ctx });
+          }
+        }
+      }
+      res.json({
+        ...invoice,
+        ...invoiceBalanceFields(invoice, balance),
+        itemsSubtotal: itemsSubtotalOf(lines),
+        advanceApplications,
+        creditedByLine,
+        lines,
+      });
     })
   );
 
@@ -401,15 +318,43 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, ...invoiceData } = req.body;
-      // Only the opening-balance flow may mark an invoice as an opening balance.
-      delete (invoiceData as any).isOpeningBalance;
+      const { lines, date } = req.body;
+      // Allow-list: invoiceType, status, isOpeningBalance, salesOrderId, lateFeeForInvoiceId, totals and
+      // every other server-owned column can never be set from a request body (mass assignment).
+      const invoiceData: Record<string, any> = pickWritable(req.body, INVOICE_WRITABLE_FIELDS);
       const parsedLines = invoiceLinesInputSchema.parse(lines);
+      const documentDiscount = documentDiscountSchema.parse(req.body);
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
+      }
+      const contactCheck = await checkContactForCompany(companyId, invoiceData.contactId);
+      if (!contactCheck.ok) {
+        return res.status(422).json({ message: contactCheck.message, code: contactCheck.code });
+      }
+      // The recipient's TRN and address are part of a tax invoice (Art. 59): take them from the contact when the caller
+      // sent none, so every invoice carries them whichever screen made it.
+      if (invoiceData.contactId && (!invoiceData.customerTrn || !invoiceData.customerAddress)) {
+        const contactRow = await storage.getCustomerContact(invoiceData.contactId);
+        if (contactRow && contactRow.companyId === companyId) {
+          if (!invoiceData.customerTrn && contactRow.trnNumber) invoiceData.customerTrn = contactRow.trnNumber;
+          const parts = [contactRow.address, contactRow.city, contactRow.country].map((x) => (x ?? "").trim()).filter(Boolean);
+          if (!invoiceData.customerAddress && parts.length) invoiceData.customerAddress = parts.join(", ");
+        }
+      }
+
+      // Place of supply (VAT 201 box 1): the body's emirate, else the contact's; none = the company's own emirate.
+      {
+        const em = parseEmirateInput(invoiceData.emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        let emirate = em.value ?? null;
+        if (emirate === null && em.value === undefined && invoiceData.contactId) {
+          const contactRow = await storage.getCustomerContact(invoiceData.contactId);
+          if (contactRow && contactRow.companyId === companyId) emirate = (contactRow as any).emirate ?? null;
+        }
+        invoiceData.emirate = emirate;
       }
 
       // Chosen revenue accounts must be income accounts of THIS company.
@@ -424,10 +369,29 @@ export function registerInvoiceRoutes(app: Express) {
       if (!productCheck.ok) {
         return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
       }
+      if (!(await projectsBelongToCompany(companyId, parsedLines.map((l) => (l as any).projectId)))) {
+        return res.status(400).json({ message: "A line names a project that does not belong to this company.", code: "INVALID_PROJECT" });
+      }
+      const priceListCheck = await checkPriceListsForCompany(companyId, parsedLines.map((l) => (l as any).priceListId));
+      if (!priceListCheck.ok) {
+        return res.status(422).json({ message: priceListCheck.message, code: priceListCheck.code });
+      }
 
-      // Calculate totals using decimal.js to avoid binary-float drift on
-      // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
-      const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
+      // Item and shipping lines come from the client; discounts are DERIVED by the server as signed lines
+      // (shared/sales-line-math.ts), so the stored lines, the totals and every VAT engine agree.
+      const salesInputs = toSalesInputs(parsedLines, lines);
+      if (!salesInputs.some((l) => l.kind === "item")) {
+        return res.status(400).json({ message: "At least one invoice line is required" });
+      }
+      const derived = deriveSalesLines({
+        lines: salesInputs,
+        discountType: documentDiscount.discountType,
+        discountValue: documentDiscount.discountValue,
+      });
+      if (!derived.ok) {
+        return res.status(422).json({ message: derived.message, code: derived.code });
+      }
+      const { subtotal, vatAmount, total } = derived;
 
       // The per-line caps above bound each factor; this bounds their product,
       // which is what actually has to fit numeric(15,2). Without it, a large
@@ -440,8 +404,9 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const invoiceDate = typeof date === "string" ? new Date(date) : date;
-      if (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime())) {
+      // The document-date contract (utils/date.ts parseCalendarDay): "YYYY-MM-DD" or an ISO instant, stored as the UAE day.
+      const invoiceDate = parseCalendarDay(date);
+      if (!invoiceDate) {
         return res.status(400).json({ message: "Invalid invoice date" });
       }
       // A tax invoice records a supply that has happened. Forward-dating pushes
@@ -517,17 +482,21 @@ export function registerInvoiceRoutes(app: Express) {
             subtotal,
             vatAmount,
             total,
-          })
+          } as any)
           .returning();
 
-        for (const line of parsedLines) {
-          await tx.insert(invoiceLinesTable).values({
-            invoiceId: insertedInvoice.id,
-            ...line,
-          });
-        }
+        await replaceInvoiceLines(tx, {
+          companyId,
+          invoiceId: insertedInvoice.id,
+          lines: salesInputs,
+          discountType: documentDiscount.discountType,
+          discountValue: documentDiscount.discountValue,
+          exchangeRate,
+          itemExtras: lineExtras(false),
+        });
+        const [withLines] = await tx.select().from(invoicesTable).where(eq(invoicesTable.id, insertedInvoice.id));
 
-        return { allocatedNumber: number, invoice: insertedInvoice };
+        return { allocatedNumber: number, invoice: withLines ?? insertedInvoice };
       });
 
       // Revenue recognition happens when the invoice is ISSUED (marked
@@ -564,7 +533,7 @@ export function registerInvoiceRoutes(app: Express) {
         actionUrl: "/invoices",
       }).catch(() => {});
 
-      res.json(invoice);
+      res.json({ ...invoice, itemsSubtotal: derived.itemsSubtotal });
     })
   );
 
@@ -647,19 +616,40 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, ...invoiceData } = req.body;
-      delete (invoiceData as any).isOpeningBalance;
+      const { lines, date } = req.body;
+      // Allow-list (see POST): status, invoiceType and the other server-owned columns are never taken from the body.
+      const invoiceData: Record<string, any> = pickWritable(req.body, INVOICE_WRITABLE_FIELDS);
       const parsedLines = invoiceLinesInputSchema.parse(lines);
+      const documentDiscount = documentDiscountSchema.parse(req.body);
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
+      }
+      const contactCheck = await checkContactForCompany(invoice.companyId, invoiceData.contactId);
+      if (!contactCheck.ok) {
+        return res.status(422).json({ message: contactCheck.message, code: contactCheck.code });
       }
       if ((invoice as any).isOpeningBalance) {
         return res.status(409).json({
           message: "This invoice was entered as an opening balance and cannot be edited. Reverse the opening balances to change it.",
           code: "OPENING_BALANCE_INVOICE",
         });
+      }
+      // The emirate of the supply is editable until the invoice is issued (it decides the VAT return box).
+      {
+        const em = parseEmirateInput(invoiceData.emirate);
+        if (!em.ok) return res.status(422).json({ message: em.message, code: em.code });
+        if (em.value === undefined) {
+          delete invoiceData.emirate;
+        } else if (invoice.status !== "draft") {
+          if (em.value !== ((invoice as any).emirate ?? null)) {
+            return res.status(409).json({ message: "The emirate of an issued invoice cannot be changed.", code: "EMIRATE_LOCKED" });
+          }
+          delete invoiceData.emirate;
+        } else {
+          invoiceData.emirate = em.value;
+        }
       }
 
       if (isTerminal(invoice.status) || invoice.status === "credited") {
@@ -680,9 +670,55 @@ export function registerInvoiceRoutes(app: Express) {
       if (!productCheck.ok) {
         return res.status(productCheck.status).json({ message: productCheck.message, code: productCheck.code });
       }
+      if (!(await projectsBelongToCompany(invoice.companyId, parsedLines.map((l) => (l as any).projectId)))) {
+        return res.status(400).json({ message: "A line names a project that does not belong to this company.", code: "INVALID_PROJECT" });
+      }
+      const previousProjects = ((await storage.getInvoiceLinesByInvoiceId(id)) as any[])
+        .filter((l) => (l.lineKind ?? "item") === "item" || l.lineKind === "shipping")
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((l) => (l.projectId ?? null) as string | null);
+      const priceListCheck = await checkPriceListsForCompany(invoice.companyId, parsedLines.map((l) => (l as any).priceListId));
+      if (!priceListCheck.ok) {
+        return res.status(422).json({ message: priceListCheck.message, code: priceListCheck.code });
+      }
 
-      // Recompute totals from lines using decimal.js for precise money math.
-      const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
+      // The invoice type decides what may be edited: an advance tax invoice and a late fee are server-made.
+      if (invoice.invoiceType === "credit_note" || invoice.invoiceType === "late_fee" || invoice.invoiceType === "advance") {
+        return res.status(422).json({
+          message: `A ${invoice.invoiceType.replace("_", " ")} cannot be edited.`,
+          code: "INVOICE_TYPE_NOT_EDITABLE",
+        });
+      }
+
+      // Rebuild the signed lines (discounts, shipping, the advance deductions already applied) and the totals.
+      const salesInputs = toSalesInputs(parsedLines, lines);
+      if (!salesInputs.some((l) => l.kind === "item")) {
+        return res.status(400).json({ message: "At least one invoice line is required" });
+      }
+      const appliedAdvances = await loadAdvanceDeductions(db, invoice.companyId, id);
+      // An advance belongs to one customer and is AED only: while a deduction is applied, the customer and the currency
+      // of the draft cannot change (the application would silently stop matching its invoice).
+      if (appliedAdvances.length > 0) {
+        const newContact = invoiceData.contactId === undefined ? undefined : invoiceData.contactId || null;
+        const contactChanged = newContact !== undefined && newContact !== (invoice.contactId ?? null);
+        const currencyChanged = invoiceData.currency !== undefined && String(invoiceData.currency).toUpperCase() !== String(invoice.currency).toUpperCase();
+        if (contactChanged || currencyChanged) {
+          return res.status(409).json({
+            message: "An advance is applied to this invoice. Remove it before changing the customer or the currency.",
+            code: "ADVANCE_APPLIED",
+          });
+        }
+      }
+      const derived = deriveSalesLines({
+        lines: salesInputs,
+        discountType: documentDiscount.discountType,
+        discountValue: documentDiscount.discountValue,
+        advances: appliedAdvances,
+      });
+      if (!derived.ok) {
+        return res.status(422).json({ message: derived.message, code: derived.code });
+      }
+      const { subtotal, vatAmount, total } = derived;
       if (!Number.isFinite(total) || Math.abs(total) > MAX_DOCUMENT_TOTAL) {
         return res.status(422).json({
           message: `Invoice total is too large to record (limit ${MAX_DOCUMENT_TOTAL.toLocaleString()}).`,
@@ -722,11 +758,21 @@ export function registerInvoiceRoutes(app: Express) {
         const existingLines = await storage.getInvoiceLinesByInvoiceId(id);
         const chart = await storage.getAccountsByCompanyId(invoice.companyId);
         const revenueCtx = revenueContextOf(chart);
+        const salesAccounts = await resolveSalesAccounts(db, invoice.companyId);
         const storedRate = resolveInvoiceFx(invoice as any).rate;
         const requestedRate = Number(invoiceData.exchangeRate) > 0 ? Number(invoiceData.exchangeRate) : storedRate;
         const verdict = checkPostedInvoiceEdit({
           before: { lines: existingLines as any[], subtotal: Number(invoice.subtotal), rate: storedRate },
-          after: { lines: parsedLines, subtotal, rate: requestedRate },
+          // The derived lines carry the accounts they will post to, so an edit that changes nothing on the ledger
+          // (a customer name) is not mistaken for moving amounts between accounts.
+          after: {
+            lines: derived.lines.map((d) => ({
+              ...d,
+              revenueAccountId: accountIdForDerived(d, d.sourceIndex !== undefined ? salesInputs[d.sourceIndex] : undefined, salesAccounts),
+            })),
+            subtotal,
+            rate: requestedRate,
+          },
           defaultAccountId: revenueCtx?.defaultAccountId ?? null,
           zeroRatedAccountId: revenueCtx?.zeroRatedAccountId ?? null,
         });
@@ -735,8 +781,8 @@ export function registerInvoiceRoutes(app: Express) {
         }
       }
 
-      const invoiceDate = typeof date === "string" ? new Date(date) : date;
-      if (invoiceDate && (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime()))) {
+      const invoiceDate = date === undefined || date === null ? undefined : parseCalendarDay(date);
+      if (invoiceDate === null) {
         return res.status(400).json({ message: "Invalid invoice date" });
       }
       const dueDateResult = normalizeOptionalInvoiceDateField(invoiceData, "dueDate");
@@ -758,24 +804,62 @@ export function registerInvoiceRoutes(app: Express) {
           ? Number(invoiceData.exchangeRate)
           : Number((invoice as any).exchangeRate) || 1;
 
-      // Update invoice
-      const updatedInvoice = await storage.updateInvoice(id, invoice.companyId, {
-        ...invoiceData,
-        date: invoiceDate,
-        subtotal,
-        vatAmount,
-        total,
-        exchangeRate: fxRate,
-        baseCurrencyAmount: Math.round(total * fxRate * 100) / 100,
-      });
+      // A posted invoice keeps its currency; only a draft may change it.
+      if (postedEntry) delete invoiceData.currency;
 
-      await storage.deleteInvoiceLinesByInvoiceId(id);
-      for (const line of parsedLines) {
-        await storage.createInvoiceLine({
+      // Write under the posting lock: an issue (revenue journal) or an advance application running at the
+      // same time must see either all of this edit or none of it.
+      const updatedInvoice = await withDocumentLock(id, LOCK_NS.INVOICE_POSTING, async (tx: typeof db) => {
+        const [fresh] = await tx.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+        if (!fresh || isTerminal(fresh.status) || fresh.status === "credited") {
+          throw new AppError({ message: `Cannot edit ${fresh?.status ?? "missing"} invoice`, statusCode: 422, code: "INVOICE_TERMINAL" });
+        }
+        const lockedPosted = (
+          await tx
+            .select({ id: journalEntriesTable.id })
+            .from(journalEntriesTable)
+            .where(
+              and(
+                eq(journalEntriesTable.companyId, invoice.companyId),
+                eq(journalEntriesTable.source, "invoice"),
+                eq(journalEntriesTable.sourceId, id),
+                eq(journalEntriesTable.status, "posted")
+              )
+            )
+        ).length > 0;
+        if (lockedPosted && !postedEntry && totalsChanged) {
+          throw new AppError({
+            message:
+              "Invoice amount cannot be changed while a posted journal entry exists. Void this invoice and issue a credit note or new invoice instead.",
+            statusCode: 422,
+            code: "INVOICE_POSTED_AMOUNT_LOCKED",
+          });
+        }
+        // An invoice made from a sales order re-checks its quantities against the order under the order's row lock.
+        if ((fresh as any).salesOrderId) {
+          await assertSalesOrderQuantitiesForEdit(tx, {
+            companyId: invoice.companyId,
+            invoiceId: id,
+            salesOrderId: (fresh as any).salesOrderId,
+            lines: salesInputs.map((l) => ({ salesOrderLineId: l.salesOrderLineId, quantity: l.quantity })),
+          });
+        }
+        await tx
+          .update(invoicesTable)
+          .set({ ...invoiceData, date: invoiceDate, exchangeRate: fxRate } as any)
+          .where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, invoice.companyId)));
+        await replaceInvoiceLines(tx, {
+          companyId: invoice.companyId,
           invoiceId: id,
-          ...line,
+          lines: salesInputs,
+          discountType: documentDiscount.discountType,
+          discountValue: documentDiscount.discountValue,
+          exchangeRate: fxRate,
+          itemExtras: lineExtras(!!(fresh as any).salesOrderId, previousProjects),
         });
-      }
+        const [row] = await tx.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+        return row;
+      });
 
       await recordAudit({
         userId,
@@ -794,7 +878,7 @@ export function registerInvoiceRoutes(app: Express) {
       });
 
       log.info({ id }, "Invoice updated successfully");
-      res.json(updatedInvoice);
+      res.json({ ...updatedInvoice, itemsSubtotal: derived.itemsSubtotal });
     })
   );
 
@@ -818,8 +902,13 @@ export function registerInvoiceRoutes(app: Express) {
         "Invoice"
       );
 
+      // A draft that deducted advances gives them back when it goes (the application rows cascade); remember which.
+      const heldAdvances = await loadAdvanceApplicationsForInvoice(invoice.companyId, id);
       try {
         await storage.safeDeleteInvoice(id);
+        for (const advanceId of new Set(heldAdvances.map((a) => a.advanceId))) {
+          await refreshAdvanceStatus(db, advanceId);
+        }
       } catch (err: any) {
         if (err?.code === "INVOICE_HAS_POSTED_JE") {
           return res.status(422).json({
@@ -864,11 +953,15 @@ export function registerInvoiceRoutes(app: Express) {
             "Invalid status. Must be one of: draft, sent, posted, partial, paid, void, cancelled",
         });
       }
-      // 'credited' is derived from the credit notes; it cannot be set by hand.
-      if (status === "credited") {
-        return res.status(422).json({
-          message: "An invoice becomes 'credited' automatically when credit notes cover its full amount.",
-          code: "CREDITED_IS_AUTOMATIC",
+      // 'paid', 'partial' and 'credited' are derived (from the payments and the credit notes): nobody can set them by
+      // hand. The status endpoint only issues (draft -> sent/posted) and voids or cancels.
+      if (status === "paid" || status === "partial" || status === "credited") {
+        return res.status(400).json({
+          message:
+            status === "credited"
+              ? "An invoice becomes 'credited' by itself when a credit note is issued against it for its full amount. Issue a credit note instead of setting the status."
+              : `An invoice becomes '${status}' by itself when payments are recorded against it. Record the payment instead of setting the status.`,
+          code: "STATUS_DERIVED",
         });
       }
 
@@ -897,28 +990,6 @@ export function registerInvoiceRoutes(app: Express) {
         if (!already.ok) return res.status(already.status).json({ message: already.message, code: already.code });
       }
 
-      // Marking paid records the cash still owed. With nothing outstanding
-      // (fully credited or already settled) there is nothing to record: refuse
-      // before anything else so a credited invoice cannot be "settled" a second time.
-      let outstandingNow = 0;
-      if (status === "paid" && oldStatus !== "paid") {
-        const balance = await getInvoiceBalance(invoice.companyId, id);
-        outstandingNow = balance.outstanding;
-        if (
-          invoice.status !== "draft" &&
-          invoice.status !== "void" &&
-          invoice.status !== "cancelled" &&
-          balance.outstanding <= 0.005
-        ) {
-          return res.status(409).json({
-            message: balance.isFullyCredited
-              ? `Invoice ${invoice.number} is fully credited: nothing is outstanding to mark as paid.`
-              : `Invoice ${invoice.number} has nothing outstanding to mark as paid.`,
-            code: "INVOICE_NOTHING_OUTSTANDING",
-          });
-        }
-      }
-
       // No-op transition is fine.
       if (oldStatus !== status && !canTransition(oldStatus, status)) {
         return res.status(422).json({
@@ -928,109 +999,14 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
-      // 'paid' transition through this endpoint records the full payment via
-      // the transactional helper so we share the race-safe code path.
-      if (status === "paid" && oldStatus !== "paid") {
-        if (!paymentAccountId) {
-          return res
-            .status(400)
-            .json({ message: "Payment account is required when marking invoice as paid" });
-        }
-        const paymentAccount = await storage.getAccount(paymentAccountId, invoice.companyId);
-        if (!paymentAccount) {
-          return res.status(400).json({ message: "Invalid payment account" });
-        }
-        if (paymentAccount.type !== "asset") {
-          return res
-            .status(400)
-            .json({ message: "Payment account must be a cash or bank account" });
-        }
-
-        const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-        const accountsReceivable = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-        );
-        if (!accountsReceivable) {
-          return res.status(500).json({ message: "Accounts Receivable account not found" });
-        }
-
-        // The settlement journal is posted on the real payment date (optional
-        // `paymentDate` / `date` in the body, default today). Validated: not in
-        // the future, not before the invoice date, and not in a locked period.
-        const { date: paymentDate } = await resolveSettlementDate(invoice.companyId, {
-          requested: req.body.paymentDate ?? req.body.date,
-        });
-
-        // The unpaid remainder: total - payments - credit notes (shared
-        // definition). Never the bare total, or a credited invoice would be
-        // settled for cash that is not owed.
-        const remaining = outstandingNow;
-
-        try {
-          if (remaining > 0.005) {
-            await storage.recordInvoicePayment({
-              invoiceId: id,
-              companyId: invoice.companyId,
-              amount: remaining,
-              date: paymentDate,
-              method: "manual",
-              reference: null,
-              notes: "Marked paid via status update",
-              paymentAccountId,
-              paymentAccountCurrency: (paymentAccount as any).currency ?? null,
-              receivableAccountId: accountsReceivable.id,
-              createdBy: userId,
-            });
-          } else {
-            await storage.updateInvoiceStatus(id, invoice.companyId, "paid");
-          }
-        } catch (err: any) {
-          if (err?.code === "INVOICE_NOTHING_OUTSTANDING") {
-            return res.status(409).json({ message: err.message, code: err.code });
-          }
-          if (err?.code === "INVOICE_TERMINAL") {
-            return res.status(422).json({ message: err.message, code: err.code });
-          }
-          if (err?.code === "CURRENCY_MISMATCH") {
-            return res.status(422).json({ message: err.message, code: err.code });
-          }
-          throw err;
-        }
-      } else if (oldStatus !== status) {
+      if (oldStatus !== status) {
         // Issuing the invoice (draft → sent/posted) is the revenue-recognition
         // event: post the AR/Revenue/VAT journal entry now. Idempotent — data
         // created before drafts stopped auto-posting is skipped.
         if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
-          await assertPeriodNotLocked(invoice.companyId, invoice.date);
-          // A-4: do not recognise revenue with a future invoice date.
-          assertNotFutureDate(invoice.date);
-          // Inventory first: stock is checked and consumed (and COGS posted) in one transaction
-          // BEFORE revenue is recognised, so a short-stock invoice is refused with 422
-          // INSUFFICIENT_STOCK and nothing has been posted. If revenue then cannot post, the
-          // stock effect is undone below.
-          const cogs = await postCogsForInvoice(invoice as any, userId);
-          let posted: boolean;
-          try {
-            posted = await postInvoiceRevenueJournal(invoice as any, userId);
-          } catch (err) {
-            if (cogs.consumed) await undoIssueCogs(invoice as any, userId);
-            throw err;
-          }
-          const existing = await storage.getJournalEntriesBySource(
-            invoice.companyId,
-            "invoice",
-            id
-          );
-          // postInvoiceRevenueJournal returns false both for "already posted"
-          // (fine) and "missing accounts" (NOT fine) — distinguish via the GL.
-          if (!posted && !existing.some((e) => e.status === "posted")) {
-            if (cogs.consumed) await undoIssueCogs(invoice as any, userId);
-            return res.status(422).json({
-              message:
-                "Cannot issue invoice: revenue accounts are missing from the chart of accounts. Seed the default chart first (POST /api/companies/:id/seed-accounts).",
-              code: "CHART_OF_ACCOUNTS_MISSING",
-            });
-          }
+          // Posts the journal(s) AND sets the status in one transaction (invoice-issue.service).
+          const issued = await issueInvoice(invoice, userId, status);
+          if (!issued.ok) return res.status(issued.status).json(issued.body);
         }
 
         // Void/cancel must reverse the original revenue-recognition JE so the
@@ -1043,11 +1019,12 @@ export function registerInvoiceRoutes(app: Express) {
             companyId: invoice.companyId,
             targetStatus: status,
             userId,
+            date: req.body.date,
           });
           if (!outcome.ok) {
             return res.status(outcome.status).json({ message: outcome.message, code: outcome.code });
           }
-        } else {
+        } else if (!(oldStatus === "draft" && (status === "sent" || status === "posted"))) {
           await storage.updateInvoiceStatus(id, invoice.companyId, status);
         }
       }
@@ -1066,7 +1043,7 @@ export function registerInvoiceRoutes(app: Express) {
         req,
       });
 
-      if (status !== oldStatus && (status === "paid" || status === "void")) {
+      if (status !== oldStatus && status === "void") {
         createAndEmitNotification({
           userId,
           companyId: invoice.companyId,
@@ -1358,7 +1335,8 @@ export function registerInvoiceRoutes(app: Express) {
       const { token } = req.params;
 
       const invoice = await storage.getInvoiceByShareToken(token);
-      if (!invoice) {
+      // A draft is not yet issued to the customer: its link shows nothing.
+      if (!invoice || invoice.status === "draft") {
         return res.status(404).json({ message: "Invoice not found or link is invalid" });
       }
 
@@ -1373,18 +1351,31 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found" });
       }
 
+      // What is still owed (payments and credit notes taken off) and the custom fields flagged for display.
+      const balance = await getInvoiceBalance(invoice.companyId, invoice.id);
+      const customFields = await pdfFieldsFor(invoice.companyId, "invoice", invoice.id);
+      // Pay now is offered only when the company can really take payment (provider keys set AND a connected account).
+      const onlinePayment = await onlinePaymentView(invoice);
+
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
         invoice: {
           number: invoice.number,
+          invoiceType: invoice.invoiceType,
           customerName: invoice.customerName,
           customerTrn: invoice.customerTrn,
           date: invoice.date,
+          dueDate: invoice.dueDate,
           currency: invoice.currency,
           subtotal: invoice.subtotal,
           vatAmount: invoice.vatAmount,
           total: invoice.total,
+          discountAmount: invoice.discountAmount,
+          shippingAmount: invoice.shippingAmount,
+          itemsSubtotal: itemsSubtotalOf(lines),
           status: invoice.status,
+          paid: balance.paid,
+          outstanding: balance.outstanding,
         },
         lines: lines.map((l) => ({
           description: l.description,
@@ -1392,7 +1383,13 @@ export function registerInvoiceRoutes(app: Express) {
           unitPrice: l.unitPrice,
           vatRate: l.vatRate,
           vatSupplyType: l.vatSupplyType,
+          lineKind: l.lineKind,
+          discountType: l.discountType,
+          discountValue: l.discountValue,
+          hasParent: !!l.parentLineId,
         })),
+        customFields,
+        onlinePayment,
         company: {
           name: company.name,
           trnVatNumber: company.trnVatNumber,
@@ -1612,586 +1609,12 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // An opening-balance invoice recognised no revenue or VAT (it is inside the opening
-      // balances), so a credit note would reverse amounts that never posted.
-      if ((original as any).isOpeningBalance) {
-        return res.status(409).json({
-          message:
-            "This invoice was entered as an opening balance and has no revenue or VAT posting to reverse. Record a customer credit or reverse the opening balances instead.",
-          code: "OPENING_BALANCE_INVOICE",
-        });
-      }
-
-      // A credit note reverses revenue that was RECOGNISED. A draft was never
-      // posted, and a void / cancelled invoice was already reversed in full:
-      // crediting either would debit revenue and VAT that never stood on the
-      // ledger. (A credit note of a credit note keeps its own CN_OF_CN error.)
-      if (
-        original.invoiceType !== "credit_note" &&
-        (original.status === "draft" || original.status === "void" || original.status === "cancelled")
-      ) {
-        return res.status(409).json({
-          message: `Cannot issue a credit note for a ${original.status} invoice: it has no posted journal entry to reverse.`,
-          code: "INVOICE_NOT_POSTED",
-        });
-      }
-
-      // PARTIAL CREDIT NOTES.
-      //
-      // Previously this endpoint accepted a `lines` payload and silently threw
-      // it away, always crediting the FULL original. Asking to credit 400 of a
-      // 1,050 invoice returned 201 with a credit note for 1,050 — reversing all
-      // the output VAT when only part of the supply was returned, which
-      // UNDER-DECLARES VAT to the FTA.
-      //
-      // Now: supply `lines` to credit exactly those lines; omit them for a full
-      // reversal (the UI sends `{}` and keeps that behaviour). The amount is
-      // capped against the remaining uncredited balance below.
-      const requestedLines = (req.body as any)?.lines;
-      let creditLines: CreditNoteLineInput[] | null = null;
-      let creditAmounts: { subtotal: number; vatAmount: number; total: number } | null = null;
-      if (requestedLines !== undefined && requestedLines !== null) {
-        if (!Array.isArray(requestedLines) || requestedLines.length === 0) {
-          return res.status(422).json({
-            message: "Credit note `lines` must be a non-empty array. Omit it entirely to credit the full invoice.",
-            code: "INVALID_CREDIT_LINES",
-          });
-        }
-        creditLines = z.array(creditNoteLineInputSchema).parse(requestedLines);
-        const creditRevenueCheck = await checkRevenueAccountsForCompany(
-          companyId,
-          creditLines.map((l) => l.revenueAccountId)
-        );
-        if (!creditRevenueCheck.ok) {
-          return res
-            .status(creditRevenueCheck.status)
-            .json({ message: creditRevenueCheck.message, code: creditRevenueCheck.code });
-        }
-        const creditProductCheck = await checkProductsForCompany(companyId, creditLines.map((l) => l.productId));
-        if (!creditProductCheck.ok) {
-          return res
-            .status(creditProductCheck.status)
-            .json({ message: creditProductCheck.message, code: creditProductCheck.code });
-        }
-        creditAmounts = calculateInvoiceTotals(creditLines);
-        if (!Number.isFinite(creditAmounts.total) || Math.abs(creditAmounts.total) > MAX_DOCUMENT_TOTAL) {
-          return res.status(422).json({
-            message: `Credit note total is too large to record (limit ${MAX_DOCUMENT_TOTAL.toLocaleString()}).`,
-            code: "AMOUNT_OUT_OF_RANGE",
-          });
-        }
-      }
-
-      // The invoice's own currency and rate: the credit note is stored in the
-      // same currency at the SAME rate, and the reversing journal is posted in
-      // AED at that rate (never in document currency).
-      const fx = resolveInvoiceFx(original);
-
-      // A-B3: de-duplicate and cap credit notes. Without this, issuing two full
-      // credit notes double-reverses AR and drives it negative. We sum the
-      // absolute totals of any existing credit notes for this invoice and
-      // refuse to credit beyond the original total.
-      // Concurrency: the cap below is a check-then-write. Five parallel credit
-      // notes each read "nothing credited yet" and all five posted, crediting
-      // one invoice 5x and driving A/R negative. Serialise per invoice so the
-      // cap is evaluated against committed state.
-      // Everything below that does NOT depend on the locked state is read BEFORE
-      // the transaction opens (same pattern as invoice-void.service). Inside the
-      // lock every read goes through the transaction's own connection: with
-      // DB_POOL_MAX connections, N waiting requests each hold one for their
-      // transaction, so a lock holder that reached for a second pool connection
-      // to read starved the pool and deadlocked the whole app.
-      // TD5: honour a caller-supplied credit-note date (previously silently
-      // ignored — CNs were always stamped "today", so a CN belonging to the
-      // period being filed could never enter that period's VAT 201 or P&L).
-      // Future dates are refused like invoices; the period lock is checked
-      // against the ACTUAL document date.
-      let cnDate = new Date();
-      const requestedCnDate = (req.body as any)?.date;
-      if (requestedCnDate !== undefined && requestedCnDate !== null) {
-        const parsed = new Date(requestedCnDate);
-        if (isNaN(parsed.getTime())) {
-          return res.status(422).json({
-            message: "Credit note `date` is not a valid date.",
-            code: "INVALID_CREDIT_NOTE_DATE",
-          });
-        }
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        if (parsed > tomorrow) {
-          return res.status(422).json({
-            message: "Credit note `date` cannot be in the future.",
-            code: "CREDIT_NOTE_DATE_IN_FUTURE",
-          });
-        }
-        cnDate = parsed;
-      }
-      await assertPeriodNotLocked(companyId, cnDate);
-
-      // A-B2 / defect 9: EVERYTHING that can reject the credit note (accounts,
-      // revenue split, balance) is computed here, BEFORE any row is written.
-      // The document and its journal entry are then inserted in one
-      // transaction, so a failure can no longer leave an orphan credit note
-      // (with a consumed number) and no journal entry.
-      const cnAccounts = await storage.getAccountsByCompanyId(companyId);
-      const cnReceivable = cnAccounts.find(
-        (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-      );
-      const cnVatPayable = cnAccounts.find(
-        (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-      );
-      const revenueCtx = revenueContextOf(cnAccounts);
-      if (!revenueCtx || !cnReceivable) {
-        return res.status(422).json({
-          message:
-            "Cannot post reversal: Accounts Receivable or Revenue account is missing. Seed the default chart of accounts first.",
-          code: "CHART_OF_ACCOUNTS_MISSING",
-        });
-      }
-
-      const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
-
-      const outcome = await withDocumentLock(invoiceId, LOCK_NS.CREDIT_NOTE, async (lockTx: typeof db) => {
-      const creditNotesOfInvoice: Invoice[] = await lockTx
-        .select()
-        .from(invoicesTable)
-        .where(
-          and(
-            eq(invoicesTable.companyId, companyId),
-            eq(invoicesTable.originalInvoiceId, invoiceId),
-            eq(invoicesTable.invoiceType, "credit_note")
-          )
-        );
-      const existingCreditNotes = creditNotesOfInvoice.filter(
-        (i) => i.status !== "void" && i.status !== "cancelled"
-      );
-      const alreadyCreditedTotal = existingCreditNotes.reduce(
-        (sum, i) => sum + Math.abs(Number(i.total)),
-        0
-      );
-      const cnDecision = evaluateCreditNoteRequest({
-        invoiceType: original.invoiceType ?? "invoice",
-        originalTotal: Number(original.total),
-        alreadyCreditedTotal,
-        // Cap a partial credit at what is still uncreditable. Omitted (full
-        // reversal) defaults to the whole remaining balance.
-        requestedAmount: creditAmounts ? creditAmounts.total : undefined,
-      });
-      if (!cnDecision.ok) {
-        return res.status(cnDecision.status).json({ message: cnDecision.message, code: cnDecision.code });
-      }
-
-
-
-      // What is already on the ledger for this invoice (AED, as posted): its
-      // own entry plus the entries of the credit notes issued so far.
-      const originalEntries: JournalEntry[] = await lockTx
-        .select()
-        .from(journalEntriesTable)
-        .where(
-          and(
-            eq(journalEntriesTable.companyId, companyId),
-            eq(journalEntriesTable.source, "invoice"),
-            eq(journalEntriesTable.sourceId, invoiceId)
-          )
-        );
-      const originalEntry = selectVoidableEntries(originalEntries).original;
-      if (!originalEntry) {
-        // e.g. an invoice created before drafts stopped auto-posting, or one whose
-        // entry was voided: there is nothing on the ledger to reverse.
-        return res.status(409).json({
-          message: "Cannot issue a credit note: this invoice has no posted journal entry to reverse.",
-          code: "INVOICE_NOT_POSTED",
-        });
-      }
-      const priorCreditNoteIds = existingCreditNotes.map((c) => c.id);
-      const priorEntries: JournalEntry[] =
-        priorCreditNoteIds.length > 0
-          ? await lockTx
-              .select()
-              .from(journalEntriesTable)
-              .where(
-                and(
-                  eq(journalEntriesTable.companyId, companyId),
-                  eq(journalEntriesTable.source, "invoice"),
-                  inArray(journalEntriesTable.sourceId, priorCreditNoteIds)
-                )
-              )
-          : [];
-      const priorEntryIds: string[] = priorEntries.filter((e) => e.status === "posted").map((e) => e.id);
-      const entryIdsForLedger = [originalEntry.id, ...priorEntryIds];
-      const ledgerSourceLines: JournalLine[] = originalEntry
-        ? await lockTx
-            .select()
-            .from(journalLinesTable)
-            .where(inArray(journalLinesTable.entryId, entryIdsForLedger))
-        : [];
-      const ledgerLines = originalEntry
-        ? ledgerSourceLines.map((l) => ({
-            accountId: l.accountId,
-            debit: Number(l.debit) || 0,
-            credit: Number(l.credit) || 0,
-          }))
-        : [];
-      const existingCreditLines =
-        priorCreditNoteIds.length > 0
-          ? await lockTx
-              .select()
-              .from(invoiceLinesTable)
-              .where(inArray(invoiceLinesTable.invoiceId, priorCreditNoteIds))
-          : [];
-
-      // The credit note lines, each carrying the revenue account it reverses.
-      //
-      // INVARIANT: the document lines must always agree with what the journal
-      // reverses, per VAT rate / supply type and per revenue account, because
-      // the VAT engines read the document lines while the ledger is reversed
-      // from the journal. So:
-      //  * a credit note that brings the invoice to fully credited (explicit
-      //    full credit, omitted lines, or a final partial) gets its lines BUILT
-      //    from what is left of each original line; lines the client sent must
-      //    match that remainder bucket for bucket (else 422);
-      //  * a partial one is capped per VAT bucket, not only per account.
-      let creditSubtotal: number;
-      let creditVat: number;
-      let creditTotal: number;
-      let docLines: Array<{
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        vatRate: number;
-        vatSupplyType: string;
-        revenueAccountId: string;
-      }>;
-      let bringsToFullyCredited: boolean;
-      const creditWasCapped = !creditLines && existingCreditNotes.length > 0;
-
-      let resolvedCreditLines: Array<{
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        vatRate: number;
-        vatSupplyType: string;
-        revenueAccountId: string;
-      }> | null = null;
-      if (creditLines) {
-        const resolved: Array<{ accountId: string }> = [];
-        for (const l of creditLines) {
-          const r = resolveCreditLineAccount(l, originalLines as any[], revenueCtx);
-          if (!r.ok) return res.status(400).json({ message: r.message, code: r.code });
-          resolved.push({ accountId: r.accountId });
-        }
-        creditSubtotal = creditAmounts!.subtotal;
-        creditVat = creditAmounts!.vatAmount;
-        creditTotal = creditAmounts!.total;
-        resolvedCreditLines = creditLines.map((l, i) => {
-          // A line that names the original line it credits takes that line's
-          // supply type (a 0% exempt sale is credited as exempt, not zero-rated).
-          const named = l.originalLineId
-            ? (originalLines as any[]).find((o) => o.id === l.originalLineId)
-            : undefined;
-          const supply =
-            named && Number(named.vatRate) === Number(l.vatRate)
-              ? deriveVatSupplyType(Number(named.vatRate), named.vatSupplyType)
-              : l.vatSupplyType;
-          return {
-            description: `[Credit] ${l.description}`,
-            quantity: -l.quantity,
-            unitPrice: l.unitPrice,
-            vatRate: l.vatRate,
-            vatSupplyType: supply,
-            revenueAccountId: resolved[i].accountId,
-          };
-        });
-        bringsToFullyCredited =
-          round2Num(alreadyCreditedTotal + creditTotal) >= round2Num(Math.abs(Number(original.total))) - 0.005;
-      } else {
-        bringsToFullyCredited = true;
-      }
-
-      if (bringsToFullyCredited) {
-        if (resolvedCreditLines) {
-          const expected = remainderBuckets({
-            originalLines: originalLines as any[],
-            creditedLines: existingCreditLines as any[],
-            ctx: revenueCtx,
-          });
-          const supplied = bucketLines(resolvedCreditLines as any[], revenueCtx, { byAccount: true });
-          const match = compareBuckets(expected, supplied);
-          if (!match.ok) {
-            return res.status(422).json({
-              message:
-                "This credit note takes the invoice to fully credited, but its lines do not match what is left of the invoice per VAT rate, supply type and revenue account. Credit exactly the remaining lines, or omit `lines` to credit the remainder.",
-              code: "CREDIT_NOTE_LINES_MISMATCH",
-              expectedBuckets: match.expected,
-              suppliedBuckets: match.supplied,
-            });
-          }
-        }
-        const originalAbs = Math.abs(Number(original.total));
-        if (existingCreditNotes.length === 0) {
-          // Nothing credited yet: mirror every original line.
-          creditSubtotal = Number(original.subtotal);
-          creditVat = Number(original.vatAmount);
-          creditTotal = Number(original.total);
-          docLines = originalLines.map((l) => ({
-            description: `[Credit] ${l.description}`,
-            quantity: -Number(l.quantity),
-            unitPrice: Number(l.unitPrice),
-            vatRate: Number(l.vatRate),
-            vatSupplyType: deriveVatSupplyType(Number(l.vatRate), l.vatSupplyType),
-            revenueAccountId: effectiveRevenueAccountId(l as any, revenueCtx),
-          }));
-        } else {
-          // TD4 / defect 3: credit exactly what is LEFT, per line and per
-          // account - not the original scaled by one factor, which reversed
-          // the wrong accounts whenever an earlier partial credit note had
-          // touched only some of them.
-          const left = remainingLines({
-            originalLines: originalLines as any[],
-            creditedLines: existingCreditLines as any[],
-            ctx: revenueCtx,
-          });
-          creditTotal = round2Num(originalAbs - round2Num(alreadyCreditedTotal));
-          const leftAccounts = remainingByAccount({
-            originalLines: originalLines as any[],
-            creditedLines: existingCreditLines as any[],
-            ctx: revenueCtx,
-          });
-          creditSubtotal = round2Num(leftAccounts.accounts.reduce((s, a) => s + a.net, 0));
-          // Derive VAT from the difference so subtotal + VAT = total exactly.
-          creditVat = round2Num(creditTotal - creditSubtotal);
-          docLines = left.map((l) => ({
-            description: `[Credit] ${l.description} (remaining balance)`,
-            quantity: -1,
-            unitPrice: normalizeUnitPrice(l.net),
-            vatRate: l.vatRate,
-            vatSupplyType: deriveVatSupplyType(l.vatRate, l.vatSupplyType),
-            revenueAccountId: l.revenueAccountId,
-          }));
-        }
-      } else {
-        // Partial: cap per VAT bucket (rate + supply type) - "no more at 5%
-        // than remains at 5%" - on top of the per-account cap on the ledger.
-        docLines = resolvedCreditLines!;
-        const excess = findBucketExcess(
-          remainingVatBuckets({
-            originalLines: originalLines as any[],
-            creditedLines: existingCreditLines as any[],
-            ctx: revenueCtx,
-          }),
-          bucketLines(docLines as any[], revenueCtx)
-        );
-        if (excess) {
-          return res.status(409).json({
-            message: `This credit note takes back more at ${Math.round(excess.vatRate * 10000) / 100}% (${excess.supplyType.replace("_", " ")}) than remains on the invoice at that VAT rate after the earlier credit notes.`,
-            code: "CREDIT_EXCEEDS_VAT_BUCKET",
-            bucket: excess,
-          });
-        }
-      }
-
-      // The reversing legs, in AED. The final credit note reverses what is
-      // actually standing on the ledger (posted minus already reversed), so
-      // AR, revenue and VAT each land on exactly 0.00 whatever the FX rate and
-      // rounding. A partial one converts its own amounts at the invoice rate.
-      const reversalLabels = (cnNumber: string) => ({
-        revenue: `Reverse revenue - ${cnNumber}`,
-        vat: `Reverse VAT - ${cnNumber}`,
-        ar: `Reduce A/R - ${cnNumber}`,
-      });
-      const buildLegs = (
-        cnNumber: string
-      ):
-        | { ok: true; lines: JournalLineLike[]; baseSubtotal: number; baseVat: number; baseTotal: number }
-        | { ok: false; status: number; code: string; message: string } => {
-        const labels = reversalLabels(cnNumber);
-        if (bringsToFullyCredited && ledgerLines.length > 0) {
-          const legs = reverseToZero(ledgerLines, {
-            arAccountId: cnReceivable.id,
-            vatAccountId: cnVatPayable?.id ?? null,
-            labels,
-          });
-          if (legs.length === 0) {
-            return {
-              ok: false,
-              status: 409,
-              code: "FULLY_CREDITED",
-              message: "This invoice has already been fully credited.",
-            };
-          }
-          const baseTotal = legs.filter((l) => l.accountId === cnReceivable.id).reduce((s, l) => s + l.credit, 0);
-          const baseVat = legs.filter((l) => l.accountId === cnVatPayable?.id).reduce((s, l) => s + l.debit, 0);
-          return {
-            ok: true,
-            lines: withForeignReceivable(legs, cnReceivable.id, fx, creditTotal),
-            baseTotal: round2Num(baseTotal),
-            baseVat: round2Num(baseVat),
-            baseSubtotal: round2Num(baseTotal - baseVat),
-          };
-        }
-
-        const baseSubtotal = toBaseCurrencyAmount(creditSubtotal, fx.rate);
-        const baseVat = toBaseCurrencyAmount(creditVat, fx.rate);
-        const built = buildReversalLines({
-          amounts: { subtotal: baseSubtotal, vatAmount: baseVat, total: round2Num(baseSubtotal + baseVat) },
-          accounts: {
-            accountsReceivableId: cnReceivable.id,
-            salesRevenueId: revenueCtx.defaultAccountId,
-            vatPayableId: cnVatPayable?.id,
-          },
-          revenueSplit: allocateRevenueCredits({
-            lines: docLines.map((l) => ({
-              quantity: Math.abs(l.quantity),
-              unitPrice: l.unitPrice,
-              vatRate: l.vatRate,
-              revenueAccountId: l.revenueAccountId,
-            })),
-            rate: fx.rate,
-            subtotal: baseSubtotal,
-            defaultAccountId: revenueCtx.defaultAccountId,
-            zeroRatedAccountId: revenueCtx.zeroRatedAccountId ?? null,
-          }),
-          labels,
-        });
-        if (!built.ok) return built;
-
-        // A partial credit note cannot take back more from an account (or from
-        // VAT) than is still standing on it.
-        if (ledgerLines.length > 0) {
-          const standing = new Map(
-            reverseToZero(ledgerLines, { arAccountId: cnReceivable.id, vatAccountId: cnVatPayable?.id ?? null, labels }).map(
-              (l) => [l.accountId, l.debit]
-            )
-          );
-          for (const leg of built.lines) {
-            if (leg.debit > 0 && leg.debit > (standing.get(leg.accountId) ?? 0) + 0.01) {
-              return {
-                ok: false,
-                status: 409,
-                code: "CREDIT_EXCEEDS_ACCOUNT_BALANCE",
-                message:
-                  "This credit note would credit more to a revenue account (or to VAT) than is still standing on it after the earlier credit notes.",
-              };
-            }
-          }
-        }
-        return {
-          ok: true,
-          lines: withForeignReceivable(built.lines, cnReceivable.id, fx, creditTotal),
-          baseSubtotal,
-          baseVat,
-          baseTotal: round2Num(baseSubtotal + baseVat),
-        };
-      };
-
-      const preflight = buildLegs("(pending)");
-      if (!preflight.ok) {
-        return res.status(preflight.status).json({ message: preflight.message, code: preflight.code });
-      }
-
-      // Allocate the credit-note number, insert the credit note + its lines
-      // AND post its reversing journal entry in ONE transaction: gap-free
-      // numbering (FTA) and a document that can never exist without its entry.
-      const insertCreditNote = async (tx: typeof db) => {
-        const number = await allocateInvoiceNumber(companyId, "credit_note", new Date(), tx);
-        const legs = buildLegs(number);
-        if (!legs.ok) {
-          const e: any = new Error(legs.message);
-          e.code = legs.code;
-          throw e;
-        }
-
-        const [insertedCreditNote] = await tx
-          .insert(invoicesTable)
-          .values({
-            companyId,
-            number,
-            customerName: original.customerName,
-            // The credit note belongs to the same customer contact, so statements and refunds find it.
-            contactId: original.contactId ?? null,
-            customerTrn: original.customerTrn || undefined,
-            date: cnDate,
-            currency: original.currency,
-            // VAT 201 converts every invoice row (credit notes included) with
-            // its own stored rate: a foreign-currency credit note must carry
-            // the original invoice's rate or it is counted as if it were AED.
-            exchangeRate: fx.rate,
-            baseCurrencyAmount: -legs.baseTotal,
-            subtotal: -creditSubtotal,
-            vatAmount: -creditVat,
-            total: -creditTotal,
-            status: "sent",
-            invoiceType: "credit_note",
-            originalInvoiceId: invoiceId,
-          } as any)
-          .returning();
-
-        for (const line of docLines) {
-          await tx.insert(invoiceLinesTable).values({
-            invoiceId: insertedCreditNote.id,
-            ...line,
-          } as any);
-        }
-
-        await storage.createJournalEntry(
-          {
-            companyId,
-            date: cnDate,
-            memo:
-              creditLines || creditWasCapped
-                ? `Credit Note ${number} - partial credit of Invoice ${original.number}`
-                : `Credit Note ${number} - reversal of Invoice ${original.number}`,
-            entryNumber: "PENDING", // assigned inside the transaction
-            status: "posted",
-            source: "invoice",
-            sourceId: insertedCreditNote.id,
-            reversedEntryId: originalEntry?.id || null,
-            reversalReason: "Credit note issued",
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: cnDate,
-          } as any,
-          legs.lines as any,
-          { tx }
-        );
-
-        // The credit note reduces what the customer owes: a fully credited,
-        // unpaid invoice becomes 'credited'; credit + payments that settle it
-        // make it 'paid'.
-        await syncInvoiceStatusFromBalance(tx, companyId, invoiceId);
-
-        // Restocking credit note: only with `restock: true` does the stock come back (and COGS
-        // reverse) - the goods are not assumed to be returned otherwise. Explicit credit lines
-        // restock the products of the original lines they name (`originalLineId`), whole or
-        // part quantities up to what was sold and not yet returned; a full credit note
-        // (no `lines`) restocks everything still out.
-        if ((req.body as any)?.restock === true) {
-          await restockInvoiceInTx(tx, {
-            invoice: original as any,
-            userId,
-            requested: restockRequestFromCreditLines(creditLines, originalLines as any[]),
-            reversalDate: cnDate,
-            postedAt: cnDate,
-            source: { id: insertedCreditNote.id, label: `Credit Note ${number}` },
-            reason: "Credit note restock",
-            movementNotes: creditNoteRestockTag(insertedCreditNote.id),
-          });
-        }
-
-        return { cnNumber: number, creditNote: insertedCreditNote };
-      };
-      const { cnNumber, creditNote } = await insertCreditNote(lockTx);
-
-      return { created: { cnNumber, creditNote } };
-      }); // end withDocumentLock
-
-      // Non-success paths already answered the request from inside the lock.
-      if (!outcome || !("created" in outcome)) return outcome;
+      const result = await issueCreditNote({ companyId, invoiceId, original, userId, body: req.body });
+      if (!result.ok) return res.status(result.status).json(result.body);
 
       // Audit AFTER the lock is released: it uses the pool, and doing that while
       // holding the lock's connection is exactly what starved the pool.
-      const { cnNumber, creditNote } = outcome.created;
+      const { cnNumber, creditNote } = result;
       await recordAudit({
         userId,
         companyId,

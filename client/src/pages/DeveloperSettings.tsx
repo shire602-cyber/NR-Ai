@@ -42,6 +42,7 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { SUPPORTED_WEBHOOK_EVENTS } from "@shared/webhook-events";
 import { Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
+import { ApiKeysTab } from "@/components/developers/ApiKeysTab";
 import { messages as pageMessages } from "./DeveloperSettings.i18n";
 
 // ===========================
@@ -92,7 +93,7 @@ export default function DeveloperSettings() {
   if (!canAccess("apiAccess")) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <PageHeader eyebrow={tr("settings")} title={tr("webhooks")} className="mb-6" />
+        <PageHeader eyebrow={tr("settings")} title={tr("developers")} className="mb-6" />
         <UpgradePrompt
           feature="apiAccess"
           requiredTier={getRequiredTier("apiAccess")}
@@ -107,11 +108,28 @@ export default function DeveloperSettings() {
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       <PageHeader
         eyebrow={tr("settings")}
-        title={tr("webhooks")}
-        description={tr("sendSignedNotificationsToYourOwn")}
+        title={tr("developers")}
+        description={tr("developersDescription")}
         className="mb-6"
       />
-      {companyId && <WebhooksTab companyId={companyId} />}
+      {companyId && (
+        <Tabs defaultValue="keys">
+          <TabsList>
+            <TabsTrigger value="keys" data-testid="tab-api-keys">
+              {tr("tabApiKeys")}
+            </TabsTrigger>
+            <TabsTrigger value="webhooks" data-testid="tab-webhooks">
+              {tr("tabWebhooks")}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="keys" className="mt-4">
+            <ApiKeysTab companyId={companyId} />
+          </TabsContent>
+          <TabsContent value="webhooks" className="mt-4">
+            <WebhooksTab companyId={companyId} />
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }
@@ -334,7 +352,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             <Send className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
+                        <Button variant="ghost" size="icon" aria-label={tr("deleteWebhookAria")} onClick={() => setDeleteId(wh.id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -420,7 +438,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
               <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopySecret}>
+              <Button variant="outline" size="icon" aria-label={tr("copySecretAria")} onClick={handleCopySecret}>
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>

@@ -14,7 +14,24 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
   decodeTokenUnsafe,
+  verifyTokenIgnoringExpiry,
 } from "../middleware/auth";
+import { issueSessionTokens } from "../services/auth-issue";
+import {
+  adoptLegacySession,
+  newSessionId,
+  revokeSession,
+  revokeUserSessions,
+  rotateSession,
+} from "../services/sessions";
+import {
+  CHALLENGE_COOKIE,
+  CHALLENGE_TTL_SECONDS,
+  isTwoFactorEnabled,
+  needsTwoFactorEnrolment,
+  signChallengeToken,
+} from "../services/two-factor";
+import { authCookieBaseOptions } from "../config/cookies";
 import {
   clearAuthCookies,
   getAccessTokenFromRequest,
@@ -165,14 +182,21 @@ async function auditOAuthLogin(
   }
 }
 
-function issueAuthTokens(
-  res: Response,
-  user: { id: string; email: string; isAdmin?: boolean; userType?: string }
-) {
-  const token = generateToken(user);
-  const refreshToken = generateRefreshToken(user);
-  setAuthCookies(res, token, refreshToken);
-  return { token, refreshToken };
+/** Password accepted by login, registration, change and reset: complexity plus a 128-char ceiling (bcrypt-DoS guard). */
+export const PASSWORD_MAX_LENGTH = 128;
+
+/**
+ * Start a 2FA challenge: a 5-minute signed token in the JSON body and in an
+ * httpOnly cookie scoped to /api/auth/2fa. No access cookie is set.
+ */
+export function startTwoFactorChallenge(res: Response, userId: string): string {
+  const challengeToken = signChallengeToken(userId);
+  res.cookie(CHALLENGE_COOKIE, challengeToken, {
+    ...authCookieBaseOptions(),
+    path: "/api/auth/2fa",
+    maxAge: CHALLENGE_TTL_SECONDS * 1000,
+  });
+  return challengeToken;
 }
 
 function loginRateLimitKey(req: Request): string {
@@ -224,9 +248,10 @@ async function seedChartOfAccounts(
 
 // Stronger password validation for a financial system:
 // 8+ characters, at least one uppercase, one lowercase, one digit
-const passwordSchema = z
+export const passwordSchema = z
   .string()
   .min(8, "Password must be at least 8 characters")
+  .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
   .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
   .regex(/[a-z]/, "Password must contain at least one lowercase letter")
   .regex(/[0-9]/, "Password must contain at least one digit");
@@ -269,6 +294,12 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
+      // The TRN is optional at sign-up; one that is typed must be 15 digits and is saved on the company.
+      const typedTrn = typeof req.body?.trn === "string" ? req.body.trn.trim() : "";
+      if (typedTrn && !/^\d{15}$/u.test(typedTrn)) {
+        return res.status(400).json({ message: "TRN must be exactly 15 digits", field: "trn" });
+      }
+
       // Check if user exists
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
@@ -299,6 +330,7 @@ export function registerAuthRoutes(app: Express): void {
         baseCurrency: "AED",
         locale: "en",
         companyType: "customer", // Self-signup companies are customer type (not managed by NR)
+        ...(typedTrn ? { trnVatNumber: typedTrn } : {}),
       });
 
       // Associate user with company as owner
@@ -318,7 +350,7 @@ export function registerAuthRoutes(app: Express): void {
         log.warn({ err, companyId: company.id }, "Could not start trial at registration")
       );
 
-      const { token, refreshToken } = issueAuthTokens(res, user);
+      const { token, refreshToken } = await issueSessionTokens(req, res, user);
 
       res.json({
         token,
@@ -379,15 +411,29 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
+      // Second factor: password is right, but no session exists until the code is.
+      if (await isTwoFactorEnabled(user.id)) {
+        const challengeToken = startTwoFactorChallenge(res, user.id);
+        return res.json({
+          twoFactorRequired: true,
+          challengeToken,
+          methods: ["totp", "recovery_code"],
+        });
+      }
+
       // Ensure isAdmin is a proper boolean
       const isAdminBoolean =
         user.isAdmin === true || (user.isAdmin as any) === "true" || (user.isAdmin as any) === 1;
 
-      const { token, refreshToken } = issueAuthTokens(res, user);
+      const { token, refreshToken, twoFactorEnrolmentRequired } = await issueSessionTokens(req, res, user, {
+        notifyNewDevice: true,
+      });
+      await recordAudit({ userId: user.id, action: "auth.login", entityType: "user", entityId: user.id, req });
 
       res.json({
         token,
         refreshToken,
+        ...(twoFactorEnrolmentRequired ? { twoFactorEnrolmentRequired: true } : {}),
         user: {
           id: user.id,
           email: user.email,
@@ -445,7 +491,14 @@ export function registerAuthRoutes(app: Express): void {
           throw new Error("Account deactivated");
         }
 
-        issueAuthTokens(res, user);
+        // Same second-factor gate as the password login: no tokens until the code.
+        if (await isTwoFactorEnabled(user.id)) {
+          startTwoFactorChallenge(res, user.id);
+          await auditOAuthLogin(req, user.id, profile, `${mode}:2fa_challenge`);
+          return res.redirect(`${new URL(oauthCallbackFailureUrl()).origin}/login?step=2fa`);
+        }
+
+        await issueSessionTokens(req, res, user, { notifyNewDevice: true });
         await auditOAuthLogin(req, user.id, profile, mode);
         log.info({ provider, userId: user.id, mode }, "OAuth login completed");
 
@@ -484,11 +537,33 @@ export function registerAuthRoutes(app: Express): void {
       return res.status(401).json({ message: "User not found" });
     }
 
-    // Refresh-token rotation: revoke the one we just consumed so it
-    // cannot be replayed, and issue a fresh pair.
-    await blacklistToken(refreshToken);
-    const newToken = generateToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    // Refresh-token rotation, now atomic over the session row: the holder of
+    // the current token wins; a rotated token that comes back is reuse and
+    // kills the session. Tokens minted before sessions existed carry no sid;
+    // a legacy refresh adopts one.
+    const sid = payload.sid ?? newSessionId();
+    const scope = (await needsTwoFactorEnrolment(user.id)) ? "2fa_enrol" : undefined;
+    const newToken = generateToken(user, { sid, scope });
+    const newRefreshToken = generateRefreshToken(user, { sid });
+    if (payload.sid) {
+      const rotated = await rotateSession({
+        sid,
+        oldRefreshToken: refreshToken,
+        newRefreshToken,
+        req,
+      });
+      if (!rotated.ok) {
+        clearAuthCookies(res);
+        return res.status(401).json({
+          message: "Refresh token has been revoked",
+          code: rotated.reason === "reuse" ? "REFRESH_TOKEN_REUSED" : "SESSION_REVOKED",
+        });
+      }
+    } else {
+      await adoptLegacySession({ sid, userId: user.id, refreshToken: newRefreshToken, req });
+      // No session row to compare against: the denylist is the only replay guard.
+      await blacklistToken(refreshToken);
+    }
     setAuthCookies(res, newToken, newRefreshToken);
 
     res.json({
@@ -602,6 +677,8 @@ export function registerAuthRoutes(app: Express): void {
       await storage.updateUserPassword(record.userId, passwordHash);
       await storage.markPasswordResetTokenUsed(record.id);
       await storage.deletePasswordResetTokensForUser(record.userId);
+      // Whoever held a session before the reset must not keep it.
+      await revokeUserSessions(record.userId, "password_reset");
 
       log.info({ userId: record.userId }, "Password reset completed");
 
@@ -650,6 +727,13 @@ export function registerAuthRoutes(app: Express): void {
 
       await revokeIfValid(accessToken, "logout");
       await revokeIfValid(refreshToken, "logout");
+      for (const raw of [accessToken, refreshToken]) {
+        const claims = raw ? verifyTokenIgnoringExpiry(raw) : null;
+        if (claims?.sid && claims.userId) {
+          await revokeSession(claims.userId, claims.sid, "logout");
+          break;
+        }
+      }
       clearAuthCookies(res);
 
       res.json({ ok: true });
@@ -747,7 +831,7 @@ export function registerAuthRoutes(app: Express): void {
           req,
         });
 
-        const { token: portalJwt, refreshToken: portalRefresh } = issueAuthTokens(res, outcome.user);
+        const { token: portalJwt, refreshToken: portalRefresh } = await issueSessionTokens(req, res, outcome.user);
         return res.json({ user: publicUser(outcome.user), token: portalJwt, refreshToken: portalRefresh });
       }
 
@@ -800,7 +884,7 @@ export function registerAuthRoutes(app: Express): void {
         description: `User registered via invitation: ${user.email}`,
       });
 
-      const { token: jwtToken, refreshToken } = issueAuthTokens(res, user);
+      const { token: jwtToken, refreshToken } = await issueSessionTokens(req, res, user);
 
       res.json({ user: publicUser(user), token: jwtToken, refreshToken });
     })

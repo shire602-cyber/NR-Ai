@@ -21,6 +21,21 @@ import {
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { editRefusal, reversalRefusal } from "../services/journal-entry-protection";
+import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { loadApprovalDocument } from "../services/approval-queue.service";
+import {
+  assertNoPendingApproval,
+  auditApprovalStep,
+  beginApprovalStep,
+  checkJournalCreateAsPosted,
+  notifyApprovalProgress,
+  pendingApprovalBody,
+  recordApprovalStep,
+  recordJournalCreateApproval,
+  resolveActor,
+} from "../services/approval-gate.service";
+import { calendarDayYmd, parseCalendarDay } from "../utils/date";
+import { NOT_REVERSED, findPostedReversal, reversalLinksFor } from "../services/journal-reversal.service";
 
 const log = createLogger("journal");
 
@@ -108,8 +123,12 @@ export function registerJournalRoutes(app: Express) {
         linesByEntryId.set(line.entryId, list);
       }
 
+      const reversalLinks = await reversalLinksFor(companyId, entries.map((e) => e.id));
       const entriesWithLines = entries.map((entry) => ({
         ...entry,
+        ...(reversalLinks.get(entry.id) ?? NOT_REVERSED),
+        isReversed: reversalLinks.has(entry.id),
+        reversalOfId: entry.source === "reversal" ? entry.reversedEntryId ?? null : null,
         lines: (linesByEntryId.get(entry.id) ?? []).map((line) => ({
           ...line,
           account: accountById.get(line.accountId),
@@ -210,7 +229,7 @@ export function registerJournalRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
+      const entryDate = (parseCalendarDay(date) ?? date) as Date;
 
       // Block posting into a locked period. Drafts are also blocked because
       // their existence implies they will eventually be posted on this date.
@@ -236,11 +255,16 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: vatProblem, code: VAT_JOURNAL_DESCRIPTION_REQUIRED });
       }
 
-      // Generate entry number atomically via storage helper
-      const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
-
       // Determine if posting immediately
       const isPosting = status === "posted";
+
+      // Approval rules: a journal created as posted passes only a one-step rule its creator may sign;
+      // otherwise it must be saved as a draft and submitted for approval.
+      const createActor = await resolveActor((req as any).user, companyId);
+      const createApproval = isPosting ? await checkJournalCreateAsPosted(companyId, totalDebit, createActor) : null;
+
+      // Generate entry number atomically via storage helper
+      const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 
       // Create journal entry + lines atomically (storage validates balance & wraps in transaction)
       const entry = await storage.createJournalEntry(
@@ -254,6 +278,18 @@ export function registerJournalRoutes(app: Express) {
           description: line.description || null,
         }))
       );
+
+      if (createApproval) {
+        await recordJournalCreateApproval({
+          req,
+          companyId,
+          entryId: entry.id,
+          entryNumber: entry.entryNumber,
+          amountAed: totalDebit,
+          approval: createApproval,
+          actor: createActor,
+        });
+      }
 
       await recordAudit({
         userId,
@@ -301,10 +337,16 @@ export function registerJournalRoutes(app: Express) {
 
       // Get journal lines for this entry
       const lines = await storage.getJournalLinesByEntryId(id);
+      const reversal = await findPostedReversal(entry.companyId, id);
 
       res.json({
         ...entry,
         lines,
+        // the pair the ledger holds: this entry is reversed by a posted reversal entry (the original itself stays posted)
+        isReversed: !!reversal,
+        reversedById: reversal?.id ?? null,
+        reversedByNumber: reversal?.entryNumber ?? null,
+        reversalOfId: entry.source === "reversal" ? entry.reversedEntryId ?? null : null,
       });
     })
   );
@@ -335,6 +377,9 @@ export function registerJournalRoutes(app: Express) {
         return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
       }
 
+      // A journal waiting for its approvals is frozen: reject it first to change or delete it.
+      await assertNoPendingApproval("manual_journal", entry.id, "changed");
+
       // IMMUTABILITY: Posted entries cannot be edited - must be reversed instead
       if (entry.status === "posted") {
         return res.status(400).json({
@@ -349,6 +394,14 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({
           message: "Void journal entries cannot be edited.",
           code: "ENTRY_VOID",
+        });
+      }
+
+      // Posting goes only through POST /api/journal/:id/post, which honours the approval rules.
+      if (req.body.status === "posted") {
+        return res.status(409).json({
+          message: "A draft is posted with the post action, not by editing it.",
+          code: "USE_POST_ROUTE",
         });
       }
 
@@ -424,7 +477,7 @@ export function registerJournalRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
+      const entryDate = (parseCalendarDay(date) ?? date) as Date;
 
       // Block updates that would land in a locked period (either the existing
       // entry date or the requested new date).
@@ -555,25 +608,51 @@ export function registerJournalRoutes(app: Express) {
       // A-4: cannot post a draft that is dated in the future.
       assertNotFutureDate(entry.date);
 
-      const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
-        status: "posted",
-        postedBy: userId,
-        postedAt: new Date(),
-      });
+      // Approval rules (amount and role) under the entry's approval lock, status re-read inside it:
+      // a journal covered by a rule posts only on its final approval; the creator never approves their own.
+      const outcome = await withDocumentLock(id, LOCK_NS.APPROVAL, async (tx) => {
+        const current = await storage.getJournalEntryById(id);
+        if (!current || current.status !== "draft") {
+          return { status: 400, body: { message: "Entry is already posted and cannot be modified", code: `ENTRY_${String(current?.status ?? "missing").toUpperCase()}` } };
+        }
+        const doc = await loadApprovalDocument("manual_journal", id);
+        const actor = await resolveActor((req as any).user, entry.companyId);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: "draft", acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
 
-      await recordAudit({
-        userId,
-        companyId: entry.companyId,
-        action: "journal.post",
-        entityType: "journal_entry",
-        entityId: id,
-        before: { status: "draft" },
-        after: { status: "posted" },
-        req,
-      });
+        if (step.kind === "step" && !step.isFinal) {
+          const request = await recordApprovalStep(tx, step, actor);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "needs_next_step" });
+          return { status: 200, body: { id, ...pendingApprovalBody(step), status: "draft", message: "Approval recorded" } };
+        }
 
-      log.info({ id }, "Entry posted successfully");
-      res.json({ id: updatedEntry.id, status: "posted", message: "Entry posted successfully" });
+        const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
+          status: "posted",
+          postedBy: userId,
+          postedAt: new Date(),
+        });
+
+        if (step.kind === "step") {
+          const request = await recordApprovalStep(tx, step, actor);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "approved" });
+        }
+
+        await recordAudit({
+          userId,
+          companyId: entry.companyId,
+          action: "journal.post",
+          entityType: "journal_entry",
+          entityId: id,
+          before: { status: "draft" },
+          after: { status: "posted" },
+          req,
+        });
+
+        log.info({ id }, "Entry posted successfully");
+        return { status: 200, body: { id: updatedEntry.id, status: "posted", message: "Entry posted successfully" } };
+      });
+      res.status(outcome.status).json(outcome.body);
     })
   );
 
@@ -585,7 +664,7 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const userId = (req as any).user.id;
-      const { reason } = req.body;
+      const { reason, date: reversalDateInput } = req.body;
 
       const entry = await findJournalEntryForUser(userId, id);
       if (!entry) {
@@ -604,10 +683,38 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: "Only posted entries can be reversed" });
       }
 
+      // A reversal is not reversed again: void it instead (POST /api/journal/:id/void-reversal), which re-opens the original.
+      if (entry.source === "reversal") {
+        return res.status(409).json({
+          message: "A reversal cannot be reversed. Void the reversal instead: that puts the original entry back in force.",
+          code: "REVERSAL_NOT_REVERSIBLE",
+        });
+      }
+      const alreadyReversed = await findPostedReversal(entry.companyId, id);
+      if (alreadyReversed) {
+        return res.status(409).json({
+          message: `This entry is already reversed by ${alreadyReversed.entryNumber}.`,
+          code: "ALREADY_REVERSED",
+          reversedById: alreadyReversed.id,
+          reversedByNumber: alreadyReversed.entryNumber,
+        });
+      }
+
       // The reversal posts a new JE on `now`. Block if today is in a locked
       // period — reversing a posted entry into a closed period must go through
       // an unlock-and-amend flow instead.
-      const now = new Date();
+      // The reversal date follows the document-date contract (a calendar day, or an instant read as its UAE day); omitted it is today.
+      // It cannot be in the future or before the entry it reverses, and its month must be open (the usual PERIOD_LOCKED refusal).
+      let now = new Date();
+      if (reversalDateInput !== undefined && reversalDateInput !== null && String(reversalDateInput).trim() !== "") {
+        const parsed = parseCalendarDay(reversalDateInput);
+        if (!parsed) return res.status(400).json({ message: "date must be a calendar day (YYYY-MM-DD)", code: "INVALID_DATE" });
+        if (calendarDayYmd(parsed) < calendarDayYmd(parseCalendarDay(entry.date) ?? new Date(entry.date))) {
+          return res.status(422).json({ message: "A reversal cannot be dated before the entry it reverses.", code: "REVERSAL_BEFORE_ORIGINAL" });
+        }
+        assertNotFutureDate(parsed);
+        now = parsed;
+      }
       await assertPeriodNotLocked(entry.companyId, now);
 
       // Get original lines
@@ -617,8 +724,6 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: "Cannot reverse an entry with no lines" });
       }
 
-      // Generate reversal entry number atomically via storage helper
-      const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
 
       // Build swapped lines and verify the original was balanced before persisting reversal
       const reversalLines = originalLines.map((line) => ({
@@ -636,24 +741,37 @@ export function registerJournalRoutes(app: Express) {
         });
       }
 
-      // Create reversing entry + lines atomically (storage re-validates balance inside transaction)
-      const reversalEntry = await storage.createJournalEntry(
-        {
-          companyId: entry.companyId,
-          date: now,
-          memo: `Reversal of ${entry.entryNumber}: ${reason || "No reason provided"}`,
-          entryNumber: reversalNumber,
-          status: "posted",
-          source: "reversal",
-          sourceId: id,
-          reversedEntryId: id,
-          reversalReason: reason || null,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
-        },
-        reversalLines
-      );
+      // One reversal of this entry at a time: under the entry's advisory lock the reversal is re-checked and posted, so two
+      // concurrent requests cannot both post one (the second sees the first and answers 409 ALREADY_REVERSED).
+      const posting = await withDocumentLock(id, LOCK_NS.JOURNAL_REVERSAL, async () => {
+        const raced = await findPostedReversal(entry.companyId, id);
+        if (raced) return { raced } as const;
+        // Generate reversal entry number atomically via storage helper
+        const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
+        // Create reversing entry + lines atomically (storage re-validates balance inside transaction)
+        const created = await storage.createJournalEntry(
+          {
+            companyId: entry.companyId,
+            date: now,
+            memo: `Reversal of ${entry.entryNumber}: ${reason || "No reason provided"}`,
+            entryNumber: reversalNumber,
+            status: "posted",
+            source: "reversal",
+            sourceId: id,
+            reversedEntryId: id,
+            reversalReason: reason || null,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          },
+          reversalLines
+        );
+        return { created } as const;
+      });
+      if ("raced" in posting && posting.raced) {
+        return res.status(409).json({ message: `This entry is already reversed by ${posting.raced.entryNumber}.`, code: "ALREADY_REVERSED", reversedById: posting.raced.id, reversedByNumber: posting.raced.entryNumber });
+      }
+      const reversalEntry = (posting as Exclude<typeof posting, { raced: unknown }>).created;
 
       // The ORIGINAL STAYS POSTED and is not touched again. Reversal accounting offsets the original
       // with an equal-and-opposite posted entry — voiding the original as
@@ -689,6 +807,49 @@ export function registerJournalRoutes(app: Express) {
     })
   );
 
+  // Customer-only: Void a reversal entry. A reversal is never reversed again; voiding it takes it out of the ledger and puts the
+  // original entry back in force (it is "reversed" only while a POSTED reversal points at it). Refused into a locked month.
+  app.post(
+    "/api/journal/:id/void-reversal",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { reason } = req.body ?? {};
+
+      const entry = await findJournalEntryForUser(userId, id);
+      if (!entry) return res.status(404).json({ message: "Journal entry not found" });
+      if (entry.source !== "reversal" || !entry.reversedEntryId) {
+        return res.status(409).json({ message: "Only a reversal entry can be voided here.", code: "NOT_A_REVERSAL" });
+      }
+      const original = await originalOf(entry);
+      const refused = reversalRefusal(entry, original);
+      if (refused) return res.status(409).json({ message: refused.message, code: refused.code, source: refused.source });
+      if (entry.status !== "posted") {
+        return res.status(409).json({ message: "This reversal is already void.", code: "REVERSAL_ALREADY_VOID" });
+      }
+
+      await withDocumentLock(entry.reversedEntryId, LOCK_NS.JOURNAL_REVERSAL, async () => {
+        // storage re-checks the month lock of the reversal's date (a posted entry cannot be changed in a locked month)
+        await storage.updateJournalEntry(id, entry.companyId, { status: "void" } as any);
+      });
+
+      await recordAudit({
+        userId,
+        companyId: entry.companyId,
+        action: "journal.void_reversal",
+        entityType: "journal_entry",
+        entityId: id,
+        before: { status: "posted", entryNumber: entry.entryNumber },
+        after: { status: "void", reopenedEntryId: entry.reversedEntryId },
+        req,
+        extra: { reason: typeof reason === "string" ? reason : null },
+      });
+      res.json({ id, status: "void", reopenedEntryId: entry.reversedEntryId, message: "Reversal voided: the original entry is back in force." });
+    })
+  );
+
   // Customer-only: Delete journal entry
   app.delete(
     "/api/journal/:id",
@@ -709,6 +870,9 @@ export function registerJournalRoutes(app: Express) {
       if (readOnly) {
         return res.status(409).json({ message: readOnly.message, code: readOnly.code, source: readOnly.source });
       }
+
+      // A journal waiting for its approvals is frozen: reject it first to change or delete it.
+      await assertNoPendingApproval("manual_journal", entry.id, "changed");
 
       // IMMUTABILITY: Posted entries cannot be deleted - must be reversed
       if (entry.status === "posted") {

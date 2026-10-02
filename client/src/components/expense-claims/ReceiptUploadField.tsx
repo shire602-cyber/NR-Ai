@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Loader2, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CameraCapture } from "@/components/CameraCapture";
+import { downscaleImage } from "@/lib/image-downscale";
 import { apiRequest } from "@/lib/queryClient";
 import {
   ACCEPTED_UPLOAD_TYPES,
@@ -42,11 +44,12 @@ export function ReceiptUploadField({ companyId, value, onChange, locale }: Recei
     }
     try {
       setState("reading");
-      const fileData = await readFileAsBase64(file);
+      const prepared = await downscaleImage(file);
+      const fileData = await readFileAsBase64(prepared);
       setState("uploading");
       const result = await apiRequest("POST", `/api/companies/${companyId}/expense-claims/receipt-upload`, {
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
+        fileName: prepared.name,
+        mimeType: prepared.type || "application/octet-stream",
         fileData,
       });
       onChange(result.receiptKey);
@@ -94,6 +97,7 @@ export function ReceiptUploadField({ companyId, value, onChange, locale }: Recei
                 ? isAr ? "استبدال الإيصال" : "Replace receipt"
                 : isAr ? "إرفاق إيصال" : "Attach receipt"}
         </Button>
+        <CameraCapture compact disabled={busy} onCapture={(files) => (files[0] ? handleFile(files[0]) : undefined)} />
         {value && !busy && (
           <span className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
             <span className="truncate" title={displayName(value)}>

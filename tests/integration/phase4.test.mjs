@@ -299,9 +299,17 @@ async function section41() {
   r = await api("POST", `/api/vat-returns/${ridB}/amend`, { token: B.token });
   ok("4.1 amend: nothing to amend while the books equal the filing -> 422 NO_DIFFERENCE", r.status === 422 && r.json?.code === "NO_DIFFERENCE", { s: r.status, j: r.json });
 
-  // unlock needs the firm-owner permission AND a reason
+  // unlock: the company's own owner (with a reason) or, for a firm-managed company, a firm owner; never an ordinary member
+  const emp41 = await api("POST", "/api/auth/register", { body: { name: "emp41", email: `emp41_${rnd}@example.com`, password: "Password123!" } });
+  await db.query("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee') ON CONFLICT DO NOTHING", [B.cid, emp41.json?.user?.id]);
+  r = await api("POST", "/api/period-lock/unlock", { token: emp41.json?.token, body: { companyId: B.cid, period: prevEnd.slice(0, 7), reason: "customer sent a missed invoice" } });
+  ok("4.1 unlock: a member who is not the owner cannot unlock (403)", r.status === 403, { s: r.status, j: r.json });
+  r = await api("POST", "/api/period-lock/unlock", { token: B.token, body: { companyId: B.cid, period: prevEnd.slice(0, 7), reason: "short" } });
+  ok("4.1 unlock: the company owner needs a real reason (400 UNLOCK_REASON_REQUIRED)", r.status === 400 && r.json?.code === "UNLOCK_REASON_REQUIRED", { s: r.status, j: r.json });
+  await db.query("UPDATE companies SET company_type = 'client' WHERE id = $1", [B.cid]);
   r = await api("POST", "/api/period-lock/unlock", { token: B.token, body: { companyId: B.cid, period: prevEnd.slice(0, 7), reason: "customer sent a missed invoice" } });
-  ok("4.1 unlock: a plain company owner cannot unlock (403 existing permission)", r.status === 403, { s: r.status, j: r.json });
+  ok("4.1 unlock: a firm-managed company's own owner cannot unlock (firm owner only, 403)", r.status === 403, { s: r.status, j: r.json });
+  await db.query("UPDATE companies SET company_type = 'customer' WHERE id = $1", [B.cid]);
   await db.query("UPDATE users SET firm_role = 'firm_owner' WHERE id = $1", [B.userId]);
   r = await api("POST", "/api/period-lock/unlock", { token: B.token, body: { companyId: B.cid, period: prevEnd.slice(0, 7) } });
   ok("4.1 unlock: unlocking a filed period without a reason -> 400 UNLOCK_REASON_REQUIRED", r.status === 400 && r.json?.code === "UNLOCK_REASON_REQUIRED", { s: r.status, j: r.json });
@@ -878,8 +886,14 @@ async function section44() {
   ok("4.4b: after both closes retained earnings show 2,200 in one account and the sheet balances", close(eqLine(bsAll, "3020")?.amount, 2200) && !eqLine(bsAll, "3900") && bsAll.isBalanced === true, bsAll.equity);
   const plY2 = await pl(`${y2}-01-01`, `${y2}-12-31`);
   ok("4.4b: the second closed year's P&L still reads 2,000 / 500", close(plY2.revenue, 2000) && close(plY2.expenses, 500), plY2);
+  const emp44 = await api("POST", "/api/auth/register", { body: { name: "emp44", email: `emp44_${rnd}@example.com`, password: "Password123!" } });
+  await db.query("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee') ON CONFLICT DO NOTHING", [Y.cid, emp44.json?.user?.id]);
+  r = await api("POST", yeUrl + "/reopen", { token: emp44.json?.token, body: { yearStart: `${y1}-01-01`, reason: "customer needs a correction" } });
+  ok("4.4b: reopening needs the owner: a member who is not the owner gets 403", r.status === 403, { s: r.status, j: r.json });
+  await db.query("UPDATE companies SET company_type = 'client' WHERE id = $1", [Y.cid]);
   r = await api("POST", yeUrl + "/reopen", { token: Y.token, body: { yearStart: `${y1}-01-01`, reason: "customer needs a correction" } });
-  ok("4.4b: reopening needs the unlock permission (403 for a plain owner)", r.status === 403, { s: r.status, j: r.json });
+  ok("4.4b: a firm-managed company's own owner cannot reopen (firm owner only, 403)", r.status === 403, { s: r.status, j: r.json });
+  await db.query("UPDATE companies SET company_type = 'customer' WHERE id = $1", [Y.cid]);
   await db.query("UPDATE users SET firm_role = 'firm_owner' WHERE id = $1", [Y.userId]);
   r = await api("POST", yeUrl + "/reopen", { token: Y.token, body: { yearStart: `${y1}-01-01`, reason: "customer needs a correction" } });
   ok("4.4b: an earlier year cannot be reopened while a later one is closed (409 LATER_YEAR_CLOSED)", r.status === 409 && r.json?.code === "LATER_YEAR_CLOSED", { s: r.status, j: r.json });

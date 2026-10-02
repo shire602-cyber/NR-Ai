@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useI18n } from "@/lib/i18n";
+import { accountName } from "@/lib/account-name";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -152,6 +154,7 @@ function getStatusBadge(status: string): {
 // =============================================
 
 export default function AIInbox() {
+  const locale = useI18n((s) => s.locale);
   const tr = pageMessages.useT();
 
   const { toast } = useToast();
@@ -824,7 +827,7 @@ export default function AIInbox() {
                   <SelectContent>
                     {accounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} — {acc.nameEn} ({acc.type})
+                        {acc.code} — {accountName(acc, locale)} ({acc.type})
                       </SelectItem>
                     ))}
                   </SelectContent>

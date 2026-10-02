@@ -33,6 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { useComplianceText } from "@/lib/i18n-compliance";
 import { messages as pageMessages } from "./OpeningBalances.i18n";
+import { OpeningStockCard, openingStockPayload, type OpeningStock } from "@/components/inventory/OpeningStockCard";
 
 interface OverviewAccount {
   id: string;
@@ -117,6 +118,7 @@ export default function OpeningBalances() {
   const [grid, setGrid] = useState<Record<string, { debit: string; credit: string }>>({});
   const [invoices, setInvoices] = useState<DocRow[]>([]);
   const [bills, setBills] = useState<DocRow[]>([]);
+  const [stock, setStock] = useState<OpeningStock>({});
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewedFor, setPreviewedFor] = useState<string>("");
   const [reverseOpen, setReverseOpen] = useState(false);
@@ -141,8 +143,10 @@ export default function OpeningBalances() {
         amount: num(d.amount),
         exchangeRate: num(d.exchangeRate) || 1,
       })),
+      // Opening stock rides with the opening entry: dated the opening date, counted in the balancing amount.
+      openingStock: openingStockPayload(stock),
     }),
-    [effectiveDate, grid, invoices, bills]
+    [effectiveDate, grid, invoices, bills, stock]
   );
   const signature = JSON.stringify(payload);
 
@@ -169,8 +173,14 @@ export default function OpeningBalances() {
   });
 
   const postMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload),
+    mutationFn: async () => {
+      // Opening stock by item is part of the same request: the server posts it on the opening date (Dr 1070 in the opening
+      // entry, plus a stock movement dated the same day).
+      return await apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload);
+    },
     onSuccess: () => {
+      setStock({});
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "products"] });
       queryClient.invalidateQueries({ queryKey: overviewKey });
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal"] });
       toast({ title: c.obPosted });
@@ -561,6 +571,13 @@ export default function OpeningBalances() {
           )}
         </CardContent>
       </Card>
+
+      <OpeningStockCard
+        companyId={companyId}
+        value={stock}
+        onChange={setStock}
+        gridStockAmount={Math.max(num(grid["1070"]?.debit ?? ""), num(grid["1070"]?.credit ?? ""))}
+      />
 
       <Card>
         <CardHeader>

@@ -28,6 +28,8 @@ const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
 const Dashboard = lazyWithReload(() => import("@/pages/Dashboard"));
+const ReportRun = lazyWithReload(() => import("@/pages/ReportRun"));
+const ReportSchedules = lazyWithReload(() => import("@/pages/ReportSchedules"));
 const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
@@ -38,6 +40,11 @@ const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
 const CookiePolicy = lazyWithReload(() => import("@/pages/CookiePolicy"));
 const TrustSecurity = lazyWithReload(() => import("@/pages/TrustSecurity"));
 const HelpCenter = lazyWithReload(() => import("@/pages/HelpCenter"));
+const HelpArticle = lazyWithReload(() => import("@/pages/HelpArticle"));
+const ApiDocs = lazyWithReload(() => import("@/pages/ApiDocs"));
+const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
+const DataPrivacy = lazyWithReload(() => import("@/pages/DataPrivacy"));
+const ImportWizard = lazyWithReload(() => import("@/pages/ImportWizard"));
 const MigrationGuides = lazyWithReload(() => import("@/pages/MigrationGuides"));
 const DemoWorkspace = lazyWithReload(() => import("@/pages/DemoWorkspace"));
 
@@ -66,6 +73,7 @@ const Accounts = lazyWithReload(() => import("@/pages/Accounts"));
 const ChartOfAccounts = lazyWithReload(() => import("@/pages/ChartOfAccounts"));
 const AccountLedger = lazyWithReload(() => import("@/pages/AccountLedger"));
 const Invoices = lazyWithReload(() => import("@/pages/Invoices"));
+const EmployeeDashboard = lazyWithReload(() => import("@/pages/EmployeeDashboard"));
 const Journal = lazyWithReload(() => import("@/pages/Journal"));
 const JournalEntryDetail = lazyWithReload(() => import("@/pages/JournalEntryDetail"));
 const Reports = lazyWithReload(() => import("@/pages/Reports"));
@@ -99,8 +107,15 @@ const VendorCredits = lazyWithReload(() => import("@/pages/VendorCredits"));
 const ExpenseClaims = lazyWithReload(() => import("@/pages/ExpenseClaims"));
 const Inventory = lazyWithReload(() => import("@/pages/Inventory"));
 const Quotes = lazyWithReload(() => import("@/pages/Quotes"));
+const SalesOrders = lazyWithReload(() => import("@/pages/SalesOrders"));
+const CustomerAdvances = lazyWithReload(() => import("@/pages/CustomerAdvances"));
+const SalesSettings = lazyWithReload(() => import("@/pages/SalesSettings"));
+const PublicQuoteView = lazyWithReload(() => import("@/pages/PublicQuoteView"));
 const CreditNotes = lazyWithReload(() => import("@/pages/CreditNotes"));
 const PurchaseOrders = lazyWithReload(() => import("@/pages/PurchaseOrders"));
+const Approvals = lazyWithReload(() => import("@/pages/Approvals"));
+const Projects = lazyWithReload(() => import("@/pages/Projects"));
+const ProjectDetail = lazyWithReload(() => import("@/pages/ProjectDetail"));
 const CostCenters = lazyWithReload(() => import("@/pages/CostCenters"));
 const FinancialStatements = lazyWithReload(() => import("@/pages/FinancialStatements"));
 const ReconciliationRules = lazyWithReload(() => import("@/pages/ReconciliationRules"));
@@ -189,6 +204,8 @@ function loginRedirectForCurrentPath(): string {
 
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { MobileNav } from "@/components/MobileNav";
+import { RoleNotices, useEmployeeGuard, useIsEmployee } from "@/components/layout/EmployeeShell";
+import { employeeRedirectFor } from "@/lib/employee-shell";
 import { NotificationBell } from "@/components/NotificationBell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { RouteGuard } from "@/components/layout/RouteGuard";
@@ -203,6 +220,7 @@ import { OnboardingWizard } from "@/components/Onboarding";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
+import { DrillHighlight } from "@/components/reports/DrillHighlight";
 import { openCommandPalette } from "@/lib/commandPalette";
 
 function FirmContextBanner() {
@@ -241,15 +259,25 @@ function FirmContextBanner() {
   );
 }
 
+/** The dashboard: company KPIs for everyone except an employee, who sees their own summary. */
+function DashboardRoute() {
+  const isEmployee = useIsEmployee();
+  if (isEmployee === null) return null;
+  return isEmployee ? <EmployeeDashboard /> : <Dashboard />;
+}
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
   const { isFirmContext } = useActiveCompany();
   const pathname = pathnameOnly(location);
+  // An employee gets a self-service shell: finance screens redirect to their own payroll page.
+  const isEmployee = useIsEmployee();
+  useEmployeeGuard();
 
   useEffect(() => {
-    if (companyLoading || pathname === "/onboarding") return;
+    if (companyLoading || pathname === "/onboarding" || isEmployee) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -273,7 +301,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, "1");
       navigate("/onboarding");
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext, isEmployee]);
 
   const style = {
     "--sidebar-width": "16rem",
@@ -283,6 +311,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <SkipLink />
+      <DrillHighlight />
       <div className="flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
@@ -325,7 +354,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </button>
               <OfflineIndicator />
               <NotificationBell />
-              <Link href="/company-profile">
+              <Link href={isEmployee ? "/settings/security" : "/company-profile"}>
                 <motion.button
                   type="button"
                   whileHover={{ scale: 1.02 }}
@@ -345,6 +374,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             </div>
           </motion.header>
           <FirmContextBanner />
+          <RoleNotices />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
@@ -356,7 +386,10 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.25, ease: "easeOut" }}
                   >
-                    <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
+                    <SectionBoundary name={routeName(location)}>
+                      {/* Do not mount a finance screen for an employee (it would fire requests the server refuses). */}
+                      {isEmployee !== false && employeeRedirectFor(location) ? null : children}
+                    </SectionBoundary>
                   </motion.div>
                 </AnimatePresence>
               </RouteGuard>
@@ -365,7 +398,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <MobileNav />
-      <OnboardingWizard />
+      {/* The company-setup tour is for the people who set the company up, not for an employee. */}
+      {isEmployee !== true && <OnboardingWizard />}
       <CommandPaletteProvider />
       <GlobalShortcutsProvider />
     </SidebarProvider>
@@ -545,12 +579,15 @@ function Router() {
     pathname === "/pricing" ||
     pathname === "/trust" ||
     pathname === "/help" ||
+    pathname.startsWith("/help/") ||
+    pathname === "/developers/api" ||
     pathname === "/migration-guides" ||
     pathname === "/demo" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/cookies" ||
     pathname.startsWith("/view/invoice/") ||
+    pathname.startsWith("/view/quote/") ||
     pathname.startsWith("/accept-invite/") ||
     pathname.startsWith("/portal/")
   ) {
@@ -572,11 +609,14 @@ function Router() {
               <Route path="/reset-password" component={ResetPassword} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              <Route path="/view/quote/:token" component={PublicQuoteView} />
               <Route path="/accept-invite/:token" component={AcceptInvite} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />
               <Route path="/help" component={HelpCenter} />
+              <Route path="/help/:slug" component={HelpArticle} />
+              <Route path="/developers/api" component={ApiDocs} />
               <Route path="/migration-guides" component={MigrationGuides} />
               <Route path="/demo" component={DemoWorkspace} />
               <Route path="/privacy" component={PrivacyPolicy} />
@@ -595,9 +635,12 @@ function Router() {
       <ProtectedLayout>
         <Suspense fallback={<PageLoader variant="list" />}>
           <Switch>
-            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/dashboard" component={DashboardRoute} />
             <Route path="/company-profile" component={CompanyProfile} />
             <Route path="/settings/company" component={CompanySettings} />
+            <Route path="/settings/security" component={SecuritySettings} />
+            <Route path="/settings/data" component={DataPrivacy} />
+            <Route path="/import" component={ImportWizard} />
             <Route path="/accounts" component={Accounts} />
             <Route path="/chart-of-accounts" component={ChartOfAccounts} />
             <Route path="/accounts/:id/ledger" component={AccountLedger} />
@@ -607,13 +650,22 @@ function Router() {
             <Route path="/journal" component={Journal} />
             <Route path="/journal/:id" component={JournalEntryDetail} />
             <Route path="/reports" component={Reports} />
+            <Route path="/reports/run" component={ReportRun} />
+            <Route path="/reports/run/:reportId" component={ReportRun} />
+            <Route path="/reports/schedules" component={ReportSchedules} />
             <Route path="/receipts" component={Receipts} />
             <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
             <Route path="/contacts" component={CustomerContacts} />
             <Route path="/inventory" component={Inventory} />
             <Route path="/quotes" component={Quotes} />
+            <Route path="/sales-orders" component={SalesOrders} />
+            <Route path="/customer-advances" component={CustomerAdvances} />
+            <Route path="/settings/sales" component={SalesSettings} />
             <Route path="/credit-notes" component={CreditNotes} />
             <Route path="/purchase-orders" component={PurchaseOrders} />
+            <Route path="/approvals" component={Approvals} />
+            <Route path="/projects" component={Projects} />
+            <Route path="/projects/:id" component={ProjectDetail} />
             <Route path="/cost-centers" component={CostCenters} />
             <Route path="/financial-statements" component={FinancialStatements} />
             <Route path="/reconciliation-rules" component={ReconciliationRules} />

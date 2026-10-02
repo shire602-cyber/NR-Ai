@@ -92,11 +92,11 @@ async function main() {
       r = await c.pay(inv.id, 50);
       ok("D1a: a payment of 50 is refused 409 INVOICE_NOTHING_OUTSTANDING", r.status === 409 && r.json?.code === "INVOICE_NOTHING_OUTSTANDING", { s: r.status, j: r.json });
       r = await c.setStatus(inv.id, "paid", { paymentAccountId: c.bank.id });
-      ok("D1a: PATCH status paid on a credited invoice is refused 422 INVOICE_CREDITED_LOCKED", r.status === 422 && r.json?.code === "INVOICE_CREDITED_LOCKED", { s: r.status, j: r.json });
+      ok("D1a: PATCH status paid is refused 400 STATUS_DERIVED (paid comes from payments)", r.status === 400 && r.json?.code === "STATUS_DERIVED", { s: r.status, j: r.json });
       const payRows = (await db.query("SELECT count(*)::int AS c FROM invoice_payments WHERE invoice_id = $1", [inv.id])).rows[0].c;
       ok("D1a: no payment row was written", payRows === 0, payRows);
       r = await c.setStatus(inv.id, "credited");
-      ok("D1a: 'credited' cannot be set by hand (422)", r.status === 422 && r.json?.code === "CREDITED_IS_AUTOMATIC", { s: r.status, j: r.json });
+      ok("D1a: 'credited' cannot be set by hand (400 STATUS_DERIVED)", r.status === 400 && r.json?.code === "STATUS_DERIVED", { s: r.status, j: r.json });
       r = await c.setStatus(inv.id, "void");
       ok("D1a: voiding a credited invoice is refused (credit notes exist)", r.status >= 400 && r.status < 500 && (await c.get(inv.id))?.status === "credited", { s: r.status, j: r.json });
 
@@ -152,8 +152,8 @@ async function main() {
       const inv = r.json;
       await c.issue(inv.id);
       await c.creditNote(inv.id, { lines: [{ description: "returned goods", quantity: 1, unitPrice: 400, vatRate: 0.05 }] });
-      r = await c.setStatus(inv.id, "paid", { paymentAccountId: c.bank.id });
-      ok("D1c: marking a partly credited invoice paid works", r.status === 200, { s: r.status, j: r.json });
+      r = await c.pay(inv.id, 630);
+      ok("D1c: paying the remainder of a partly credited invoice works", r.status === 201, { s: r.status, j: r.json });
       const pays = (await db.query("SELECT amount::float8 AS a FROM invoice_payments WHERE invoice_id = $1", [inv.id])).rows;
       ok("D1c: exactly one payment of 630 (not 1050) was recorded", pays.length === 1 && close(pays[0].a, 630), pays);
       const led = await ledger(c.cid);
@@ -242,8 +242,8 @@ async function main() {
       ok("D2: the auto-reversal is dated the next day and balanced", rev && rev.d === ymd(-1) && close(rev.dr, rev.cr), rev);
       const lines = (await db.query(
         `SELECT a.code, l.debit::float8 AS d, l.credit::float8 AS c FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE l.entry_id = $1`, [reval?.id])).rows;
-      const ar = lines.find((l) => l.code === "1040"), fx = lines.find((l) => l.code === "4090");
-      ok("D2: Dr Accounts Receivable 2.89, Cr FX gain 2.89 (only the issued invoice counted)", ar && close(ar.d, 2.89) && close(ar.c, 0) && fx && close(fx.c, 2.89) && lines.length === 2, lines);
+      const ar = lines.find((l) => l.code === "1040"), fx = lines.find((l) => l.code === "4095");
+      ok("D2: Dr Accounts Receivable 2.89, Cr unrealised exchange gain (4095, apart from the realised 4090) 2.89 (only the issued invoice counted)", ar && close(ar.d, 2.89) && close(ar.c, 0) && fx && close(fx.c, 2.89) && lines.length === 2, lines);
 
       const again = await api("POST", `/api/companies/${c.cid}/exchange-rates/revalue`, { token: c.token, body: { asOf } });
       ok("D2: running it again for the same date is refused 409 REVALUATION_ALREADY_POSTED", again.status === 409 && again.json?.code === "REVALUATION_ALREADY_POSTED", { s: again.status, j: again.json });
@@ -269,7 +269,7 @@ async function main() {
     }
 
     {
-      // a missing FX account gives a clear 422 naming it
+      // unrealised results have their own account, created on demand: the realised FX accounts are not needed (Teardown 8)
       const c = await freshCompany("d2c");
       await c.addRate({ fromCurrency: "USD", toCurrency: "AED", rate: 3.6725, effectiveDate: ymd(-40) });
       const r0 = await c.mk({ currency: "USD", date: ymd(-30), dueDate: ymd(30), lines: [{ description: "consulting", quantity: 1, unitPrice: 100, vatRate: 0.05 }] });
@@ -277,9 +277,9 @@ async function main() {
       await c.addRate({ fromCurrency: "USD", toCurrency: "AED", rate: 3.70, effectiveDate: ymd(-5) });
       await db.query("DELETE FROM accounts WHERE company_id = $1 AND code = '4090'", [c.cid]);
       const r = await api("POST", `/api/companies/${c.cid}/exchange-rates/revalue`, { token: c.token, body: { asOf: ymd(-2) } });
-      ok("D2c: a missing FX gain account is a 422 naming account 4090", r.status === 422 && /4090/.test(r.json?.message ?? ""), { s: r.status, j: r.json });
-      const cnt = (await db.query("SELECT count(*)::int AS c FROM journal_entries WHERE company_id = $1 AND source LIKE 'fx_revaluation%'", [c.cid])).rows[0].c;
-      ok("D2c: nothing was posted", cnt === 0, cnt);
+      ok("D2c: with the realised gain account (4090) gone the revaluation still posts, to the unrealised account 4095", r.status === 201, { s: r.status, j: r.json });
+      const u = (await db.query("SELECT a.code, a.type FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE l.entry_id = $1 AND a.code = '4095'", [r.json?.journalEntryId])).rows;
+      ok("D2c: the gain is on a 4095 income account created on demand", u.length === 1 && u[0].type === "income", u);
     }
 
     // ───────── D3: recurring invoices use the rate of the day ─────────

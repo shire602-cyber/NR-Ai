@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { messages as pageMessages } from "./CustomerPortal.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { CustomFieldsDisplay } from "@/components/sales/CustomFieldsDisplay";
+import { InvoiceTypeBadge } from "@/components/sales/SalesShared";
+import { PayNowButton } from "@/components/sales/PayNowButton";
+import { paymentReturnState, type DisplayField, type OnlinePaymentView } from "@/lib/sales-api";
 
 interface PortalInfo {
   customerName: string;
@@ -44,6 +49,11 @@ interface PortalInvoice {
   /** total - payments - credit notes, from the server. */
   outstandingAmount?: number;
   isFullyCredited?: boolean;
+  discountAmount?: number | string | null;
+  shippingAmount?: number | string | null;
+  customFields?: DisplayField[];
+  /** Pay now: shown only when the company can take payment (configured + connected) and the invoice is payable. */
+  onlinePayment?: OnlinePaymentView;
 }
 
 function formatCurrency(amount: number, currency: string = "AED"): string {
@@ -116,6 +126,8 @@ function isOverdue(invoice: PortalInvoice): boolean {
 
 export default function CustomerPortal() {
   const tr = pageMessages.useT();
+  const salesTr = salesMessages.useT();
+  const returned = typeof window !== "undefined" ? paymentReturnState(window.location.search) : null;
 
   const { token } = useParams<{ token: string }>();
 
@@ -151,6 +163,9 @@ export default function CustomerPortal() {
     },
     enabled: !!token && !!info,
     retry: false,
+    // Back from the payment page: the receipt is posted by the provider's webhook, so look again for a short while.
+    refetchInterval: (query) =>
+      returned === "success" && query.state.dataUpdateCount < 12 ? 4000 : false,
   });
 
   const handleDownloadPDF = (invoiceId: string, invoiceNumber: string) => {
@@ -239,6 +254,16 @@ export default function CustomerPortal() {
 
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-6">
+        {returned === "success" && (
+          <div role="status" className="rounded-lg border border-success/40 bg-success-subtle p-3 text-sm text-success" data-testid="portal-payment-success">
+            {salesTr("paymentProcessing")}
+          </div>
+        )}
+        {returned === "cancelled" && (
+          <div role="status" className="rounded-lg border bg-muted p-3 text-sm" data-testid="portal-payment-cancelled">
+            {salesTr("paymentCancelled")}
+          </div>
+        )}
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
@@ -326,10 +351,24 @@ export default function CustomerPortal() {
                       const overdue = isOverdue(invoice);
                       return (
                         <TableRow key={invoice.id}>
-                          <TableCell className="font-medium">{invoice.number}</TableCell>
+                          <TableCell className="font-medium">
+                            {invoice.number}
+                            <InvoiceTypeBadge invoiceType={invoice.invoiceType} className="ms-2" />
+                            <CustomFieldsDisplay fields={invoice.customFields} className="mt-1 space-y-0.5 text-xs" />
+                          </TableCell>
                           <TableCell>{formatDate(invoice.date)}</TableCell>
                           <TableCell className="text-end font-medium">
                             {formatCurrency(invoice.total, invoice.currency)}
+                            {invoice.outstandingAmount !== undefined &&
+                              invoice.invoiceType !== "credit_note" &&
+                              invoice.status !== "draft" &&
+                              invoice.status !== "void" &&
+                              invoice.outstandingAmount > 0.005 &&
+                              Math.abs(invoice.outstandingAmount - invoice.total) > 0.005 && (
+                                <span className="block text-xs font-normal text-muted-foreground" data-testid={`portal-outstanding-${invoice.id}`}>
+                                  {salesTr("outstandingLine", { amount: formatCurrency(invoice.outstandingAmount, invoice.currency) })}
+                                </span>
+                              )}
                           </TableCell>
                           <TableCell>
                             {overdue ? (
@@ -341,14 +380,26 @@ export default function CustomerPortal() {
                             )}
                           </TableCell>
                           <TableCell className="text-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownloadPDF(invoice.id, invoice.number)}
-                            >
-                              <Download className="w-4 h-4 me-1" />
-                              PDF
-                            </Button>
+                            <div className="flex flex-wrap items-start justify-end gap-2">
+                              {token && (
+                                <PayNowButton
+                                  compact
+                                  onlinePayment={invoice.onlinePayment}
+                                  outstanding={invoice.outstandingAmount ?? 0}
+                                  currency={invoice.currency}
+                                  checkoutPath={`/api/portal/${token}/invoices/${invoice.id}/checkout`}
+                                  testId={`button-portal-pay-${invoice.id}`}
+                                />
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadPDF(invoice.id, invoice.number)}
+                              >
+                                <Download className="w-4 h-4 me-1" />
+                                PDF
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );

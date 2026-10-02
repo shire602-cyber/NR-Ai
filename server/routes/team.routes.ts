@@ -53,7 +53,7 @@ export function registerTeamRoutes(app: Express) {
       }
 
       // Check if already a member
-      const existingAccess = await storage.hasCompanyAccess(invitedUser.id, companyId);
+      const existingAccess = await storage.hasCompanyAccess(invitedUser.id, companyId, { employeeSelfService: true });
       if (existingAccess) {
         return res.status(400).json({ message: "User is already a team member" });
       }
@@ -65,6 +65,16 @@ export function registerTeamRoutes(app: Express) {
         role: role || "employee",
       });
 
+      await recordAudit({
+        userId,
+        companyId,
+        action: "team.invite",
+        entityType: "company_user",
+        entityId: companyUser.id,
+        before: null,
+        after: { email: invitedUser.email, role: companyUser.role, newAccount: !invitedUser.passwordHash },
+        req,
+      });
       res.status(201).json(companyUser);
     })
   );

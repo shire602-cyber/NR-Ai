@@ -43,9 +43,11 @@ import {
   parseVatPasteRows,
   vatEmirates,
   vatRowCategories,
-  vatRowCategoryLabel,
   type VatRowCategory,
 } from "@/lib/vat-workpaper-grid";
+import { emirateLabel, statusLabel, vatRowCategoryText } from "@/lib/enum-labels";
+import { useI18n } from "@/lib/i18n";
+import { VatEmirateBreakdown } from "./VatEmirateBreakdown";
 import { messages as pageMessages } from "./VatWorkpaperPanel.i18n";
 
 interface VatWorkpaperSummary {
@@ -174,6 +176,7 @@ export default function VatWorkpaperPanel({
   onVatReturnGenerated,
 }: VatWorkpaperPanelProps) {
   const tr = pageMessages.useT();
+  const locale = useI18n((state) => state.locale);
 
   const { toast } = useToast();
   const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
@@ -620,7 +623,7 @@ export default function VatWorkpaperPanel({
                   {workpapers.map((workpaper) => (
                     <SelectItem key={workpaper.id} value={workpaper.id}>
                       {formatDate(workpaper.periodStart)} - {formatDate(workpaper.periodEnd)} ·{" "}
-                      {workpaper.status}
+                      {statusLabel(workpaper.status, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -701,6 +704,8 @@ export default function VatWorkpaperPanel({
           </div>
         </div>
 
+        <VatEmirateBreakdown boxes={totals} testId="workpaper-emirate-breakdown" />
+
         <div className="rounded-md border">
           <div className="border-b bg-muted/30 px-3 py-2">
             <p className="font-medium">{tr("entryGrid")}</p>
@@ -768,7 +773,7 @@ export default function VatWorkpaperPanel({
                       <SelectContent>
                         {vatRowCategories.map((category) => (
                           <SelectItem key={category.value} value={category.value}>
-                            {category.label}
+                            {vatRowCategoryText(category.value, locale)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -785,7 +790,7 @@ export default function VatWorkpaperPanel({
                       <SelectContent>
                         {vatEmirates.map((emirate) => (
                           <SelectItem key={emirate.value} value={emirate.value}>
-                            {emirate.label}
+                            {emirateLabel(emirate.value, locale)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -868,8 +873,8 @@ export default function VatWorkpaperPanel({
                         <p className="font-medium">{row.invoiceNumber || "-"}</p>
                         <p className="text-xs text-muted-foreground">{row.vat201Box}</p>
                       </TableCell>
-                      <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
-                      <TableCell>{row.emirate || "-"}</TableCell>
+                      <TableCell>{vatRowCategoryText(row.rowCategory, locale)}</TableCell>
+                      <TableCell>{row.emirate ? emirateLabel(row.emirate, locale) : "-"}</TableCell>
                       <TableCell className="text-end">
                         {formatCurrency(Number(row.taxableAmount ?? 0))}
                       </TableCell>
@@ -889,7 +894,7 @@ export default function VatWorkpaperPanel({
                                 : "secondary"
                           }
                         >
-                          {row.status}
+                          {statusLabel(row.status, locale)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-end">
@@ -957,7 +962,9 @@ export default function VatWorkpaperPanel({
           <div className="space-y-3 rounded-md border bg-muted/20 p-3">
             <div>
               <p className="text-xs text-muted-foreground">{tr("defaultPastedRowCategory")}</p>
-              <p className="text-sm font-medium">{vatRowCategoryLabel(rowForm.rowCategory)}</p>
+              <p className="text-sm font-medium">
+                {vatRowCategoryText(rowForm.rowCategory, locale)}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{tr("previewRows")}</p>

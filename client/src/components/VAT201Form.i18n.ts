@@ -3,7 +3,7 @@ import { defineMessages } from "@/lib/i18n-messages";
 export const messages = defineMessages(
   "VAT201Form",
   {
-    vat201Return: "VAT 201 Return",
+    vat201Return: "VAT 201 worksheet",
     trn: "TRN",
     legalNameEnglish: "Legal Name (English)",
     legalNameArabic: "Legal Name (Arabic)",
@@ -32,10 +32,10 @@ export const messages = defineMessages(
     totalValueOfRecoverableTaxFor: "Total value of recoverable tax for the period",
     payableTaxForThePeriod: "Payable Tax for the period",
     thisIsASystemGeneratedDocument:
-      "This is a system generated document and does not need to be signed. The Taxpayer is solely responsible for the usage of this document.",
+      "This is a worksheet prepared from your ledger. It is not the FTA return and is not an FTA document: check the figures and file the return through EmaraTax.",
   },
   {
-    vat201Return: "إقرار ضريبة القيمة المضافة (نموذج 201)",
+    vat201Return: "ورقة عمل ضريبة القيمة المضافة (نموذج 201)",
     trn: "الرقم الضريبي",
     legalNameEnglish: "الاسم القانوني (بالإنجليزية)",
     legalNameArabic: "الاسم القانوني (بالعربية)",
@@ -64,6 +64,6 @@ export const messages = defineMessages(
     totalValueOfRecoverableTaxFor: "إجمالي قيمة الضريبة القابلة للاسترداد عن الفترة",
     payableTaxForThePeriod: "الضريبة المستحقة الدفع عن الفترة",
     thisIsASystemGeneratedDocument:
-      "هذا مستند صادر عن النظام ولا يحتاج إلى توقيع. يتحمل دافع الضريبة وحده مسؤولية استخدام هذا المستند.",
+      "هذه ورقة عمل أُعدّت من دفاترك، وليست إقرار الهيئة الاتحادية للضرائب ولا مستنداً صادراً عنها: راجع الأرقام وقدّم الإقرار عبر EmaraTax.",
   }
 );

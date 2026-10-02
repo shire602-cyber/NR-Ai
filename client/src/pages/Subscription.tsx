@@ -565,7 +565,7 @@ export default function Subscription() {
                   { label: tr("aiCfoAdvisor"), values: [false, false, true, true] },
                   { label: tr("payrollIntegration"), values: [false, false, true, true] },
                   { label: tr("inventoryManagement"), values: [false, false, true, true] },
-                  { label: tr("apiAccess"), values: [false, false, false, true] },
+                  { label: tr("apiAccess"), values: [false, false, true, true] },
                   { label: tr("whiteLabel"), values: [false, false, false, true] },
                   { label: tr("dedicatedAccountant"), values: [false, false, false, true] },
                   { label: tr("enterpriseSupportTerms"), values: [false, false, false, true] },

@@ -3,8 +3,8 @@ import { sql, eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import {
+  customerContacts as customerContactsTable,
   invoices as invoicesTable,
-  invoiceLines as invoiceLinesTable,
   recurringInvoices as recurringInvoicesTable,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
@@ -14,9 +14,13 @@ import { deriveVatSupplyType } from "./vat-supply-type";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
+import { runDueReportSchedules } from "../reports/schedule";
 import { resolveDocumentExchangeRate } from "./document-fx-rate";
 import { postInvoiceRevenueJournal } from "./invoice-posting.service";
 import { listOpenReceivables } from "./invoice-outstanding";
+import { deriveSalesLines } from "../../shared/sales-line-math";
+import { replaceInvoiceLines } from "./sales-lines.service";
+import { sendGeneratedRecurringInvoice } from "./recurring-send.service";
 
 const log = createLogger("scheduler");
 
@@ -216,6 +220,21 @@ export function initScheduler() {
     }
   });
 
+  // Run daily at 06:30 UTC: late fees (companies that switched them on) and expiry of quotes past their date.
+  // Both are cheap indexed queries; there is nothing to do for companies that use neither.
+  cron.schedule("30 6 * * *", async () => {
+    try {
+      log.info("Running daily late-fee and quote-expiry jobs...");
+      const { runLateFeeJob } = await import("./late-fee.service");
+      await runLateFeeJob();
+      const { expireDueQuotes } = await import("./quote-acceptance.service");
+      await expireDueQuotes();
+      log.info("Daily late-fee and quote-expiry jobs complete");
+    } catch (err) {
+      log.error({ err }, "Scheduler error during late-fee / quote-expiry jobs");
+    }
+  });
+
   // Run hourly: sweep expired auth tokens (blacklist, password reset, email verify)
   cron.schedule("15 * * * *", async () => {
     try {
@@ -228,6 +247,36 @@ export function initScheduler() {
     }
   });
 
+  // Daily at 03:30 UTC (D5): company deletions past their 30 days are purged, retention-expired
+  // companies erased, export links past 24 h expired, dead sessions, idempotency keys and the
+  // 90-day API request log swept. In-process, a handful of indexed DELETEs: no extra infrastructure.
+  cron.schedule("30 3 * * *", async () => {
+    try {
+      const [{ runCompanyPurge }, { expireOldExports }, { purgeDeadSessions }, { purgeExpiredIdempotencyKeys }, { purgeOldRequestLog }] =
+        await Promise.all([
+          import("./company-deletion"),
+          import("./company-export"),
+          import("./sessions"),
+          import("../api-v1/idempotency"),
+          import("../api-v1/request-log"),
+        ]);
+      const purge = await runCompanyPurge();
+      const exports = await expireOldExports();
+      const sessions = await purgeDeadSessions();
+      const idempotency = await purgeExpiredIdempotencyKeys();
+      const requestLog = await purgeOldRequestLog();
+      log.info({ purge, exports, sessions, idempotency, requestLog }, "Daily platform housekeeping complete");
+    } catch (err) {
+      log.error({ err }, "Scheduler error during daily platform housekeeping");
+    }
+  });
+
+  // At boot: an export that was running when the previous process died can never finish.
+  void import("./company-export")
+    .then(({ failStaleExports }) => failStaleExports())
+    .then((n) => n > 0 && log.warn({ count: n }, "Marked interrupted company exports as failed"))
+    .catch((err) => log.error({ err }, "Could not recover stale company exports"));
+
   // Run hourly: queue due report delivery subscriptions after readiness checks
   cron.schedule("20 * * * *", async () => {
     try {
@@ -237,10 +286,28 @@ export function initScheduler() {
     } catch (err) {
       log.error({ err }, "Scheduler error during report delivery scan");
     }
+
+    // Phase 8 D4: per-report scheduled email delivery rides the same hourly tick (no new cron).
+    try {
+      const { claimed } = await runDueReportSchedules();
+      if (claimed > 0) log.info({ claimed }, "Scheduled report runs complete");
+    } catch (err) {
+      log.error({ err }, "Scheduler error during scheduled report delivery");
+    }
+  });
+
+  // Phase 8 D3: hourly bank feed sync. Does nothing (no query, no call) unless a feed provider is configured.
+  cron.schedule("40 * * * *", async () => {
+    try {
+      const { runHourlyBankSync } = await import("./bank-feed-sync.service");
+      await runHourlyBankSync();
+    } catch (err) {
+      log.error({ err }, "Scheduler error during bank feed sync");
+    }
   });
 
   log.info(
-    "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly, report delivery scan hourly"
+    "Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, late fees and quote expiry daily at 06:30 UTC, auth-token sweep hourly, report delivery scan hourly"
   );
 }
 
@@ -609,16 +676,33 @@ export async function generateDueRecurringInvoices(
           return { skipped: true };
         }
 
-        let subtotal = 0;
-        let vatAmount = 0;
-        for (const line of templateLines) {
-          const lineTotal = line.quantity * line.unitPrice;
-          subtotal += lineTotal;
-          vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+        // Template lines may carry line discounts and a shipping line (Phase 8 D1): the same derivation as a
+        // hand-made invoice gives the signed lines and the totals.
+        const sourceLines = templateLines.map((line: any) => {
+          const vatRate = line.vatRate ?? UAE_VAT_RATE;
+          return {
+            kind: (line.lineKind === "shipping" ? "shipping" : "item") as "item" | "shipping",
+            description: line.description,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            vatRate,
+            vatSupplyType: deriveVatSupplyType(vatRate, line.vatSupplyType),
+            discountType: line.lineKind === "shipping" ? null : (line.discountType ?? null),
+            discountValue: line.lineKind === "shipping" ? null : (line.discountValue ?? null),
+            revenueAccountId: line.revenueAccountId ?? null,
+            productId: line.productId ?? null,
+          };
+        });
+        const derivedTotals = deriveSalesLines({ lines: sourceLines });
+        if (!derivedTotals.ok) {
+          log.error({ templateId: template.id, code: derivedTotals.code }, "Recurring template lines do not derive - disabling");
+          await tx
+            .update(recurringInvoicesTable)
+            .set({ isActive: false } as any)
+            .where(eq(recurringInvoicesTable.id, template.id));
+          return { skipped: true };
         }
-        subtotal = Math.round(subtotal * 100) / 100;
-        vatAmount = Math.round(vatAmount * 100) / 100;
-        const total = Math.round((subtotal + vatAmount) * 100) / 100;
+        const { subtotal, vatAmount, total } = derivedTotals;
 
         const invoiceDate = new Date();
         const expectedNextRunDate = new Date(template.nextRunDate);
@@ -662,6 +746,18 @@ export async function generateDueRecurringInvoices(
           tx
         );
 
+        // The customer contact and a due date: the invoice used to be created with neither, so it was
+        // invisible to statements by contact and never became overdue (no chasing, no late fee).
+        let termsDays = template.paymentTermsDays ?? null;
+        if (termsDays === null && template.contactId) {
+          const [contactRow] = await tx
+            .select({ paymentTerms: customerContactsTable.paymentTerms })
+            .from(customerContactsTable)
+            .where(eq(customerContactsTable.id, template.contactId));
+          termsDays = contactRow?.paymentTerms ?? null;
+        }
+        const dueDate = computeDueDate(invoiceDate, termsDays ?? 30);
+
         const [insertedInvoice] = await tx
           .insert(invoicesTable)
           .values({
@@ -669,7 +765,9 @@ export async function generateDueRecurringInvoices(
             number: newNumber,
             customerName: template.customerName,
             customerTrn: template.customerTrn || undefined,
+            contactId: template.contactId ?? null,
             date: invoiceDate,
+            dueDate,
             currency: template.currency,
             exchangeRate,
             baseCurrencyAmount: Math.round(total * exchangeRate * 100) / 100,
@@ -689,21 +787,15 @@ export async function generateDueRecurringInvoices(
             .filter((a) => a.type === "income" && a.isActive !== false)
             .map((a) => a.id)
         );
-        for (const line of templateLines) {
-          const vatRate = line.vatRate ?? UAE_VAT_RATE;
-          await tx.insert(invoiceLinesTable).values({
-            invoiceId: insertedInvoice.id,
-            description: line.description,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            vatRate,
-            vatSupplyType: deriveVatSupplyType(vatRate, line.vatSupplyType),
-            revenueAccountId:
-              line.revenueAccountId && validRevenueIds.has(line.revenueAccountId)
-                ? line.revenueAccountId
-                : undefined,
-          } as any);
-        }
+        await replaceInvoiceLines(tx, {
+          companyId: template.companyId,
+          invoiceId: insertedInvoice.id,
+          lines: sourceLines.map((l) => ({
+            ...l,
+            revenueAccountId: l.revenueAccountId && validRevenueIds.has(l.revenueAccountId) ? l.revenueAccountId : null,
+          })),
+          exchangeRate,
+        });
 
         // Advance the template inside the same tx — atomic with the invoice
         // insert because we still hold the row lock.
@@ -788,6 +880,14 @@ export async function generateDueRecurringInvoices(
       log.error(
         { jeErr, templateId: template.id, invoiceId: invoice.id },
         "Recurring invoice created but failed to post GL — manual intervention required"
+      );
+    }
+
+    // Auto-send (Phase 8 D1): after the invoice is posted. A failed send never blocks billing: the invoice
+    // stays issued, the template stays active, the failure is recorded and surfaced, nothing is resent.
+    if (template.autoSend) {
+      await sendGeneratedRecurringInvoice(template, invoice).catch((err) =>
+        log.error({ err, templateId: template.id }, "Recurring invoice auto-send failed unexpectedly")
       );
     }
 

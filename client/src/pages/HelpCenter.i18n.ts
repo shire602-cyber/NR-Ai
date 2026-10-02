@@ -3,21 +3,6 @@ import { defineMessages } from "@/lib/i18n-messages";
 export const messages = defineMessages(
   "HelpCenter",
   {
-    setUpYourCompany: "Set up your company",
-    addTradeLicenseDetailsTrnEmirate:
-      "Add trade license details, TRN, emirate, fiscal year, currency, and the UAE chart of accounts.",
-    createVatReadyInvoices: "Create VAT-ready invoices",
-    createInvoicesCreditNotesPaymentRecords:
-      "Create invoices, credit notes, payment records, and downloadable PDFs with clear VAT totals.",
-    importReceiptsAndContacts: "Import receipts and contacts",
-    uploadReceiptsExportToExcelAnd:
-      "Upload receipts, export to Excel, and import customers from .xlsx or CSV templates.",
-    reconcileBankStatements: "Reconcile bank statements",
-    importCsvPdfStatementsReviewSuggested:
-      "Import CSV/PDF statements, review suggested matches, and create entries for unmatched transactions.",
-    migrateFromMazeedOrWafeq: "Migrate from mazeed or Wafeq",
-    useAGoLiveDatePreserve:
-      "Use a go-live date, preserve source exports, import contacts and bank statements, and validate opening balances before live posting.",
     launchOnboardingSupportForSetupMigration:
       "Launch onboarding support for setup, migration, VAT workflow questions, and first-month close.",
     migrationReviewCoversMazeedWafeqZoho:
@@ -28,10 +13,6 @@ export const messages = defineMessages(
       "Enterprise support terms, response windows, and uptime commitments are confirmed during activation.",
     criticalAccountingWorkflowIssuesAreTriaged:
       "Critical accounting workflow issues are triaged ahead of feature requests during launch.",
-    pricing: "Pricing",
-    trust: "Trust",
-    migrate: "Migrate",
-    contactSupport: "Contact Support",
     helpCenter: "Help Center",
     launchSupportForUaeAccountingTeams: "Launch support for UAE accounting teams moving fast.",
     practicalSetupGuidesForInvoicesVat:
@@ -43,23 +24,28 @@ export const messages = defineMessages(
     askForAGuidedMigrationReview: "Ask for a guided migration review before importing live books.",
     requestReview: "Request Review",
     migrationGuides: "Migration Guides",
+    searchLabel: "Search the help centre",
+    searchPlaceholder: "Search, for example: VAT, invoice, bank",
+    noResults: "No articles match your search. Try fewer or different words.",
+    resultsCount_zero: "No articles found",
+    resultsCount_one: "{count} article found",
+    resultsCount_two: "{count} articles found",
+    resultsCount_few: "{count} articles found",
+    resultsCount_many: "{count} articles found",
+    resultsCount_other: "{count} articles found",
+    cat_getting_started: "Getting started",
+    cat_sales: "Sales",
+    cat_purchases: "Purchases",
+    cat_banking: "Banking",
+    cat_accounting: "Accounting",
+    cat_compliance: "VAT and tax",
+    cat_payroll: "Payroll",
+    cat_reports: "Reports",
+    cat_settings: "Settings and data",
+    cat_security: "Security and developers",
+    cat_firm: "For accounting firms",
   },
   {
-    setUpYourCompany: "جهّز شركتك",
-    addTradeLicenseDetailsTrnEmirate:
-      "أضف بيانات الرخصة التجارية والرقم الضريبي والإمارة والسنة المالية والعملة ودليل الحسابات الإماراتي.",
-    createVatReadyInvoices: "أنشئ فواتير جاهزة لضريبة القيمة المضافة",
-    createInvoicesCreditNotesPaymentRecords:
-      "أنشئ الفواتير والإشعارات الدائنة وسجلات الدفع وملفات PDF قابلة للتنزيل بإجماليات ضريبة واضحة.",
-    importReceiptsAndContacts: "استورد الإيصالات وجهات الاتصال",
-    uploadReceiptsExportToExcelAnd:
-      "ارفع الإيصالات وصدّرها إلى Excel واستورد العملاء من قوالب ‎.xlsx أو CSV.",
-    reconcileBankStatements: "سوِّ كشوف الحسابات البنكية",
-    importCsvPdfStatementsReviewSuggested:
-      "استورد كشوف CSV/PDF وراجع المطابقات المقترحة وأنشئ قيودًا للمعاملات غير المطابقة.",
-    migrateFromMazeedOrWafeq: "الانتقال من mazeed أو Wafeq",
-    useAGoLiveDatePreserve:
-      "حدّد تاريخ بدء التشغيل الفعلي واحتفظ بالملفات المصدَّرة من النظام السابق واستورد جهات الاتصال والكشوف البنكية وتحقق من الأرصدة الافتتاحية قبل الترحيل الفعلي.",
     launchOnboardingSupportForSetupMigration:
       "دعم التهيئة عند الإطلاق للإعداد والانتقال وأسئلة مسارات ضريبة القيمة المضافة والإقفال الأول.",
     migrationReviewCoversMazeedWafeqZoho:
@@ -70,10 +56,6 @@ export const messages = defineMessages(
       "تُؤكَّد شروط دعم المؤسسات ومهل الاستجابة والتزامات التوافر أثناء التفعيل.",
     criticalAccountingWorkflowIssuesAreTriaged:
       "تُعالَج مشكلات المسارات المحاسبية الحرجة قبل طلبات الميزات أثناء الإطلاق.",
-    pricing: "الأسعار",
-    trust: "الثقة",
-    migrate: "الانتقال",
-    contactSupport: "تواصل مع الدعم",
     helpCenter: "مركز المساعدة",
     launchSupportForUaeAccountingTeams: "دعم الإطلاق لفرق المحاسبة في الإمارات التي تتحرك بسرعة.",
     practicalSetupGuidesForInvoicesVat:
@@ -85,5 +67,25 @@ export const messages = defineMessages(
     askForAGuidedMigrationReview: "اطلب مراجعة انتقال موجَّهة قبل استيراد الدفاتر الفعلية.",
     requestReview: "طلب مراجعة",
     migrationGuides: "أدلة الانتقال",
+    searchLabel: "ابحث في مركز المساعدة",
+    searchPlaceholder: "ابحث، مثال: ضريبة القيمة المضافة، فاتورة، بنك",
+    noResults: "لا توجد مقالات تطابق بحثك. جرّب كلمات أقل أو مختلفة.",
+    resultsCount_zero: "لم يُعثر على مقالات",
+    resultsCount_one: "تم العثور على مقال واحد",
+    resultsCount_two: "تم العثور على مقالين",
+    resultsCount_few: "تم العثور على {count} مقالات",
+    resultsCount_many: "تم العثور على {count} مقالًا",
+    resultsCount_other: "تم العثور على {count} مقال",
+    cat_getting_started: "البدء",
+    cat_sales: "المبيعات",
+    cat_purchases: "المشتريات",
+    cat_banking: "الخدمات المصرفية",
+    cat_accounting: "المحاسبة",
+    cat_compliance: "ضريبة القيمة المضافة والضرائب",
+    cat_payroll: "الرواتب",
+    cat_reports: "التقارير",
+    cat_settings: "الإعدادات والبيانات",
+    cat_security: "الأمان والمطورون",
+    cat_firm: "لمكاتب المحاسبة",
   }
 );

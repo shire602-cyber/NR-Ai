@@ -25,6 +25,8 @@ import { ACCOUNT_CODES } from "../constants";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { advanceSequencePast, previewSequenceJumps, type SequenceJump } from "./invoice-numbering.service";
 import { recordAudit } from "./audit.service";
+import { drizzleQueryable, resolveVendorWith } from "./vendor-contact.service";
+import { applyMovementInTx, findAccount, isCostingEnabled } from "./inventory-costing.service";
 import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, postSettlementJournal, type FilingActor } from "./tax-filing.service";
 import { fromFils, toFils } from "./tax-filing-core";
@@ -65,6 +67,35 @@ export interface OpeningInput {
   csv?: string | null;
   invoices?: OpeningDocInput[];
   bills?: OpeningDocInput[];
+  /** Opening stock by item: it comes in on the opening date, inside the opening entry (Dr 1070) and as a stock movement. */
+  openingStock?: Array<{ productId: string; quantity: number; unitCost: number }>;
+}
+
+export interface OpeningStockLine {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+  value: number;
+}
+
+/** Validate the opening-stock rows against the company's tracked products. */
+async function cleanOpeningStock(companyId: string, rows: OpeningInput["openingStock"]): Promise<{ lines: OpeningStockLine[]; errors: OpeningIssue[] }> {
+  const lines: OpeningStockLine[] = [];
+  const errors: OpeningIssue[] = [];
+  const wanted = (rows ?? []).filter((r) => Number(r?.quantity) > 0);
+  if (wanted.length === 0) return { lines, errors };
+  const res: any = await db.execute(sql`SELECT id::text AS id, name, track_inventory FROM products WHERE company_id = ${companyId} AND id::text IN (${sql.join(wanted.map((r) => sql`${String(r.productId)}`), sql`, `)})`);
+  const found = new Map<string, { name: string; track: boolean }>((res.rows ?? res).map((r: any) => [r.id, { name: r.name, track: !!r.track_inventory }]));
+  for (const r of wanted) {
+    const p = found.get(String(r.productId));
+    const quantity = Math.trunc(Number(r.quantity));
+    const unitCost = Number(r.unitCost);
+    if (!p || !p.track) errors.push({ code: "OPENING_STOCK_INVALID", message: "An opening stock row names an item that is not a stock-tracked item of this company." });
+    else if (!(quantity >= 1) || !Number.isFinite(unitCost) || unitCost < 0) errors.push({ code: "OPENING_STOCK_INVALID", message: `Opening stock of ${p.name}: a whole quantity and a cost of zero or more are needed.` });
+    else lines.push({ productId: String(r.productId), name: p.name, quantity, unitCost, value: fromFils(toFils(quantity * unitCost)) });
+  }
+  return { lines, errors };
 }
 
 interface CleanDoc {
@@ -135,7 +166,7 @@ export async function firstTransactionDate(companyId: string): Promise<string | 
       UNION ALL SELECT date FROM invoices
         WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled') AND COALESCE(is_opening_balance, false) = false
       UNION ALL SELECT bill_date FROM vendor_bills
-        WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled', 'pending') AND COALESCE(is_opening_balance, false) = false
+        WHERE company_id = ${companyId} AND status NOT IN ('draft', 'void', 'cancelled', 'pending', 'pending_approval') AND COALESCE(is_opening_balance, false) = false
       UNION ALL SELECT COALESCE(date, created_at) FROM receipts WHERE company_id = ${companyId}
     ) t`);
   return ((res.rows ?? res)[0]?.first as string | null) ?? null;
@@ -190,6 +221,8 @@ export interface OpeningPreview {
     ap: number;
     openInvoicesTotal: number;
     openBillsTotal: number;
+    /** Opening stock (quantity x cost) entered by item; part of the debit side when inventory is posted to the ledger. */
+    stockValue: number;
   } | null;
 }
 
@@ -218,6 +251,10 @@ export async function previewOpeningBalance(companyId: string, input: OpeningInp
   const inv = cleanDocs("invoice", input.invoices, openingDate);
   const bil = cleanDocs("bill", input.bills, openingDate);
   errors.push(...inv.errors, ...bil.errors);
+  const stock = await cleanOpeningStock(companyId, input.openingStock);
+  errors.push(...stock.errors);
+  const stockValue = fromFils(stock.lines.reduce((sum, l) => sum + toFils(l.value), 0));
+  const stockOnLedger = stockValue > 0 && (await isCostingEnabled(db, companyId));
 
   // Numbers already used by other documents of this company.
   if (inv.docs.length > 0) {
@@ -234,9 +271,11 @@ export async function previewOpeningBalance(companyId: string, input: OpeningInp
     const apBalance = ap ? fromFils(toFils(ap.credit) - toFils(ap.debit)) : 0;
     const openInvoicesTotal = fromFils(inv.docs.reduce((s, d) => s + toFils(d.base), 0));
     const openBillsTotal = fromFils(bil.docs.reduce((s, d) => s + toFils(d.base), 0));
-    const diff = toFils(grid.totalDebit) - toFils(grid.totalCredit);
+    // The stock goes into the same entry as a debit to Inventory, so it counts on the debit side: the balancing amount to
+    // Opening Balance Equity is what is left after it.
+    const diff = toFils(grid.totalDebit) + (stockOnLedger ? toFils(stockValue) : 0) - toFils(grid.totalCredit);
     totals = {
-      debit: grid.totalDebit,
+      debit: fromFils(toFils(grid.totalDebit) + (stockOnLedger ? toFils(stockValue) : 0)),
       credit: grid.totalCredit,
       balancingSide: diff === 0 ? "none" : diff > 0 ? "credit" : "debit",
       balancingAmount: fromFils(Math.abs(diff)),
@@ -244,6 +283,7 @@ export async function previewOpeningBalance(companyId: string, input: OpeningInp
       ap: apBalance,
       openInvoicesTotal,
       openBillsTotal,
+      stockValue,
     };
     const tie = reconcileSubledgers({ arBalance, apBalance, openInvoicesTotal, openBillsTotal, documentsEntered: inv.docs.length + bil.docs.length > 0 });
     if (!tie.ok) errors.push(...tie.errors);
@@ -318,6 +358,8 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
   if (!grid.ok) throw new AppError({ message: grid.errors[0].message, statusCode: 422, code: "OPENING_BALANCE_INVALID", details: { errors: grid.errors } });
   const invDocs = cleanDocs("invoice", args.input.invoices, openingDate).docs;
   const billDocs = cleanDocs("bill", args.input.bills, openingDate).docs;
+  const stock = await cleanOpeningStock(companyId, args.input.openingStock);
+  if (stock.errors.length > 0) throw new AppError({ message: stock.errors[0].message, statusCode: 422, code: "OPENING_BALANCE_INVALID", details: { errors: stock.errors } });
 
   // Gaps the imported invoice numbers open in the sequence, read inside the transaction BEFORE the
   // opening invoices are inserted (afterwards they would count as "existing"); recorded in the audit log below.
@@ -329,6 +371,33 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
       .insert(openingBalances)
       .values({ companyId, asOfDate: openingDate, status: "active", createdBy: user.id })
       .returning();
+    // Opening stock by item: the items' quantity and cost come in on the opening date. With inventory posted to the ledger
+    // the value is a debit to Inventory (1070) in THIS entry (so the balancing amount to Opening Balance Equity already
+    // counts it), and each item gets a stock movement dated the opening date.
+    const stockValue = fromFils(stock.lines.reduce((sum, l) => sum + toFils(l.value), 0));
+    const stockRows: typeof grid.rows = [];
+    if (stock.lines.length > 0) {
+      if (await isCostingEnabled(tx, companyId)) {
+        const inv = await findAccount(tx, companyId, ACCOUNT_CODES.INVENTORY, "asset");
+        if (inv && stockValue > 0) stockRows.push({ accountId: inv.id, accountCode: ACCOUNT_CODES.INVENTORY, accountName: "Opening stock", debit: stockValue, credit: 0 });
+      }
+      for (const l of stock.lines) {
+        await applyMovementInTx(tx, {
+          productId: l.productId,
+          companyId,
+          type: "adjustment",
+          quantity: l.quantity,
+          unitCost: l.unitCost,
+          valueOverride: l.value,
+          reference: "Opening stock",
+          notes: `Opening balances as of ${openingDate}`,
+          userId: user.id,
+          date: new Date(`${openingDate}T00:00:00Z`),
+          skipJournal: true,
+        });
+        await tx.execute(sql`UPDATE products SET cost_price = ${l.unitCost} WHERE id = ${l.productId} AND company_id = ${companyId} AND (cost_price IS NULL OR cost_price = 0)`);
+      }
+    }
     const entryId = await postSettlementJournal(tx, {
       companyId,
       ymd: openingDate,
@@ -336,7 +405,7 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
       source: OPENING_JOURNAL_SOURCE,
       sourceId: ob.id,
       userId: user.id,
-      lines: buildOpeningBalanceLines(grid.rows, equity.id),
+      lines: buildOpeningBalanceLines([...grid.rows, ...stockRows], equity.id),
     });
     await tx.update(openingBalances).set({ journalEntryId: entryId }).where(eq(openingBalances.id, ob.id));
 
@@ -375,11 +444,13 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
     await advanceSequencePast(tx, companyId, "invoice", invDocs.map((d) => d.number));
     // Open vendor bills, likewise: approved, no journal, no VAT.
     for (const d of billDocs) {
+      // One contacts table: the opening bill is linked to (or creates) the vendor contact.
+      const vendor = await resolveVendorWith(drizzleQueryable(tx), companyId, { vendorName: d.party });
       const res: any = await tx.execute(sql`
         INSERT INTO vendor_bills (company_id, vendor_name, bill_number, bill_date, due_date, currency, subtotal, vat_amount,
-                                  total_amount, amount_paid, status, exchange_rate, is_opening_balance, notes)
+                                  total_amount, amount_paid, status, exchange_rate, is_opening_balance, notes, vendor_id)
         VALUES (${companyId}, ${d.party}, ${d.number}, ${d.date}::date, ${d.dueDate}::date, ${d.currency}, ${d.amount}, 0,
-                ${d.amount}, 0, 'approved', ${d.exchangeRate}, true, 'Opening balance')
+                ${d.amount}, 0, 'approved', ${d.exchangeRate}, true, 'Opening balance', ${vendor.vendorId})
         RETURNING id`);
       const billId = (res.rows ?? res)[0].id;
       await tx.execute(sql`
@@ -401,6 +472,7 @@ export async function postOpeningBalance(args: { user: FilingActor; companyId: s
       accounts: grid.rows.length,
       invoices: invDocs.length,
       bills: billDocs.length,
+      openingStockItems: stock.lines.length,
       ...(sequenceJumps.length > 0 ? { invoiceNumberJumps: sequenceJumps } : {}),
     },
     req: args.req,

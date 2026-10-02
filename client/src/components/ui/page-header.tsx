@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { HelpLink } from "@/components/HelpLink";
 import { messages as pageMessages } from "./page-header.i18n";
 
 // Section eyebrows are passed as English literals across ~65 pages; mapping
@@ -63,7 +64,8 @@ export function PageHeader({
       : eyebrow;
   return (
     <header className={cn("flex items-end justify-between flex-wrap gap-4", className)}>
-      <div className="flex-1 min-w-0">
+      {/* Full row on phones so the title never shrinks to a sliver beside the buttons; side by side from sm up. */}
+      <div className="flex-1 min-w-0 basis-full sm:basis-0">
         {backHref && (
           <Link href={backHref}>
             <span className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
@@ -90,6 +92,7 @@ export function PageHeader({
           >
             {title}
           </h1>
+          <HelpLink />
         </div>
         {description && (
           <p className="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed max-w-2xl">

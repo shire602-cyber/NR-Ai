@@ -32,6 +32,9 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: false,
     costCenters: false,
+    // Phase 8 D2: projects and approvals are Professional and above
+    projects: false,
+    approvals: false,
   },
   starter: {
     quotes: true,
@@ -49,6 +52,9 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: false,
     costCenters: false,
+    // Phase 8 D2: projects and approvals are Professional and above
+    projects: false,
+    approvals: false,
   },
   professional: {
     quotes: true,
@@ -58,7 +64,7 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     bankImport: true,
     bulkOps: true,
     advancedReports: true,
-    apiAccess: false,
+    apiAccess: true,
     invoicePayment: true,
     recurringInvoices: true,
     multiCurrency: true,
@@ -66,6 +72,9 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: true,
     costCenters: true,
+    // Phase 8 D2: projects and approvals are Professional and above
+    projects: true,
+    approvals: true,
   },
   enterprise: {
     quotes: true,
@@ -83,6 +92,9 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: true,
     fixedAssets: true,
     costCenters: true,
+    // Phase 8 D2: projects and approvals are Professional and above
+    projects: true,
+    approvals: true,
   },
 };
 
@@ -122,6 +134,11 @@ const TIER_LIMITS: Record<string, Record<string, number>> = {
 };
 
 const TIER_ORDER = ["free", "starter", "professional", "enterprise"];
+
+/** Whether a plan includes a feature (for tests and capability reports). */
+export function planHasFeature(planId: string, feature: string): boolean {
+  return TIER_FEATURES[planId]?.[feature] === true;
+}
 
 // Minimum tier that unlocks each feature
 const FEATURE_MIN_TIER: Record<string, string> = {};

@@ -171,6 +171,8 @@ const featureMatrix: MatrixCategory[] = [
       { kind: "feature", labelKey: "purchaseOrders", feature: "purchaseOrders" },
       { kind: "feature", labelKey: "bulkOperations", feature: "bulkOps" },
       { kind: "feature", labelKey: "costCentres", feature: "costCenters" },
+      { kind: "feature", labelKey: "projectsTimeBilling", feature: "projects" },
+      { kind: "feature", labelKey: "approvalRules", feature: "approvals" },
       { kind: "feature", labelKey: "fixedAssetsDepreciation", feature: "fixedAssets" },
     ],
   },

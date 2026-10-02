@@ -197,3 +197,50 @@ describe("validateRevenueAccounts", () => {
     expect(validateRevenueAccounts(chart, ["inc-off"]).ok).toBe(false);
   });
 });
+
+describe("negative groups (Phase 8 D1: discount lines post to a contra account)", () => {
+  const DISCOUNT = "acc-4050";
+  const SHIP = "acc-4035";
+
+  it("a negative group becomes a DEBIT and the entry balances", () => {
+    const alloc = allocateRevenueCredits({
+      lines: [
+        { quantity: 1, unitPrice: 1000, vatRate: 0.05 },
+        { quantity: 1, unitPrice: -100, vatRate: 0.05, revenueAccountId: DISCOUNT },
+        { quantity: 1, unitPrice: -50, vatRate: 0.05, revenueAccountId: DISCOUNT },
+        { quantity: 1, unitPrice: 100, vatRate: 0.05, revenueAccountId: SHIP },
+      ],
+      rate: 1,
+      subtotal: 950,
+      defaultAccountId: DEFAULT,
+      zeroRatedAccountId: ZERO,
+    });
+    expect(alloc.find((a) => a.accountId === DISCOUNT)?.amount).toBe(-150);
+    const legs = buildRevenueCreditLines(alloc, { defaultAccountId: DEFAULT, zeroRatedAccountId: ZERO, invoiceNumber: "INV-1" });
+    const discountLeg = legs.find((l) => l.accountId === DISCOUNT)!;
+    expect(discountLeg.debit).toBe(150);
+    expect(discountLeg.credit).toBe(0);
+    const credits = sum(legs.map((l) => l.credit));
+    const debits = sum(legs.map((l) => l.debit));
+    expect(sum([credits, -debits])).toBe(950);
+  });
+
+  it("the reversal credits a contra account back and stays balanced", () => {
+    const built = buildReversalLines({
+      amounts: { subtotal: 950, vatAmount: 47.5, total: 997.5 },
+      accounts: { accountsReceivableId: "ar", salesRevenueId: DEFAULT, vatPayableId: "vat" },
+      revenueSplit: [
+        { accountId: DEFAULT, amount: 1000 },
+        { accountId: DISCOUNT, amount: -150 },
+        { accountId: SHIP, amount: 100 },
+      ],
+      labels: { revenue: "rev", vat: "vat", ar: "ar" },
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const contra = built.lines.find((l) => l.accountId === DISCOUNT)!;
+    expect(contra.credit).toBe(150);
+    expect(contra.debit).toBe(0);
+    expect(sum(built.lines.map((l) => l.debit))).toBe(sum(built.lines.map((l) => l.credit)));
+  });
+});

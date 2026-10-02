@@ -7,6 +7,9 @@ export const UPLOAD_ROUTE_PATTERNS: readonly RegExp[] = [
   /^\/api\/client-portal\/documents$/,
   /^\/api\/companies\/[^/]+\/tax-returns-archive$/,
   /^\/api\/companies\/[^/]+\/expense-claims\/receipt-upload$/,
+  // Bank statements: a text statement up to 5 MB, or a PDF with its extracted text.
+  /^\/api\/companies\/[^/]+\/bank-statements\/(import|imports\/pdf)$/,
+  /^\/api\/companies\/[^/]+\/bank-connections\/[^/]+\/import$/,
   /^\/api\/firm\/vat-workpapers\/[^/]+\/scan$/,
   // Tax filing: FTA acknowledgement uploaded with, or after, recording a filing.
   /^\/api\/vat-returns\/[^/]+\/(file|evidence)$/,

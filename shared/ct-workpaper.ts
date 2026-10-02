@@ -191,6 +191,11 @@ export function computeCtLiability(input: {
 
 /** Art. 21 + Ministerial Decision 73/2023: relief available while revenue ≤ AED 3M. */
 export const CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP = 3_000_000;
+/**
+ * Ministerial Decision 73/2023: Small Business Relief is available only for tax periods ending on or before this day.
+ * (Phase 8 D4: the computation used to check the revenue cap alone, so it kept granting relief past the sunset.)
+ */
+export const CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END = "2026-12-31";
 /** Art. 37(2): carried-forward losses offset at most 75% of taxable income. */
 export const CT_LOSS_OFFSET_LIMIT = 0.75;
 /** Cabinet Decision 116/2022: 0% band on the first AED 375,000. */
@@ -198,34 +203,53 @@ export const CT_ZERO_RATE_BAND = 375_000;
 
 export type CtAdjustmentDirection = "add" | "deduct";
 
+/** Art. 32 (Federal Decree-Law 47/2022): only 50% of client entertainment is deductible, so 50% is added back. */
+export const CT_ENTERTAINMENT_DISALLOWED_SHARE = 0.5;
+
 export const CT_ADJUSTMENT_CATEGORIES = {
   entertainment_50: {
-    label: "Client entertainment (50% disallowed)",
+    label: "Client entertainment (50% disallowed, Art. 32)",
+    labelAr: "الضيافة والترفيه (يُستبعد 50%، المادة 32)",
     direction: "add" as CtAdjustmentDirection,
   },
-  fines_penalties: { label: "Fines and penalties", direction: "add" as CtAdjustmentDirection },
+  fines_penalties: { label: "Fines and penalties", labelAr: "الغرامات والعقوبات", direction: "add" as CtAdjustmentDirection },
   non_approved_donations: {
-    label: "Donations to non-approved entities",
+    label: "Donations to non-qualifying entities",
+    labelAr: "التبرعات لجهات غير مؤهلة",
     direction: "add" as CtAdjustmentDirection,
   },
   related_party_excess: {
     label: "Related-party payments above arm's length",
+    labelAr: "مدفوعات الأطراف ذات العلاقة فوق سعر السوق",
     direction: "add" as CtAdjustmentDirection,
   },
   owner_drawings: {
     label: "Owner drawings / non-business expenses",
+    labelAr: "مسحوبات المالك / مصروفات غير تجارية",
     direction: "add" as CtAdjustmentDirection,
   },
-  other_addback: { label: "Other add-back", direction: "add" as CtAdjustmentDirection },
+  depreciation_addback: {
+    label: "Accounting depreciation (added back; replaced by the capital allowance)",
+    labelAr: "الاستهلاك المحاسبي (يُعاد إضافته ويُستبدل بالمخصص الرأسمالي)",
+    direction: "add" as CtAdjustmentDirection,
+  },
+  other_addback: { label: "Other add-back", labelAr: "إضافة أخرى", direction: "add" as CtAdjustmentDirection },
+  capital_allowance: {
+    label: "Capital allowance (tax depreciation)",
+    labelAr: "المخصص الرأسمالي (الاستهلاك الضريبي)",
+    direction: "deduct" as CtAdjustmentDirection,
+  },
   exempt_income: {
     label: "Exempt income (participation/foreign PE)",
+    labelAr: "دخل معفى (مشاركة / منشأة دائمة أجنبية)",
     direction: "deduct" as CtAdjustmentDirection,
   },
   unrealized_gains: {
     label: "Unrealised gains (realisation basis election)",
+    labelAr: "أرباح غير محققة (اختيار أساس التحقق)",
     direction: "deduct" as CtAdjustmentDirection,
   },
-  other_deduction: { label: "Other deduction", direction: "deduct" as CtAdjustmentDirection },
+  other_deduction: { label: "Other deduction", labelAr: "خصم آخر", direction: "deduct" as CtAdjustmentDirection },
 } as const;
 
 export type CtAdjustmentCategory = keyof typeof CT_ADJUSTMENT_CATEGORIES;
@@ -234,8 +258,10 @@ export interface CtBridgeAdjustment {
   id: string;
   category: CtAdjustmentCategory;
   label?: string;
-  /** Positive AED amount; `direction` (or the category default) decides sign. */
+  /** Positive AED amount; `direction` (or the category default) decides sign. For entertainment_50 it is derived from baseAmount. */
   amount: number;
+  /** entertainment_50 only: the entertainment expense in the books; 50% of it is the add-back (Art. 32). */
+  baseAmount?: number;
   direction?: CtAdjustmentDirection;
   notes?: string;
 }
@@ -257,6 +283,11 @@ export interface CtComputationInput {
    * even if current revenue is within the cap.
    */
   priorPeriodsExceededRevenueCap?: boolean;
+  /**
+   * The last day of the tax period (YYYY-MM-DD or a Date). Relief ends with periods ending after
+   * CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END (31 Dec 2026); when absent the sunset cannot be checked and is not applied.
+   */
+  taxPeriodEnd?: string | Date | null;
   exemptionThreshold?: number;
   taxRate?: number;
 }
@@ -277,6 +308,8 @@ export interface CtComputationResult {
     eligible: boolean;
     applied: boolean;
     revenueCap: number;
+    /** Why relief is not available (when elected but not eligible, or just not eligible). */
+    ineligibleReason?: "revenue_cap" | "prior_period_breach" | "period_after_sunset";
   };
   lossBroughtForward: number;
   lossReliefApplied: number;
@@ -300,6 +333,81 @@ export function adjustmentDirection(adj: CtBridgeAdjustment): CtAdjustmentDirect
 
 export function adjustmentLabel(adj: CtBridgeAdjustment): string {
   return adj.label || CT_ADJUSTMENT_CATEGORIES[adj.category]?.label || adj.category;
+}
+
+const OTHER_CATEGORIES_NEEDING_REASON: ReadonlySet<string> = new Set(["other_addback", "other_deduction", "related_party_excess", "unrealized_gains"]);
+
+/**
+ * Validate and normalise the adjustments a client sends: known category, a positive (or zero) AED amount, an id, a reason for the
+ * free-form categories, and for the entertainment add-back the amount derived from the entertainment expense (50%, Art. 32).
+ * Never trusts the client's arithmetic for entertainment: baseAmount wins.
+ */
+export function normalizeCtAdjustments(
+  raw: unknown
+): { ok: true; adjustments: CtBridgeAdjustment[] } | { ok: false; message: string } {
+  if (raw === undefined || raw === null) return { ok: true, adjustments: [] };
+  if (!Array.isArray(raw)) return { ok: false, message: "adjustments must be a list." };
+  if (raw.length > 200) return { ok: false, message: "At most 200 adjustments are allowed." };
+  const out: CtBridgeAdjustment[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of raw.entries()) {
+    const row = (item ?? {}) as Record<string, unknown>;
+    const category = String(row.category ?? "") as CtAdjustmentCategory;
+    if (!(category in CT_ADJUSTMENT_CATEGORIES)) return { ok: false, message: `Adjustment ${index + 1}: unknown category "${String(row.category ?? "")}".` };
+    const id = String(row.id ?? `adj-${index + 1}`).slice(0, 64);
+    if (seen.has(id)) return { ok: false, message: `Adjustment ${index + 1}: duplicate id "${id}".` };
+    seen.add(id);
+    const notes = typeof row.notes === "string" ? row.notes.trim().slice(0, 500) : "";
+    if (OTHER_CATEGORIES_NEEDING_REASON.has(category) && notes.length < 5) {
+      return { ok: false, message: `Adjustment ${index + 1} (${CT_ADJUSTMENT_CATEGORIES[category].label}): a written reason of at least 5 characters is required.` };
+    }
+    let amount: number;
+    let baseAmount: number | undefined;
+    if (category === "entertainment_50" && row.baseAmount !== undefined && row.baseAmount !== null) {
+      baseAmount = Number(row.baseAmount);
+      if (!Number.isFinite(baseAmount) || baseAmount < 0) return { ok: false, message: `Adjustment ${index + 1}: the entertainment expense must be zero or more.` };
+      baseAmount = round2(baseAmount);
+      amount = round2(baseAmount * CT_ENTERTAINMENT_DISALLOWED_SHARE);
+    } else {
+      amount = Number(row.amount);
+      if (!Number.isFinite(amount) || amount < 0) return { ok: false, message: `Adjustment ${index + 1}: the amount must be zero or more (AED).` };
+      amount = round2(amount);
+    }
+    const direction = CT_ADJUSTMENT_CATEGORIES[category].direction;
+    out.push({
+      id,
+      category,
+      ...(typeof row.label === "string" && row.label.trim() ? { label: row.label.trim().slice(0, 160) } : {}),
+      amount,
+      ...(baseAmount !== undefined ? { baseAmount } : {}),
+      direction,
+      ...(notes ? { notes } : {}),
+    });
+  }
+  return { ok: true, adjustments: out };
+}
+
+export type CtSbrUnavailableReason = "revenue_cap" | "prior_period_breach" | "period_after_sunset";
+
+/**
+ * Small Business Relief (Ministerial Decision 73/2023) is OFFERED only when revenue is at most AED 3,000,000 in the period and was in
+ * every earlier period, and the period ends on or before 31 Dec 2026. (The AED 375,000 is the 0% band of Art. 3, a different thing.)
+ */
+export function ctSmallBusinessReliefAvailability(input: {
+  totalRevenue: number;
+  priorPeriodsExceededRevenueCap?: boolean;
+  taxPeriodEnd?: string | Date | null;
+}): { available: boolean; reason?: CtSbrUnavailableReason } {
+  const end = input.taxPeriodEnd == null ? null : typeof input.taxPeriodEnd === "string" ? input.taxPeriodEnd.slice(0, 10) : input.taxPeriodEnd.toISOString().slice(0, 10);
+  const reason: CtSbrUnavailableReason | undefined =
+    input.totalRevenue > CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP
+      ? "revenue_cap"
+      : input.priorPeriodsExceededRevenueCap === true
+        ? "prior_period_breach"
+        : end !== null && end > CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END
+          ? "period_after_sunset"
+          : undefined;
+  return reason ? { available: false, reason } : { available: true };
 }
 
 /**
@@ -334,9 +442,22 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
   const sbrElected = input.smallBusinessReliefElected === true;
   // A-B16: eligible only if the cap is met this period AND was never breached
   // in a prior period.
-  const sbrEligible =
-    input.totalRevenue <= CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP &&
-    input.priorPeriodsExceededRevenueCap !== true;
+  const periodEndYmd =
+    input.taxPeriodEnd == null
+      ? null
+      : typeof input.taxPeriodEnd === "string"
+        ? input.taxPeriodEnd.slice(0, 10)
+        : input.taxPeriodEnd.toISOString().slice(0, 10);
+  const afterSunset = periodEndYmd !== null && periodEndYmd > CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END;
+  const ineligibleReason: "revenue_cap" | "prior_period_breach" | "period_after_sunset" | undefined =
+    input.totalRevenue > CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP
+      ? "revenue_cap"
+      : input.priorPeriodsExceededRevenueCap === true
+        ? "prior_period_breach"
+        : afterSunset
+          ? "period_after_sunset"
+          : undefined;
+  const sbrEligible = ineligibleReason === undefined;
   const sbrApplied = sbrElected && sbrEligible;
 
   let lossReliefApplied = 0;
@@ -370,7 +491,10 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
     const amount = Math.abs(Number(adj.amount) || 0);
     bridge.push({
       key: `adj_${adj.category}_${adj.id}`,
-      label: adjustmentLabel(adj),
+      label:
+        adj.category === "entertainment_50" && adj.baseAmount !== undefined && !adj.label
+          ? `Client entertainment: 50% of AED ${round2(adj.baseAmount).toLocaleString("en-US")} disallowed (Art. 32)`
+          : adjustmentLabel(adj),
       amount: round2(adjustmentDirection(adj) === "add" ? amount : -amount),
     });
   }
@@ -389,7 +513,7 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
   if (sbrApplied) {
     bridge.push({
       key: "small_business_relief",
-      label: "Small business relief (Art. 21) — taxable income treated as nil",
+      label: "Small business relief elected (MD 73/2023; revenue up to AED 3,000,000) — taxable income treated as nil",
       amount: -adjustedTaxableIncome,
     });
   } else if (lossReliefApplied > 0) {
@@ -403,7 +527,7 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
     { key: "taxable_income", label: "Taxable income", amount: taxableIncome },
     {
       key: "zero_band",
-      label: `0% band (first AED ${exemptionThreshold.toLocaleString("en-US")})`,
+      label: `0% band (Art. 3: first AED ${exemptionThreshold.toLocaleString("en-US")} of taxable income)`,
       amount: round2(-Math.min(taxableIncome, exemptionThreshold)),
     },
     { key: "taxable_amount", label: "Income taxed at 9%", amount: taxableAmount },
@@ -420,6 +544,7 @@ export function computeCtComputation(input: CtComputationInput): CtComputationRe
       eligible: sbrEligible,
       applied: sbrApplied,
       revenueCap: CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+      ...(ineligibleReason ? { ineligibleReason } : {}),
     },
     lossBroughtForward: round2(lossBroughtForward),
     lossReliefApplied,

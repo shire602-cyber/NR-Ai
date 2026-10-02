@@ -3,6 +3,7 @@
 // NEVER DECLARED. The VAT return engines and the ledger reading of the filing gate both use
 // `neverDeclaredVoidedInvoiceIds`, so the return and the ledger cannot disagree.
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { periodYmd } from "./vat-period-status.service";
@@ -77,7 +78,6 @@ export async function neverDeclaredAmong(ex: Executor, companyId: string, docs: 
   const out = new Set<string>();
   if (voided.length === 0) return out;
   const [filedReturns, cutover] = await Promise.all([loadFiledVatReturnRecords(ex, companyId), getVatDateRuleCutover(ex)]);
-  if (filedReturns.length === 0) return out;
   for (const d of voided) {
     if (
       voidedDocumentNeverDeclared({
@@ -103,11 +103,11 @@ export async function neverDeclaredVoidedInvoiceIds(ex: Executor, companyId: str
   const start = periodYmd(startYmd);
   const end = periodYmd(endYmd);
   const res = await ex.execute(sql`
-    SELECT i.id, to_char(i.date, 'YYYY-MM-DD') AS date_ymd, i.status, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
+    SELECT i.id, ${sql.raw(dubaiDayTextSql("i.date"))} AS date_ymd, i.status, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
       FROM invoices i ${sql.raw(VOID_DATE_LATERAL_SQL)}
      WHERE i.company_id = ${companyId} AND i.status IN ('void', 'cancelled') AND rev.d IS NOT NULL
        AND COALESCE(i.is_opening_balance, false) = false
-       AND ((i.date::date >= ${start}::date AND i.date::date <= ${end}::date)
+       AND ((${sql.raw(dubaiDaySql("i.date"))} >= ${start}::date AND ${sql.raw(dubaiDaySql("i.date"))} <= ${end}::date)
          OR (rev.d >= ${start}::date AND rev.d <= ${end}::date))`);
   const docs = rowsOf(res).map((r) => ({
     id: String(r.id),

@@ -12,6 +12,8 @@ import { db } from "../db";
 import { and, eq, sql } from "drizzle-orm";
 import { products, inventoryMovements } from "../../shared/schema";
 import { AppError } from "../errors";
+import { calendarDaySchema } from "../utils/calendar-day-schema";
+import { parseCalendarDay, uaeCalendarDate } from "../utils/date";
 import {
   applyMovementInTx,
   isCostingEnabled,
@@ -57,6 +59,8 @@ const inventoryMovementSchema = z.object({
   unitCost: decimalString.optional().nullable(),
   reference: z.string().max(255).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  // The day the stock moved (a calendar day, default today): it dates the movement, the valuation report and the journal.
+  date: calendarDaySchema.optional(),
 })
   // Direction is carried by `type`, not by the sign of the quantity: the handler
   // applies Math.abs() for purchase/sale/return, so a negative quantity there was
@@ -186,6 +190,11 @@ export function registerInventoryRoutes(app: Express) {
       const updated = await db.transaction(async (tx: typeof db) => {
         const [row] = await tx.update(products).set(req.body).where(eq(products.id, id)).returning();
         if (!stockOrTrackingChanged) return row;
+        // Opening stock sets the quantity AND the cost: stock that starts from nothing comes in at the cost price
+        // (otherwise the quantity would carry a zero average and no value).
+        if (Number(row.currentStock) > 0 && (Number(product.currentStock) <= 0 || !(Number(row.averageCost) > 0)) && Number(row.costPrice) > 0) {
+          await tx.update(products).set({ averageCost: Number(row.costPrice) }).where(eq(products.id, id));
+        }
         await resetProductValueInTx(tx, product.companyId, id);
         if (await isCostingEnabled(tx, product.companyId)) await postInventoryOpeningInTx(tx, product.companyId, userId);
         const [fresh] = await tx.select().from(products).where(eq(products.id, id));
@@ -261,9 +270,14 @@ export function registerInventoryRoutes(app: Express) {
 
       const { type, quantity, unitCost, reference, notes } = req.body;
 
-      // Inventory movements change stock value (and COGS for sales) as of today —
-      // refuse if today falls inside a closed period.
-      await assertPeriodNotLocked(product.companyId, new Date());
+      // A movement is dated the day the stock moved (not the day it was typed in). Not in the future, and
+      // not inside a closed period.
+      const today = uaeCalendarDate();
+      const movementDay = req.body.date ? parseCalendarDay(req.body.date) ?? today : today;
+      if (movementDay.getTime() > today.getTime()) {
+        return res.status(422).json({ message: "A stock movement cannot be dated in the future.", code: "FUTURE_DATE" });
+      }
+      await assertPeriodNotLocked(product.companyId, movementDay);
 
       // One transaction: lock the product row, check stock, record the movement, re-average the
       // cost and update stock together (no movement is left behind by a refused sale).
@@ -277,6 +291,7 @@ export function registerInventoryRoutes(app: Express) {
           reference: reference || null,
           notes: notes || null,
           userId,
+          date: movementDay,
         })
       );
       if (!outcome.productFound) {

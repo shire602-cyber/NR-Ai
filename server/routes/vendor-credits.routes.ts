@@ -39,6 +39,8 @@ const lineSchema = z.object({
       { message: "VAT rate must be 0% or 5% (UAE)" }
     ),
   account_id: z.string().uuid().optional().nullable(),
+  // The stock item returned to the supplier on this line (0127): approving the credit takes it out of stock.
+  product_id: z.string().uuid().optional().nullable(),
 });
 
 const rateSchema = z
@@ -50,6 +52,7 @@ const rateSchema = z
   });
 
 const createSchema = z.object({
+  vendor_id: z.string().uuid().optional().nullable(),
   vendor_name: z.string().min(1).max(255).optional(),
   vendor_trn: z.string().max(20).optional().nullable(),
   bill_id: z.string().uuid().optional().nullable(),

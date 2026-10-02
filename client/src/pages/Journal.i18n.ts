@@ -63,6 +63,9 @@ export const messages = defineMessages(
     thisWillCreateANewReversing:
       "This will create a new reversing entry that offsets this posted entry, and mark the original as void. Posted entries cannot be edited or deleted.",
     reverseEntry: "Reverse Entry",
+    reversalDate: "Reversal date",
+    reversalDateHint:
+      "Defaults to today (UAE time). The date must fall in an open period: a locked month refuses the reversal.",
     userRequestedReversal: "User requested reversal",
     noJournalEntriesYet: "No journal entries yet",
     recordYourFirstManualJournalEntry:
@@ -147,6 +150,9 @@ export const messages = defineMessages(
     thisWillCreateANewReversing:
       "سيؤدي هذا إلى إنشاء قيد عكسي جديد يعادل هذا القيد المرحّل ووسم القيد الأصلي كملغى. لا يمكن تعديل القيود المرحّلة أو حذفها.",
     reverseEntry: "عكس القيد",
+    reversalDate: "تاريخ العكس",
+    reversalDateHint:
+      "الافتراضي اليوم (بتوقيت الإمارات). يجب أن يقع التاريخ في فترة مفتوحة: الشهر المقفل يرفض العكس.",
     userRequestedReversal: "عكس بطلب المستخدم",
     noJournalEntriesYet: "لا توجد قيود يومية بعد",
     recordYourFirstManualJournalEntry:

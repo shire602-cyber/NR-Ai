@@ -201,6 +201,8 @@ export const messages = defineMessages(
     terms: "Terms",
     cookies: "Cookies",
     trustSecurity: "Trust and security",
+    footerHelp: "Help centre",
+    footerApiDocs: "API documentation",
     muhasibAiDifcDubaiUnitedArab: "© {getFullYear} Muhasib.ai · DIFC, Dubai, United Arab Emirates",
   },
   {
@@ -402,6 +404,8 @@ export const messages = defineMessages(
     terms: "الشروط",
     cookies: "ملفات تعريف الارتباط",
     trustSecurity: "الثقة والأمان",
+    footerHelp: "مركز المساعدة",
+    footerApiDocs: "وثائق واجهة البرمجة",
     muhasibAiDifcDubaiUnitedArab:
       "© {getFullYear} Muhasib.ai · مركز دبي المالي العالمي، دبي، الإمارات العربية المتحدة",
   }

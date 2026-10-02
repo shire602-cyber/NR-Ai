@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -205,6 +206,7 @@ export default function Notifications() {
                             variant="ghost"
                             size="sm"
                             onClick={() => markAsReadMutation.mutate(notification.id)}
+                            aria-label={iconLabels.t("markAsRead")}
                             data-testid={`button-read-${notification.id}`}
                           >
                             <Check className="w-4 h-4" />
@@ -214,6 +216,7 @@ export default function Notifications() {
                           variant="ghost"
                           size="sm"
                           onClick={() => dismissMutation.mutate(notification.id)}
+                          aria-label={iconLabels.t("dismiss")}
                           data-testid={`button-dismiss-${notification.id}`}
                         >
                           <XCircle className="w-4 h-4" />

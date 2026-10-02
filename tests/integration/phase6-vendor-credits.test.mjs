@@ -205,7 +205,7 @@ async function lockedPeriod() {
   const billId = await L.bill(prevMid, 500);
   const c = await L.credit({ bill_id: billId, date: prevMid, line_items: [line(100)] });
   ok("locked period: the draft can be created while the month is open", c.status === 201, { s: c.status });
-  let r = await api("POST", `/api/companies/${L.cid}/month-end/lock-period`, { token: L.token, body: { periodEnd: prevEnd } });
+  let r = await api("POST", `/api/companies/${L.cid}/month-end/lock-period`, { token: L.token, body: { periodEnd: prevEnd, overrideVatCheck: true, overrideReason: "Test lock without a VAT return" } });
   ok("locked period: month locked", r.status === 200, { s: r.status, j: r.json });
   r = await L.approve(c.json.id);
   ok("approval dated in a locked month is refused (403 period locked)", r.status === 403 && (await L.journal(c.json.id)).length === 0 && (await L.get(c.json.id)).json?.status === "draft", { s: r.status, j: r.json });

@@ -12,7 +12,7 @@
 // convention as server/utils/date.ts, so "today" and "the document date"
 // mean what an accountant in Dubai means by them.
 
-import { uaeYmdParts } from "../utils/date";
+import { parseCalendarDay, uaeYmdParts } from "../utils/date";
 
 export type PaymentDateResult =
   | { ok: true; date: Date; ymd: string; source: "requested" | "fallback" }
@@ -33,17 +33,12 @@ function ymdOf(date: Date): string {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-/** Parse to a Date; a bare YYYY-MM-DD becomes UTC midnight (invoice convention). */
+/**
+ * The posting date is the UTC midnight of the UAE calendar day (utils/date.ts parseCalendarDay): a bare YYYY-MM-DD keeps
+ * its day, an instant becomes the UAE day it falls on, so the journal's date::date is the day the user meant.
+ */
 function parse(value: string | Date): Date | null {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  const text = value.trim();
-  if (DATE_ONLY.test(text)) {
-    const d = new Date(`${text}T00:00:00Z`);
-    // Reject impossible calendar dates such as 2026-02-30 (Date rolls them over).
-    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text ? d : null;
-  }
-  const d = new Date(text);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseCalendarDay(value);
 }
 
 function isBlank(value: unknown): boolean {

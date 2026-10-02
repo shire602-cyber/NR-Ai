@@ -11,6 +11,7 @@
  *    snapshot; if the books have moved since, `driftDetected` says so per box.
  */
 
+import { invalidateVatDueNext } from "../reports/kpis";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Request } from "express";
 import { db } from "../db";
@@ -26,9 +27,8 @@ import {
   type VatReturn,
 } from "../../shared/schema";
 import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
-import { assertPeriodNotLocked } from "./period-lock.service";
 import { lockPeriodInTx } from "./month-end.service";
-import { acquirePeriodLockExclusive } from "./posting-lock";
+import { acquirePeriodLockExclusive, assertMonthOpenInTx } from "./posting-lock";
 import { ledgerVatBalances, planVatClearing } from "./vat-clearing.service";
 import { ensureLegacyVatFilings } from "./vat-legacy-filings.service";
 import { removeStoredFile } from "./document-upload.service";
@@ -178,7 +178,7 @@ export interface VatFilingResult {
   clearing: { irrecoverableVat: number; rounding: number; manualAdjustment: number };
 }
 
-export async function recordVatFiling(args: {
+async function recordVatFilingInner(args: {
   user: FilingActor;
   returnId: string;
   input: {
@@ -209,8 +209,10 @@ export async function recordVatFiling(args: {
   if (!checked.ok) {
     throw new AppError({ message: checked.message, statusCode: checked.status, code: checked.code });
   }
-  // The clearing journal is dated on the filing day (re-checked inside the transaction).
-  await assertPeriodNotLocked(companyId, checked.filedAt);
+  // The clearing journal is dated on the filing day. If that day's month was locked meanwhile (month-end close), the
+  // filing flow still posts it: it is the VAT filing journal, allowed into the locked month only here (PostingBypass
+  // "vat_filing") and labelled so in its memo. Choice made: the journal keeps the real filing date (no re-dating) and the
+  // snapshot of the filed figures is untouched. Ordinary postings into that month stay refused.
 
   const notes = typeof args.input.notes === "string" && args.input.notes.trim() ? args.input.notes.trim().slice(0, 2000) : null;
 
@@ -383,14 +385,24 @@ export async function recordVatFiling(args: {
         recompute: { action: assessment.action, differences: assessment.differences },
       };
 
+      let filingMonthLocked = false;
+      try {
+        await assertMonthOpenInTx(tx, companyId, checked.filedAt);
+      } catch (err) {
+        if ((err as { statusCode?: number })?.statusCode !== 403 && !/locked period/i.test(String((err as Error)?.message ?? ""))) throw err;
+        filingMonthLocked = true;
+      }
       const clearingEntryId = await postSettlementJournal(tx, {
         companyId,
         ymd: checked.filedAt,
-        memo: `VAT ${ret.isAmendment ? "amendment " : ""}return ${periodStartYmd} to ${periodEndYmd} filed - FTA ref ${checked.referenceNumber}`,
+        memo:
+          `VAT ${ret.isAmendment ? "amendment " : ""}return ${periodStartYmd} to ${periodEndYmd} filed - FTA ref ${checked.referenceNumber}` +
+          (filingMonthLocked ? " (VAT filing journal posted into a locked month by the filing flow)" : ""),
         source: VAT_JOURNAL_SOURCE_FILING,
         sourceId: ret.id,
         userId: args.user.id,
         lines: plan.lines,
+        allowLockedPeriod: filingMonthLocked ? { reason: "vat_filing", returnId: ret.id } : undefined,
       });
 
       const [row] = await tx
@@ -619,6 +631,8 @@ export async function overlayVatReturns(rows: VatReturn[]) {
             snapshotHash: filing.snapshotHash,
             evidenceCount: evidenceCounts.get(filing.id) ?? 0,
             settlement: buildSettlementView(filing.settlementNet, paymentSums.get(filing.id) ?? []),
+            // recorded with "Filed outside Muhasib": figures are zero, nothing was posted
+            filedElsewhere: (filing.snapshot as { filedElsewhere?: boolean } | null)?.filedElsewhere === true,
           }
         : null,
     };
@@ -728,4 +742,14 @@ export async function findFiledVatReturnsCoveringMonth(companyId: string, monthE
     referenceNumber: r.reference_number,
     filedAt: r.filed_at,
   }));
+}
+
+/** Filing a return moves the VAT "due next" on the dashboard: drop its cache for the company, before and after. */
+export async function recordVatFiling(args: Parameters<typeof recordVatFilingInner>[0]): Promise<VatFilingResult> {
+  const companyId = (await loadVatReturn(args.returnId).catch(() => null))?.companyId;
+  try {
+    return await recordVatFilingInner(args);
+  } finally {
+    if (companyId) invalidateVatDueNext(companyId);
+  }
 }

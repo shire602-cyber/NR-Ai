@@ -6,6 +6,12 @@ import { createLogger } from "../config/logger";
 
 const log = createLogger("csp");
 
+/** Hosts of the Lean Link SDK (script, API, iframe). Empty unless Lean is configured, so the policy only widens when needed. */
+export function leanCspHosts(env: NodeJS.ProcessEnv = process.env): string[] {
+  if (!env.LEAN_APP_TOKEN || !env.LEAN_CLIENT_SECRET) return [];
+  return ["https://*.leantech.me"];
+}
+
 /**
  * Per-request nonce middleware. Attaches `res.locals.cspNonce` for templates
  * that need to inline a script (rare here; mostly available for future use).
@@ -31,10 +37,12 @@ export function buildCspDirectives() {
     return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
   };
 
+  const lean = leanCspHosts();
   return {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: [...(prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"]), ...lean],
+      ...(lean.length ? { frameSrc: ["'self'", ...lean] } : {}),
       // D4 — the ENFORCED policy keeps `'unsafe-inline'` for styles. The client
       // uses 219 React `style={{ … }}` props across 22 files (inline style
       // ATTRIBUTES), and Radix/framer-motion inject `<style>` ELEMENTS at
@@ -46,9 +54,7 @@ export function buildCspDirectives() {
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
-      connectSrc: prod
-        ? ["'self'"]
-        : ["'self'", "ws://localhost:*", "http://localhost:*", "ws://127.0.0.1:*"],
+      connectSrc: [...(prod ? ["'self'"] : ["'self'", "ws://localhost:*", "http://localhost:*", "ws://127.0.0.1:*"]), ...lean],
       workerSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

@@ -20,7 +20,7 @@ export interface RevenueLine {
 
 export interface RevenueCredit {
   accountId: string;
-  /** Positive AED net amount credited to (or, on reversal, debited from) the account. */
+  /** AED net amount credited to (or, on reversal, debited from) the account; negative for a contra account. */
   amount: number;
 }
 
@@ -90,22 +90,29 @@ export function allocateRevenueCredits(args: {
   return ids.map((accountId) => ({ accountId, amount: groups.get(accountId) ?? 0 }));
 }
 
-/** Journal credit legs for an allocation, described like today's legs. */
+/**
+ * Journal legs for an allocation, described like today's legs. A positive group
+ * is a credit; a NEGATIVE group (a contra account such as Sales Discounts, whose
+ * lines carry a negative amount) is a debit, so the legs always add up to the
+ * subtotal and the entry stays balanced.
+ */
 export function buildRevenueCreditLines(
   allocation: RevenueCredit[],
   ctx: { defaultAccountId: string; zeroRatedAccountId?: string | null; invoiceNumber: string }
 ): JournalLine[] {
   return allocation
-    .filter((a) => a.amount > 0)
-    .map((a) => ({
-      accountId: a.accountId,
-      debit: 0,
-      credit: a.amount,
-      description:
-        a.accountId === ctx.zeroRatedAccountId
-          ? `Zero-rated sales - Invoice ${ctx.invoiceNumber}`
-          : `Sales revenue - Invoice ${ctx.invoiceNumber}`,
-    }));
+    .filter((a) => a.amount !== 0)
+    .map((a) => {
+      const description =
+        a.amount < 0
+          ? `Sales discount - Invoice ${ctx.invoiceNumber}`
+          : a.accountId === ctx.zeroRatedAccountId
+            ? `Zero-rated sales - Invoice ${ctx.invoiceNumber}`
+            : `Sales revenue - Invoice ${ctx.invoiceNumber}`;
+      return a.amount < 0
+        ? { accountId: a.accountId, debit: round2(-a.amount), credit: 0, description }
+        : { accountId: a.accountId, debit: 0, credit: a.amount, description };
+    });
 }
 
 export interface AccountLike {

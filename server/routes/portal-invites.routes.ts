@@ -8,6 +8,7 @@ import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { escapeHtml, sendEmail, type SendEmailResult } from "../services/email.service";
+import { bilingualSubject, bilingualText, emailLanguages, htmlSections, localized, tx } from "../services/email-i18n";
 import {
   PORTAL_COMPANY_ROLE,
   PORTAL_USER_TYPE,
@@ -61,13 +62,16 @@ function renderInviteEmail(params: { companyName: string; inviterName: string; u
   const company = escapeHtml(params.companyName);
   const inviter = escapeHtml(params.inviterName);
   const url = escapeHtml(params.url);
+  // Arabic block first, then English (email-i18n.ts).
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.7;color:#374151">
-<p>${inviter} at NR Accounting has invited you to the client portal for <strong>${company}</strong>.</p>
-<p>The portal lets you view invoices and statements, upload documents and message your accountant.</p>
-<p><a href="${url}" style="display:inline-block;background:#1E40AF;color:#fff;text-decoration:none;padding:12px 28px;border-radius:6px;font-weight:bold">Accept invitation</a></p>
-<p style="font-size:12px;color:#6B7280">This link works once and expires in ${PORTAL_INVITE_TTL_DAYS} days. If the button does not work, copy this address into your browser:<br>${url}</p>
+${htmlSections(null, (lang) => `<p>${tx("inviteBody", lang, { inviter, company })}</p>
+<p>${tx("inviteWhat", lang)}</p>
+<p><a href="${url}" style="display:inline-block;background:#1E40AF;color:#fff;text-decoration:none;padding:12px 28px;border-radius:6px;font-weight:bold">${tx("inviteButton", lang)}</a></p>
+<p style="font-size:12px;color:#6B7280">${tx("inviteExpiry", lang, { days: PORTAL_INVITE_TTL_DAYS })}<br><span dir="ltr">${url}</span></p>`)}
 </div>`;
-  const text = `${params.inviterName} at NR Accounting has invited you to the client portal for ${params.companyName}.\n\nAccept the invitation (works once, expires in ${PORTAL_INVITE_TTL_DAYS} days):\n${params.url}`;
+  const plain = (lang: "ar" | "en") =>
+    `${tx("inviteBody", lang, { inviter: params.inviterName, company: params.companyName }).replace(/<\/?strong>/g, "")}\n\n${tx("inviteExpiry", lang, { days: PORTAL_INVITE_TTL_DAYS })}\n${params.url}`;
+  const text = bilingualText({ ar: plain("ar"), en: plain("en") });
   return { html, text };
 }
 
@@ -98,7 +102,7 @@ async function sendInviteAndRespond(
   try {
     result = await sendEmail(
       params.invitation.email,
-      `You are invited to the ${params.companyName} client portal`,
+      bilingualSubject(localized("inviteSubject", { company: params.companyName })),
       text,
       { fromName: "NR Accounting", html }
     );

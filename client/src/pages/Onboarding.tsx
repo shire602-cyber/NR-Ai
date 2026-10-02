@@ -1,4 +1,7 @@
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import OpeningBalancesOnboardingStep from "@/components/compliance/OpeningBalancesOnboardingStep";
+import { BANKS } from "@/components/banking/BankAccountDialog";
+import { DeletedCompaniesNotice } from "@/components/data/DeletedCompaniesNotice";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -68,19 +71,20 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { Company } from "@shared/schema";
+import { messages as pageMessages } from "./Onboarding.i18n";
+import { withoutBlankTrn } from "@/lib/onboarding-payload";
 
-const UAE_BANKS = [
-  "Emirates NBD",
-  "First Abu Dhabi Bank (FAB)",
-  "Abu Dhabi Commercial Bank (ADCB)",
-  "Dubai Islamic Bank",
-  "Mashreq Bank",
-  "RAKBANK",
-  "Commercial Bank of Dubai",
-  "Sharjah Islamic Bank",
-  "United Arab Bank",
-  "Other",
-];
+// The bank name is stored as the English value (it is data); only the label shown is translated.
+// Exactly the names the server accepts for a bank account (BANKS in the banking dialog; tests/unit/sales-ui.test.ts keeps it equal to
+// the server's list). Anything else used to end in a bare "Validation error".
+const BANK_LABEL_KEYS = {
+  "Emirates NBD": "emiratesNbd",
+  ADCB: "abuDhabiCommercialBankAdcb",
+  FAB: "firstAbuDhabiBankFab",
+  Mashreq: "mashreqBank",
+  Other: "other",
+} as const;
+const UAE_BANKS = BANKS.map((value) => ({ value, labelKey: BANK_LABEL_KEYS[value] }));
 
 const UAE_EMIRATES = [
   { value: "abu_dhabi", label: "Abu Dhabi" },
@@ -94,16 +98,24 @@ const UAE_EMIRATES = [
 
 type Step = "welcome" | "company" | "accounts" | "bank" | "opening" | "first-doc" | "complete";
 
-const STEPS: Step[] = ["welcome", "company", "accounts", "bank", "opening", "first-doc", "complete"];
+const STEPS: Step[] = [
+  "welcome",
+  "company",
+  "accounts",
+  "bank",
+  "opening",
+  "first-doc",
+  "complete",
+];
 
 const STEP_LABELS: Record<Step, string> = {
-  welcome: "Welcome",
-  company: "Company Details",
-  accounts: "Chart of Accounts",
-  bank: "Bank Account",
-  opening: "Opening Balances",
-  "first-doc": "First Document",
-  complete: "Complete",
+  welcome: pageMessages.t("welcome"),
+  company: pageMessages.t("companyDetails"),
+  accounts: pageMessages.t("chartOfAccounts"),
+  bank: pageMessages.t("bankAccount"),
+  opening: pageMessages.t("openingBalances"),
+  "first-doc": pageMessages.t("firstDocument"),
+  complete: pageMessages.t("complete"),
 };
 
 function stepIndex(step: Step): number {
@@ -121,17 +133,27 @@ export default function Onboarding() {
   if (user?.firmRole === "firm_owner" || user?.firmRole === "firm_admin") {
     return <FirmOnboarding firmRole={user.firmRole} />;
   }
-  return <CustomerOnboarding />;
+  return (
+    <>
+      <DeletedCompaniesNotice />
+      <CustomerOnboarding />
+    </>
+  );
 }
 
 function CustomerOnboarding() {
+  const trl = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const { data: companies, isLoading: companiesLoading } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
   });
-  const company = companies?.[0];
+  // The ACTIVE company, not the first in the list: with several companies the wizard used to edit (and prefill
+  // from) whichever one happened to be first, so a switch to another client opened a form holding the wrong name.
+  const { company: activeCompany } = useDefaultCompany();
+  const company = activeCompany ?? companies?.[0];
 
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -199,7 +221,7 @@ function CustomerOnboarding() {
 
   const saveCompanyMutation = useMutation({
     mutationFn: (data: Partial<typeof companyForm>) =>
-      apiRequest("PATCH", `/api/companies/${company!.id}`, data),
+      apiRequest("PATCH", `/api/companies/${company!.id}`, withoutBlankTrn(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       setCompanyFieldErrors({});
@@ -229,8 +251,8 @@ function CustomerOnboarding() {
     },
     onError: (err: any) => {
       toast({
-        title: "Failed to create company",
-        description: err?.message ?? "Please try again",
+        title: trl("failedToCreateCompany"),
+        description: err?.message ?? trl("pleaseTryAgain"),
         variant: "destructive",
       });
     },
@@ -244,7 +266,7 @@ function CustomerOnboarding() {
     },
     onError: (err: Error) => {
       toast({
-        title: "Failed to create bank account",
+        title: trl("failedToCreateBankAccount"),
         description: err.message,
         variant: "destructive",
       });
@@ -259,7 +281,7 @@ function CustomerOnboarding() {
     },
     onError: (err: Error) => {
       toast({
-        title: "Failed to complete onboarding",
+        title: trl("failedToCompleteOnboarding"),
         description: err.message,
         variant: "destructive",
       });
@@ -286,17 +308,17 @@ function CustomerOnboarding() {
     // shapes the server will obviously reject. Empty TRN is allowed (this
     // step is partially optional), but if supplied it must be 15 digits.
     const localSchema = z.object({
-      name: z.string().trim().min(1, "Company name is required").max(200),
+      name: z.string().trim().min(1, trl("companyNameIsRequired")).max(200),
       trnVatNumber: z
         .string()
         .trim()
         .optional()
-        .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
+        .refine((v) => !v || /^[0-9]{15}$/.test(v), trl("uaeTrnMustBeExactly15")),
       contactEmail: z
         .string()
         .trim()
         .optional()
-        .refine((v) => !v || z.string().email().safeParse(v).success, "Enter a valid email"),
+        .refine((v) => !v || z.string().email().safeParse(v).success, trl("enterAValidEmail")),
     });
 
     const parsed = localSchema.safeParse(companyForm);
@@ -330,8 +352,7 @@ function CustomerOnboarding() {
       // network failures surface the inline retry banner instead.
       const apiErr = err as ApiError;
       const status = apiErr?.status;
-      const message =
-        apiErr?.message || "We could not save your company details. Please try again.";
+      const message = apiErr?.message || trl("weCouldNotSaveYourCompany");
 
       if (status && status >= 400 && status < 500) {
         // Heuristic: route the message back to the most likely field.
@@ -346,14 +367,14 @@ function CustomerOnboarding() {
           setCompanySaveError(message);
         }
         toast({
-          title: "Please check your details",
+          title: trl("pleaseCheckYourDetails"),
           description: message,
           variant: "destructive",
         });
       } else {
         setCompanySaveError(message);
         toast({
-          title: "Could not save company details",
+          title: trl("couldNotSaveCompanyDetails"),
           description: message,
           variant: "destructive",
         });
@@ -368,7 +389,8 @@ function CustomerOnboarding() {
   async function handleExpressSetup(data: { name: string; emirate: string; trnVatNumber: string }) {
     setExpressSaving(true);
     try {
-      const payload = { ...companyForm, ...data };
+      // A blank TRN field never replaces the TRN saved at sign-up (the update drops it; a new company has none).
+      const payload = { ...companyForm, ...data, trnVatNumber: data.trnVatNumber || companyForm.trnVatNumber };
       let target = company;
       if (target) {
         await saveCompanyMutation.mutateAsync(payload);
@@ -379,13 +401,13 @@ function CustomerOnboarding() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       localStorage.removeItem(STORAGE_KEY(target.id));
       toast({
-        title: "Your books are ready",
-        description: "UAE chart of accounts seeded — create your first invoice whenever you like.",
+        title: trl("yourBooksAreReady"),
+        description: trl("uaeChartOfAccountsSeededCreate"),
       });
       setLocation("/dashboard");
     } catch (err) {
-      const message = (err as ApiError)?.message ?? "Please try again.";
-      toast({ title: "Express setup failed", description: message, variant: "destructive" });
+      const message = (err as ApiError)?.message ?? trl("pleaseTryAgain2");
+      toast({ title: trl("expressSetupFailed"), description: message, variant: "destructive" });
     } finally {
       setExpressSaving(false);
     }
@@ -423,8 +445,8 @@ function CustomerOnboarding() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Fixed background blobs */}
       <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
+        <div className="absolute top-0 start-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
+        <div className="absolute bottom-0 end-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
       </div>
 
       {/* Header */}
@@ -453,7 +475,7 @@ function CustomerOnboarding() {
             disabled={completeMutation.isPending}
             className="text-muted-foreground text-sm"
           >
-            Save & continue later
+            {trl("saveContinueLater")}
           </Button>
         )}
       </header>
@@ -463,7 +485,7 @@ function CustomerOnboarding() {
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
-              Step {stepIndex(currentStep) + 1} of {STEPS.length}
+              {trl("stepOf", { value: stepIndex(currentStep) + 1, STEPSCount: STEPS.length })}
             </span>
             <span className="text-sm text-muted-foreground">{STEP_LABELS[currentStep]}</span>
           </div>
@@ -497,6 +519,7 @@ function CustomerOnboarding() {
               {currentStep === "welcome" && (
                 <WelcomeStep
                   companyName={company?.name}
+                  savedTrn={company?.trnVatNumber ?? undefined}
                   onNext={goNext}
                   onExpress={handleExpressSetup}
                   expressSaving={expressSaving}
@@ -572,27 +595,35 @@ function WelcomeStep({
   onNext,
   onExpress,
   expressSaving,
+  savedTrn,
 }: {
   companyName?: string;
+  savedTrn?: string;
   onNext: () => void;
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
   expressSaving: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   const { t } = useTranslation();
   const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? "");
   const [emirate, setEmirate] = useState("dubai");
-  const [trn, setTrn] = useState("");
+  const [trn, setTrn] = useState(savedTrn ?? "");
   const [error, setError] = useState<string | null>(null);
+  // the company can arrive after this step first renders: pre-fill the TRN saved at sign-up unless the user already typed one
+  useEffect(() => {
+    if (savedTrn) setTrn((current) => current || savedTrn);
+  }, [savedTrn]);
 
   async function handleExpress() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Company name is required");
+      setError(trl("companyNameIsRequired"));
       return;
     }
     if (trn.trim() && !/^[0-9]{15}$/.test(trn.trim())) {
-      setError("UAE TRN must be exactly 15 digits");
+      setError(trl("uaeTrnMustBeExactly15"));
       return;
     }
     setError(null);
@@ -603,24 +634,23 @@ function WelcomeStep({
     <div className="text-center space-y-8">
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
-          Welcome to Muhasib.ai
+          {trl("welcomeToMuhasibAi")}
         </Badge>
         <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
           {companyName
-            ? `Hello, ${companyName}.`
-            : (tr.booksReadyTitle ?? "Books ready in 90 seconds.")}
+            ? trl("hello", { companyName })
+            : (tr.booksReadyTitle ?? trl("booksReadyIn90Seconds"))}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Your company name is all we need — the UAE chart of accounts, VAT setup, and invoicing are
-          configured automatically.
+          {trl("yourCompanyNameIsAllWe")}
         </p>
       </div>
 
       {/* Express setup — the 90-second path */}
-      <Card className="max-w-md mx-auto text-left border-accent/30 shadow-lg">
+      <Card className="max-w-md mx-auto text-start border-accent/30 shadow-lg">
         <CardContent className="p-5 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="express-name">{tr.companyNameLabel ?? "Company name"}</Label>
+            <Label htmlFor="express-name">{tr.companyNameLabel ?? trl("companyName")}</Label>
             <Input
               id="express-name"
               value={name}
@@ -628,14 +658,14 @@ function WelcomeStep({
                 setName(e.target.value);
                 setError(null);
               }}
-              placeholder="e.g. Pearl Trading LLC"
+              placeholder={trl("eGPearlTradingLlc")}
               disabled={expressSaving}
               data-testid="express-company-name"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>{tr.emirateLabel ?? "Emirate"}</Label>
+              <Label>{tr.emirateLabel ?? trl("emirate")}</Label>
               <Select value={emirate} onValueChange={setEmirate} disabled={expressSaving}>
                 <SelectTrigger data-testid="express-emirate">
                   <SelectValue />
@@ -650,7 +680,7 @@ function WelcomeStep({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="express-trn">{tr.trnOptionalLabel ?? "TRN (optional)"}</Label>
+              <Label htmlFor="express-trn">{tr.trnOptionalLabel ?? trl("trnOptional")}</Label>
               <Input
                 id="express-trn"
                 value={trn}
@@ -658,7 +688,7 @@ function WelcomeStep({
                   setTrn(e.target.value);
                   setError(null);
                 }}
-                placeholder="15 digits"
+                placeholder={trl("n15Digits")}
                 inputMode="numeric"
                 maxLength={15}
                 disabled={expressSaving}
@@ -681,17 +711,16 @@ function WelcomeStep({
             {expressSaving ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />{" "}
-                {tr.settingUpBooks ?? "Setting up your books…"}
+                {tr.settingUpBooks ?? trl("settingUpYourBooks")}
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" /> {tr.setUpMyBooks ?? "Set up my books now"}
+                <Sparkles className="w-4 h-4" /> {tr.setUpMyBooks ?? trl("setUpMyBooksNow")}
               </>
             )}
           </Button>
           <p className="text-[11.5px] text-muted-foreground text-center leading-relaxed">
-            Seeds a UAE-standard chart of accounts with VAT input/output accounts. You can add bank
-            details and your TRN any time in Settings.
+            {trl("seedsAUaeStandardChartOf")}
           </p>
         </CardContent>
       </Card>
@@ -703,23 +732,27 @@ function WelcomeStep({
           className="gap-2 text-muted-foreground hover:text-foreground"
           data-testid="onboarding-start"
         >
-          Prefer the guided tour? Take the 3-minute setup
+          {trl("preferTheGuidedTourTakeThe")}
           <ArrowRight className="w-4 h-4" />
         </Button>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-start">
           {[
             {
               icon: Building2,
-              title: "Company Profile",
-              desc: "Add your TRN and business details",
+              title: trl("companyProfile"),
+              desc: trl("addYourTrnAndBusinessDetails"),
             },
             {
               icon: BookOpen,
-              title: "Chart of Accounts",
-              desc: "UAE-standard accounts pre-configured",
+              title: trl("chartOfAccounts"),
+              desc: trl("uaeStandardAccountsPreConfigured"),
             },
-            { icon: Landmark, title: "Bank Account", desc: "Connect for easy reconciliation" },
+            {
+              icon: Landmark,
+              title: trl("bankAccount"),
+              desc: trl("connectForEasyReconciliation"),
+            },
           ].map(({ icon: Icon, title, desc }) => (
             <Card key={title} className="border border-border/50">
               <CardContent className="p-4 space-y-2">
@@ -768,12 +801,14 @@ function CompanyStep({
   onRetry: () => void;
   saving: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Building2}
-        title="Company Details"
-        description="Add your official business information for UAE compliance."
+        title={trl("companyDetails")}
+        description={trl("addYourOfficialBusinessInformationFor")}
       />
 
       {saveError && (
@@ -784,7 +819,7 @@ function CompanyStep({
         >
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
           <div className="flex-1 space-y-2">
-            <p className="text-sm font-medium">We couldn't save your company.</p>
+            <p className="text-sm font-medium">{trl("weCouldnTSaveYourCompany")}</p>
             <p className="text-sm text-destructive/90">{saveError}</p>
             <Button
               size="sm"
@@ -795,7 +830,7 @@ function CompanyStep({
               className="gap-2"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
-              {saving ? "Retrying…" : "Try again"}
+              {saving ? trl("retrying") : trl("tryAgain")}
             </Button>
           </div>
         </div>
@@ -804,11 +839,11 @@ function CompanyStep({
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Company Name</Label>
+            <Label>{trl("companyName2")}</Label>
             <Input
               value={form.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              placeholder="Acme Trading LLC"
+              placeholder={trl("acmeTradingLlc")}
               aria-invalid={!!fieldErrors.name}
               data-testid="onboarding-company-name"
             />
@@ -819,7 +854,7 @@ function CompanyStep({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Emirate</Label>
+            <Label>{trl("emirate")}</Label>
             <Select value={form.emirate} onValueChange={(v) => onChange({ emirate: v })}>
               <SelectTrigger data-testid="onboarding-emirate">
                 <SelectValue />
@@ -838,8 +873,8 @@ function CompanyStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>
-              TRN — Tax Registration Number
-              <span className="text-muted-foreground ml-1 text-xs">(optional, 15 digits)</span>
+              {trl("trnTaxRegistrationNumber")}
+              <span className="text-muted-foreground ms-1 text-xs">{trl("optional15Digits")}</span>
             </Label>
             <Input
               value={form.trnVatNumber}
@@ -858,8 +893,8 @@ function CompanyStep({
           </div>
           <div className="space-y-1.5">
             <Label>
-              Trade License Number
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              {trl("tradeLicenseNumber")}
+              <span className="text-muted-foreground ms-1 text-xs">{trl("optional")}</span>
             </Label>
             <Input
               value={form.registrationNumber}
@@ -871,18 +906,18 @@ function CompanyStep({
         </div>
 
         <div className="space-y-1.5">
-          <Label>Business Address</Label>
+          <Label>{trl("businessAddress")}</Label>
           <Input
             value={form.businessAddress}
             onChange={(e) => onChange({ businessAddress: e.target.value })}
-            placeholder="Office 401, Business Bay, Dubai, UAE"
+            placeholder={trl("office401BusinessBayDubaiUae")}
             data-testid="onboarding-address"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Phone</Label>
+            <Label>{trl("phone")}</Label>
             <Input
               value={form.contactPhone}
               onChange={(e) => onChange({ contactPhone: e.target.value })}
@@ -891,7 +926,7 @@ function CompanyStep({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>{trl("email")}</Label>
             <Input
               type="email"
               value={form.contactEmail}
@@ -909,7 +944,7 @@ function CompanyStep({
         </div>
       </div>
 
-      <StepNav onBack={onBack} onNext={onNext} nextLabel="Save & Continue" loading={saving} />
+      <StepNav onBack={onBack} onNext={onNext} nextLabel={trl("saveContinue")} loading={saving} />
     </div>
   );
 }
@@ -925,21 +960,23 @@ function AccountsStep({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const trl = pageMessages.useT();
+
   const categories = [
-    { label: "Assets", description: "Cash, receivables, inventory, fixed assets" },
-    { label: "Liabilities", description: "Payables, VAT payable, loans" },
-    { label: "Equity", description: "Owner's capital and retained earnings" },
-    { label: "Revenue", description: "Sales, service income" },
-    { label: "Expenses", description: "COGS, operating expenses, payroll" },
-    { label: "VAT Accounts", description: "Input VAT 5%, Output VAT 5%, VAT control" },
+    { label: trl("assets"), description: trl("cashReceivablesInventoryFixedAssets") },
+    { label: trl("liabilities"), description: trl("payablesVatPayableLoans") },
+    { label: trl("equity"), description: trl("ownerSCapitalAndRetainedEarnings") },
+    { label: trl("revenue"), description: trl("salesServiceIncome") },
+    { label: trl("expenses"), description: trl("cogsOperatingExpensesPayroll") },
+    { label: trl("vatAccounts"), description: trl("inputVat5OutputVat5") },
   ];
 
   return (
     <div className="space-y-6">
       <StepHeader
         icon={BookOpen}
-        title="Chart of Accounts"
-        description="Your UAE-standard chart of accounts has been pre-configured and is ready to use."
+        title={trl("chartOfAccounts")}
+        description={trl("yourUaeStandardChartOfAccounts")}
       />
 
       <Card className="border-success/30 bg-success-subtle ">
@@ -947,11 +984,11 @@ function AccountsStep({
           <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
           <div>
             <p className="text-sm font-medium text-success-subtle-foreground ">
-              {accountCount > 0 ? `${accountCount} accounts configured` : "UAE preset applied"}
+              {accountCount > 0
+                ? trl("accountsConfigured", { accountCount })
+                : trl("uaePresetApplied")}
             </p>
-            <p className="text-xs text-success ">
-              All standard categories with VAT input/output accounts are included.
-            </p>
+            <p className="text-xs text-success ">{trl("allStandardCategoriesWithVatInput")}</p>
           </div>
         </CardContent>
       </Card>
@@ -972,14 +1009,14 @@ function AccountsStep({
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        You can customise accounts anytime from{" "}
+        {trl("youCanCustomiseAccountsAnytimeFrom")}
         <Link href="/chart-of-accounts" className="underline text-primary">
-          Chart of Accounts
+          {trl("chartOfAccounts")}
         </Link>
         .
       </p>
 
-      <StepNav onBack={onBack} onNext={onNext} nextLabel="Looks good, continue" />
+      <StepNav onBack={onBack} onNext={onNext} nextLabel={trl("looksGoodContinue")} />
     </div>
   );
 }
@@ -1009,13 +1046,23 @@ function BankStep({
   onBack: () => void;
   saving: boolean;
 }) {
+  const trl = pageMessages.useT();
+  // The banks the server accepts come from the server (GET /api/banks); the built-in list is only the fallback while it loads.
+  const { data: bankList } = useQuery<{ banks: { value: string; label: string }[] }>({ queryKey: ["/api/banks"], staleTime: 60 * 60 * 1000 });
+  const bankOptions = bankList?.banks?.length
+    ? bankList.banks.map((b) => {
+        const labelKey = (BANK_LABEL_KEYS as Record<string, (typeof BANK_LABEL_KEYS)[keyof typeof BANK_LABEL_KEYS]>)[b.value];
+        return { value: b.value, label: labelKey ? trl(labelKey) : b.label };
+      })
+    : UAE_BANKS.map((b) => ({ value: b.value, label: trl(b.labelKey) }));
+
   if (existingAccounts.length > 0) {
     return (
       <div className="space-y-6">
         <StepHeader
           icon={Landmark}
-          title="Bank Account"
-          description="Your bank account is already connected for reconciliation."
+          title={trl("bankAccount")}
+          description={trl("yourBankAccountIsAlreadyConnected")}
         />
         <Card className="border-success/30 bg-success-subtle ">
           <CardContent className="p-4 space-y-2">
@@ -1037,31 +1084,31 @@ function BankStep({
     <div className="space-y-6">
       <StepHeader
         icon={Landmark}
-        title="Bank Account"
-        description="Add your bank account to enable statement import and reconciliation."
+        title={trl("bankAccount")}
+        description={trl("addYourBankAccountToEnable")}
       />
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Account Display Name</Label>
+            <Label>{trl("accountDisplayName")}</Label>
             <Input
               value={form.nameEn}
               onChange={(e) => onChange({ nameEn: e.target.value })}
-              placeholder="Emirates NBD Current"
+              placeholder={trl("emiratesNbdCurrent")}
               data-testid="onboarding-bank-name"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Bank</Label>
+            <Label>{trl("bank")}</Label>
             <Select value={form.bankName} onValueChange={(v) => onChange({ bankName: v })}>
               <SelectTrigger data-testid="onboarding-bank-select">
-                <SelectValue placeholder="Select bank" />
+                <SelectValue placeholder={trl("selectBank")} />
               </SelectTrigger>
               <SelectContent>
-                {UAE_BANKS.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
+                {bankOptions.map((b) => (
+                  <SelectItem key={b.value} value={b.value}>
+                    {b.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1072,8 +1119,8 @@ function BankStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>
-              Account Number
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              {trl("accountNumber")}
+              <span className="text-muted-foreground ms-1 text-xs">{trl("optional")}</span>
             </Label>
             <Input
               value={form.accountNumber}
@@ -1085,12 +1132,12 @@ function BankStep({
           <div className="space-y-1.5">
             <Label>
               IBAN
-              <span className="text-muted-foreground ml-1 text-xs">(optional)</span>
+              <span className="text-muted-foreground ms-1 text-xs">{trl("optional")}</span>
             </Label>
             <Input
               value={form.iban}
               onChange={(e) => onChange({ iban: e.target.value })}
-              placeholder="AE070331234567890123456"
+              placeholder={trl("ae070331234567890123456")}
               data-testid="onboarding-iban"
             />
           </div>
@@ -1100,7 +1147,7 @@ function BankStep({
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
           <ArrowLeft className="w-4 h-4" />
-          Back
+          {trl("back")}
         </Button>
         <Button
           variant="outline"
@@ -1108,7 +1155,7 @@ function BankStep({
           className="text-muted-foreground"
           data-testid="onboarding-skip-bank"
         >
-          Skip for now
+          {trl("skipForNow")}
         </Button>
         <Button
           onClick={onNext}
@@ -1116,7 +1163,7 @@ function BankStep({
           className="flex-1 gap-2"
           data-testid="onboarding-save-bank"
         >
-          {saving ? "Saving…" : "Save & Continue"}
+          {saving ? trl("saving") : trl("saveContinue")}
           <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
@@ -1135,20 +1182,22 @@ function FirstDocStep({
   onBack: () => void;
   completing: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   const [, setLocation] = useLocation();
 
   const options = [
     {
       icon: FileText,
-      title: "Create an Invoice",
-      description: "Issue a VAT-ready tax invoice to your first customer.",
+      title: trl("createAnInvoice"),
+      description: trl("issueAVatReadyTaxInvoice"),
       action: "/invoices",
       testId: "onboarding-goto-invoice",
     },
     {
       icon: Receipt,
-      title: "Upload a Receipt",
-      description: "Let AI extract and categorise an expense from a photo or PDF.",
+      title: trl("uploadAReceipt"),
+      description: trl("letAiExtractAndCategoriseAn"),
       action: "/receipts",
       testId: "onboarding-goto-receipt",
     },
@@ -1163,8 +1212,8 @@ function FirstDocStep({
     <div className="space-y-6">
       <StepHeader
         icon={FileText}
-        title="Create Your First Document"
-        description="Kick off your bookkeeping by creating an invoice or uploading an expense receipt."
+        title={trl("createYourFirstDocument")}
+        description={trl("kickOffYourBookkeepingByCreating")}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1174,7 +1223,7 @@ function FirstDocStep({
             onClick={() => handleOptionClick(action)}
             disabled={completing}
             data-testid={testId}
-            className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+            className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           >
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
               <Icon className="w-5 h-5 text-primary" />
@@ -1182,7 +1231,7 @@ function FirstDocStep({
             <p className="font-semibold text-sm mb-1">{title}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
             <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-              Get started <ChevronRight className="w-3 h-3" />
+              {trl("getStarted")} <ChevronRight className="w-3 h-3" />
             </div>
           </button>
         ))}
@@ -1191,7 +1240,7 @@ function FirstDocStep({
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
           <ArrowLeft className="w-4 h-4" />
-          Back
+          {trl("back")}
         </Button>
         <Button
           variant="ghost"
@@ -1200,7 +1249,7 @@ function FirstDocStep({
           className="flex-1 text-muted-foreground"
           data-testid="onboarding-skip-doc"
         >
-          {completing ? "Finishing…" : "I'll do this later"}
+          {completing ? trl("finishing") : trl("iLlDoThisLater")}
         </Button>
       </div>
     </div>
@@ -1210,6 +1259,8 @@ function FirstDocStep({
 // ─── Step: Complete ─────────────────────────────────────────────────────────
 
 function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
+  const trl = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(
     () => getPreferredReportPersona() ?? "owner"
@@ -1253,11 +1304,11 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   );
 
   const features = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-    { icon: FileText, label: "Invoices", href: "/invoices" },
-    { icon: Receipt, label: "Receipts", href: "/receipts" },
-    { icon: BookOpen, label: "Chart of Accounts", href: "/chart-of-accounts" },
-    { icon: Users, label: "Contacts", href: "/contacts" },
+    { icon: LayoutDashboard, label: trl("dashboard"), href: "/dashboard" },
+    { icon: FileText, label: trl("invoices"), href: "/invoices" },
+    { icon: Receipt, label: trl("receipts"), href: "/receipts" },
+    { icon: BookOpen, label: trl("chartOfAccounts"), href: "/chart-of-accounts" },
+    { icon: Users, label: trl("contacts"), href: "/contacts" },
   ];
 
   return (
@@ -1274,19 +1325,19 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
       </motion.div>
 
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">You're all set!</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{trl("youReAllSet")}</h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Muhasib.ai is configured for your business. Here's what you can explore next:
+          {trl("muhasibAiIsConfiguredForYour")}
         </p>
       </div>
 
       <div className="space-y-3 max-w-2xl mx-auto">
         <div className="flex items-center justify-center gap-2 text-sm font-medium">
           <BarChart3 className="w-4 h-4 text-primary" />
-          Reporting workspace
+          {trl("reportingWorkspace")}
         </div>
         <div
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-start"
           data-testid="onboarding-report-workspaces"
         >
           {reportPersonaWorkspaces.map((workspace) => {
@@ -1315,14 +1366,14 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                   {workspace.automationOutcome}
                 </p>
                 <p className="mt-3 text-[11px] font-medium text-primary">
-                  {workspace.automations.length} automation lanes
+                  {trl("automationLanes", { automationsCount: workspace.automations.length })}
                 </p>
               </button>
             );
           })}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-quick-access-impact"
         >
           {selectedQuickAccessProfile ? (
@@ -1345,7 +1396,9 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {selectedQuickAccessProfile.reportIds.length} ready reports
+                {trl("readyReports", {
+                  reportIdsCount: selectedQuickAccessProfile.reportIds.length,
+                })}
               </p>
             </button>
           ) : null}
@@ -1377,7 +1430,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         </div>
         {selectedQuickAccessReports.length > 0 ? (
           <div
-            className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2 lg:grid-cols-3"
+            className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2 lg:grid-cols-3"
             data-testid={`onboarding-report-quick-access-reports-${selectedWorkspace.persona}`}
           >
             {selectedQuickAccessReports.slice(0, 6).map((report) => (
@@ -1409,7 +1462,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           </div>
         ) : null}
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-suites"
         >
           {selectedReportSuites.map((suite) => (
@@ -1433,13 +1486,16 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {suite.reportIds.length} reports · {suite.primaryAction}
+                {trl("reports", {
+                  reportIdsCount: suite.reportIds.length,
+                  primaryAction: suite.primaryAction,
+                })}
               </p>
             </button>
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
           data-testid="onboarding-report-decision-shortcuts"
         >
           {selectedDecisionShortcuts.map((shortcut) => (
@@ -1463,13 +1519,13 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {shortcut.reportIds.length} linked reports
+                {trl("linkedReports", { reportIdsCount: shortcut.reportIds.length })}
               </p>
             </button>
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-comparison-presets"
         >
           {selectedComparisonPresets.map((preset) => (
@@ -1493,7 +1549,10 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {preset.baseline} · {preset.metricIds.length} metrics
+                {trl("metrics", {
+                  baseline: preset.baseline,
+                  metricIdsCount: preset.metricIds.length,
+                })}
               </p>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                 {preset.automationTrigger}
@@ -1502,7 +1561,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
           data-testid="onboarding-report-saved-views"
         >
           {selectedSavedViews.map((view) => (
@@ -1532,7 +1591,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-3"
           data-testid="onboarding-report-trigger-rules"
         >
           {selectedTriggerRules.map((rule) => (
@@ -1556,13 +1615,13 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {rule.cadence} · {rule.reportIds.length} reports
+                {trl("reports2", { cadence: rule.cadence, reportIdsCount: rule.reportIds.length })}
               </p>
             </button>
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-delivery-subscriptions"
         >
           {selectedDeliverySubscriptions.map((subscription) => (
@@ -1586,13 +1645,16 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {subscription.channel} · {subscription.reportIds.length} reports
+                {trl("reports3", {
+                  channel: subscription.channel,
+                  reportIdsCount: subscription.reportIds.length,
+                })}
               </p>
             </button>
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-automation-starters"
         >
           {selectedAutomationStarters.map((starter) => (
@@ -1616,13 +1678,16 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {starter.setupTime} · {starter.setupSteps.length} setup steps
+                {trl("setupSteps", {
+                  setupTime: starter.setupTime,
+                  setupStepsCount: starter.setupSteps.length,
+                })}
               </p>
             </button>
           ))}
         </div>
         <div
-          className="grid grid-cols-1 gap-3 text-left sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 text-start sm:grid-cols-2"
           data-testid="onboarding-report-pack-templates"
         >
           {selectedReportPackTemplates.map((template) => (
@@ -1646,7 +1711,10 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               </div>
               <p className="mt-3 text-[11px] font-medium text-primary">
-                {template.cadence} · {template.reportIds.length} reports
+                {trl("reports2", {
+                  cadence: template.cadence,
+                  reportIdsCount: template.reportIds.length,
+                })}
               </p>
             </button>
           ))}
@@ -1661,7 +1729,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-report-operations"
           >
-            Open report operations
+            {trl("openReportOperations")}
             <ArrowRight className="w-4 h-4" />
           </Button>
           <Button
@@ -1674,7 +1742,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-report-workspace"
           >
-            Open {selectedWorkspace.navLabel}
+            {trl("open", { navLabel: selectedWorkspace.navLabel })}
             <ArrowRight className="w-4 h-4" />
           </Button>
           <Button
@@ -1687,7 +1755,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
             className="gap-2 px-8"
             data-testid="onboarding-open-automation-center"
           >
-            Open {selectedWorkspace.automationNavLabel}
+            {trl("open2", { automationNavLabel: selectedWorkspace.automationNavLabel })}
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>
@@ -1712,7 +1780,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         className="gap-2 px-8"
         data-testid="onboarding-go-dashboard"
       >
-        Go to Dashboard
+        {trl("goToDashboard")}
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>
@@ -1754,11 +1822,13 @@ function StepNav({
   nextLabel?: string;
   loading?: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="flex gap-3">
       <Button variant="outline" onClick={onBack} className="gap-1">
         <ArrowLeft className="w-4 h-4" />
-        Back
+        {trl("back")}
       </Button>
       <Button
         onClick={onNext}
@@ -1766,7 +1836,7 @@ function StepNav({
         className="flex-1 gap-2"
         data-testid="onboarding-next"
       >
-        {loading ? "Saving…" : nextLabel}
+        {loading ? trl("saving") : nextLabel}
         {!loading && <ArrowRight className="w-4 h-4" />}
       </Button>
     </div>
@@ -1782,13 +1852,15 @@ function StepNav({
 type FirmStep = "welcome" | "team" | "clients" | "complete";
 const FIRM_STEPS: FirmStep[] = ["welcome", "team", "clients", "complete"];
 const FIRM_STEP_LABELS: Record<FirmStep, string> = {
-  welcome: "Welcome",
-  team: "Invite your team",
-  clients: "Add your first client",
-  complete: "Ready to go",
+  welcome: pageMessages.t("welcome"),
+  team: pageMessages.t("inviteYourTeam"),
+  clients: pageMessages.t("addYourFirstClient"),
+  complete: pageMessages.t("readyToGo"),
 };
 
 function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" }) {
+  const trl = pageMessages.useT();
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState<FirmStep>("welcome");
@@ -1809,7 +1881,7 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
     },
     onError: (err: Error) => {
       toast({
-        title: "Could not finish setup",
+        title: trl("couldNotFinishSetup"),
         description: err.message,
         variant: "destructive",
       });
@@ -1857,8 +1929,8 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
+        <div className="absolute top-0 start-1/4 w-[600px] h-[600px] bg-primary/8 rounded-full blur-[128px]" />
+        <div className="absolute bottom-0 end-1/4 w-[500px] h-[500px] bg-chart-5/8 rounded-full blur-[128px]" />
       </div>
 
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
@@ -1876,7 +1948,7 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
             className="text-muted-foreground text-sm"
             data-testid="firm-onboarding-skip"
           >
-            Skip for now
+            {trl("skipForNow")}
           </Button>
         )}
       </header>
@@ -1885,7 +1957,7 @@ function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" })
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
-              Step {idx + 1} of {FIRM_STEPS.length}
+              {trl("stepOf2", { value: idx + 1, FIRM_STEPSCount: FIRM_STEPS.length })}
             </span>
             <span className="text-sm text-muted-foreground">{FIRM_STEP_LABELS[step]}</span>
           </div>
@@ -1940,6 +2012,8 @@ function FirmWelcomeStep({
   firmRole: "firm_owner" | "firm_admin";
   onNext: () => void;
 }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="text-center space-y-8">
       <div className="flex justify-center">
@@ -1949,21 +2023,21 @@ function FirmWelcomeStep({
       </div>
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
-          {firmRole === "firm_owner" ? "Firm Owner" : "Firm Admin"}
+          {firmRole === "firm_owner" ? trl("firmOwner") : trl("firmAdmin")}
         </Badge>
-        <h1 className="text-3xl font-bold tracking-tight">Welcome to your firm workspace</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{trl("welcomeToYourFirmWorkspace")}</h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           {firmRole === "firm_owner"
-            ? "Invite your team, onboard your clients, and manage their books from one place."
-            : "Onboard your assigned clients and start managing their books."}
+            ? trl("inviteYourTeamOnboardYourClients")
+            : trl("onboardYourAssignedClientsAndStart")}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-start">
         {[
-          { icon: Users, title: "Team", desc: "Invite staff with the right permissions" },
-          { icon: Building2, title: "Clients", desc: "Onboard companies you manage" },
-          { icon: BarChart3, title: "Analytics", desc: "Firm-wide health and KPIs" },
+          { icon: Users, title: trl("team"), desc: trl("inviteStaffWithTheRightPermissions") },
+          { icon: Building2, title: trl("clients"), desc: trl("onboardCompaniesYouManage") },
+          { icon: BarChart3, title: trl("analytics"), desc: trl("firmWideHealthAndKpis") },
         ].map(({ icon: Icon, title, desc }) => (
           <Card key={title} className="border border-border/50">
             <CardContent className="p-4 space-y-2">
@@ -1978,7 +2052,7 @@ function FirmWelcomeStep({
       </div>
 
       <Button size="lg" onClick={onNext} className="gap-2 px-8" data-testid="firm-onboarding-start">
-        Get Started
+        {trl("getStarted2")}
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>
@@ -1996,25 +2070,24 @@ function FirmTeamStep({
   onGoTo: (path: string) => void;
   canManageStaff: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Users}
-        title="Invite your team"
+        title={trl("inviteYourTeam")}
         description={
           canManageStaff
-            ? "Add your accountants and assign them to client portfolios."
-            : "Your firm owner manages staff. You can move on to onboarding clients."
+            ? trl("addYourAccountantsAndAssignThem")
+            : trl("yourFirmOwnerManagesStaffYou")
         }
       />
 
       {canManageStaff ? (
         <Card className="border border-border/50">
           <CardContent className="p-5 space-y-3">
-            <p className="text-sm">
-              Open Staff Management in a new tab to send invites — your team gets an email link to
-              set their password and join.
-            </p>
+            <p className="text-sm">{trl("openStaffManagementInANew")}</p>
             <Button
               variant="outline"
               onClick={() => onGoTo("/firm/staff")}
@@ -2022,7 +2095,7 @@ function FirmTeamStep({
               data-testid="firm-onboarding-staff"
             >
               <Users className="w-4 h-4" />
-              Open Staff Management
+              {trl("openStaffManagement")}
             </Button>
           </CardContent>
         </Card>
@@ -2030,7 +2103,7 @@ function FirmTeamStep({
         <Card className="border border-border/50">
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground">
-              Staff invitations are managed by the firm owner. Skip ahead to add clients.
+              {trl("staffInvitationsAreManagedByThe")}
             </p>
           </CardContent>
         </Card>
@@ -2052,12 +2125,14 @@ function FirmClientsStep({
   onGoTo: (path: string) => void;
   completing: boolean;
 }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="space-y-6">
       <StepHeader
         icon={Building2}
-        title="Add your first client"
-        description="Onboard a client company so you can start managing their books."
+        title={trl("addYourFirstClient")}
+        description={trl("onboardAClientCompanySoYou")}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2065,36 +2140,36 @@ function FirmClientsStep({
           type="button"
           onClick={() => onGoTo("/firm/clients")}
           disabled={completing}
-          className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+          className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-add-client"
         >
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
             <Building2 className="w-5 h-5 text-primary" />
           </div>
-          <p className="font-semibold text-sm mb-1">Add a client</p>
+          <p className="font-semibold text-sm mb-1">{trl("addAClient")}</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Create a new client workspace and invite their team to the portal.
+            {trl("createANewClientWorkspaceAnd")}
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-            Open <ChevronRight className="w-3 h-3" />
+            {trl("open3")} <ChevronRight className="w-3 h-3" />
           </div>
         </button>
         <button
           type="button"
           onClick={() => onGoTo("/firm/bulk")}
           disabled={completing}
-          className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
+          className="text-start p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-bulk"
         >
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
             <FileText className="w-5 h-5 text-primary" />
           </div>
-          <p className="font-semibold text-sm mb-1">Import in bulk</p>
+          <p className="font-semibold text-sm mb-1">{trl("importInBulk")}</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Migrating from another tool? Bring your client list across with a CSV.
+            {trl("migratingFromAnotherToolBringYour")}
           </p>
           <div className="flex items-center gap-1 mt-3 text-xs text-primary font-medium">
-            Open <ChevronRight className="w-3 h-3" />
+            {trl("open3")} <ChevronRight className="w-3 h-3" />
           </div>
         </button>
       </div>
@@ -2102,7 +2177,7 @@ function FirmClientsStep({
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} className="gap-1">
           <ArrowLeft className="w-4 h-4" />
-          Back
+          {trl("back")}
         </Button>
         <Button
           variant="ghost"
@@ -2111,7 +2186,7 @@ function FirmClientsStep({
           className="flex-1 text-muted-foreground"
           data-testid="firm-onboarding-finish"
         >
-          {completing ? "Finishing…" : "I'll add clients later"}
+          {completing ? trl("finishing") : trl("iLlAddClientsLater")}
         </Button>
       </div>
     </div>
@@ -2119,6 +2194,8 @@ function FirmClientsStep({
 }
 
 function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
+  const trl = pageMessages.useT();
+
   return (
     <div className="text-center space-y-8">
       <motion.div
@@ -2132,9 +2209,9 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
         </div>
       </motion.div>
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">Your firm is set up</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{trl("yourFirmIsSetUp")}</h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          Jump straight into the client portfolio to start managing books.
+          {trl("jumpStraightIntoTheClientPortfolio")}
         </p>
       </div>
       <Button
@@ -2143,7 +2220,7 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
         className="gap-2 px-8"
         data-testid="firm-onboarding-go"
       >
-        Go to clients
+        {trl("goToClients")}
         <ArrowRight className="w-4 h-4" />
       </Button>
     </div>

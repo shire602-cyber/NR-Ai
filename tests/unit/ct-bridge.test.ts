@@ -39,7 +39,7 @@ describe("disallowable expense add-backs", () => {
 
     // Every adjustment appears as a labelled bridge line.
     const labels = r.bridge.map((l) => l.label);
-    expect(labels).toContain("Client entertainment (50% disallowed)");
+    expect(labels).toContain("Client entertainment (50% disallowed, Art. 32)");
     expect(labels).toContain("Fines and penalties");
     expect(labels).toContain("Exempt income (participation/foreign PE)");
     const entertainment = r.bridge.find((l) => l.label.startsWith("Client entertainment"));

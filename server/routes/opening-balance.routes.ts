@@ -32,6 +32,10 @@ const bodySchema = z.object({
   csv: z.string().max(2_000_000).optional().nullable(),
   invoices: z.array(docSchema).max(2000).optional(),
   bills: z.array(docSchema).max(2000).optional(),
+  openingStock: z
+    .array(z.object({ productId: z.string().uuid(), quantity: z.coerce.number().int().min(0), unitCost: z.coerce.number().min(0) }))
+    .max(2000)
+    .optional(),
 });
 
 function actorOf(req: Request): FilingActor {

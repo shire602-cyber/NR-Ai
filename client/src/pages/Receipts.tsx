@@ -1,4 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { formatCalendarDate, todayYmd, uaeDayOf } from "@/lib/calendar-date";
+import { accountName } from "@/lib/account-name";
+import { CameraCapture } from "@/components/CameraCapture";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
@@ -305,6 +308,27 @@ export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  // Categories are stored as English ids; the label shown is in the interface language.
+  const categoryLabel = (category: string | null | undefined): string => {
+    const keys = {
+      "Office Supplies": "officeSupplies",
+      Meals: "mealsEntertainment",
+      "Meals & Entertainment": "mealsEntertainment",
+      Travel: "travel",
+      Utilities: "utilities",
+      Marketing: "marketing",
+      Equipment: "equipment",
+      Communication: "communication",
+      "Professional Services": "professionalServices",
+      Insurance: "insurance",
+      Maintenance: "maintenance",
+      Rent: "rent",
+      Software: "software",
+      Other: "other",
+    } as const;
+    const key = keys[(category ?? "") as keyof typeof keys];
+    return key ? tr(key) : (category ?? "");
+  };
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -333,7 +357,7 @@ export default function Receipts() {
     resolver: zodResolver(receiptSchema),
     defaultValues: {
       merchant: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayYmd(),
       amount: 0,
       vatAmount: null,
       category: "",
@@ -544,7 +568,7 @@ export default function Receipts() {
     setEditingReceipt(receipt);
     form.reset({
       merchant: receipt.merchant || "",
-      date: receipt.date || "",
+      date: uaeDayOf(receipt.date),
       amount: receipt.amount || 0,
       vatAmount: receipt.vatAmount || null,
       category: receipt.category || "",
@@ -851,7 +875,7 @@ export default function Receipts() {
           parsed = {
             // i18n-ignore: persisted data value, must not depend on the UI language
             merchant: result.merchant || "Unknown Merchant",
-            date: result.date || new Date().toISOString().split("T")[0],
+            date: result.date || todayYmd(),
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
             vatPercentage: result.vatPercentage ?? 5,
@@ -1106,7 +1130,7 @@ export default function Receipts() {
           companyId: companyId,
           // i18n-ignore: persisted data value, must not depend on the UI language
           merchant: receipt.data!.merchant || "Unknown",
-          date: receipt.data!.date || new Date().toISOString().split("T")[0],
+          date: receipt.data!.date || todayYmd(),
           invoiceNumber: receipt.data!.invoiceNumber || null,
           amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
           vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
@@ -1420,6 +1444,7 @@ export default function Receipts() {
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tr("clickOrDropMoreImagesTo")}</p>
+                <CameraCapture onCapture={handleFilesSelect} />
               </div>
             ) : (
               <div className="space-y-4">
@@ -1446,6 +1471,7 @@ export default function Receipts() {
                 >
                   {tr("browseFiles")}
                 </Button>
+                <CameraCapture onCapture={handleFilesSelect} />
               </div>
             )}
           </div>
@@ -1666,7 +1692,7 @@ export default function Receipts() {
                           <Label className="text-xs">{tr("date")}</Label>
                           <Input
                             type="date"
-                            value={receipt.data.date || ""}
+                            value={uaeDayOf(receipt.data.date)}
                             onChange={(e) => updateReceiptData(index, { date: e.target.value })}
                             className="h-8"
                             data-testid={`input-date-${index}`}
@@ -1897,7 +1923,7 @@ export default function Receipts() {
                     />
                     <div>
                       <p className="font-medium">{receipt.merchant || tr("unknownMerchant")}</p>
-                      <p className="text-sm text-muted-foreground">{receipt.date}</p>
+                      <p className="text-sm text-muted-foreground">{formatCalendarDate(receipt.date, locale)}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -1906,7 +1932,7 @@ export default function Receipts() {
                         {formatCurrency(receipt.amount || 0, "AED", locale)}
                       </p>
                       <div className="flex gap-2 mt-1 flex-wrap sm:justify-end">
-                        <Badge variant="outline">{receipt.category || tr("uncategorized")}</Badge>
+                        <Badge variant="outline">{receipt.category ? categoryLabel(receipt.category) : tr("uncategorized")}</Badge>
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
                             variant="secondary"
@@ -2098,7 +2124,7 @@ export default function Receipts() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{tr("amount")}</FormLabel>
+                    <FormLabel>{tr("amountBeforeVat")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -2206,10 +2232,10 @@ export default function Receipts() {
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="font-medium">{transaction.merchant || tr("unknownMerchant")}</p>
-                      <p className="text-sm text-muted-foreground">{transaction.date}</p>
+                      <p className="text-sm text-muted-foreground">{formatCalendarDate(transaction.date, locale)}</p>
                       {transaction.category && (
                         <Badge variant="outline" className="mt-1">
-                          {transaction.category}
+                          {categoryLabel(transaction.category)}
                         </Badge>
                       )}
                     </div>
@@ -2342,7 +2368,7 @@ export default function Receipts() {
                     <p className="font-medium">
                       {postingReceipt.merchant || tr("unknownMerchant")}
                     </p>
-                    <p className="text-sm text-muted-foreground">{postingReceipt.date}</p>
+                    <p className="text-sm text-muted-foreground">{formatCalendarDate(postingReceipt.date, locale)}</p>
                   </div>
                   <p dir="ltr" className="font-mono font-semibold text-lg">
                     {formatCurrency(
@@ -2427,7 +2453,7 @@ export default function Receipts() {
                 <div className="flex justify-between">
                   <span>
                     {tr("dr")}
-                    {accounts?.find((a) => a.id === selectedExpenseAccount)?.nameEn ||
+                    {accountName(accounts?.find((a) => a.id === selectedExpenseAccount), locale) ||
                       tr("expenseAccount")}
                   </span>
                   <span>
@@ -2441,7 +2467,7 @@ export default function Receipts() {
                 <div className="flex justify-between ps-4">
                   <span>
                     {tr("cr")}
-                    {accounts?.find((a) => a.id === selectedPaymentAccount)?.nameEn ||
+                    {accountName(accounts?.find((a) => a.id === selectedPaymentAccount), locale) ||
                       tr("paymentAccount")}
                   </span>
                   <span>
@@ -2530,7 +2556,7 @@ export default function Receipts() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{tr("amountAed")}</FormLabel>
+                    <FormLabel>{tr("amountBeforeVat")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"

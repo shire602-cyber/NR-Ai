@@ -1,4 +1,7 @@
+import { recordFiledElsewhere } from "../services/vat-filed-elsewhere.service";
+import { currentVatFilingPeriod } from "../services/vat-autopilot.service";
 import type { Express, Request, Response } from "express";
+import { invalidateVatDueNext } from "../reports/kpis";
 import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
@@ -6,8 +9,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { computeVatReturnForPeriod } from "../services/vat-return-compute.service";
 import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.service";
 import { pool } from "../db";
+import { recordAudit } from "../services/audit.service";
 import { round2 } from "../services/financial-statements";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { MIN_MANUAL_EDIT_REASON, editedFigureKeys, mergeManualEdits } from "../services/tax-filing-core";
 import {
   assertVatPeriodEnded,
@@ -112,6 +115,18 @@ async function requireCompanyWorkpaperAccess(
     return null;
   }
   return { userId, detail };
+}
+
+/** The money on a VAT return row (every numeric box and total) plus its period, for the audit trail. */
+function vatDraftFigures(row: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    period: `${new Date(row.periodStart).toISOString().slice(0, 10)}..${new Date(row.periodEnd).toISOString().slice(0, 10)}`,
+    status: row.status ?? null,
+  };
+  for (const [k, v] of Object.entries(row)) {
+    if (typeof v === "number" && /^box|vat|total|net|payable|due|refund/i.test(k)) out[k] = v;
+  }
+  return out;
 }
 
 export function registerVATRoutes(app: Express) {
@@ -432,6 +447,42 @@ export function registerVATRoutes(app: Express) {
   // =====================================
 
   // Get VAT returns by company
+  // "Filed outside Muhasib": record a historical period as filed elsewhere (posts nothing, audit-logged, owner / accountant / CFO).
+  // Body: { periodStart, periodEnd, filingDate, reference? } (UAE-day strings).
+  app.post(
+    "/api/companies/:companyId/vat-returns/filed-elsewhere",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const u = (req as any).user;
+      const result = await recordFiledElsewhere({
+        user: { id: u.id, isAdmin: u.isAdmin === true, firmRole: u.firmRole ?? null },
+        companyId,
+        periodStart: req.body?.periodStart,
+        periodEnd: req.body?.periodEnd,
+        filingDate: req.body?.filingDate,
+        reference: req.body?.reference,
+        req,
+      });
+      res.status(201).json(result);
+    })
+  );
+
+  // The period the VAT Filing page works on: the last ended period not yet filed (Q3 due 28 Oct while it is early October),
+  // else the period that contains today. Never a quarter before the company's VAT start day.
+  app.get(
+    "/api/companies/:companyId/vat-returns/current-period",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = await requireCompanyAccess(req, res, companyId);
+      if (!userId) return;
+      const current = await currentVatFilingPeriod(companyId);
+      if (!current) return res.status(404).json({ message: "Company not found" });
+      res.json(current);
+    })
+  );
+
   app.get(
     "/api/companies/:companyId/vat-returns",
     authMiddleware,
@@ -464,6 +515,8 @@ export function registerVATRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      // The dashboard's "VAT due next" is cached per company; a generated return changes it.
+      invalidateVatDueNext(companyId);
 
       // Validate the period before doing anything else. A UAE VAT period is a
       // month or a quarter; absurd spans (e.g. 1900-01-01 → 2999-12-31) must be
@@ -506,11 +559,9 @@ export function registerVATRoutes(app: Express) {
       }
       const previewMeta = vatPeriodPreviewMeta(periodStart, periodEnd, now);
 
-      // Generating a VAT return for a period that is already closed would
-      // produce numbers that disagree with the locked-period books. Block it.
-      if (periodEnd) {
-        await assertPeriodNotLocked(companyId, periodEnd);
-      }
+      // Computing a draft return is a READ of the books: it never hits the period lock (locking September must not stop the
+      // Q3 return from being prepared). Only a posting is subject to the lock; filing's clearing journal goes through the
+      // filing flow (vat-filing.service.ts).
 
       const { returnValues, metadata } = await computeVatReturnForPeriod({
         companyId,
@@ -555,6 +606,17 @@ export function registerVATRoutes(app: Express) {
 
       // Regenerating replaces every figure with the books' figures: hand edits are gone with them.
       const vatReturn = await persistVatReturn({ ...returnValues, manualEdits: null });
+      // Keep the replaced draft's figures: a regenerated draft used to overwrite the earlier one without a trace.
+      await recordAudit({
+        userId,
+        companyId,
+        action: samePeriod ? "vat.draft.regenerate" : "vat.draft.generate",
+        entityType: "vat_return",
+        entityId: vatReturn.id,
+        before: samePeriod ? vatDraftFigures(samePeriod) : null,
+        after: vatDraftFigures(vatReturn),
+        req,
+      });
 
       // Return with additional metadata for the UI
       res.status(201).json({
@@ -620,9 +682,8 @@ export function registerVATRoutes(app: Express) {
         });
       }
 
-      // Submitting the return finalises the VAT settlement against periodEnd —
-      // refuse if the underlying period is already closed.
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
+      // Marking a return submitted posts nothing (the settlement journal is posted by the filing flow), so the period lock
+      // is not consulted here.
 
       // H2 — HONEST FILING STATUS.
       //

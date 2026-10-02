@@ -3,6 +3,8 @@ import { defineMessages } from "@/lib/i18n-messages";
 export const messages = defineMessages(
   "Accounts",
   {
+    accountCodeIsRequired: "Account code is required",
+    accountCode: "Account code",
     accountNameEnIsRequired: "Account name (EN) is required",
     accountCreated: "Account created",
     newAccountHasBeenAddedTo: "New account has been added to the Chart of Accounts.",
@@ -37,8 +39,16 @@ export const messages = defineMessages(
       "Note: This account cannot be deleted if it has existing transactions.",
     cancel: "Cancel",
     delete: "Delete",
+    intercompanyCounterparty: "Intercompany counterparty",
+    intercompanyNone: "None",
+    intercompanyHint:
+      "Pick the group company on the other side of this account so consolidated statements can eliminate it.",
+    intercompanyWith: "Intercompany with {company}",
+    intercompanyUnknownCompany: "another company",
   },
   {
+    accountCodeIsRequired: "رمز الحساب مطلوب",
+    accountCode: "رمز الحساب",
     accountNameEnIsRequired: "اسم الحساب (بالإنجليزية) مطلوب",
     accountCreated: "تم إنشاء الحساب",
     newAccountHasBeenAddedTo: "تمت إضافة الحساب الجديد إلى دليل الحسابات.",
@@ -72,5 +82,11 @@ export const messages = defineMessages(
     noteThisAccountCannotBeDeleted: "ملاحظة: لا يمكن حذف هذا الحساب إن كانت عليه معاملات.",
     cancel: "إلغاء",
     delete: "حذف",
+    intercompanyCounterparty: "الشركة المقابلة (بين شركات المجموعة)",
+    intercompanyNone: "لا شيء",
+    intercompanyHint:
+      "اختر شركة المجموعة على الجانب الآخر من هذا الحساب ليتمكن التوحيد من استبعاده.",
+    intercompanyWith: "بين شركات المجموعة مع {company}",
+    intercompanyUnknownCompany: "شركة أخرى",
   }
 );

@@ -135,6 +135,12 @@ export const messages = defineMessages(
     assetsRegistered_few: "{count} assets registered",
     assetsRegistered_many: "{count} assets registered",
     assetsRegistered_other: "{count} assets registered",
+    fromBill: "From a bill",
+    disposalInvoiceIssued: "Tax invoice {number} was issued to the buyer.",
+    colNbv: "Net book value",
+    tabAssets: "Assets",
+    tabRegister: "Asset register",
+    tabSchedule: "Depreciation schedule",
   },
   {
     assetNameIsRequired: "اسم الأصل مطلوب",
@@ -269,5 +275,11 @@ export const messages = defineMessages(
     assetsRegistered_few: "{count} أصول مسجلة",
     assetsRegistered_many: "{count} أصلًا مسجلًا",
     assetsRegistered_other: "{count} أصل مسجل",
+    fromBill: "من فاتورة مشتريات",
+    disposalInvoiceIssued: "صدرت فاتورة ضريبية {number} للمشتري.",
+    colNbv: "صافي القيمة الدفترية",
+    tabAssets: "الأصول",
+    tabRegister: "سجل الأصول",
+    tabSchedule: "جدول الاستهلاك",
   }
 );

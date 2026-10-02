@@ -175,6 +175,13 @@ export const limiterProfiles = {
     max: envInt("RL_CLIENT_ERRORS_MAX", 10),
     message: "Too many error reports.",
   } as RouteLimit,
+  // Phase 8 D1: no-login actions that write (quote accept/decline, public checkout): 20 per 15 minutes per IP.
+  // The test/dev harness raises RL_API_MAX far above a human rate; the same switch lifts this limit there.
+  publicAction: {
+    windowMs: envInt("RL_PUBLIC_ACTION_WINDOW_MS", 15 * 60_000),
+    max: envInt("RL_PUBLIC_ACTION_MAX", envInt("RL_API_MAX", 100) > 1000 ? envInt("RL_API_MAX", 100) : 20),
+    message: "Too many attempts. Please try again later.",
+  } as RouteLimit,
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
     // must sit well above real navigation and report review.

@@ -23,6 +23,8 @@ import { uaeTodayYmd } from "./vat-period-status.service";
 import { assertFilingPermission, findAccountByCode, findAccountByName, missingAccountError, postSettlementJournal, type FilingActor } from "./tax-filing.service";
 import { findFiledVatReturnsCoveringMonth } from "./vat-filing.service";
 import { fromFils, toFils } from "./tax-filing-core";
+import { dubaiDaySql } from "./vat-dubai-day";
+import { assertClosingWindow, assertYearFullyClosed } from "./closing-guard";
 import { buildYearEndClosingLines, fiscalYearContaining, fiscalYearRange, monthEndsOfFiscalYear } from "./year-end";
 
 type Tx = any;
@@ -47,7 +49,7 @@ async function yearBalances(companyId: string, yearStart: string, yearEnd: strin
       JOIN journal_entries je ON je.id = jl.entry_id
       JOIN accounts a ON a.id = jl.account_id
      WHERE je.company_id = ${companyId} AND je.status = 'posted'
-       AND je.date >= ${yearStart}::date AND je.date < (${yearEnd}::date + 1)
+       AND ${sql.raw(dubaiDaySql("je.date"))} >= ${yearStart}::date AND ${sql.raw(dubaiDaySql("je.date"))} <= ${yearEnd}::date
        AND a.type IN ('income', 'expense')
      GROUP BY a.id, a.type
     HAVING SUM(jl.credit - jl.debit) <> 0`);
@@ -98,7 +100,7 @@ export async function getYearEndOverview(companyId: string): Promise<{ fiscalYea
     const blockers: YearOverviewRow["blockers"] = [];
     if (!close) {
       if (!ended) blockers.push({ code: "YEAR_NOT_ENDED", message: "The financial year has not ended yet." });
-      const drafts: any = await db.execute(sql`SELECT count(*)::int AS n FROM journal_entries WHERE company_id = ${companyId} AND status = 'draft' AND date >= ${range.yearStart}::date AND date < (${range.yearEnd}::date + 1)`);
+      const drafts: any = await db.execute(sql`SELECT count(*)::int AS n FROM journal_entries WHERE company_id = ${companyId} AND status = 'draft' AND ${sql.raw(dubaiDaySql("date"))} >= ${range.yearStart}::date AND ${sql.raw(dubaiDaySql("date"))} <= ${range.yearEnd}::date`);
       const n = (drafts.rows ?? drafts)[0]?.n ?? 0;
       if (n > 0) blockers.push({ code: "DRAFT_ENTRIES_EXIST", message: `${n} draft journal entr${n === 1 ? "y is" : "ies are"} dated in this year. Post or delete them first.` });
     }
@@ -134,7 +136,7 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
   if (!(range.yearEnd < uaeTodayYmd())) {
     throw new AppError({ message: "The financial year has not ended yet, so it cannot be closed.", statusCode: 422, code: "YEAR_NOT_ENDED" });
   }
-  const drafts: any = await db.execute(sql`SELECT count(*)::int AS n FROM journal_entries WHERE company_id = ${companyId} AND status = 'draft' AND date >= ${range.yearStart}::date AND date < (${range.yearEnd}::date + 1)`);
+  const drafts: any = await db.execute(sql`SELECT count(*)::int AS n FROM journal_entries WHERE company_id = ${companyId} AND status = 'draft' AND ${sql.raw(dubaiDaySql("date"))} >= ${range.yearStart}::date AND ${sql.raw(dubaiDaySql("date"))} <= ${range.yearEnd}::date`);
   if (((drafts.rows ?? drafts)[0]?.n ?? 0) > 0) {
     throw new AppError({ message: "Draft journal entries dated in this year would be left out of the close. Post or delete them first.", statusCode: 409, code: "DRAFT_ENTRIES_EXIST" });
   }
@@ -157,6 +159,8 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
         const retained = await resolveRetained(tx, companyId);
         const built = buildYearEndClosingLines(balances, { retainedId: retained.id }, `Financial year ${range.yearStart} to ${range.yearEnd}`);
         netIncome = built.netIncome;
+        // A closing entry only ever carries the postings of its own year, up to its own date.
+        assertClosingWindow({ entryYmd: range.yearEnd, fromYmd: range.yearStart, throughYmd: range.yearEnd });
         entryId = await postSettlementJournal(tx, {
           companyId,
           ymd: range.yearEnd,
@@ -169,6 +173,8 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
           allowLockedPeriod: { reason: "year_end_close", closeId: row.id },
         });
         await tx.update(yearEndCloses).set({ closingEntryId: entryId }).where(eq(yearEndCloses.id, row.id));
+        // After the close the year's income and expense accounts are nil: nothing was left out, nothing from outside was taken.
+        await assertYearFullyClosed(tx, companyId, range.yearStart, range.yearEnd);
       }
       for (const monthEnd of monthEndsOfFiscalYear(range.yearStart, range.yearEnd)) {
         await lockPeriodInTx(tx, companyId, monthEnd, user.id);
@@ -195,14 +201,23 @@ export async function closeFinancialYear(args: { user: FilingActor; companyId: s
   return { ...range, ...result };
 }
 
+/** The caller is an owner member of this company and the company is not managed by a firm. */
+export async function isOwnCompanyOwner(userId: string, companyId: string): Promise<boolean> {
+  const membership = await storage.getUserRole(companyId, userId);
+  if (membership?.role !== "owner") return false;
+  const company = await storage.getCompany(companyId);
+  return !!company && company.companyType !== "client";
+}
+
 export async function reopenFinancialYear(args: { user: FilingActor; companyId: string; yearStart: unknown; reason: unknown; req?: Request }) {
   const { user, companyId } = args;
   if (!(await storage.hasCompanyAccess(user.id, companyId))) {
     throw new AppError({ message: "Access denied", statusCode: 403, code: "ACCESS_DENIED" });
   }
-  // Same authority as unlocking a period: it re-opens closed months.
-  if (!user.isAdmin && user.firmRole !== "firm_owner") {
-    throw new AppError({ message: "Only a firm owner can reopen a closed financial year.", statusCode: 403, code: "REOPEN_FORBIDDEN" });
+  // Same authority as unlocking a period: it re-opens closed months. A firm owner for a firm-managed client; the
+  // company's own owner for a company that is not firm-managed (a reason, audit-logged, is required either way).
+  if (!user.isAdmin && user.firmRole !== "firm_owner" && !(await isOwnCompanyOwner(user.id, companyId))) {
+    throw new AppError({ message: "Only the company owner (or a firm owner for a firm-managed company) can reopen a closed financial year.", statusCode: 403, code: "REOPEN_FORBIDDEN" });
   }
   const reason = typeof args.reason === "string" ? args.reason.trim() : "";
   if (reason.length < 10) {

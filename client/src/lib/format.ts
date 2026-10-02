@@ -30,10 +30,12 @@ export function formatNumber(num: number, locale: string = "en"): string {
   }).format(num);
 }
 
+// Dates are shown as UAE calendar days whatever the browser's time zone is (a stored 2026-09-30T20:00Z is 1 October here).
 const DEFAULT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "short",
   day: "numeric",
+  timeZone: "Asia/Dubai",
 };
 
 /** Options for a fixed calendar date such as "2026-04-26" (no time-zone shift). */

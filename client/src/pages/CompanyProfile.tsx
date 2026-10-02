@@ -83,6 +83,15 @@ const companyProfileSchema = z.object({
     .string()
     .transform((val) => val || undefined)
     .optional(),
+  // WPS (payroll bank file): MOHRE establishment ID and the employer's bank routing code.
+  mohreEstablishmentId: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  wpsEmployerRoutingCode: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
 });
 
 type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
@@ -120,6 +129,8 @@ export default function CompanyProfile() {
       vatFilingFrequency: "",
       taxRegistrationDate: "",
       corporateTaxId: "",
+      mohreEstablishmentId: "",
+      wpsEmployerRoutingCode: "",
     },
   });
 
@@ -145,6 +156,8 @@ export default function CompanyProfile() {
           ? new Date(company.taxRegistrationDate).toISOString().split("T")[0]
           : "",
         corporateTaxId: company.corporateTaxId || "",
+        mohreEstablishmentId: company.mohreEstablishmentId || "",
+        wpsEmployerRoutingCode: company.wpsEmployerRoutingCode || "",
       });
 
       if (company.logoUrl) {
@@ -489,7 +502,6 @@ export default function CompanyProfile() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="Standard">{tr("standard")}</SelectItem>
-                          <SelectItem value="Flat Rate">{tr("flatRate")}</SelectItem>
                           <SelectItem value="Non-registered">{tr("nonRegistered")}</SelectItem>
                           <SelectItem value="Other">{tr("other")}</SelectItem>
                         </SelectContent>
@@ -514,7 +526,6 @@ export default function CompanyProfile() {
                         <SelectContent>
                           <SelectItem value="Monthly">{tr("monthly")}</SelectItem>
                           <SelectItem value="Quarterly">{tr("quarterly")}</SelectItem>
-                          <SelectItem value="Annually">{tr("annually")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormDescription>{tr("requiredForVatRegisteredBusinesses")}</FormDescription>
@@ -550,6 +561,35 @@ export default function CompanyProfile() {
                           className="font-mono"
                           data-testid="input-corporate-tax-id"
                         />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="mohreEstablishmentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("mohreEstablishmentId")}</FormLabel>
+                      <FormControl>
+                        <Input {...field} className="font-mono" inputMode="numeric" data-testid="input-mohre-establishment-id" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("wpsFieldsHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="wpsEmployerRoutingCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("wpsEmployerRoutingCode")}</FormLabel>
+                      <FormControl>
+                        <Input {...field} className="font-mono" inputMode="numeric" data-testid="input-wps-routing-code" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { todayYmd, toYmd } from "@/lib/calendar-date";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
@@ -87,8 +88,8 @@ function getDefaultDateRange() {
   const now = new Date();
   const startOfYear = new Date(now.getFullYear(), 0, 1);
   return {
-    startDate: startOfYear.toISOString().slice(0, 10),
-    endDate: now.toISOString().slice(0, 10),
+    startDate: toYmd(startOfYear),
+    endDate: todayYmd(now),
   };
 }
 
@@ -193,11 +194,11 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("startDate")}</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Input type="date" aria-label={tr("startDate")} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>{tr("endDate")}</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <Input type="date" aria-label={tr("endDate")} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />
@@ -306,7 +307,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
 function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: string }) {
   const tr = pageMessages.useT();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayYmd();
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
 
@@ -328,7 +329,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("asOfDate")}</Label>
-              <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+              <Input type="date" aria-label={tr("asOfDate")} value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />
@@ -528,11 +529,11 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-4 items-end">
             <div className="space-y-2">
               <Label>{tr("startDate")}</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Input type="date" aria-label={tr("startDate")} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>{tr("endDate")}</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <Input type="date" aria-label={tr("endDate")} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <Button onClick={handleGenerate}>
               <Search className="h-4 w-4 me-2" />

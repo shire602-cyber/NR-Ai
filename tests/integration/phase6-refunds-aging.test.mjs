@@ -285,7 +285,7 @@ async function agingSection() {
   await A.creditNote(credited.id, { date: day(5) });
   // VOIDED now: issued 40 days ago, due 35 days ago
   const voided = await A.invoice(day(40), 1000, { customerName: "VoidedCo", dueDate: day(35) });
-  const vr = await api("PATCH", `/api/invoices/${voided.id}/status`, { token: A.token, body: { status: "void" } });
+  const vr = await api("PATCH", `/api/invoices/${voided.id}/status`, { token: A.token, body: { status: "void", date: today } });
   ok("aging: setup: invoice voided today", vr.status === 200, { s: vr.status, j: vr.json });
   // OPEN: issued 90 days ago, due 45 days ago, never paid
   await A.invoice(day(90), 1000, { customerName: "OpenCo", dueDate: day(45) });

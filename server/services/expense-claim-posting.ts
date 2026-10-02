@@ -16,6 +16,8 @@ export type ExpenseClaimItem = {
   amount?: number | string | null;
   vatAmount?: number | string | null;
   description?: string | null;
+  /** Phase 8 D2: the project the cost belongs to; expense lines are split by (account, project). */
+  projectId?: string | null;
 };
 
 export type JournalLine = {
@@ -61,7 +63,7 @@ export function buildExpenseClaimJournalLines(args: {
   resolveByCode: (code: string) => string | null | undefined;
   memoPrefix?: string;
 }):
-  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string }> }
+  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string; projectId?: string | null }> }
   | { ok: false; status: number; code: string; message: string } {
   const { items, resolveByCode } = args;
   if (!items || items.length === 0) {
@@ -84,7 +86,8 @@ export function buildExpenseClaimJournalLines(args: {
   // TD5 (Art. 53, Cabinet Decision 52/2017): input VAT on entertainment is
   // BLOCKED from recovery — it must be expensed gross, never debited to the
   // Input VAT account. Previously every claim's VAT was posted as recoverable.
-  const expenseByCode = new Map<string, number>();
+  // Keyed by (account code, project): costs of different projects never merge into one ledger line.
+  const expenseByCode = new Map<string, { code: string; projectId: string | null; amount: number }>();
   let totalVat = 0;
   let totalGross = 0;
   for (const item of items) {
@@ -95,13 +98,16 @@ export function buildExpenseClaimJournalLines(args: {
     // Blocked input VAT is absorbed into the expense line (gross); recoverable
     // VAT goes to the Input VAT control account.
     const expensePortion = blocked ? round2(net + vat) : net;
-    expenseByCode.set(code, round2((expenseByCode.get(code) ?? 0) + expensePortion));
+    const projectId = item.projectId ?? null;
+    const key = `${code}|${projectId ?? ""}`;
+    const current = expenseByCode.get(key);
+    expenseByCode.set(key, { code, projectId, amount: round2((current?.amount ?? 0) + expensePortion) });
     if (!blocked) totalVat = round2(totalVat + vat);
     totalGross = round2(totalGross + net + vat);
   }
 
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
-  for (const [code, amount] of expenseByCode.entries()) {
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string; projectId?: string | null }> = [];
+  for (const { code, projectId, amount } of expenseByCode.values()) {
     if (amount === 0) continue;
     const accountId = resolveByCode(code);
     if (!accountId) {
@@ -112,7 +118,7 @@ export function buildExpenseClaimJournalLines(args: {
         message: `Cannot post expense claim: expense account ${code} is missing from the chart of accounts.`,
       };
     }
-    lines.push({ accountId, debit: amount, credit: 0, description: `Expense claim — ${code}` });
+    lines.push({ accountId, debit: amount, credit: 0, description: `Expense claim — ${code}`, ...(projectId ? { projectId } : {}) });
   }
 
   if (totalVat > 0) {

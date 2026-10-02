@@ -1,0 +1,43 @@
+import { defineMessages } from "@/lib/i18n-messages";
+
+export const messages = defineMessages(
+  "EmployeeDashboard",
+  {
+    eyebrow: "My work",
+    title: "My summary",
+    description: "Your own leave balance and latest payslip. Company figures are not shown to your role.",
+    greeting: "Hello, {name}",
+    leaveTitle: "Leave balance",
+    leaveNone: "No leave balance is recorded for you yet.",
+    daysLeft: "{days} days",
+    payslipTitle: "Latest payslip",
+    payslipNone: "No payslip is available yet. It appears once your employer calculates the month.",
+    payslipFor: "Payslip for {month}",
+    download: "Download payslip",
+    downloadFailed: "Could not download the payslip. Try again.",
+    myPayroll: "Open my payroll",
+    myLeave: "Request leave",
+    myLoans: "My loans",
+    loading: "Loading...",
+    loadFailed: "Could not load your summary. Try again.",
+  },
+  {
+    eyebrow: "عملي",
+    title: "ملخصي",
+    description: "رصيد إجازتك وآخر قسيمة راتب لك. لا تُعرض أرقام الشركة لدورك.",
+    greeting: "مرحبًا، {name}",
+    leaveTitle: "رصيد الإجازات",
+    leaveNone: "لا يوجد رصيد إجازات مسجَّل لك بعد.",
+    daysLeft: "{days} يومًا",
+    payslipTitle: "آخر قسيمة راتب",
+    payslipNone: "لا توجد قسيمة راتب متاحة بعد. تظهر عندما يحتسب صاحب العمل الشهر.",
+    payslipFor: "قسيمة راتب {month}",
+    download: "تنزيل القسيمة",
+    downloadFailed: "تعذر تنزيل القسيمة. حاول مجددًا.",
+    myPayroll: "افتح رواتبي",
+    myLeave: "طلب إجازة",
+    myLoans: "قروضي",
+    loading: "جارٍ التحميل...",
+    loadFailed: "تعذر تحميل ملخصك. حاول مجددًا.",
+  }
+);

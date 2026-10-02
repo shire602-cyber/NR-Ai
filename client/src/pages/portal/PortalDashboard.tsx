@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucide-react";
+import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar, Receipt } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
@@ -55,6 +55,7 @@ export default function PortalDashboard() {
   }
 
   const inv = data?.invoices ?? {};
+  const payables = data?.payables ?? null;
   const vatStatus = data?.vatStatus ?? null;
   const recentInvoices: any[] = data?.recentInvoices ?? [];
 
@@ -66,7 +67,7 @@ export default function PortalDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-5">
             <div className="flex items-start justify-between">
@@ -82,6 +83,27 @@ export default function PortalDashboard() {
                 </p>
               </div>
               <AlertCircle className="w-5 h-5 text-warning mt-1" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {tr("payables")}
+                </p>
+                <p className="text-2xl font-bold text-foreground mt-1" data-testid="portal-payables-total">
+                  {formatAed(payables?.outstandingTotal ?? 0)}
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  {Number(payables?.unappliedCredits ?? 0) > 0
+                    ? tr("payablesAfterCredits", { amount: formatAed(payables.unappliedCredits) })
+                    : tr("owedToSuppliers")}
+                </p>
+              </div>
+              <Receipt className="w-5 h-5 text-chart-3 mt-1" />
             </div>
           </CardContent>
         </Card>

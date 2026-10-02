@@ -1,4 +1,6 @@
+import { accountName } from "@/lib/account-name";
 import { useParams, Link } from "wouter";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { formatCurrency } from "@/lib/format";
 import {
   ArrowLeft,
@@ -144,7 +147,7 @@ export default function JournalEntryDetail() {
       <div className="space-y-6 p-6">
         <div className="flex items-center gap-4">
           <Link href="/journal">
-            <Button variant="ghost" size="icon" data-testid="button-back-to-journal">
+            <Button variant="ghost" size="icon" aria-label={iconLabels.t("back")} data-testid="button-back-to-journal">
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
@@ -173,7 +176,7 @@ export default function JournalEntryDetail() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Link href="/journal">
-            <Button variant="ghost" size="icon" data-testid="button-back-to-journal">
+            <Button variant="ghost" size="icon" aria-label={iconLabels.t("back")} data-testid="button-back-to-journal">
               <ArrowLeft className="w-5 h-5" />
             </Button>
           </Link>
@@ -243,7 +246,7 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground" data-testid="text-memo">
-              {entry.memo}
+              {localizeJournalText(entry.memo, locale)}
             </p>
           </CardContent>
         </Card>
@@ -270,9 +273,7 @@ export default function JournalEntryDetail() {
                 <TableRow key={line.id} data-testid={`row-journal-line-${index}`}>
                   <TableCell className="font-mono">{line.account?.code || "-"}</TableCell>
                   <TableCell>
-                    {locale === "ar" && line.account?.nameAr
-                      ? line.account.nameAr
-                      : line.account?.nameEn || tr("unknownAccount")}
+                    {accountName(line.account, locale) || tr("unknownAccount")}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">

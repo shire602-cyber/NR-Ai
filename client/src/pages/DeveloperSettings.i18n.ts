@@ -5,9 +5,15 @@ export const messages = defineMessages(
   {
     settings: "Settings",
     webhooks: "Webhooks",
-    unlockWebhookAccess: "Unlock Webhook Access",
+    developers: "Developers",
+    developersDescription: "Connect your own software: API keys for the REST API, and signed webhooks.",
+    tabApiKeys: "API keys",
+    tabWebhooks: "Webhooks",
+    unlockWebhookAccess: "Unlock the API and webhooks",
+    deleteWebhookAria: "Delete this webhook endpoint",
+    copySecretAria: "Copy the signing secret",
     webhooksAreAvailableOnTheEnterprise:
-      "Webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems.",
+      "API keys and webhooks are available on the Professional plan and above. Integrate Muhasib.ai with your own systems.",
     sendSignedNotificationsToYourOwn:
       "Send signed notifications to your own systems when invoices, payments, credit notes and bills change.",
     failedToCreateWebhook: "Failed to create webhook",
@@ -62,9 +68,15 @@ export const messages = defineMessages(
   {
     settings: "الإعدادات",
     webhooks: "الويب هوك",
-    unlockWebhookAccess: "فتح الوصول إلى الويب هوك",
+    developers: "المطورون",
+    developersDescription: "اربط برامجك الخاصة: مفاتيح للواجهة البرمجية REST، وإشعارات ويب هوك موقّعة.",
+    tabApiKeys: "مفاتيح الواجهة البرمجية",
+    tabWebhooks: "الويب هوك",
+    unlockWebhookAccess: "فتح الواجهة البرمجية والويب هوك",
+    deleteWebhookAria: "حذف نقطة الويب هوك هذه",
+    copySecretAria: "نسخ سر التوقيع",
     webhooksAreAvailableOnTheEnterprise:
-      "الويب هوك متاح في باقة المؤسسات. اربط Muhasib.ai بأنظمتك الخاصة.",
+      "مفاتيح الواجهة البرمجية والويب هوك متاحة في الباقة الاحترافية وما فوقها. اربط Muhasib.ai بأنظمتك الخاصة.",
     sendSignedNotificationsToYourOwn:
       "أرسل إشعارات موقّعة إلى أنظمتك عند تغيّر الفواتير والمدفوعات والإشعارات الدائنة وفواتير المشتريات.",
     failedToCreateWebhook: "تعذّر إنشاء الويب هوك",

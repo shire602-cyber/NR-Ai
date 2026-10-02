@@ -694,3 +694,54 @@ textarea:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* Tables marked `stack-table` become stacked cards on phones (labels come from lib/stack-tables.ts). */
+@media (max-width: 767px) {
+  .stack-table table,
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table td {
+    display: block;
+    width: 100%;
+  }
+  /* styles/mobile.css gives every table a 600 px minimum on phones; a stacked table has none */
+  .stack-table table {
+    min-width: 0;
+  }
+  .stack-table thead {
+    display: none;
+  }
+  .stack-table tr {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .stack-table tr:last-child {
+    border-bottom: 0;
+  }
+  .stack-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0;
+    border: 0;
+    text-align: end;
+  }
+  .stack-table td,
+  .stack-table td > div {
+    flex-wrap: wrap;
+  }
+  .stack-table td > div {
+    justify-content: flex-end;
+  }
+  .stack-table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    text-align: start;
+  }
+  .stack-table td[data-label=""]::before {
+    content: none;
+  }
+}

@@ -61,8 +61,15 @@ export default function Login() {
       .catch(() => {});
   }, [setLocation, toast]);
 
-  const handleSuccess = async (user: any) => {
+  const startAtTwoFactor = new URLSearchParams(window.location.search).get("step") === "2fa";
+
+  const handleSuccess = async (user: any, extra?: { twoFactorEnrolmentRequired: boolean }) => {
     const currentUser = await establishAuthenticatedSession(user);
+    // A company requires 2FA from this user and they have none yet: go set it up first.
+    if (extra?.twoFactorEnrolmentRequired) {
+      setLocation("/settings/security?required=1");
+      return;
+    }
     const fallback =
       currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
     const next = safeNextPath();
@@ -82,7 +89,7 @@ export default function Login() {
       }
       subline={tr("signBackInToAReal")}
     >
-      <LoginForm onSuccess={handleSuccess} />
+      <LoginForm onSuccess={handleSuccess} startAtTwoFactor={startAtTwoFactor} />
     </AuthLayout>
   );
 }

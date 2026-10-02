@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
+import { useMyCompanyRole } from "@/hooks/useMyCompanyRole";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -77,6 +78,12 @@ import { getStoredUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
 import { ReceiptUploadField } from "@/components/expense-claims/ReceiptUploadField";
 import { downloadAuthenticatedFile } from "@/lib/file-upload";
+import { LineProjectFields } from "@/components/projects/LineProjectFields";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./ExpenseClaims.i18n";
 import { resolveMessage } from "@/lib/i18n-messages";
 
@@ -92,6 +99,8 @@ interface ExpenseClaimItem {
   vat_amount: number;
   receipt_url?: string | null;
   merchant_name?: string | null;
+  project_id?: string | null;
+  is_billable?: boolean;
   created_at?: string;
 }
 
@@ -164,6 +173,8 @@ const expenseItemSchema = z.object({
   vat_amount: z.coerce.number().min(0, pageMessages.marker("vatAmountMustBe0")),
   merchant_name: z.string().optional().nullable(),
   receipt_url: z.string().optional().nullable(),
+  project_id: z.string().optional().nullable(),
+  is_billable: z.boolean().optional(),
 });
 
 const claimFormSchema = z.object({
@@ -195,6 +206,10 @@ export default function ExpenseClaims() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const currentUser = getStoredUser();
+  // An employee files and follows their own claims; reviewing, paying and the company summary are for finance roles
+  // (the server refuses them with ROLE_REQUIRED, so the controls are not shown).
+  const { role: myRole } = useMyCompanyRole(companyId ?? undefined);
+  const canReview = myRole !== "employee";
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState<ExpenseClaim | null>(null);
@@ -216,7 +231,7 @@ export default function ExpenseClaims() {
 
   const { data: summary } = useQuery<ClaimSummary>({
     queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
-    enabled: !!companyId,
+    enabled: !!companyId && canReview,
   });
 
   // ─── Derived data ─────────────────────────────────────
@@ -227,9 +242,10 @@ export default function ExpenseClaims() {
   );
 
   const submittedClaims = useMemo(
-    () => allClaims.filter((c) => c.status === "submitted"),
+    () => allClaims.filter((c) => c.status === "submitted" || c.status === "pending_approval"),
     [allClaims]
   );
+  const approvalProgress = useApprovalProgress(companyId ?? undefined, "expense_claim", allClaims.some((c) => c.status === "pending_approval"));
 
   const pendingTotal = summary?.thisMonth?.submitted?.total || 0;
   const approvedTotal = summary?.thisMonth?.approved?.total || 0;
@@ -346,17 +362,25 @@ export default function ExpenseClaims() {
   const approveClaimMutation = useMutation({
     mutationFn: ({ id, review_notes }: { id: string; review_notes?: string }) =>
       apiRequest("POST", `/api/expense-claims/${id}/approve`, { review_notes }),
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: tr("claimApproved"), description: tr("theExpenseClaimHasBeenApproved") });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+      } else {
+        toast({ title: tr("claimApproved"), description: tr("theExpenseClaimHasBeenApproved") });
+      }
       setReviewDialogOpen(false);
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast(failureToast(error, tr("error")));
     },
   });
 
@@ -446,6 +470,8 @@ export default function ExpenseClaims() {
                 vat_amount: parseFloat(String(item.vat_amount)) || 0,
                 merchant_name: item.merchant_name || "",
                 receipt_url: item.receipt_url || "",
+                project_id: item.project_id ?? null,
+                is_billable: !!item.is_billable,
               }))
             : [
                 {
@@ -517,8 +543,12 @@ export default function ExpenseClaims() {
 
   // ─── Helpers ──────────────────────────────────────────
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, claimId?: string) => {
     switch (status) {
+      case "pending_approval": {
+        const progress = claimId ? approvalProgress.get(claimId) : undefined;
+        return <ApprovalStatusBadge status="pending_approval" completedSteps={progress?.completedSteps} requiredSteps={progress?.requiredSteps} />;
+      }
       case "draft":
         return <StatusBadge tone="neutral">{tr("draft")}</StatusBadge>;
       case "submitted":
@@ -644,7 +674,7 @@ export default function ExpenseClaims() {
                     locale
                   )}
                 </TableCell>
-                <TableCell>{getStatusBadge(claim.status)}</TableCell>
+                <TableCell>{getStatusBadge(claim.status, claim.id)}</TableCell>
                 {showActions && (
                   <TableCell className="text-end">
                     <div className="flex items-center justify-end gap-1">
@@ -686,7 +716,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {isReview && claim.status === "submitted" && (
+                      {isReview && canReview && (claim.status === "submitted" || claim.status === "pending_approval") && (
                         <>
                           <Button
                             variant="ghost"
@@ -708,7 +738,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {claim.status === "approved" && (
+                      {canReview && claim.status === "approved" && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -745,6 +775,7 @@ export default function ExpenseClaims() {
       </div>
 
       {/* ─── Summary Cards ─────────────────────────────── */}
+      {canReview && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -784,7 +815,7 @@ export default function ExpenseClaims() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </div>)}
 
       {/* ─── Tabs ──────────────────────────────────────── */}
       <Tabs defaultValue="my-claims" className="space-y-4">
@@ -793,6 +824,7 @@ export default function ExpenseClaims() {
             <FileText className="w-4 h-4" />
             {tr("myClaims")}
           </TabsTrigger>
+          {canReview && (
           <TabsTrigger value="review" className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4" />
             {tr("review")}
@@ -801,7 +833,7 @@ export default function ExpenseClaims() {
                 {submittedClaims.length}
               </StatusBadge>
             )}
-          </TabsTrigger>
+          </TabsTrigger>)}
           <TabsTrigger value="all-claims" className="flex items-center gap-2">
             <Receipt className="w-4 h-4" />
             {tr("allClaims")}
@@ -839,6 +871,7 @@ export default function ExpenseClaims() {
         </TabsContent>
 
         {/* ─── Review Tab ──────────────────────────────── */}
+        {canReview && (
         <TabsContent value="review">
           <Card>
             <CardHeader>
@@ -860,7 +893,7 @@ export default function ExpenseClaims() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>)}
 
         {/* ─── All Claims Tab ──────────────────────────── */}
         <TabsContent value="all-claims">
@@ -1062,7 +1095,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.amount`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.amount || tr("amount")} (AED) *</FormLabel>
+                            <FormLabel>{tr("amountNetOfVat")} *</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>
@@ -1102,6 +1135,18 @@ export default function ExpenseClaims() {
                             <FormMessage />
                           </FormItem>
                         )}
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <LineProjectFields
+                        companyId={companyId ?? undefined}
+                        projectId={claimForm.watch(`items.${index}.project_id`)}
+                        isBillable={claimForm.watch(`items.${index}.is_billable`)}
+                        testIdSuffix={`-${index}`}
+                        onChange={({ projectId, isBillable }) => {
+                          claimForm.setValue(`items.${index}.project_id`, projectId, { shouldDirty: true });
+                          claimForm.setValue(`items.${index}.is_billable`, isBillable, { shouldDirty: true });
+                        }}
                       />
                     </div>
                   </Card>
@@ -1240,7 +1285,7 @@ export default function ExpenseClaims() {
                           <TableHead>{tr("category2")}</TableHead>
                           <TableHead>{t.description || tr("description")}</TableHead>
                           <TableHead>{tr("merchant")}</TableHead>
-                          <TableHead className="text-end">{t.amount || tr("amount")}</TableHead>
+                          <TableHead className="text-end">{tr("amountNetOfVat")}</TableHead>
                           <TableHead className="text-end">{tr("vat")}</TableHead>
                           <TableHead>{tr("receipt")}</TableHead>
                         </TableRow>

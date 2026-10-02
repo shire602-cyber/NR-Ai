@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import {
+  CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
   computeCtLiability,
   computeCtTotals,
   parseCtPasteRows,
@@ -79,6 +80,21 @@ function workpaperSourceLabel(ctReturn: CorporateTaxReturn): string {
   return "Not captured";
 }
 
+/** What the workpaper says about Small Business Relief: elected and applied, elected but refused (with why), or not elected. */
+function sbrStatusLabel(ctReturn: CorporateTaxReturn): string {
+  const wp = (ctReturn.workpaper ?? {}) as { sbrElected?: boolean; computation?: { smallBusinessRelief?: { elected?: boolean; applied?: boolean; ineligibleReason?: string } } };
+  const sbr = wp.computation?.smallBusinessRelief;
+  const elected = typeof wp.sbrElected === "boolean" ? wp.sbrElected : (sbr?.elected ?? ctReturn.smallBusinessRelief === true);
+  if (!elected) return "Not elected";
+  if (sbr?.applied === true || (!sbr && ctReturn.smallBusinessRelief === true)) return "Elected and applied";
+  const why: Record<string, string> = {
+    revenue_cap: "revenue above AED 3,000,000",
+    prior_period_breach: "revenue above AED 3,000,000 in an earlier period",
+    period_after_sunset: "period ends after 31 Dec 2026",
+  };
+  return `Elected, not available (${why[sbr?.ineligibleReason ?? ""] ?? "conditions not met"})`;
+}
+
 function addSupportNotesSheet(
   workbook: ExcelJS.Workbook,
   ctReturn: CorporateTaxReturn,
@@ -99,10 +115,12 @@ function addSupportNotesSheet(
   styleHeaderRow(headerRow);
 
   const rows = workpaperRows(ctReturn);
-  const taxableAmount = Math.max(
-    0,
-    money(ctReturn.taxableIncome) - money(ctReturn.exemptionThreshold)
-  );
+  // The saved computation (add-backs, relief, losses) is the truth; the plain formula only serves a legacy return without one.
+  const savedComputation = (ctReturn.workpaper as any)?.computation as { taxableAmount?: number } | undefined;
+  const taxableAmount =
+    typeof savedComputation?.taxableAmount === "number"
+      ? savedComputation.taxableAmount
+      : Math.max(0, money(ctReturn.taxableIncome) - money(ctReturn.exemptionThreshold));
   const supportRows: Array<[string, string | number, string, "money" | "plain" | "percent"]> = [
     [
       "Submission note",
@@ -135,9 +153,9 @@ function addSupportNotesSheet(
       "money",
     ],
     [
-      "0% band threshold",
+      "0% band (Art. 3): first AED of taxable income",
       money(ctReturn.exemptionThreshold),
-      "Stored threshold for this return.",
+      "The 0% rate applies to taxable income up to this amount (AED 375,000); stored for this return.",
       "money",
     ],
     ["Income above threshold", taxableAmount, "Amount subject to the stored CT rate.", "money"],
@@ -165,11 +183,12 @@ function addSupportNotesSheet(
       "Remaining loss pool after this computation if applicable.",
       "money",
     ],
+    ["Small business relief", sbrStatusLabel(ctReturn), "Election recorded with the computation (MD 73/2023).", "plain"],
     [
-      "Small business relief",
-      ctReturn.smallBusinessRelief ? "Elected/applied" : "Not applied",
-      "Reflects the saved return state.",
-      "plain",
+      "Small business relief revenue threshold",
+      CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+      "Relief needs revenue of at most this amount (and a tax period ending on or before 31 Dec 2026). Not the AED 375,000 band.",
+      "money",
     ],
     [
       "Related-party notes",
@@ -329,7 +348,7 @@ function addComputationSheet(
       ["Accounting profit / (loss)", money(ctReturn.totalRevenue) - money(ctReturn.totalExpenses)],
       ["Deductions / adjustments", money(ctReturn.totalDeductions)],
       ["Taxable income", liability.taxableIncome, true],
-      ["Small-business relief threshold", liability.exemptionThreshold],
+      ["0% band (Art. 3): first AED of taxable income", liability.exemptionThreshold],
       ["Income above threshold", liability.taxableAmount],
       [`Corporate tax rate`, `${(liability.taxRate * 100).toFixed(0)}%`],
       ["Corporate tax payable", liability.taxPayable, true],

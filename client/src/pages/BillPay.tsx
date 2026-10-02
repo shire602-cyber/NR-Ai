@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import { accountName } from "@/lib/account-name";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -75,6 +77,20 @@ import {
   BarChart3,
   Receipt,
 } from "lucide-react";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { LineProjectFields } from "@/components/projects/LineProjectFields";
+import { LineProductPicker, type PickerProduct } from "@/components/sales/LineProductPicker";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { failureToast } from "@/lib/approval-feedback";
+import { isForeignVendorCountry, isPendingApprovalBody, reverseChargePreview } from "@/lib/purchasing-hr";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { PaymentAccountSelect } from "@/components/banking/PaymentAccountSelect";
+import { FxRateField } from "@/components/banking/FxRateField";
+import { parseRate as parseFxRate } from "@/components/banking/fx-preview";
 import { messages as pageMessages } from "./BillPay.i18n";
 
 // ===========================
@@ -84,6 +100,8 @@ import { messages as pageMessages } from "./BillPay.i18n";
 interface VendorBill {
   id: string;
   company_id: string;
+  vendor_id?: string | null;
+  reverse_charge?: boolean;
   vendor_name: string;
   vendor_trn: string | null;
   bill_number: string | null;
@@ -102,6 +120,9 @@ interface VendorBill {
   approved_at: string | null;
   paid_at: string | null;
   created_at: string;
+  /** A draft sent back by an approver: why, and who. */
+  rejection_reason?: string | null;
+  rejected_by_name?: string | null;
 }
 
 interface BillLineItem {
@@ -113,6 +134,9 @@ interface BillLineItem {
   vat_rate: string;
   amount: string;
   account_id: string | null;
+  product_id?: string | null;
+  project_id?: string | null;
+  is_billable?: boolean;
   created_at: string;
 }
 
@@ -158,9 +182,15 @@ const billLineSchema = z.object({
   unit_price: z.coerce.number().min(0, pageMessages.marker("priceMustBeNonNegative")),
   vat_rate: z.coerce.number().default(5),
   account_id: z.string().optional(),
+  // A stock item on the line: the bill receives stock on the bill date (the ledger entry debits Inventory).
+  product_id: z.string().optional().nullable(),
+  project_id: z.string().optional().nullable(),
+  is_billable: z.boolean().optional(),
 });
 
 const billFormSchema = z.object({
+  reverse_charge: z.boolean().optional(),
+  vendor_id: z.string().optional().nullable(),
   vendor_name: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
@@ -176,6 +206,7 @@ const paymentFormSchema = z.object({
   payment_date: z.date(),
   amount: z.coerce.number().min(0.01, pageMessages.marker("amountMustBePositive")),
   payment_method: z.string().default("bank_transfer"),
+  payment_account_id: z.string().min(1, pageMessages.marker("paymentAccountRequired")),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -187,12 +218,20 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 // Status helpers
 // ===========================
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, progress?: { completedSteps: number; requiredSteps: number }) {
   switch (status) {
+    case "pending_approval":
+      return <ApprovalStatusBadge status="pending_approval" completedSteps={progress?.completedSteps} requiredSteps={progress?.requiredSteps} />;
     case "pending":
       return (
         <Badge variant="outline" className="bg-muted text-foreground ">
           {pageMessages.t("pending")}
+        </Badge>
+      );
+    case "draft":
+      return (
+        <Badge variant="outline" className="bg-destructive/10 text-destructive" data-testid="badge-bill-rejected">
+          {pageMessages.t("rejectedDraft")}
         </Badge>
       );
     case "approved":
@@ -238,6 +277,8 @@ function initialBillPayTab(): BillPayTab {
 
 export default function BillPay() {
   const tr = pageMessages.useT();
+  const salesTr = salesMessages.useT();
+  const approvalTr = approvalMessages.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -247,7 +288,10 @@ export default function BillPay() {
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
+  const [foreignVendor, setForeignVendor] = useState(false);
   const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
+  // foreign-currency bills: the rate on the payment day (AED per unit), defaulted from the rates on file
+  const [payRateText, setPayRateText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [vendorSearch, setVendorSearch] = useState("");
 
@@ -260,6 +304,8 @@ export default function BillPay() {
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
   });
+
+  const approvalProgress = useApprovalProgress(companyId ?? undefined, "bill", bills.some((b) => b.status === "pending_approval"));
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
@@ -306,7 +352,7 @@ export default function BillPay() {
       const results = await Promise.all(paymentPromises);
       return results
         .flat()
-        .sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+        .sort((a, b) => (pickerDate(b.payment_date) as Date).getTime() - (pickerDate(a.payment_date) as Date).getTime());
     },
     enabled: !!companyId && bills.length > 0,
   });
@@ -338,15 +384,17 @@ export default function BillPay() {
   const billForm = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
+      vendor_id: null,
+      reverse_charge: false,
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
-      bill_date: new Date(),
+      bill_date: parseYmd(todayYmd()),
       due_date: undefined,
       currency: "AED",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
     },
   });
 
@@ -366,9 +414,10 @@ export default function BillPay() {
   const paymentForm = useForm<PaymentFormData>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
-      payment_date: new Date(),
+      payment_date: parseYmd(todayYmd()),
       amount: 0,
       payment_method: "bank_transfer",
+      payment_account_id: "",
       reference: "",
       notes: "",
     },
@@ -396,6 +445,9 @@ export default function BillPay() {
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
+          product_id: l.product_id || null,
+          project_id: l.project_id || null,
+          is_billable: !!l.project_id && !!l.is_billable,
         })),
       };
       return apiRequest("POST", `/api/companies/${companyId}/bills`, payload);
@@ -424,6 +476,9 @@ export default function BillPay() {
         line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
+          product_id: l.product_id || null,
+          project_id: l.project_id || null,
+          is_billable: !!l.project_id && !!l.is_billable,
         })),
       };
       return apiRequest("PATCH", `/api/bills/${id}`, payload);
@@ -436,11 +491,7 @@ export default function BillPay() {
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToUpdateBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToUpdateBill")));
     },
   });
 
@@ -451,26 +502,38 @@ export default function BillPay() {
       toast({ title: tr("billDeleted"), description: tr("vendorBillHasBeenDeleted") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToDeleteBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToDeleteBill")));
+    },
+  });
+
+  const resubmitBillMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/approvals/bill/${id}/resubmit`, {}),
+    onSuccess: () => {
+      invalidateBills();
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      toast({ title: tr("billResubmitted"), description: tr("billResubmittedBody") });
+    },
+    onError: (error: any) => {
+      toast(failureToast(error, tr("billResubmitFailed")));
     },
   });
 
   const approveBillMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/bills/${id}/approve`),
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       invalidateBills();
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
       toast({ title: tr("billApproved"), description: tr("theBillHasBeenApproved") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToApproveBill"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToApproveBill")));
     },
   });
 
@@ -479,6 +542,7 @@ export default function BillPay() {
       const payload = {
         ...data,
         payment_date: toDateOnly(data.payment_date),
+        ...(parseFxRate(payRateText) && (payingBill?.currency || "AED") !== "AED" ? { exchange_rate: parseFxRate(payRateText) } : {}),
       };
       return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },
@@ -494,9 +558,10 @@ export default function BillPay() {
       setPaymentDialogOpen(false);
       setPayingBill(null);
       paymentForm.reset({
-        payment_date: new Date(),
+        payment_date: parseYmd(todayYmd()),
         amount: 0,
         payment_method: "bank_transfer",
+        payment_account_id: "",
         reference: "",
         notes: "",
       });
@@ -516,17 +581,20 @@ export default function BillPay() {
 
   const resetBillForm = () => {
     billForm.reset({
+      vendor_id: null,
+      reverse_charge: false,
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
-      bill_date: new Date(),
+      bill_date: parseYmd(todayYmd()),
       due_date: undefined,
       currency: "AED",
       category: "",
       notes: "",
-      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
     });
     setEditingBill(null);
+    setForeignVendor(false);
   };
 
   const handleEditBill = async (bill: VendorBill) => {
@@ -534,11 +602,13 @@ export default function BillPay() {
       const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
       setEditingBill(detail);
       billForm.reset({
+        vendor_id: detail.vendor_id ?? null,
+        reverse_charge: !!detail.reverse_charge,
         vendor_name: detail.vendor_name,
         vendor_trn: detail.vendor_trn || "",
         bill_number: detail.bill_number || "",
-        bill_date: new Date(detail.bill_date),
-        due_date: detail.due_date ? new Date(detail.due_date) : undefined,
+        bill_date: (pickerDate(detail.bill_date) as Date),
+        due_date: detail.due_date ? (pickerDate(detail.due_date) as Date) : undefined,
         currency: detail.currency || "AED",
         category: detail.category || "",
         notes: detail.notes || "",
@@ -550,8 +620,11 @@ export default function BillPay() {
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate),
                 account_id: l.account_id || "",
+                product_id: l.product_id ?? null,
+                project_id: l.project_id ?? null,
+                is_billable: !!l.is_billable,
               }))
-            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
+            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "", project_id: null, is_billable: false }],
       });
       setBillDialogOpen(true);
     } catch (error: any) {
@@ -566,10 +639,12 @@ export default function BillPay() {
   const handlePayBill = (bill: VendorBill) => {
     const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
     setPayingBill(bill);
+    setPayRateText("");
     paymentForm.reset({
-      payment_date: new Date(),
+      payment_date: parseYmd(todayYmd()),
       amount: Number(remaining.toFixed(2)),
       payment_method: "bank_transfer",
+      payment_account_id: "",
       reference: "",
       notes: "",
     });
@@ -599,9 +674,19 @@ export default function BillPay() {
     const lineAmount = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
     return sum + lineAmount * ((Number(line.vat_rate) || 0) / 100);
   }, 0);
-  const totalAmount = subtotal + vatAmount;
+  const reverseCharge = !!billForm.watch("reverse_charge");
+  const rcPreview = reverseChargePreview(watchLines);
+  // Reverse charge: the vendor charges no VAT, so the payable is the net amount.
+  const totalAmount = reverseCharge ? subtotal : subtotal + vatAmount;
 
   // Expense account options
+  // Stock items (tracked products) can be bought on a bill line: the bill adds them to stock.
+  const { data: allProducts = [] } = useQuery<Array<PickerProduct & { costPrice?: number | string | null }>>({
+    queryKey: ["/api/companies", companyId, "products"],
+    enabled: !!companyId,
+  });
+  const stockItems = allProducts.filter((p) => p.trackInventory && p.isActive !== false);
+
   const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");
 
   // ===========================
@@ -671,6 +756,7 @@ export default function BillPay() {
                     <SelectContent>
                       <SelectItem value="all">{tr("allStatuses")}</SelectItem>
                       <SelectItem value="pending">{tr("pending")}</SelectItem>
+                      <SelectItem value="pending_approval">{approvalTr("pendingApproval")}</SelectItem>
                       <SelectItem value="approved">{tr("approved")}</SelectItem>
                       <SelectItem value="partial">{tr("partial")}</SelectItem>
                       <SelectItem value="paid">{tr("paid")}</SelectItem>
@@ -713,7 +799,22 @@ export default function BillPay() {
                               <FormItem>
                                 <FormLabel>{tr("vendorName")}</FormLabel>
                                 <FormControl>
-                                  <Input {...field} placeholder={tr("vendorCompanyName")} />
+                                  <VendorPicker
+                                    companyId={companyId ?? undefined}
+                                    vendorId={billForm.watch("vendor_id")}
+                                    fallbackName={field.value}
+                                    onSelect={(vendor) => {
+                                      billForm.setValue("vendor_id", vendor.id, { shouldDirty: true });
+                                      billForm.setValue("vendor_name", vendor.name, { shouldDirty: true, shouldValidate: true });
+                                      if (vendor.trnNumber) billForm.setValue("vendor_trn", vendor.trnNumber, { shouldDirty: true });
+                                      // A vendor outside the UAE: imported services are normally reverse charge. New bills only.
+                                      if (!editingBill) {
+                                        const foreign = isForeignVendorCountry(vendor.country);
+                                        setForeignVendor(foreign);
+                                        billForm.setValue("reverse_charge", foreign, { shouldDirty: true });
+                                      }
+                                    }}
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -774,7 +875,7 @@ export default function BillPay() {
                                         )}
                                       >
                                         <CalendarIcon className="me-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : tr("pickADate")}
+                                        {field.value ? formatCalendarDate(field.value, locale) : tr("pickADate")}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -808,7 +909,7 @@ export default function BillPay() {
                                         )}
                                       >
                                         <CalendarIcon className="me-2 h-4 w-4" />
-                                        {field.value ? format(field.value, "PPP") : tr("pickADate")}
+                                        {field.value ? formatCalendarDate(field.value, locale) : tr("pickADate")}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -883,6 +984,44 @@ export default function BillPay() {
                               </FormItem>
                             )}
                           />
+                        </div>
+
+                        {/* Reverse charge (imported services, Article 48) */}
+                        <div className="rounded-md border p-3 space-y-2" data-testid="section-reverse-charge">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <Label htmlFor="bill-reverse-charge" className="font-medium">
+                                {tr("reverseCharge")}
+                              </Label>
+                              <p className="text-xs text-muted-foreground">{tr("reverseChargeHelp")}</p>
+                              {foreignVendor && !editingBill && (
+                                <p className="text-xs text-info" data-testid="text-reverse-charge-hint">
+                                  {tr("reverseChargeForeignHint")}
+                                </p>
+                              )}
+                              {editingBill && <p className="text-xs text-muted-foreground">{tr("reverseChargeLocked")}</p>}
+                            </div>
+                            <Switch
+                              id="bill-reverse-charge"
+                              checked={reverseCharge}
+                              disabled={!!editingBill}
+                              onCheckedChange={(checked) => billForm.setValue("reverse_charge", checked, { shouldDirty: true })}
+                              data-testid="switch-reverse-charge"
+                            />
+                          </div>
+                          {reverseCharge && (
+                            <div className="rounded-md bg-muted/40 p-2 text-sm space-y-1" data-testid="reverse-charge-preview">
+                              <div className="flex justify-between">
+                                <span>{tr("reverseChargeOutput")}</span>
+                                <span className="tabular-nums" data-testid="text-rc-output">{formatCurrency(rcPreview.outputVatBox3, "AED")}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>{tr("reverseChargeInput")}</span>
+                                <span className="tabular-nums" data-testid="text-rc-input">{formatCurrency(rcPreview.inputVatBox10, "AED")}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{tr("reverseChargeNet", { payable: formatCurrency(rcPreview.payable, "AED") })}</p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Line Items */}
@@ -998,7 +1137,7 @@ export default function BillPay() {
                                         <SelectContent>
                                           {expenseAccounts.map((acc: any) => (
                                             <SelectItem key={acc.id} value={acc.id}>
-                                              {acc.nameEn || acc.name}
+                                              {accountName(acc, locale)}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
@@ -1027,6 +1166,35 @@ export default function BillPay() {
                                   </Button>
                                 )}
                               </div>
+                              {stockItems.length > 0 && (
+                                <div className="col-span-12" data-testid={`bill-line-stock-${index}`}>
+                                  <LineProductPicker
+                                    products={stockItems}
+                                    value={watchLines[index]?.product_id}
+                                    testId={`select-bill-line-product-${index}`}
+                                    onPick={(picked) => {
+                                      billForm.setValue(`line_items.${index}.product_id`, picked?.id ?? null, { shouldDirty: true });
+                                      if (!picked) return;
+                                      billForm.setValue(`line_items.${index}.description`, locale === "ar" && picked.nameAr ? picked.nameAr : picked.name, { shouldDirty: true });
+                                      if (Number(picked.costPrice) > 0) billForm.setValue(`line_items.${index}.unit_price`, Number(picked.costPrice), { shouldDirty: true });
+                                      billForm.setValue(`line_items.${index}.vat_rate`, Math.round(Number(picked.vatRate ?? 0.05) * 100), { shouldDirty: true });
+                                    }}
+                                  />
+                                  {watchLines[index]?.product_id && <p className="mt-1 text-xs text-muted-foreground">{salesTr("billLineStockHint")}</p>}
+                                </div>
+                              )}
+                              <div className="col-span-12">
+                                <LineProjectFields
+                                  companyId={companyId ?? undefined}
+                                  projectId={watchLines[index]?.project_id}
+                                  isBillable={watchLines[index]?.is_billable}
+                                  testIdSuffix={`-${index}`}
+                                  onChange={({ projectId, isBillable }) => {
+                                    billForm.setValue(`line_items.${index}.project_id`, projectId, { shouldDirty: true });
+                                    billForm.setValue(`line_items.${index}.is_billable`, isBillable, { shouldDirty: true });
+                                  }}
+                                />
+                              </div>
                             </div>
                           ))}
 
@@ -1038,7 +1206,7 @@ export default function BillPay() {
                                 <span>{formatCurrency(subtotal, "AED")}</span>
                               </div>
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">{tr("vat")}</span>
+                                <span className="text-muted-foreground">{reverseCharge ? tr("vatSelfAssessed") : tr("vat")}</span>
                                 <span>{formatCurrency(vatAmount, "AED")}</span>
                               </div>
                               <div className="flex justify-between font-semibold border-t pt-1">
@@ -1149,11 +1317,18 @@ export default function BillPay() {
                             <TableCell className="text-end">
                               {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
                             </TableCell>
-                            <TableCell>{getStatusBadge(bill.status)}</TableCell>
+                            <TableCell>
+                              {getStatusBadge(bill.status, approvalProgress.get(bill.id))}
+                              {bill.status === "draft" && bill.rejection_reason && (
+                                <p className="mt-1 max-w-xs text-xs text-destructive break-words" data-testid={`text-bill-rejection-${bill.id}`}>
+                                  {tr("rejectionNote", { by: bill.rejected_by_name || "-", reason: bill.rejection_reason })}
+                                </p>
+                              )}
+                            </TableCell>
                             <TableCell className="text-end">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
+                                  <Button variant="ghost" size="sm" data-testid={`button-bill-actions-${bill.id}`}>
                                     <MoreHorizontal className="w-4 h-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1162,7 +1337,7 @@ export default function BillPay() {
                                     <Edit className="w-4 h-4 me-2" />
                                     {tr("edit")}
                                   </DropdownMenuItem>
-                                  {bill.status === "pending" && (
+                                  {(bill.status === "pending" || bill.status === "pending_approval") && (
                                     <DropdownMenuItem
                                       onClick={() => approveBillMutation.mutate(bill.id)}
                                     >
@@ -1170,8 +1345,14 @@ export default function BillPay() {
                                       {tr("approve")}
                                     </DropdownMenuItem>
                                   )}
-                                  {bill.status !== "paid" && (
-                                    <DropdownMenuItem onClick={() => handlePayBill(bill)}>
+                                  {bill.status === "draft" && (
+                                    <DropdownMenuItem onClick={() => resubmitBillMutation.mutate(bill.id)} data-testid={`button-resubmit-bill-${bill.id}`}>
+                                      <CheckCircle className="w-4 h-4 me-2" />
+                                      {tr("resubmit")}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {!["paid", "pending", "pending_approval", "draft"].includes(bill.status) && (
+                                    <DropdownMenuItem onClick={() => handlePayBill(bill)} data-testid={`menu-pay-bill-${bill.id}`}>
                                       <DollarSign className="w-4 h-4 me-2" />
                                       {tr("recordPayment")}
                                     </DropdownMenuItem>
@@ -1509,7 +1690,7 @@ export default function BillPay() {
                             )}
                           >
                             <CalendarIcon className="me-2 h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : tr("pickADate")}
+                            {field.value ? formatCalendarDate(field.value, locale) : tr("pickADate")}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -1551,6 +1732,29 @@ export default function BillPay() {
               />
               <FormField
                 control={paymentForm.control}
+                name="payment_account_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <PaymentAccountSelect companyId={companyId ?? ""} value={field.value} onChange={field.onChange} testId="select-bill-payment-account" />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {payingBill && (
+                <FxRateField
+                  companyId={companyId ?? ""}
+                  currency={payingBill.currency || "AED"}
+                  date={toDateOnly(paymentForm.watch("payment_date"))}
+                  amount={Number(paymentForm.watch("amount")) || 0}
+                  bookRate={Number((payingBill as any).exchange_rate) || undefined}
+                  kind="payment"
+                  value={payRateText}
+                  onChange={setPayRateText}
+                  testId="bill-payment-fx"
+                />
+              )}
+              <FormField
+                control={paymentForm.control}
                 name="reference"
                 render={({ field }) => (
                   <FormItem>
@@ -1586,7 +1790,7 @@ export default function BillPay() {
                 >
                   {tr("cancel")}
                 </Button>
-                <Button type="submit" disabled={recordPaymentMutation.isPending}>
+                <Button type="submit" disabled={recordPaymentMutation.isPending || ((payingBill?.currency || "AED") !== "AED" && !parseFxRate(payRateText))}>
                   {recordPaymentMutation.isPending ? tr("recording") : tr("recordPayment")}
                 </Button>
               </DialogFooter>

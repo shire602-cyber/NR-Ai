@@ -20,6 +20,7 @@
 // (source, sourceId) the helper is a no-op, so retried approvals cannot
 // double-post.
 
+import { isBlockedInputCategory } from "./blocked-input-vat";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
@@ -83,9 +84,13 @@ const rateOf = (bill: { exchange_rate?: string | number | null }) =>
   Number(bill.exchange_rate) > 0 ? Number(bill.exchange_rate) : 1;
 
 interface BillLineRow {
+  /** Present when the caller loaded it: stock legs (purchase-stock.service) are keyed by it. */
+  id?: string;
   description: string;
   amount: string | number;
   account_id: string | null;
+  /** Phase 8 D2: the project the cost belongs to; the expense debit is tagged with it. */
+  project_id?: string | null;
 }
 
 function toDate(value: string | Date): Date {
@@ -138,7 +143,9 @@ export async function postBillApprovalJournal(
   bill: BillRow,
   lineItems: BillLineRow[],
   category: string | null,
-  userId: string
+  userId: string,
+  /** Stock bought on the bill: `legs` replace the expense debit of those lines; `tx` carries the movement and the entry together. */
+  stock?: { tx?: any; legs?: Map<string, Array<{ accountId: string; debit: number; credit: number; description: string }>> }
 ): Promise<void> {
   const companyId = bill.company_id;
 
@@ -167,24 +174,39 @@ export async function postBillApprovalJournal(
   const billDate = toDate(bill.bill_date);
   const billRef = bill.bill_number || bill.id.slice(0, 8);
 
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string; projectId?: string }> =
     [];
 
   for (const line of lineItems) {
+    const stockLegs = line.id ? stock?.legs?.get(line.id) : undefined;
+    if (stockLegs && stockLegs.length > 0) {
+      for (const leg of stockLegs) lines.push({ ...leg, ...(line.project_id ? { projectId: line.project_id } : {}) });
+      continue;
+    }
     const accountId = await resolveLineAccount(accounts, companyId, line, category);
     lines.push({
       accountId,
       debit: round2(Number(line.amount) * fxRate),
       credit: 0,
       description: `Bill ${billRef} - ${line.description}`.slice(0, 255),
+      ...(line.project_id ? { projectId: line.project_id } : {}),
     });
   }
 
   // Per-line rounding can drift a fils from subtotal×rate — rebalance off the
   // actual expense debits (BEFORE the VAT leg) so the entry always balances.
-  const expenseDebits = round2(lines.reduce((sum, l) => sum + l.debit, 0));
+  const expenseDebits = round2(lines.reduce((sum, l) => sum + l.debit - l.credit, 0));
 
-  if (vatAmount > 0 && inputVat) {
+  // Blocked input VAT (Art. 53, e.g. an entertainment bill): the VAT is part of the expense, never debited to Input VAT.
+  const blockedVat = !bill.reverse_charge && vatAmount > 0 && isBlockedInputCategory(category);
+  if (blockedVat && lines.length > 0) {
+    lines.push({
+      accountId: lines[0].accountId,
+      debit: vatAmount,
+      credit: 0,
+      description: `Non-recoverable VAT (Art. 53) - Bill ${billRef}`,
+    });
+  } else if (vatAmount > 0 && inputVat) {
     lines.push({
       accountId: inputVat.id,
       debit: vatAmount,
@@ -212,7 +234,7 @@ export async function postBillApprovalJournal(
   } else {
     // If the input VAT account is missing the debit side is short — fall back
     // to crediting AP for the subtotal+VAT only when VAT was debited.
-    const apCredit = round2(vatAmount > 0 && inputVat ? expenseDebits + vatAmount : expenseDebits);
+    const apCredit = round2(vatAmount > 0 && (inputVat || blockedVat) ? expenseDebits + vatAmount : expenseDebits);
     lines.push({
       accountId: ap.id,
       debit: 0,
@@ -221,7 +243,7 @@ export async function postBillApprovalJournal(
     });
   }
 
-  const entryNumber = await storage.generateEntryNumber(companyId, billDate);
+  const entryNumber = stock?.tx ? "PENDING" : await storage.generateEntryNumber(companyId, billDate);
   await storage.createJournalEntry(
     {
       companyId,
@@ -235,7 +257,8 @@ export async function postBillApprovalJournal(
       postedBy: userId,
       postedAt: billDate,
     } as any,
-    lines
+    lines,
+    stock?.tx ? { tx: stock.tx } : undefined
   );
 
   log.info({ billId: bill.id, entryNumber }, "Bill approval journal entry created");

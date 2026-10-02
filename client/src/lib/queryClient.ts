@@ -1,6 +1,10 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryFunction } from "@tanstack/react-query";
+import { reportRoleRequired } from "./role-blocked";
 import { getAuthHeaders, refreshSession } from "./auth";
 import { apiUrl } from "./api";
+import { stringifyBody } from "./calendar-date";
+import { localizeServerError } from "./server-errors";
+import { useI18n } from "./i18n";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
 
@@ -43,7 +47,8 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status, errorCode, errorDetails);
+    // In Arabic the message is ours for every code we know (English stays the server's sentence unless it is a sales code).
+    throw new ApiError(localizeServerError(errorCode, errorMessage, useI18n.getState().locale), res.status, errorCode, errorDetails);
   }
 }
 
@@ -105,7 +110,8 @@ export async function apiRequest(
 
   const fullUrl = apiUrl(url);
   const upperMethod = method.toUpperCase();
-  const body = data !== undefined ? JSON.stringify(data) : undefined;
+  // A Date (a picker value) leaves as its calendar day ("2026-10-01"), never as a UTC instant (lib/calendar-date.ts).
+  const body = data !== undefined ? stringifyBody(data) : undefined;
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
@@ -203,6 +209,8 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 // Mutations still call queryClient.invalidateQueries to force-refresh after
 // writes, so freshness guarantees don't depend on the timer alone.
 export const queryClient = new QueryClient({
+  // A 403 ROLE_REQUIRED on a page load becomes one standard notice in the shell, not an error on every screen.
+  queryCache: new QueryCache({ onError: (error, query) => reportRoleRequired(error, query.queryKey) }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

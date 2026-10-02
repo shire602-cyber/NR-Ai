@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSearch } from "wouter";
+import { payrollTabFromSearch } from "@/lib/employee-shell";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,10 +69,25 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate, CALENDAR_DATE_SHORT_FORMAT } from "@/lib/format";
 import { getAuthHeaders } from "@/lib/auth";
 import { downloadPdf } from "@/lib/download-pdf";
 import { apiUrl } from "@/lib/api";
+import { uaeDayOf } from "@/lib/calendar-date";
+import { ApiError } from "@/lib/queryClient";
+import { LeaveTab } from "@/components/payroll/LeaveTab";
+import { LoansTab } from "@/components/payroll/LoansTab";
+import { useConfirmAction } from "@/components/ConfirmDialog";
+import { PayslipsTab } from "@/components/payroll/PayslipsTab";
+import { FinalSettlementTab } from "@/components/payroll/FinalSettlementTab";
+import { RecordPaymentDialog } from "@/components/payroll/RecordPaymentDialog";
+import { PayrollRegisterDialog } from "@/components/payroll/PayrollRegisterDialog";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { useMyCompanyRole } from "@/hooks/useMyCompanyRole";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./Payroll.i18n";
 
 // ─── Types ───────────────────────────────────────────────
@@ -89,6 +106,11 @@ interface Employee {
   bank_account_number: string | null;
   iban: string | null;
   routing_code: string | null;
+  mol_person_id?: string | null;
+  opening_gratuity_provision?: string | null;
+  opening_leave_days?: string | null;
+  opening_leave_provision?: string | null;
+  opening_provisions_as_of?: string | null;
   department: string | null;
   designation: string | null;
   join_date: string | null;
@@ -99,6 +121,7 @@ interface Employee {
   total_salary: string;
   status: string;
   created_at: string;
+  user_id?: string | null;
 }
 
 interface PayrollRun {
@@ -110,6 +133,8 @@ interface PayrollRun {
   total_basic: string;
   total_allowances: string;
   total_deductions: string;
+  total_leave_deductions?: string;
+  total_loan_deductions?: string;
   total_net: string;
   employee_count: number;
   status: string;
@@ -126,6 +151,7 @@ interface PayrollItem {
   employee_name: string;
   employee_name_ar: string | null;
   employee_number: string | null;
+  days_worked?: string | number | null;
   department: string | null;
   designation: string | null;
   basic_salary: string;
@@ -134,6 +160,10 @@ interface PayrollItem {
   other_allowance: string;
   overtime: string;
   deductions: string;
+  leave_deduction?: string;
+  loan_deduction?: string;
+  unpaid_leave_days?: string;
+  half_pay_leave_days?: string;
   deduction_notes: string | null;
   net_salary: string;
   payment_mode: string;
@@ -174,6 +204,11 @@ const employeeFormSchema = z.object({
   bankAccountNumber: z.string().optional(),
   iban: z.string().optional(),
   routingCode: z.string().optional(),
+  molPersonId: z.string().regex(/^(\d{14})?$/, pageMessages.marker("molPersonIdInvalid")).optional(),
+  openingGratuityProvision: z.coerce.number().min(0).default(0),
+  openingLeaveDays: z.coerce.number().min(0).default(0),
+  openingLeaveProvision: z.coerce.number().min(0).default(0),
+  openingProvisionsAsOf: z.string().optional(),
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
@@ -182,6 +217,8 @@ const employeeFormSchema = z.object({
   transportAllowance: z.coerce.number().min(0).default(0),
   otherAllowance: z.coerce.number().min(0).default(0),
   status: z.string().default("active"),
+  // The team member this record belongs to ("none" = not linked); only an accountant or above can set it.
+  userId: z.string().default("none"),
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
@@ -227,11 +264,33 @@ export default function Payroll() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
+  // A refused employee form: the server answers FIELD_REQUIRED / FIELD_INVALID (FULL_NAME, EMPLOYEE_NUMBER, BASIC_SALARY,
+  // JOIN_DATE, AS_OF_DATE ...). Say which field, in the interface language.
+  const employeeErrorMessage = (error: unknown): string | undefined => {
+    const code = error instanceof ApiError ? error.code : undefined;
+    const match = code?.match(/^(.+)_(REQUIRED|INVALID)$/);
+    if (!match) return (error as Error)?.message;
+    const labels: Record<string, string> = {
+      FULL_NAME: tr("fieldFullName"),
+      EMPLOYEE_NUMBER: tr("fieldEmployeeNumber"),
+      BASIC_SALARY: tr("fieldBasicSalary"),
+      JOIN_DATE: tr("fieldJoinDate"),
+      AS_OF_DATE: tr("openingProvisionAsOf"),
+    };
+    const field = labels[match[1]] ?? (error as ApiError).details ?? (error as Error).message;
+    return match[2] === "REQUIRED" ? tr("fieldRequired", { field: String(field) }) : tr("fieldInvalid", { field: String(field) });
+  };
+
   // Dialog states
   const [employeeDialogOpen, setEmployeeDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [payrollRunDialogOpen, setPayrollRunDialogOpen] = useState(false);
   const [viewingRunId, setViewingRunId] = useState<string | null>(null);
+  const [registerRunId, setRegisterRunId] = useState<string | null>(null);
+  const [payRunId, setPayRunId] = useState<string | null>(null);
+  const [deleteRunId, setDeleteRunId] = useState<string | null>(null);
+  // The warnings of the last calculation per run (pro-rata and excluded employees), kept on screen with the run.
+  const [warningsByRun, setWarningsByRun] = useState<Record<string, string[]>>({});
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDialogOpen, setEditItemDialogOpen] = useState(false);
 
@@ -262,6 +321,23 @@ export default function Payroll() {
   });
 
   const viewingRun = payrollRuns.find((r) => r.id === viewingRunId);
+  // Employees with service before the first payroll period and no opening provisions (the server names them; it is what the
+  // register and the calculate warnings use). Fetched for any open run that has not posted yet.
+  const { data: runRegister } = useQuery<{ priorServiceMissing?: Array<{ employeeId: string; name: string }> }>({
+    queryKey: ["/api/payroll-runs", viewingRunId, "register", "prior-service"],
+    enabled: !!viewingRunId && !!viewingRun && ["draft", "calculated", "pending_approval"].includes(viewingRun.status),
+    queryFn: () => apiRequest("GET", `/api/payroll-runs/${viewingRunId}/register`),
+  });
+  const firstRunWarningEmployees = runRegister?.priorServiceMissing ?? [];
+  const { canWriteHr, isLoading: isLoadingRole } = useMyCompanyRole(companyId ?? undefined);
+  // ?tab=leave / ?tab=loans / ?tab=payslips opens that tab (the employee menu links straight to them).
+  const requestedTab = payrollTabFromSearch(useSearch());
+  // The team members an employee record can be linked to (an accountant or above links; same cache entry as the role).
+  const { data: teamMembers = [] } = useQuery<Array<{ userId: string; role: string; user?: { name: string; email: string } }>>({
+    queryKey: ["/api/companies", companyId ?? undefined, "team"],
+    enabled: !!companyId && canWriteHr,
+  });
+  const approvalProgress = useApprovalProgress(companyId ?? undefined, "payroll_run", payrollRuns.some((r) => r.status === "pending_approval"));
 
   // ─── Forms ───────────────────────────────────────────
 
@@ -279,6 +355,11 @@ export default function Payroll() {
       bankAccountNumber: "",
       iban: "",
       routingCode: "",
+      molPersonId: "",
+      openingGratuityProvision: 0,
+      openingLeaveDays: 0,
+      openingLeaveProvision: 0,
+      openingProvisionsAsOf: "",
       department: "",
       designation: "",
       joinDate: "",
@@ -287,6 +368,7 @@ export default function Payroll() {
       transportAllowance: 0,
       otherAllowance: 0,
       status: "active",
+      userId: "none",
     },
   });
 
@@ -310,7 +392,7 @@ export default function Payroll() {
   // ─── Mutations ─────────────────────────────────────
 
   const createEmployeeMutation = useMutation({
-    mutationFn: (data: EmployeeFormData) =>
+    mutationFn: (data: Omit<EmployeeFormData, "userId"> & { userId: string | null }) =>
       apiRequest("POST", `/api/companies/${companyId}/employees`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
@@ -322,12 +404,12 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: employeeErrorMessage(error), variant: "destructive" });
     },
   });
 
   const updateEmployeeMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<EmployeeFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<Omit<EmployeeFormData, "userId">> & { userId?: string | null } }) =>
       apiRequest("PATCH", `/api/employees/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
@@ -340,7 +422,7 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: employeeErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -374,8 +456,17 @@ export default function Payroll() {
 
   const calculatePayrollMutation = useMutation({
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/calculate`),
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, calculatedRunId: string) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      const notes: Array<{ code: string; name: string; days: number; basis?: number; date: string | null }> = Array.isArray(result?.proRataNotes) ? result.proRataNotes : [];
+      const others: string[] = Array.isArray(result?.otherWarnings) ? result.otherWarnings : Array.isArray(result?.warnings) ? result.warnings : [];
+      setWarningsByRun((prev) => ({
+        ...prev,
+        [calculatedRunId]: [
+          ...notes.map((n) => tr(`proRata_${n.code}` as "proRata_joined", { name: n.name, days: n.days, basis: n.basis ?? 30, date: n.date ?? "-" })),
+          ...others,
+        ],
+      }));
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
@@ -393,34 +484,60 @@ export default function Payroll() {
 
   const approvePayrollMutation = useMutation({
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/approve`),
-    onMutate: async (runId: string) => {
-      const queryKey = [`/api/companies/${companyId}/payroll-runs`] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((run: any) => (run.id === runId ? { ...run, status: "approved" } : run)) ?? []
-      );
-      return { previous, queryKey };
-    },
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
       }
       toast({
         title: tr("payrollApproved"),
         description: tr("thePayrollRunHasBeenApproved"),
       });
     },
-    onError: (error: Error, _runId, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+    onError: (error: Error) => {
+      toast(failureToast(error, tr("error")));
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+    },
+  });
+
+  // Service before the first run: provisions the opening fields did not cover are booked once, on purpose, not inside the first month.
+  const [askConfirm, confirmDialog] = useConfirmAction();
+  const catchUpMutation = useMutation({
+    mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/book-prior-service-catchup`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-runs"] });
+      toast({ title: tr("catchUpBooked"), description: tr("catchUpBookedBody") });
+    },
+    onError: (error: any) => {
+      const unavailable = error?.status === 404 || error?.status === 405;
+      const nothing = error?.code === "NOTHING_TO_BOOK";
+      toast({ title: tr("catchUpFailed"), description: nothing ? tr("catchUpNothing") : unavailable ? tr("catchUpUnavailable") : error?.message, variant: "destructive" });
+    },
+  });
+
+  const deleteRunMutation = useMutation({
+    mutationFn: (runId: string) => apiRequest("DELETE", `/api/payroll-runs/${runId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (deleteRunId && deleteRunId === viewingRunId) setViewingRunId(null);
+      setDeleteRunId(null);
+      toast({ title: tr("runDeleted"), description: tr("runDeletedBody") });
+    },
+    onError: (error: Error) => {
+      setDeleteRunId(null);
+      toast(failureToast(error, tr("error")));
     },
   });
 
@@ -468,6 +585,11 @@ export default function Payroll() {
       bankAccountNumber: "",
       iban: "",
       routingCode: "",
+      molPersonId: "",
+      openingGratuityProvision: 0,
+      openingLeaveDays: 0,
+      openingLeaveProvision: 0,
+      openingProvisionsAsOf: "",
       department: "",
       designation: "",
       joinDate: "",
@@ -476,6 +598,7 @@ export default function Payroll() {
       transportAllowance: 0,
       otherAllowance: 0,
       status: "active",
+      userId: "none",
     });
     setEmployeeDialogOpen(true);
   };
@@ -494,19 +617,29 @@ export default function Payroll() {
       bankAccountNumber: emp.bank_account_number || "",
       iban: emp.iban || "",
       routingCode: emp.routing_code || "",
+      molPersonId: emp.mol_person_id || "",
+      openingGratuityProvision: parseFloat(emp.opening_gratuity_provision ?? "0") || 0,
+      openingLeaveDays: parseFloat(emp.opening_leave_days ?? "0") || 0,
+      openingLeaveProvision: parseFloat(emp.opening_leave_provision ?? "0") || 0,
+      openingProvisionsAsOf: uaeDayOf(emp.opening_provisions_as_of),
       department: emp.department || "",
       designation: emp.designation || "",
-      joinDate: emp.join_date ? emp.join_date.split("T")[0] : "",
+      joinDate: uaeDayOf(emp.join_date),
       basicSalary: parseFloat(emp.basic_salary) || 0,
       housingAllowance: parseFloat(emp.housing_allowance) || 0,
       transportAllowance: parseFloat(emp.transport_allowance) || 0,
       otherAllowance: parseFloat(emp.other_allowance) || 0,
       status: emp.status,
+      userId: emp.user_id ?? "none",
     });
     setEmployeeDialogOpen(true);
   };
 
-  const handleEmployeeSubmit = (data: EmployeeFormData) => {
+  const handleEmployeeSubmit = (form: EmployeeFormData) => {
+    // "none" in the picker means unlinked (null clears an existing link).
+    const { molPersonId, employeeNumber, ...rest } = form;
+    // An empty employee number is "not given" (the number is optional), not an empty string the server would refuse.
+    const data = { ...rest, ...(employeeNumber?.trim() ? { employeeNumber: employeeNumber.trim() } : {}), ...(molPersonId ? { molPersonId } : {}), userId: form.userId === "none" ? null : form.userId };
     if (editingEmployee) {
       updateEmployeeMutation.mutate({ id: editingEmployee.id, data });
     } else {
@@ -591,8 +724,12 @@ export default function Payroll() {
 
   // ─── Helpers ───────────────────────────────────────
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, runId?: string) => {
     switch (status) {
+      case "pending_approval": {
+        const progress = runId ? approvalProgress.get(runId) : undefined;
+        return <ApprovalStatusBadge status="pending_approval" completedSteps={progress?.completedSteps} requiredSteps={progress?.requiredSteps} />;
+      }
       case "active":
         return (
           <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
@@ -601,6 +738,8 @@ export default function Payroll() {
         );
       case "inactive":
         return <Badge variant="secondary">{tr("inactive")}</Badge>;
+      case "terminated":
+        return <Badge variant="secondary">{tr("statusTerminated")}</Badge>;
       case "draft":
         return <Badge variant="outline">{tr("draft")}</Badge>;
       case "calculated":
@@ -657,6 +796,29 @@ export default function Payroll() {
     );
   }
 
+  // Dialogs opened from the run list AND from the run detail view (record payment, register, delete run).
+  // They must be mounted in both views: the detail view returns early, so dialogs rendered only at the end of the page never appear there.
+  const runLevelDialogs = (
+    <>
+      <PayrollRegisterDialog runId={registerRunId} onClose={() => setRegisterRunId(null)} />
+      {companyId && <RecordPaymentDialog companyId={companyId} runId={payRunId} onClose={() => setPayRunId(null)} />}
+      <AlertDialog open={!!deleteRunId} onOpenChange={(open) => !open && setDeleteRunId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tr("deleteRunTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("deleteRunBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteRunId && deleteRunMutation.mutate(deleteRunId)} data-testid="button-confirm-delete-run">
+              {tr("deleteRun")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+
   // ─── Render: Run detail view ───────────────────────
 
   if (viewingRunId && viewingRun) {
@@ -671,7 +833,7 @@ export default function Payroll() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>
                   {tr("payrollRun", {
@@ -690,10 +852,10 @@ export default function Payroll() {
                       ),
                     })}
                   </span>
-                  <span>{getStatusBadge(viewingRun.status)}</span>
+                  <span>{getStatusBadge(viewingRun.status, viewingRun.id)}</span>
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {viewingRun.status === "draft" && (
                   <Button
                     onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
@@ -704,17 +866,19 @@ export default function Payroll() {
                     {calculatePayrollMutation.isPending ? tr("calculating") : tr("calculate")}
                   </Button>
                 )}
-                {viewingRun.status === "calculated" && (
+                {(viewingRun.status === "calculated" || viewingRun.status === "pending_approval") && (
                   <>
-                    <Button
-                      onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
-                      variant="outline"
-                      disabled={calculatePayrollMutation.isPending}
-                      className="flex items-center gap-2"
-                    >
-                      <Calculator className="w-4 h-4" />
-                      {tr("recalculate")}
-                    </Button>
+                    {viewingRun.status === "calculated" && (
+                      <Button
+                        onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
+                        variant="outline"
+                        disabled={calculatePayrollMutation.isPending}
+                        className="flex items-center gap-2"
+                      >
+                        <Calculator className="w-4 h-4" />
+                        {tr("recalculate")}
+                      </Button>
+                    )}
                     <Button
                       onClick={() => approvePayrollMutation.mutate(viewingRunId)}
                       disabled={approvePayrollMutation.isPending}
@@ -725,14 +889,38 @@ export default function Payroll() {
                     </Button>
                   </>
                 )}
-                {(viewingRun.status === "calculated" || viewingRun.status === "approved") && (
+                {viewingRun.status !== "draft" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setRegisterRunId(viewingRunId)}
+                    className="flex items-center gap-2"
+                    data-testid="button-open-register"
+                  >
+                    <FileText className="w-4 h-4" />
+                    {tr("register")}
+                  </Button>
+                )}
+                {(viewingRun.status === "approved" || viewingRun.status === "paid") && (
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadSIF(viewingRunId)}
                     className="flex items-center gap-2"
+                    data-testid="button-download-sif"
                   >
                     <Download className="w-4 h-4" />
                     {tr("downloadSif")}
+                  </Button>
+                )}
+                {viewingRun.status === "approved" && (
+                  <Button onClick={() => setPayRunId(viewingRunId)} className="flex items-center gap-2" data-testid="button-record-payment">
+                    <Banknote className="w-4 h-4" />
+                    {tr("recordPayment")}
+                  </Button>
+                )}
+                {(viewingRun.status === "draft" || viewingRun.status === "calculated") && (
+                  <Button variant="outline" onClick={() => setDeleteRunId(viewingRunId)} className="flex items-center gap-2 text-destructive" data-testid="button-delete-run">
+                    <Trash2 className="w-4 h-4" />
+                    {tr("deleteRun")}
                   </Button>
                 )}
               </div>
@@ -741,7 +929,35 @@ export default function Payroll() {
 
           {/* Summary cards */}
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {firstRunWarningEmployees.length > 0 && (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-sm space-y-2" role="status" data-testid="payroll-first-run-warning">
+                <div className="font-medium">{tr("firstRunWarningTitle")}</div>
+                <p>{tr("firstRunWarningBody")}</p>
+                <p className="text-muted-foreground" data-testid="text-first-run-employees">{firstRunWarningEmployees.map((e) => e.name).join(", ")}</p>
+                {canWriteHr && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={catchUpMutation.isPending}
+                    onClick={() => askConfirm(tr("catchUpConfirm"), () => catchUpMutation.mutate(viewingRun.id))}
+                    data-testid="button-book-catchup"
+                  >
+                    {tr("catchUpAction")}
+                  </Button>
+                )}
+              </div>
+            )}
+            {(warningsByRun[viewingRunId ?? ""] ?? []).length > 0 && (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-sm" role="status" data-testid="payroll-run-warnings">
+                <div className="font-medium">{tr("runWarningsTitle")}</div>
+                <ul className="mt-1 list-disc ps-5">
+                  {warningsByRun[viewingRunId ?? ""].map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">{tr("totalBasic")}</div>
                 <div className="text-lg font-semibold">
@@ -758,6 +974,18 @@ export default function Payroll() {
                 <div className="text-sm text-muted-foreground">{tr("totalDeductions")}</div>
                 <div className="text-lg font-semibold text-destructive">
                   {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3" data-testid="card-total-leave-deductions">
+                <div className="text-sm text-muted-foreground">{tr("leaveDeductions")}</div>
+                <div className="text-lg font-semibold text-destructive">
+                  {formatCurrency(parseFloat(viewingRun.total_leave_deductions ?? "0") || 0, "AED", locale)}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3" data-testid="card-total-loan-deductions">
+                <div className="text-sm text-muted-foreground">{tr("loanDeductions")}</div>
+                <div className="text-lg font-semibold text-destructive">
+                  {formatCurrency(parseFloat(viewingRun.total_loan_deductions ?? "0") || 0, "AED", locale)}
                 </div>
               </div>
               <div className="rounded-lg border p-3">
@@ -789,6 +1017,8 @@ export default function Payroll() {
                       <TableHead className="text-end">{tr("basic")}</TableHead>
                       <TableHead className="text-end">{tr("allowances")}</TableHead>
                       <TableHead className="text-end">{tr("overtime")}</TableHead>
+                      <TableHead className="text-end">{tr("leaveShort")}</TableHead>
+                      <TableHead className="text-end">{tr("loansShort")}</TableHead>
                       <TableHead className="text-end">{tr("deductions")}</TableHead>
                       <TableHead className="text-end">{tr("netSalary")}</TableHead>
                       <TableHead>{tr("status")}</TableHead>
@@ -805,7 +1035,12 @@ export default function Payroll() {
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">
                             <div>
-                              {item.employee_name}
+                              {locale === "ar" && item.employee_name_ar ? item.employee_name_ar : item.employee_name}
+                              {item.days_worked != null && Number(item.days_worked) > 0 && (
+                                <div className="text-xs text-warning" data-testid={`days-worked-${item.id}`}>
+                                  {tr("daysWorkedOf", { days: Number(item.days_worked) })}
+                                </div>
+                              )}
                               {item.employee_number && (
                                 <div className="text-xs text-muted-foreground">
                                   #{item.employee_number}
@@ -825,6 +1060,12 @@ export default function Payroll() {
                           <TableCell className="text-end">
                             {formatCurrency(parseFloat(item.overtime) || 0, "AED", locale)}
                           </TableCell>
+                          <TableCell className="text-end text-destructive" data-testid={`cell-leave-deduction-${item.id}`}>
+                            {formatCurrency(parseFloat(item.leave_deduction ?? "0") || 0, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-end text-destructive" data-testid={`cell-loan-deduction-${item.id}`}>
+                            {formatCurrency(parseFloat(item.loan_deduction ?? "0") || 0, "AED", locale)}
+                          </TableCell>
                           <TableCell className="text-end text-destructive">
                             {formatCurrency(parseFloat(item.deductions) || 0, "AED", locale)}
                           </TableCell>
@@ -833,8 +1074,7 @@ export default function Payroll() {
                           </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
                           <TableCell className="text-end">
-                            {(viewingRun.status === "calculated" ||
-                              viewingRun.status === "approved") && (
+                            {viewingRun.status !== "draft" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -845,7 +1085,7 @@ export default function Payroll() {
                                 <FileText className="w-4 h-4" />
                               </Button>
                             )}
-                            {viewingRun.status !== "approved" && (
+                            {viewingRun.status !== "approved" && viewingRun.status !== "pending_approval" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -941,6 +1181,9 @@ export default function Payroll() {
             </Form>
           </DialogContent>
         </Dialog>
+
+        {runLevelDialogs}
+        {confirmDialog}
       </div>
     );
   }
@@ -961,19 +1204,38 @@ export default function Payroll() {
         </div>
       </div>
 
-      <Tabs defaultValue="employees" className="space-y-4">
+      {!canWriteHr && !isLoadingRole && (
+        <p className="text-sm text-muted-foreground" data-testid="payroll-own-records-notice">{tr("ownRecordsNotice")}</p>
+      )}
+
+      {/* An employee login starts on their own payslips; HR roles on the employee list. */}
+      <Tabs key={`${isLoadingRole || canWriteHr ? "hr" : "own"}:${requestedTab ?? ""}`} defaultValue={requestedTab ?? (isLoadingRole || canWriteHr ? "employees" : "payslips")} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="employees" className="flex items-center gap-2">
+          <TabsTrigger value="employees" className="flex shrink-0 items-center gap-2">
             <Users className="w-4 h-4" />
             {tr("employees2")}
           </TabsTrigger>
-          <TabsTrigger value="payroll-runs" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            {tr("payrollRuns")}
+          {canWriteHr && (
+            <TabsTrigger value="payroll-runs" className="flex shrink-0 items-center gap-2">
+              <FileText className="w-4 h-4" />
+              {tr("payrollRuns")}
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="payslips" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-payslips">
+            {tr("tabPayslips")}
           </TabsTrigger>
-          <TabsTrigger value="gratuity" className="flex items-center gap-2">
+          <TabsTrigger value="gratuity" className="flex shrink-0 items-center gap-2">
             <Calculator className="w-4 h-4" />
             {tr("gratuityCalculator")}
+          </TabsTrigger>
+          <TabsTrigger value="leave" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-leave">
+            {tr("tabLeave")}
+          </TabsTrigger>
+          <TabsTrigger value="loans" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-loans">
+            {tr("tabLoans")}
+          </TabsTrigger>
+          <TabsTrigger value="settlement" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-settlement">
+            {tr("tabSettlement")}
           </TabsTrigger>
         </TabsList>
 
@@ -988,10 +1250,12 @@ export default function Payroll() {
                     {tr.plural("employeesRegistered", employees.length)}
                   </CardDescription>
                 </div>
-                <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  {tr("addEmployee")}
-                </Button>
+                {canWriteHr && (
+                  <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
+                    <Plus className="w-4 h-4" />
+                    {tr("addEmployee")}
+                  </Button>
+                )}
               </div>
               <div className="mt-4">
                 <Input
@@ -1024,7 +1288,7 @@ export default function Payroll() {
                         <TableHead>{tr("designation")}</TableHead>
                         <TableHead className="text-end">{tr("totalSalary")}</TableHead>
                         <TableHead>{tr("status")}</TableHead>
-                        <TableHead className="text-end">{tr("actions")}</TableHead>
+                        {canWriteHr && <TableHead className="text-end">{tr("actions")}</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1032,7 +1296,7 @@ export default function Payroll() {
                         <TableRow key={emp.id}>
                           <TableCell className="font-medium">
                             <div>
-                              {emp.full_name}
+                              {locale === "ar" && emp.full_name_ar ? emp.full_name_ar : emp.full_name}
                               {emp.full_name_ar && (
                                 <div className="text-xs text-muted-foreground">
                                   {emp.full_name_ar}
@@ -1049,7 +1313,7 @@ export default function Payroll() {
                             {formatCurrency(parseFloat(emp.total_salary) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(emp.status)}</TableCell>
-                          <TableCell className="text-end">
+                          {canWriteHr && <TableCell className="text-end">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
@@ -1069,7 +1333,7 @@ export default function Payroll() {
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
-                          </TableCell>
+                          </TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1081,7 +1345,7 @@ export default function Payroll() {
         </TabsContent>
 
         {/* ─── Payroll Runs Tab ─────────────────────────── */}
-        <TabsContent value="payroll-runs">
+        {canWriteHr && <TabsContent value="payroll-runs">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -1124,7 +1388,7 @@ export default function Payroll() {
                     </TableHeader>
                     <TableBody>
                       {payrollRuns.map((run) => (
-                        <TableRow key={run.id}>
+                        <TableRow key={run.id} className="cursor-pointer md:cursor-default" onClick={(e) => { if (window.matchMedia("(max-width: 767px)").matches && !(e.target as HTMLElement).closest("button")) setViewingRunId(run.id); }} data-testid={`row-run-${run.id}`}>
                           <TableCell className="font-medium">
                             {getMonths()[(run.period_month || 1) - 1]} {run.period_year}
                           </TableCell>
@@ -1132,10 +1396,10 @@ export default function Payroll() {
                           <TableCell className="text-end font-mono">
                             {formatCurrency(parseFloat(run.total_net) || 0, "AED", locale)}
                           </TableCell>
-                          <TableCell>{getStatusBadge(run.status)}</TableCell>
+                          <TableCell>{getStatusBadge(run.status, run.id)}</TableCell>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
                             {run.created_at
-                              ? format(new Date(run.created_at), "MMM dd, yyyy")
+                              ? formatDate(run.created_at, locale)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-end">
@@ -1159,7 +1423,7 @@ export default function Payroll() {
                                   <Calculator className="w-4 h-4" />
                                 </Button>
                               )}
-                              {run.status === "calculated" && (
+                              {(run.status === "calculated" || run.status === "pending_approval") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1171,7 +1435,18 @@ export default function Payroll() {
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
                               )}
-                              {(run.status === "calculated" || run.status === "approved") && (
+                              {run.status !== "draft" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setRegisterRunId(run.id)}
+                                  title={tr("registerTitle")}
+                                  data-testid={`button-register-${run.id}`}
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {(run.status === "approved" || run.status === "paid") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1191,7 +1466,7 @@ export default function Payroll() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>}
 
         {/* ─── Gratuity Calculator Tab ──────────────────── */}
         <TabsContent value="gratuity">
@@ -1272,13 +1547,13 @@ export default function Payroll() {
                         <div className="text-muted-foreground">{tr("joinDate")}</div>
                         <div className="font-medium">
                           {gratuityResult.joinDate
-                            ? format(new Date(gratuityResult.joinDate), "MMM dd, yyyy")
+                            ? formatDate(gratuityResult.joinDate, locale, CALENDAR_DATE_SHORT_FORMAT)
                             : "-"}
                         </div>
 
                         <div className="text-muted-foreground">{tr("terminationDate")}</div>
                         <div className="font-medium">
-                          {format(new Date(gratuityResult.terminationDate), "MMM dd, yyyy")}
+                          {formatDate(gratuityResult.terminationDate, locale, CALENDAR_DATE_SHORT_FORMAT)}
                         </div>
 
                         <div className="text-muted-foreground">{tr("yearsOfService")}</div>
@@ -1302,7 +1577,7 @@ export default function Payroll() {
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="text-muted-foreground">
                           {tr("first5YearsYrsX21", {
-                            firstFiveYears: gratuityResult.firstFiveYears,
+                            firstFiveYears: gratuityResult.firstFiveYears ?? Math.round(Math.min(gratuityResult.yearsOfService, 5) * 100) / 100,
                           })}
                         </div>
                         <div className="font-medium">
@@ -1311,7 +1586,7 @@ export default function Payroll() {
 
                         <div className="text-muted-foreground">
                           {tr("after5YearsYrsX30", {
-                            remainingYears: gratuityResult.remainingYears,
+                            remainingYears: gratuityResult.remainingYears ?? Math.round(Math.max(0, gratuityResult.yearsOfService - 5) * 100) / 100,
                           })}
                         </div>
                         <div className="font-medium">
@@ -1351,7 +1626,24 @@ export default function Payroll() {
             )}
           </div>
         </TabsContent>
+
+        {/* ─── Leave, loans and final settlement (Phase 8 D2) ── */}
+        <TabsContent value="payslips">
+          <PayslipsTab runs={payrollRuns} ownOnly={!canWriteHr} />
+        </TabsContent>
+
+        <TabsContent value="leave">
+          {companyId && <LeaveTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
+        <TabsContent value="loans">
+          {companyId && <LoansTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
+        <TabsContent value="settlement">
+          {companyId && <FinalSettlementTab companyId={companyId} employees={employees} canWrite={canWriteHr} />}
+        </TabsContent>
       </Tabs>
+
+      {runLevelDialogs}
 
       {/* ─── Employee Create/Edit Dialog ──────────────── */}
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
@@ -1596,6 +1888,78 @@ export default function Payroll() {
                   )}
                 />
               </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={employeeForm.control}
+                  name="molPersonId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("molPersonId")}</FormLabel>
+                      <FormControl>
+                        <Input inputMode="numeric" maxLength={14} placeholder="00000000000000" {...field} value={field.value || ""} data-testid="input-mol-person-id" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("molPersonIdHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingGratuityProvision"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingGratuityProvision")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.01" {...field} data-testid="input-opening-gratuity-provision" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingGratuityProvisionHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingLeaveDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingLeaveDays")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.5" {...field} data-testid="input-opening-leave-days" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingLeaveDaysHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingLeaveProvision"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingLeaveProvision")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.01" {...field} data-testid="input-opening-leave-provision" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingLeaveProvisionHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingProvisionsAsOf"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingProvisionAsOf")}</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} value={field.value ?? ""} data-testid="input-opening-provision-asof" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingProvisionAsOfHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               {/* Salary */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
@@ -1676,6 +2040,34 @@ export default function Payroll() {
                         <SelectItem value="inactive">{tr("inactive")}</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Linked login: what an employee-role user is allowed to see is their own record */}
+              <FormField
+                control={employeeForm.control}
+                name="userId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tr("linkedLogin")}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-employee-linked-login">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">{tr("linkedLoginNone")}</SelectItem>
+                        {teamMembers.map((m) => (
+                          <SelectItem key={m.userId} value={m.userId}>
+                            {m.user?.name || m.user?.email || m.userId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{tr("linkedLoginHint")}</p>
                     <FormMessage />
                   </FormItem>
                 )}

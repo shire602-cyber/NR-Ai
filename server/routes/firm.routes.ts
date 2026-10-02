@@ -46,6 +46,7 @@ import {
   engagements,
 } from "../../shared/schema";
 import { openArAmount, openArCondition } from "../services/invoice-outstanding.db";
+import { vatSetupProblem } from "../services/company-setup-rules";
 
 const logger = createLogger("firm-routes");
 
@@ -582,10 +583,10 @@ const createClientSchema = z.object({
   contactEmail: z.string().email().optional().or(z.literal("")),
   websiteUrl: z.string().optional(),
   emirate: z.string().optional(),
-  vatFilingFrequency: z.string().optional(),
+  vatFilingFrequency: z.string().optional().refine((v) => !vatSetupProblem({ vatFilingFrequency: v }), { message: "VAT is filed monthly or quarterly in the UAE, not annually." }),
   vatPeriodStartMonth: optionalVatPeriodStartMonthSchema,
   fiscalYearStartMonth: z.coerce.number().int().min(1).max(12).optional(),
-  taxRegistrationType: z.string().optional(),
+  taxRegistrationType: z.string().optional().refine((v) => !vatSetupProblem({ taxRegistrationType: v }), { message: "The UAE has no Flat Rate VAT scheme." }),
   corporateTaxId: z.string().optional(),
   serviceScope: z.array(clientServiceSchema).optional(),
 });

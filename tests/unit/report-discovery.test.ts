@@ -184,8 +184,54 @@ describe("report discoverability", () => {
     "Expense Claims",
   ];
 
-  it("keeps the Reports catalog at 33 live high-level reports with dimensional coverage", () => {
-    expect(liveReportCatalog).toHaveLength(33);
+  // Phase 8 D4: the reports served by the server report engine (/reports/run/:id). They have no in-page tab, so the
+  // persona pack, workbook and automation-starter mappings below cover the 33 in-page reports only.
+  const serverViewerReportNames = [
+    "Cash Flow (Direct)",
+    "Comparative Trial Balance",
+    "Journal Report",
+    "Equity Movement",
+    "Receivables Detail",
+    "Payments Received",
+    "Credit Notes and Refunds",
+    "Quotes Status and Conversion",
+    "Recurring Invoice Schedule",
+    "Payables Detail",
+    "Purchases by Vendor",
+    "Purchases by Item",
+    "Payments Made",
+    "Purchase Orders Status",
+    "Vendor Credits",
+    "VAT Audit: Sales Detail",
+    "VAT Audit: Purchases Detail",
+    "VAT Control Reconciliation",
+    "Corporate Tax Computation",
+    "Unreconciled Bank Items",
+    "Inventory Summary",
+    "Payroll Register",
+    "Asset Disposals",
+    "Bank Reconciliation Statement",
+    "Bank Feed Sync Status",
+    "Sales Orders Status",
+    "Customer Advances and Deposits",
+    "Project Profitability",
+    "Time Summary",
+    "Unbilled Time and Expenses",
+    "Approval History",
+    "Leave Balances",
+    "End-of-Service Provision",
+    "Employee Loans and Advances",
+  ];
+  const inPageLiveReports = liveReportCatalog.filter(
+    (report) => !report.href?.startsWith("/reports/run/")
+  );
+
+  it("keeps the Reports catalog at 67 live high-level reports with dimensional coverage", () => {
+    expect(liveReportCatalog).toHaveLength(67);
+    expect(inPageLiveReports).toHaveLength(33);
+    for (const label of serverViewerReportNames) {
+      expect(liveReportCatalog.map((report) => report.name)).toContain(label);
+    }
 
     for (const label of expectedLiveReports) {
       expect(liveReportCatalog.map((report) => report.name)).toContain(label);
@@ -209,7 +255,7 @@ describe("report discoverability", () => {
     expect(liveReportCatalog.some((report) => report.id === "cost-center-profitability")).toBe(
       true
     );
-    expect(readyReportCatalog).toHaveLength(33);
+    expect(readyReportCatalog).toHaveLength(67);
     expect(readyReportCatalog.some((report) => report.id === "cost-center-profitability")).toBe(
       true
     );
@@ -1308,7 +1354,7 @@ describe("report discoverability", () => {
     expect(commandSource).toContain('tr("automationCommandCenter", { title: workspace.title })');
     expect(commandSource).toContain('tr("reportPackAutomation", { title: workspace.title })');
 
-    for (const report of liveReportCatalog) {
+    for (const report of inPageLiveReports) {
       expect(
         reportAutomationStarters.some((starter) => starter.reportIds.includes(report.id))
       ).toBe(true);
@@ -1575,7 +1621,12 @@ describe("report discoverability", () => {
       expect(profile.reportIds).toEqual(
         expect.arrayContaining(
           reportCatalog
-            .filter((item) => item.status === "live" && item.personas.includes(profile.persona))
+            .filter(
+              (item) =>
+                item.status === "live" &&
+                item.personas.includes(profile.persona) &&
+                !item.href?.startsWith("/reports/run/")
+            )
             .map((item) => item.id)
         )
       );
@@ -2107,11 +2158,20 @@ describe("report discoverability", () => {
     }
 
     for (const workspace of reportPersonaWorkspaces) {
+      // Persona packs cover the in-page reports; the server-engine reports (/reports/run/:id) have per-report schedules.
       const personaReportIds = reportCatalog
-        .filter((report) => report.personas.includes(workspace.persona))
+        .filter(
+          (report) =>
+            report.personas.includes(workspace.persona) && !report.href?.startsWith("/reports/run/")
+        )
         .map((report) => report.id);
       const livePersonaReportIds = reportCatalog
-        .filter((report) => report.status === "live" && report.personas.includes(workspace.persona))
+        .filter(
+          (report) =>
+            report.status === "live" &&
+            report.personas.includes(workspace.persona) &&
+            !report.href?.startsWith("/reports/run/")
+        )
         .map((report) => report.id);
       const packReportIds = new Set(
         reportPackTemplates
@@ -2222,7 +2282,10 @@ describe("report discoverability", () => {
 
     for (const workspace of reportPersonaWorkspaces) {
       const personaReportIds = reportCatalog
-        .filter((report) => report.personas.includes(workspace.persona))
+        .filter(
+          (report) =>
+            report.personas.includes(workspace.persona) && !report.href?.startsWith("/reports/run/")
+        )
         .map((report) => report.id);
       const comparisonReportIds = new Set(
         reportComparisonPresets
@@ -3106,7 +3169,12 @@ describe("report discoverability", () => {
       expect(workspace.automations).toHaveLength(3);
 
       const liveReportIds = reportCatalog
-        .filter((report) => report.status === "live" && report.personas.includes(workspace.persona))
+        .filter(
+          (report) =>
+            report.status === "live" &&
+            report.personas.includes(workspace.persona) &&
+            !report.href?.startsWith("/reports/run/")
+        )
         .map((report) => report.id);
       expect(liveReportIds.every((reportId) => workbookMappedReportIds.has(reportId))).toBe(true);
     }

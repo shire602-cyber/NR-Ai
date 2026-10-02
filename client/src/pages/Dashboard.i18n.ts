@@ -136,6 +136,9 @@ export const messages = defineMessages(
     yourFinancialOverviewRevenueExpensesAnd:
       "Your financial overview — revenue, expenses, and outstanding receivables.",
     netProfitThisMonth: "Net Profit · This Month",
+    netProfitYearToDate: "Net Profit · Fiscal Year to Date",
+    moneyOwedEyebrow: "Cash and credit",
+    moneyOwedTitle: "Receivables, payables and VAT",
     positive: "Positive",
     negative: "Negative",
     margin: "Margin",
@@ -162,7 +165,7 @@ export const messages = defineMessages(
     inOutstandingInvoices: "in outstanding invoices.",
     talkToAiCfo: "Talk to AI CFO",
     reportsWorkspace: "Reports workspace",
-    ready2: "· {readyReports}/{reportsCount} ready",
+    ready2: "· {readyReports} of {reportsCount} reports in this view ready",
     openWorkspace: "Open workspace",
     reportingMode: "Reporting mode",
     switchTheDailyReportWorkspaceFor:
@@ -185,7 +188,7 @@ export const messages = defineMessages(
     pack: "Pack",
     autopilot: "Autopilot",
     quickAccessReports: "Quick access reports",
-    ready3: "{readyReports}/{reportsCount} ready",
+    ready3: "{readyReports} of {reportsCount} in this view ready",
     comparison: "Comparison",
     openBoard: "Open board",
     open: "Open",
@@ -199,7 +202,8 @@ export const messages = defineMessages(
     automationHealth: "Automation health",
     syncingCatalog: "Syncing catalog",
     localCatalog: "Local catalog",
-    syncedReports: "{syncedReadyReports} synced reports",
+    syncedReports:
+      "{syncedReadyReports} of {catalogReadyReports} catalog reports synced for this persona",
     packs: "{syncedPackTemplates} packs",
     comparisons: "{syncedComparisonPresets} comparisons",
     blendsPackReadinessAutomationLanesAnd:
@@ -456,6 +460,9 @@ export const messages = defineMessages(
     yourFinancialOverviewRevenueExpensesAnd:
       "نظرة عامة على وضعك المالي — الإيرادات والمصروفات والذمم المدينة المستحقة.",
     netProfitThisMonth: "صافي الربح · هذا الشهر",
+    netProfitYearToDate: "صافي الربح · السنة المالية حتى تاريخه",
+    moneyOwedEyebrow: "النقد والائتمان",
+    moneyOwedTitle: "الذمم المدينة والدائنة وضريبة القيمة المضافة",
     positive: "إيجابي",
     negative: "سلبي",
     margin: "الهامش",
@@ -482,7 +489,7 @@ export const messages = defineMessages(
     inOutstandingInvoices: "في فواتير مستحقة.",
     talkToAiCfo: "تحدث مع المدير المالي الذكي",
     reportsWorkspace: "مساحة التقارير",
-    ready2: "· {readyReports}/{reportsCount} جاهز",
+    ready2: "· {readyReports} من {reportsCount} تقريرًا في هذا العرض جاهز",
     openWorkspace: "فتح مساحة العمل",
     reportingMode: "وضع التقارير",
     switchTheDailyReportWorkspaceFor:
@@ -505,7 +512,7 @@ export const messages = defineMessages(
     pack: "حزمة",
     autopilot: "طيار آلي",
     quickAccessReports: "تقارير الوصول السريع",
-    ready3: "{readyReports}/{reportsCount} جاهز",
+    ready3: "{readyReports} من {reportsCount} في هذا العرض جاهز",
     comparison: "مقارنة",
     openBoard: "فتح اللوحة",
     open: "فتح",
@@ -519,7 +526,8 @@ export const messages = defineMessages(
     automationHealth: "سلامة الأتمتة",
     syncingCatalog: "جارٍ مزامنة الفهرس",
     localCatalog: "فهرس محلي",
-    syncedReports: "{syncedReadyReports} تقارير متزامنة",
+    syncedReports:
+      "{syncedReadyReports} من {catalogReadyReports} تقريرًا في الفهرس متزامنة لهذا الدور",
     packs: "{syncedPackTemplates} حزم",
     comparisons: "{syncedComparisonPresets} مقارنات",
     blendsPackReadinessAutomationLanesAnd:

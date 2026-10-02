@@ -1,56 +1,23 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { PageHeader } from "@/components/ui/page-header";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useI18n } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
-import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  RefreshCw,
-  Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
-  Wallet,
-} from "lucide-react";
+import { formatCalendarDate } from "@/lib/calendar-date";
+import type { ForecastInsight, ForecastItemType, ForecastResponse, ForecastScenarioFields, SavedScenario } from "@/lib/banking-api-types";
+import { ForecastChart } from "@/components/cashflow/ForecastChart";
+import { ScenarioPanel } from "@/components/cashflow/ScenarioPanel";
+import { DEFAULT_SCENARIO, lowestBalance, scenarioIssues, scenarioQuery, weekLabel } from "@/components/cashflow/chart-data";
 import { messages as pageMessages } from "./CashFlowForecast.i18n";
-
-interface WeeklyProjection {
-  week: number;
-  weekStart: string;
-  weekEnd: string;
-  expectedInflows: number;
-  expectedOutflows: number;
-  projectedBalance: number;
-}
-
-interface ForecastData {
-  currentBalance: number;
-  projections: WeeklyProjection[];
-  insights: string[];
-}
 
 interface MonthlyCashHistory {
   month: string;
@@ -61,344 +28,336 @@ interface MonthlyCashHistory {
   netCashFlow: number;
 }
 
+const monthName = (year: number, month: number, locale: string) =>
+  new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+
+const HORIZONS = [30, 60, 90, 180] as const;
+const ITEM_PAGE = 50;
+type Tr = ReturnType<typeof pageMessages.useT>;
+
+const TYPE_KEY: Record<ForecastItemType, Parameters<Tr>[0]> = {
+  invoice: "typeInvoice",
+  bill: "typeBill",
+  recurring: "typeRecurring",
+  payroll: "typePayroll",
+  adjustment: "typeAdjustment",
+};
+
+type Tone = "risk" | "positive" | "info";
+
+/** One observation from the server's code and params, in the active language. */
+function insightText(tr: Tr, insight: ForecastInsight, money: (n: number) => string, locale: string): { text: string; tone: Tone } {
+  const p = insight.params;
+  const day = (v: unknown) => weekLabel(String(v), locale);
+  switch (insight.code) {
+    case "NEGATIVE_BALANCE":
+      return { tone: "risk", text: tr("insightNegative", { week: Number(p.week), weekStart: day(p.weekStart), amount: money(Number(p.amount)) }) };
+    case "LOW_BALANCE":
+      return { tone: "risk", text: tr("insightLow", { week: Number(p.week), weekStart: day(p.weekStart), threshold: money(Number(p.threshold)) }) };
+    case "OVERDUE_RECEIVABLES":
+      return { tone: "risk", text: tr("insightOverdue", { count: Number(p.count), amount: money(Number(p.amount)) }) };
+    case "RECEIVABLES_EXPECTED":
+      return { tone: "info", text: tr("insightReceivables", { amount: money(Number(p.amount)) }) };
+    case "PAYABLES_DUE":
+      return { tone: "info", text: tr("insightPayables", { amount: money(Number(p.amount)) }) };
+    case "POSITIVE_OUTLOOK":
+      return { tone: "positive", text: tr("insightPositiveOutlook", { improvement: money(Number(p.improvement)) }) };
+    default:
+      return { tone: "info", text: tr("insightNoActivity") };
+  }
+}
+
 export default function CashFlowForecast() {
   const tr = pageMessages.useT();
-
-  const { t, locale } = useTranslation();
+  const locale = useI18n((s) => s.locale);
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  const [forecastDays, setForecastDays] = useState("90");
+  const [days, setDays] = useState<number>(90);
+  const [draft, setDraft] = useState<ForecastScenarioFields>(DEFAULT_SCENARIO);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [initialised, setInitialised] = useState(false);
+  const [itemLimit, setItemLimit] = useState(ITEM_PAGE);
 
-  const {
-    data: forecast,
-    isLoading: isLoadingForecast,
-    refetch: refetchForecast,
-    isFetching: isFetchingForecast,
-  } = useQuery<ForecastData>({
-    queryKey: [`/api/companies/${companyId}/cashflow/forecast?days=${forecastDays}`],
-    enabled: !!companyId,
-  });
+  const { data: scenarios } = useQuery<SavedScenario[]>({ queryKey: ["/api/companies", companyId, "cashflow", "scenarios"], enabled: !!companyId });
+  // start from the company's default scenario, once
+  useEffect(() => {
+    if (initialised || !scenarios) return;
+    const d = scenarios.find((s) => s.isDefault);
+    if (d) {
+      setSelectedId(d.id);
+      setDraft({ receiptDelayDays: d.receiptDelayDays, paymentDelayDays: d.paymentDelayDays, collectionRatePct: Number(d.collectionRatePct), includeRecurring: d.includeRecurring, includePayroll: d.includePayroll, payrollPayDay: d.payrollPayDay, adjustments: d.adjustments ?? [] });
+    }
+    setInitialised(true);
+  }, [scenarios, initialised]);
 
-  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({
-    queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
-    enabled: !!companyId,
+  const valid = scenarioIssues(draft).length === 0;
+  const query = scenarioQuery(days, draft);
+  const { data: forecast, isLoading, isFetching, isError, refetch } = useQuery<ForecastResponse>({
+    queryKey: [`/api/companies/${companyId}/cashflow/forecast?${query}`],
+    enabled: !!companyId && initialised && valid,
+    placeholderData: (prev) => prev,
   });
+  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({ queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`], enabled: !!companyId });
+
+  const currency = forecast?.currency ?? "AED";
+  const money = (n: number) => formatCurrency(n, currency, locale);
+  const low = useMemo(() => (forecast ? lowestBalance(forecast.weeks) : null), [forecast]);
+  const totals = useMemo(() => {
+    const weeks = forecast?.weeks ?? [];
+    return { inflows: weeks.reduce((s, w) => s + w.inflows, 0), outflows: weeks.reduce((s, w) => s + w.outflows, 0), closing: weeks.length ? weeks[weeks.length - 1].closingBalance : (forecast?.openingBalance ?? 0) };
+  }, [forecast]);
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
         </div>
       </div>
     );
   }
-
   if (!companyId) {
     return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground text-center">{tr("pleaseCreateACompanyFirstTo")}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardContent className="pt-6 text-center text-muted-foreground">{tr("noCompany")}</CardContent>
+      </Card>
     );
   }
 
-  const getInsightIcon = (insight: string) => {
-    const lower = insight.toLowerCase();
-    if (lower.includes("warning") || lower.includes("negative") || lower.includes("drop below")) {
-      return <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />;
-    }
-    if (lower.includes("positive") || lower.includes("improve")) {
-      return <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />;
-    }
-    return <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />;
-  };
-
-  const getInsightBadge = (insight: string) => {
-    const lower = insight.toLowerCase();
-    if (lower.includes("warning") || lower.includes("negative")) {
-      return (
-        <Badge variant="destructive" className="text-xs">
-          {tr("risk")}
-        </Badge>
-      );
-    }
-    if (lower.includes("positive") || lower.includes("improve")) {
-      return (
-        <Badge className="bg-success-subtle text-success-subtle-foreground text-xs">
-          {tr("positive")}
-        </Badge>
-      );
-    }
-    return (
-      <Badge variant="secondary" className="text-xs">
-        {tr("info")}
-      </Badge>
-    );
-  };
-
-  // Calculate summary stats from projections
-  const totalProjectedInflows =
-    forecast?.projections.reduce((s, p) => s + p.expectedInflows, 0) || 0;
-  const totalProjectedOutflows =
-    forecast?.projections.reduce((s, p) => s + p.expectedOutflows, 0) || 0;
+  const items = forecast?.items ?? [];
+  const insights = (forecast?.insights ?? []).map((i) => insightText(tr, i, money, locale));
+  const toneIcon = (t: Tone) => (t === "risk" ? <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" /> : t === "positive" ? <CheckCircle2 className="h-4 w-4 text-[hsl(var(--chart-5))] shrink-0 mt-0.5" /> : <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />);
+  const toneBadge = (t: Tone) => (t === "risk" ? <Badge variant="destructive">{tr("insightRisk")}</Badge> : t === "positive" ? <Badge className="bg-[hsl(var(--chart-5)/0.15)] text-[hsl(var(--chart-5))]">{tr("insightPositive")}</Badge> : <Badge variant="secondary">{tr("insightInfo")}</Badge>);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <TrendingUp className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{tr("cashFlowForecast")}</h1>
-            <p className="text-muted-foreground text-sm">{tr("aiPoweredProjectionsBasedOnYour")}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Select value={forecastDays} onValueChange={setForecastDays}>
-            <SelectTrigger className="w-[140px]">
+    <div className="space-y-6" data-testid="cashflow-page">
+      <PageHeader
+        eyebrow={forecast?.scenarioMeta ? tr("scenarioName", { name: forecast.scenarioMeta.name }) : undefined}
+        title={tr("title")}
+        description={tr("description")}
+      />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="horizon" className="text-sm">
+            {tr("horizon")}
+          </Label>
+          <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
+            <SelectTrigger id="horizon" className="w-32" data-testid="select-horizon">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="30">{tr("n30Days")}</SelectItem>
-              <SelectItem value="60">{tr("n60Days")}</SelectItem>
-              <SelectItem value="90">{tr("n90Days")}</SelectItem>
+              {HORIZONS.map((d) => (
+                <SelectItem key={d} value={String(d)}>
+                  {d === 30 ? tr("days30") : d === 60 ? tr("days60") : d === 90 ? tr("days90") : tr("days180")}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetchForecast()}
-            disabled={isFetchingForecast}
-          >
-            <RefreshCw className={`h-4 w-4 me-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
-            {tr("refresh")}
-          </Button>
         </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching || !valid}>
+          <RefreshCw className={`h-4 w-4 me-2 ${isFetching ? "animate-spin" : ""}`} />
+          {tr("refresh")}
+        </Button>
       </div>
 
-      {/* Current Balance + Summary Cards */}
-      {isLoadingForecast ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-        </div>
-      ) : forecast ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="border-2 border-primary/20">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
-                {tr("currentBalance")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? "text-success" : "text-destructive"}`}
-              >
-                {formatCurrency(forecast.currentBalance, "AED", locale)}
+      <div className="grid gap-6 lg:grid-cols-[1fr_22rem] items-start">
+        <div className="space-y-6 min-w-0">
+          {isLoading && !forecast ? (
+            <Skeleton className="h-80 w-full" />
+          ) : isError && !forecast ? (
+            <Card>
+              <CardContent className="pt-6 text-sm text-destructive">{tr("loadFailed")}</CardContent>
+            </Card>
+          ) : forecast ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <p className="text-xs text-muted-foreground">{tr("cardOpening")}</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p dir="ltr" className="text-lg font-bold text-start whitespace-nowrap" data-testid="forecast-opening">
+                      {money(forecast.openingBalance)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <p className="text-xs text-muted-foreground">{tr("cardInflows")}</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p dir="ltr" className="text-lg font-bold text-start whitespace-nowrap text-[hsl(var(--chart-5))]" data-testid="forecast-inflows">
+                      {money(totals.inflows)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <p className="text-xs text-muted-foreground">{tr("cardOutflows")}</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p dir="ltr" className="text-lg font-bold text-start whitespace-nowrap text-[hsl(var(--chart-4))]" data-testid="forecast-outflows">
+                      {money(totals.outflows)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <p className="text-xs text-muted-foreground">{tr("cardClosing")}</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p dir="ltr" className={`text-lg font-bold text-start whitespace-nowrap ${totals.closing < 0 ? "text-destructive" : ""}`} data-testid="forecast-closing">
+                      {money(totals.closing)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <p className="text-xs text-muted-foreground">{tr("cardLowest")}</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p dir="ltr" className={`text-lg font-bold text-start whitespace-nowrap ${low && low.balance < 0 ? "text-destructive" : ""}`} data-testid="forecast-lowest">
+                      {low ? money(low.balance) : "-"}
+                    </p>
+                    {low && <p className="text-[11px] text-muted-foreground">{tr("cardLowestWeek", { date: weekLabel(low.weekStart, locale) })}</p>}
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">{tr("chartTitle")}</CardTitle>
+                  <CardDescription>{tr("chartDescription")}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ForecastChart weeks={forecast.weeks} currency={currency} />
+                </CardContent>
+              </Card>
+
+              {insights.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{tr("insightsTitle")}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2" data-testid="forecast-insights">
+                      {insights.map((i, n) => (
+                        <li key={n} className="flex items-start gap-2 text-sm">
+                          {toneIcon(i.tone)}
+                          <span className="flex-1">{i.text}</span>
+                          {toneBadge(i.tone)}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">{tr("itemsTitle")}</CardTitle>
+                  <CardDescription>{tr("itemsDescription")}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {items.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{tr("itemsEmpty")}</p>
+                  ) : (
+                    <>
+                      <div className="rounded-md border overflow-x-auto">
+                        <Table data-testid="forecast-items">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-28">{tr("colDate")}</TableHead>
+                              <TableHead className="w-28">{tr("colType")}</TableHead>
+                              <TableHead>{tr("colLabel")}</TableHead>
+                              <TableHead className="w-28">{tr("colOriginal")}</TableHead>
+                              <TableHead className="text-end w-36">{tr("colAmount")}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {items.slice(0, itemLimit).map((it, idx) => (
+                              <TableRow key={`${it.type}-${it.sourceId ?? idx}-${it.date}-${idx}`} data-testid={`forecast-item-${it.type}`}>
+                                <TableCell className="font-mono text-xs">{formatCalendarDate(it.date, locale, "short")}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">{tr(TYPE_KEY[it.type])}</Badge>
+                                </TableCell>
+                                <TableCell className="text-sm" dir="auto">
+                                  {it.label}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">{it.originalDate !== it.date ? formatCalendarDate(it.originalDate, locale, "short") : ""}</TableCell>
+                                <TableCell dir="ltr" className={`text-end font-mono text-sm ${it.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
+                                  {money(it.amount)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      {items.length > itemLimit && (
+                        <div className="flex justify-center pt-3">
+                          <Button variant="outline" size="sm" onClick={() => setItemLimit((n) => n + ITEM_PAGE)}>
+                            {tr("itemsMore", { count: items.length - itemLimit })}
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <ArrowUpRight className="h-4 w-4 text-success" />
-                {tr("projectedInflowsD", { forecastDays })}
-              </CardDescription>
+            <CardHeader>
+              <CardTitle className="text-base">{tr("historyTitle")}</CardTitle>
+              <CardDescription>{tr("historyDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {formatCurrency(totalProjectedInflows, "AED", locale)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <ArrowDownRight className="h-4 w-4 text-destructive" />
-                {tr("projectedOutflowsD", { forecastDays })}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {formatCurrency(totalProjectedOutflows, "AED", locale)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
-
-      {/* AI Insights */}
-      {forecast && forecast.insights.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              {tr("aiInsights")}
-            </CardTitle>
-            <CardDescription>{tr("keyObservationsAndRecommendationsFromYour")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {forecast.insights.map((insight, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 border"
-                >
-                  {getInsightIcon(insight)}
-                  <span className="text-sm flex-1">{insight}</span>
-                  {getInsightBadge(insight)}
+              {isLoadingHistory ? (
+                <Skeleton className="h-24 w-full" />
+              ) : !history || history.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tr("historyEmpty")}</p>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tr("month")}</TableHead>
+                        <TableHead className="text-end">{tr("totalInflows")}</TableHead>
+                        <TableHead className="text-end">{tr("totalOutflows")}</TableHead>
+                        <TableHead className="text-end">{tr("netCashFlow")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {history.map((h) => (
+                        <TableRow key={`${h.year}-${h.monthNum}`}>
+                          <TableCell>
+                            {monthName(h.year, h.monthNum, locale)}
+                          </TableCell>
+                          <TableCell dir="ltr" className="text-end font-mono text-[hsl(var(--chart-5))]">
+                            {formatCurrency(h.totalInflows, "AED", locale)}
+                          </TableCell>
+                          <TableCell dir="ltr" className="text-end font-mono text-destructive">
+                            {formatCurrency(h.totalOutflows, "AED", locale)}
+                          </TableCell>
+                          <TableCell dir="ltr" className={`text-end font-mono font-medium ${h.netCashFlow >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
+                            {formatCurrency(h.netCashFlow, "AED", locale)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Projection Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-primary" />
-            {tr("weeklyProjections")}
-          </CardTitle>
-          <CardDescription>
-            {tr("projectedCashInflowsAndOutflowsFor", { forecastDays })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingForecast ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : forecast && forecast.projections.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tr("week")}</TableHead>
-                    <TableHead>{tr("period")}</TableHead>
-                    <TableHead className="text-end">{tr("expectedIn")}</TableHead>
-                    <TableHead className="text-end">{tr("expectedOut")}</TableHead>
-                    <TableHead className="text-end">{tr("projectedBalance")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {forecast.projections.map((proj) => (
-                    <TableRow key={proj.week}>
-                      <TableCell className="font-medium">
-                        {tr("week2", { week: proj.week })}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {proj.weekStart} - {proj.weekEnd}
-                      </TableCell>
-                      <TableCell className="text-end">
-                        <span className="text-success flex items-center justify-end gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          {formatCurrency(proj.expectedInflows, "AED", locale)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-end">
-                        <span className="text-destructive flex items-center justify-end gap-1">
-                          <TrendingDown className="h-3 w-3" />
-                          {formatCurrency(proj.expectedOutflows, "AED", locale)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-end">
-                        <span
-                          className={`font-semibold ${
-                            proj.projectedBalance >= 0 ? "text-success" : "text-destructive"
-                          }`}
-                        >
-                          {formatCurrency(proj.projectedBalance, "AED", locale)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-8">
-              {tr("noProjectionDataAvailableAddJournal")}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Cash Flow History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            {tr("cashFlowHistoryLast6Months")}
-          </CardTitle>
-          <CardDescription>{tr("actualMonthlyCashInflowsAndOutflows")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingHistory ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : history && history.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tr("month")}</TableHead>
-                    <TableHead className="text-end">{tr("totalInflows")}</TableHead>
-                    <TableHead className="text-end">{tr("totalOutflows")}</TableHead>
-                    <TableHead className="text-end">{tr("netCashFlow")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {history.map((h) => (
-                    <TableRow key={`${h.year}-${h.monthNum}`}>
-                      <TableCell className="font-medium">
-                        {h.month} {h.year}
-                      </TableCell>
-                      <TableCell className="text-end text-success">
-                        {formatCurrency(h.totalInflows, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-end text-destructive">
-                        {formatCurrency(h.totalOutflows, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-end">
-                        <span
-                          className={`font-semibold ${
-                            h.netCashFlow >= 0 ? "text-success" : "text-destructive"
-                          }`}
-                        >
-                          {formatCurrency(h.netCashFlow, "AED", locale)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-8">
-              {tr("noHistoricalDataAvailableYetPost")}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        <ScenarioPanel companyId={companyId} scenarios={scenarios ?? []} selectedId={selectedId} value={draft} onChange={setDraft} onSelect={setSelectedId} />
+      </div>
     </div>
   );
 }

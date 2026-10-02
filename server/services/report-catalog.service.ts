@@ -37,6 +37,8 @@ import {
   type ReportPersona,
 } from "../../client/src/lib/reportCatalog";
 
+import { REPORT_FORMATS } from "../../shared/report-result";
+
 export interface ReportCatalogDiscoveryOptions {
   persona?: ReportPersona | null;
 }
@@ -339,6 +341,10 @@ export function buildReportCatalogDiscovery(options: ReportCatalogDiscoveryOptio
     reports: reports.map((report) => ({
       ...report,
       href: (persona ? reportPersonaHref(report, persona) : reportHref(report)) ?? null,
+      // Phase 8 D4: every live report runs on the server report engine (server/reports), which renders these
+      // formats and can email them on a schedule. Registry parity with the catalog is covered by a unit test.
+      formats: report.status === "live" ? REPORT_FORMATS : [],
+      schedulable: report.status === "live",
     })),
     workspaces: workspaces.map((workspace) => ({
       ...workspace,

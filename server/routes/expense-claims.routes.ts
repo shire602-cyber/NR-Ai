@@ -11,6 +11,19 @@ import { buildExpenseClaimJournalLines } from "../services/expense-claim-posting
 import { ValidationError } from "../errors";
 import { sendStoredDocument, storeUploadedFile } from "../services/document-upload.service";
 import { keyBelongsToCompany, parseStorageKey } from "../services/document-validation";
+import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { assertProjectsOfCompany, recordProjectExpensesForClaim } from "../services/project.service";
+import { loadApprovalDocument } from "../services/approval-queue.service";
+import {
+  auditApprovalStep,
+  assertNotRejected,
+  beginApprovalStep,
+  notifyApprovalProgress,
+  pendingApprovalBody,
+  recordApprovalStep,
+  rejectDocumentApproval,
+  resolveActor,
+} from "../services/approval-gate.service";
 
 const log = createLogger("expense-claims");
 
@@ -34,6 +47,21 @@ function receiptKeyOrNull(
   return value;
 }
 
+/**
+ * An employee-role member files and follows their own claims only: they may open, change, delete and submit a claim
+ * they submitted, never a colleague's (403 EXPENSE_CLAIM_OWN_ONLY). Everyone else with company access is unchanged.
+ * Approving, rejecting, paying and the summary stay closed to the employee role (default deny in hasCompanyAccess).
+ */
+async function ownClaimOnly(req: Request, res: Response, claim: { company_id: string; submitted_by: string | null }): Promise<boolean> {
+  const userId = (req as any).user.id as string;
+  const membership = await storage.getUserRole(claim.company_id, userId);
+  if (membership?.role === "employee" && claim.submitted_by !== userId) {
+    res.status(403).json({ message: "You can only see your own expense claims.", code: "EXPENSE_CLAIM_OWN_ONLY" });
+    return false;
+  }
+  return true;
+}
+
 export function registerExpenseClaimRoutes(app: Express) {
   // =====================================
   // Expense Claims Routes
@@ -49,7 +77,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const userId = (req as any).user.id;
       const { status, submitted_by } = req.query;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -57,6 +85,12 @@ export function registerExpenseClaimRoutes(app: Express) {
       let query = "SELECT * FROM expense_claims WHERE company_id = $1";
       const params: any[] = [companyId];
       let paramIndex = 2;
+      // an employee-role member lists only the claims they submitted
+      if ((await storage.getUserRole(companyId, userId))?.role === "employee") {
+        query += ` AND submitted_by = $${paramIndex}`;
+        params.push(userId);
+        paramIndex++;
+      }
 
       if (status && typeof status === "string") {
         query += ` AND status = $${paramIndex}`;
@@ -93,10 +127,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       const itemsResult = await pool.query(
         "SELECT * FROM expense_claim_items WHERE claim_id = $1 ORDER BY expense_date ASC",
@@ -116,7 +151,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -139,6 +174,8 @@ export function registerExpenseClaimRoutes(app: Express) {
       const receiptKeys: Array<string | null> = Array.isArray(items)
         ? items.map((item: any) => receiptKeyOrNull(item?.receipt_url, companyId))
         : [];
+      // Tagged projects must be the company's own.
+      if (Array.isArray(items)) await assertProjectsOfCompany(companyId, items.map((item: any) => item?.project_id));
 
       // Generate claim number
       const countResult = await pool.query(
@@ -161,8 +198,8 @@ export function registerExpenseClaimRoutes(app: Express) {
       if (items && Array.isArray(items)) {
         for (const [index, item] of items.entries()) {
           const itemResult = await pool.query(
-            `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name, project_id, is_billable)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
             [
               claim.id,
@@ -173,6 +210,8 @@ export function registerExpenseClaimRoutes(app: Express) {
               item.vat_amount || 0,
               receiptKeys[index],
               item.merchant_name || null,
+              item.project_id || null,
+              item.project_id ? item.is_billable === true : false,
             ]
           );
           insertedItems.push(itemResult.rows[0]);
@@ -195,7 +234,7 @@ export function registerExpenseClaimRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
-      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+      if (!(await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true }))) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -229,14 +268,15 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res.status(404).json({ message: "Receipt not found" });
       }
 
-      const claimResult = await pool.query("SELECT company_id FROM expense_claims WHERE id = $1", [id]);
+      const claimResult = await pool.query("SELECT company_id, submitted_by FROM expense_claims WHERE id = $1", [id]);
       if (claimResult.rows.length === 0) {
         return res.status(404).json({ message: "Expense claim not found" });
       }
       const companyId: string = claimResult.rows[0].company_id;
-      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+      if (!(await storage.hasCompanyAccess(userId, companyId, { employeeSelfService: true }))) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claimResult.rows[0]))) return;
 
       const itemResult = await pool.query(
         "SELECT receipt_url FROM expense_claim_items WHERE id = $1 AND claim_id = $2",
@@ -267,11 +307,18 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
+      if (claim.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This claim is waiting for approval and cannot be changed. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
       if (claim.status !== "draft") {
         return res.status(400).json({ message: "Only draft claims can be updated" });
       }
@@ -313,13 +360,14 @@ export function registerExpenseClaimRoutes(app: Express) {
         const receiptKeys = items.map((item: any) =>
           receiptKeyOrNull(item?.receipt_url, claim.company_id, existingValues)
         );
+        await assertProjectsOfCompany(claim.company_id, items.map((item: any) => item?.project_id));
 
         await pool.query("DELETE FROM expense_claim_items WHERE claim_id = $1", [id]);
 
         for (const [index, item] of items.entries()) {
           await pool.query(
-            `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount, receipt_url, merchant_name, project_id, is_billable)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
               id,
               item.expense_date,
@@ -329,6 +377,8 @@ export function registerExpenseClaimRoutes(app: Express) {
               item.vat_amount || 0,
               receiptKeys[index],
               item.merchant_name || null,
+              item.project_id || null,
+              item.project_id ? item.is_billable === true : false,
             ]
           );
         }
@@ -360,11 +410,18 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
+      if (claim.status === "pending_approval") {
+        return res.status(409).json({
+          message: "This claim is waiting for approval and cannot be changed. Reject it first.",
+          code: "APPROVAL_IN_PROGRESS",
+        });
+      }
       if (claim.status !== "draft") {
         return res.status(400).json({ message: "Only draft claims can be deleted" });
       }
@@ -393,10 +450,11 @@ export function registerExpenseClaimRoutes(app: Express) {
 
       const claim = claimResult.rows[0];
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id, { employeeSelfService: true });
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      if (!(await ownClaimOnly(req, res, claim))) return;
 
       if (claim.status !== "draft") {
         return res.status(400).json({ message: "Only draft claims can be submitted" });
@@ -438,103 +496,135 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res.status(404).json({ message: "Expense claim not found" });
       }
 
-      const claim = claimResult.rows[0];
+      const companyId: string = claimResult.rows[0].company_id;
 
-      const hasAccess = await storage.hasCompanyAccess(userId, claim.company_id);
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (claim.status !== "submitted") {
-        return res.status(400).json({ message: "Only submitted claims can be approved" });
-      }
+      // The status check, the approval rules and the posting run under the claim's approval lock with the
+      // claim re-read inside it: parallel approvals post once.
+      const outcome = await withDocumentLock(id, LOCK_NS.APPROVAL, async (tx) => {
+        const fresh = await pool.query("SELECT * FROM expense_claims WHERE id = $1", [id]);
+        const claim = fresh.rows[0];
+        if (!claim) return { status: 404, body: { message: "Expense claim not found" } };
 
-      // Approval recognises the expense on the latest item date — block if any
-      // line item falls inside a locked period.
-      const itemDates = await pool.query(
-        `SELECT MAX(expense_date) AS latest FROM expense_claim_items WHERE claim_id = $1`,
-        [id]
-      );
-      // expense_date is a date-only `timestamp` column; node-pg reads it in
-      // server-local time, so normalise to UTC midnight of the calendar day.
-      const latestExpenseDate = localWallDateToUtcMidnight(itemDates.rows[0]?.latest);
-      if (latestExpenseDate) {
-        await assertPeriodNotLocked(claim.company_id, latestExpenseDate);
-      }
+        await assertNotRejected("expense_claim", id);
+        if (claim.status !== "submitted" && claim.status !== "pending_approval") {
+          return { status: 400, body: { message: "Only submitted claims can be approved" } };
+        }
 
-      const { review_notes } = req.body;
+        // Approval recognises the expense on the latest item date — block if any
+        // line item falls inside a locked period.
+        const itemDates = await pool.query(
+          `SELECT MAX(expense_date) AS latest FROM expense_claim_items WHERE claim_id = $1`,
+          [id]
+        );
+        // expense_date is a date-only `timestamp` column; node-pg reads it in
+        // server-local time, so normalise to UTC midnight of the calendar day.
+        const latestExpenseDate = localWallDateToUtcMidnight(itemDates.rows[0]?.latest);
+        if (latestExpenseDate) {
+          await assertPeriodNotLocked(claim.company_id, latestExpenseDate);
+        }
 
-      // S-H6: approval recognises the expense in the GL. Build the balanced
-      // entry (Dr expense accounts per category + Dr recoverable input VAT,
-      // Cr Employee Reimbursements Payable) and validate it BEFORE flipping the
-      // status, so we never approve a claim we can't post.
-      const itemsRes = await pool.query(
-        `SELECT category, amount, vat_amount FROM expense_claim_items WHERE claim_id = $1`,
-        [id]
-      );
-      const accountsList = await storage.getAccountsByCompanyId(claim.company_id);
-      const codeToId = new Map<string, string>(accountsList.map((a) => [a.code, a.id]));
-      const built = buildExpenseClaimJournalLines({
-        items: itemsRes.rows.map((r: any) => ({
-          category: r.category,
-          amount: r.amount,
-          vatAmount: r.vat_amount,
-        })),
-        resolveByCode: (code) => codeToId.get(code) ?? null,
-      });
-      if (!built.ok) {
-        return res.status(built.status).json({ message: built.message, code: built.code });
-      }
+        // Approval rules (amount and role); the submitter never approves their own claim.
+        const doc = await loadApprovalDocument("expense_claim", id);
+        const actor = await resolveActor(req.user!, claim.company_id);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: claim.status, acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
+        const { review_notes } = req.body ?? {};
 
-      // Idempotency: skip if a JE was already posted for this claim.
-      const existingEntries = await storage.getJournalEntriesBySource(
-        claim.company_id,
-        "expense_claim",
-        id
-      );
-      const alreadyPosted = existingEntries.some((e) => e.status === "posted");
+        if (step.kind === "step" && !step.isFinal) {
+          const request = await recordApprovalStep(tx, step, actor, review_notes);
+          const updated = await pool.query(`UPDATE expense_claims SET status = 'pending_approval' WHERE id = $1 RETURNING *`, [id]);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "needs_next_step" });
+          return { status: 200, body: { ...updated.rows[0], ...pendingApprovalBody(step) } };
+        }
 
-      const updatedResult = await pool.query(
-        `UPDATE expense_claims
+        // S-H6: approval recognises the expense in the GL. Build the balanced
+        // entry (Dr expense accounts per category + Dr recoverable input VAT,
+        // Cr Employee Reimbursements Payable) and validate it BEFORE flipping the
+        // status, so we never approve a claim we can't post.
+        const itemsRes = await pool.query(
+          `SELECT category, amount, vat_amount, project_id FROM expense_claim_items WHERE claim_id = $1`,
+          [id]
+        );
+        const accountsList = await storage.getAccountsByCompanyId(claim.company_id);
+        const codeToId = new Map<string, string>(accountsList.map((a) => [a.code, a.id]));
+        const built = buildExpenseClaimJournalLines({
+          items: itemsRes.rows.map((r: any) => ({
+            category: r.category,
+            amount: r.amount,
+            vatAmount: r.vat_amount,
+            projectId: r.project_id,
+          })),
+          resolveByCode: (code) => codeToId.get(code) ?? null,
+        });
+        if (!built.ok) {
+          return { status: built.status, body: { message: built.message, code: built.code } };
+        }
+
+        // Idempotency: skip if a JE was already posted for this claim.
+        const existingEntries = await storage.getJournalEntriesBySource(
+          claim.company_id,
+          "expense_claim",
+          id
+        );
+        const alreadyPosted = existingEntries.some((e) => e.status === "posted");
+
+        const updatedResult = await pool.query(
+          `UPDATE expense_claims
        SET status = 'approved', reviewed_by = $1, reviewed_at = NOW(), review_notes = $2
        WHERE id = $3
        RETURNING *`,
-        [userId, review_notes || null, id]
-      );
-
-      if (!alreadyPosted) {
-        const postingDate = latestExpenseDate ? new Date(latestExpenseDate) : new Date();
-        const entryNumber = await storage.generateEntryNumber(claim.company_id, postingDate);
-        await storage.createJournalEntry(
-          {
-            companyId: claim.company_id,
-            date: postingDate,
-            memo: `Expense claim ${claim.claim_number || id} approved`,
-            entryNumber,
-            status: "posted",
-            source: "expense_claim",
-            sourceId: id,
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: postingDate,
-          } as any,
-          built.lines
+          [userId, review_notes || null, id]
         );
-      }
 
-      log.info({ claimId: id, reviewedBy: userId }, "Expense claim approved and posted to GL");
-      // S-H4: audit the approval (an authorization of company spend).
-      const { recordAudit } = await import("../services/audit.service");
-      await recordAudit({
-        userId,
-        companyId: claim.company_id,
-        action: "expense_claim.approve",
-        entityType: "expense_claim",
-        entityId: id,
-        after: { status: "approved", totalAmount: Number(claim.total_amount) || 0 },
-        req,
+        if (!alreadyPosted) {
+          const postingDate = latestExpenseDate ? new Date(latestExpenseDate) : new Date();
+          const entryNumber = await storage.generateEntryNumber(claim.company_id, postingDate);
+          await storage.createJournalEntry(
+            {
+              companyId: claim.company_id,
+              date: postingDate,
+              memo: `Expense claim ${claim.claim_number || id} approved`,
+              entryNumber,
+              status: "posted",
+              source: "expense_claim",
+              sourceId: id,
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: postingDate,
+            } as any,
+            built.lines
+          );
+        }
+
+        // Costs tagged with a project become billable project costs once the claim is on the ledger.
+        await recordProjectExpensesForClaim(id);
+
+        if (step.kind === "step") {
+          const request = await recordApprovalStep(tx, step, actor, review_notes);
+          await auditApprovalStep({ req, actor, doc: doc!, request, stepNumber: step.stepNumber, decision: "approved" });
+          void notifyApprovalProgress({ doc: doc!, request, actor, outcome: "approved" });
+        }
+
+        log.info({ claimId: id, reviewedBy: userId }, "Expense claim approved and posted to GL");
+        // S-H4: audit the approval (an authorization of company spend).
+        const { recordAudit } = await import("../services/audit.service");
+        await recordAudit({
+          userId,
+          companyId: claim.company_id,
+          action: "expense_claim.approve",
+          entityType: "expense_claim",
+          entityId: id,
+          after: { status: "approved", totalAmount: Number(claim.total_amount) || 0 },
+          req,
+        });
+        return { status: 200, body: updatedResult.rows[0] };
       });
-      res.json(updatedResult.rows[0]);
+      res.status(outcome.status).json(outcome.body);
     })
   );
 
@@ -559,7 +649,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      if (claim.status !== "submitted") {
+      if (claim.status !== "submitted" && claim.status !== "pending_approval") {
         return res.status(400).json({ message: "Only submitted claims can be rejected" });
       }
 
@@ -569,6 +659,14 @@ export function registerExpenseClaimRoutes(app: Express) {
         return res
           .status(400)
           .json({ message: "Review notes are required when rejecting a claim" });
+      }
+
+      // A claim waiting for its approvals is rejected through the approval engine (closes the request).
+      if (claim.status === "pending_approval") {
+        const actor = await resolveActor((req as any).user, claim.company_id);
+        await rejectDocumentApproval({ req, documentType: "expense_claim", documentId: id, actor, comment: review_notes });
+        const rejected = await pool.query("SELECT * FROM expense_claims WHERE id = $1", [id]);
+        return res.json(rejected.rows[0]);
       }
 
       const updatedResult = await pool.query(

@@ -1,7 +1,40 @@
 import { createPdfDocument } from "./pdf-fonts";
 import { fitFontSize } from "./pdf-layout";
 import { formatMoney, formatPdfDate } from "./pdf-format";
-import type { CustomerStatement, StatementContact, StatementLineType } from "./customer-statement.service";
+import type { StatementAging, StatementContact } from "./customer-statement.service";
+
+/** Whose account the statement is: a customer's (what they owe us) or a vendor's (what we owe them). */
+export type StatementParty = "customer" | "vendor";
+
+/** The shape both the customer and the vendor statement builders produce. */
+export interface StatementDocument {
+  from: string;
+  to: string;
+  openingBalance: number;
+  lines: Array<{
+    date: string;
+    type: string;
+    reference: string;
+    currency: string;
+    documentAmount: number;
+    debit: number;
+    credit: number;
+    balance: number;
+  }>;
+  totalDebits: number;
+  totalCredits: number;
+  closingBalance: number;
+  aging: StatementAging;
+  /** Phase 8 D1: advances and deposits received and not yet applied (a memo, not part of the balance). */
+  unappliedAdvances?: Array<{
+    number: string;
+    kind: string;
+    invoiceNumber: string;
+    date: string;
+    availableNet: number;
+    availableGross: number;
+  }>;
+}
 
 const PAGE_WIDTH = 595.28;
 const MARGIN = 50;
@@ -9,11 +42,32 @@ const CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN;
 const BOTTOM = 760;
 const ROW_HEIGHT = 20;
 
-const TYPE_LABEL: Record<StatementLineType, string> = {
+const TYPE_LABEL: Record<string, string> = {
   invoice: "Invoice",
   credit_note: "Credit Note",
   payment: "Payment",
   refund: "Refund",
+  bill: "Bill",
+  vendor_credit: "Vendor Credit",
+  vendor_credit_fx: "FX Difference",
+};
+
+const PARTY_LABELS: Record<StatementParty, { title: string; counterparty: string; ageing: string; footer: string; titlePrefix: string }> = {
+  customer: {
+    title: "STATEMENT OF ACCOUNT",
+    counterparty: "CUSTOMER / العميل",
+    ageing: "أعمار الديون",
+    footer: "Amounts are in AED at the rate booked on each document. Ageing is by due date. Draft and void documents are excluded.",
+    titlePrefix: "Statement of Account",
+  },
+  vendor: {
+    title: "VENDOR STATEMENT",
+    counterparty: "SUPPLIER / المورد",
+    ageing: "أعمار الذمم الدائنة",
+    footer:
+      "Amounts are in AED at the rate booked on each document; the balance is what we owe the supplier. Ageing is by due date. Pending, draft and void documents are excluded.",
+    titlePrefix: "Vendor Statement",
+  },
 };
 
 // x offset and width of each table column (sums to CONTENT_WIDTH).
@@ -36,15 +90,17 @@ export interface StatementPdfCompany {
 }
 
 export async function generateStatementPDF(
-  statement: CustomerStatement & { contact: StatementContact },
-  company: StatementPdfCompany
+  statement: StatementDocument & { contact: StatementContact },
+  company: StatementPdfCompany,
+  party: StatementParty = "customer"
 ): Promise<Buffer> {
+  const labels = PARTY_LABELS[party];
   return new Promise((resolve, reject) => {
     try {
       const doc = createPdfDocument({
         size: "A4",
         margin: MARGIN,
-        info: { Title: `Statement of Account - ${statement.contact.name}`, Author: company.name },
+        info: { Title: `${labels.titlePrefix} - ${statement.contact.name}`, Author: company.name },
       });
       const chunks: Buffer[] = [];
       doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -55,7 +111,7 @@ export async function generateStatementPDF(
       doc.rect(0, 0, PAGE_WIDTH, 100).fill("#1E40AF");
       doc.fontSize(20).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text(company.name, MARGIN, 30, { width: CONTENT_WIDTH * 0.55, align: "left" });
-      doc.fontSize(16).text("STATEMENT OF ACCOUNT", MARGIN, 35, { width: CONTENT_WIDTH, align: "right" });
+      doc.fontSize(16).text(labels.title, MARGIN, 35, { width: CONTENT_WIDTH, align: "right" });
       doc.fontSize(12).fillColor("#DBEAFE").font("Helvetica");
       doc.text("كشف حساب", MARGIN, 57, { width: CONTENT_WIDTH, align: "right" });
 
@@ -74,7 +130,7 @@ export async function generateStatementPDF(
       const customerX = MARGIN + 290;
       let cy = 114;
       doc.fontSize(9).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("CUSTOMER / العميل", customerX, cy, { width: 205 });
+      doc.text(labels.counterparty, customerX, cy, { width: 205 });
       cy += 14;
       doc.fontSize(11).fillColor("#1F2937");
       doc.text(statement.contact.name, customerX, cy, { width: 205 });
@@ -166,7 +222,7 @@ export async function generateStatementPDF(
       // --- Ageing ---
       ensureSpace(90);
       doc.fontSize(10).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text(`AGEING AT ${formatPdfDate(statement.to).toUpperCase()} / أعمار الديون`, MARGIN, y, {
+      doc.text(`AGEING AT ${formatPdfDate(statement.to).toUpperCase()} / ${labels.ageing}`, MARGIN, y, {
         width: CONTENT_WIDTH,
       });
       y += 18;
@@ -192,9 +248,29 @@ export async function generateStatementPDF(
       });
       y += 60;
 
+      // --- Advances received and not yet applied (memo) ---
+      const advances = statement.unappliedAdvances ?? [];
+      if (advances.length > 0) {
+        ensureSpace(40 + advances.length * 16);
+        doc.fontSize(10).fillColor("#1E40AF").font("Helvetica-Bold");
+        doc.text("ADVANCES RECEIVED, NOT YET APPLIED / دفعات مقدمة غير مطبقة", MARGIN, y, { width: CONTENT_WIDTH });
+        y += 16;
+        doc.fontSize(7.5).fillColor("#6B7280").font("Helvetica");
+        doc.text("Memo only: these amounts are already paid and are not part of the balance above.", MARGIN, y, { width: CONTENT_WIDTH });
+        y += 12;
+        doc.fontSize(8.5).fillColor("#1F2937").font("Helvetica");
+        for (const a of advances) {
+          ensureSpace(16);
+          doc.text(`${a.number} (${a.invoiceNumber}) - ${formatPdfDate(a.date)}${a.kind === "deposit" ? " - deposit" : ""}`, MARGIN, y, { width: 330, lineBreak: false });
+          doc.text(formatMoney(a.availableGross), MARGIN + 330, y, { width: CONTENT_WIDTH - 330, align: "right", lineBreak: false });
+          y += 16;
+        }
+        y += 8;
+      }
+
       doc.fontSize(7.5).fillColor("#6B7280").font("Helvetica");
       doc.text(
-        "Amounts are in AED at the rate booked on each document. Ageing is by due date. Draft and void documents are excluded.",
+        labels.footer,
         MARGIN,
         Math.min(y, 790),
         { width: CONTENT_WIDTH, align: "center" }

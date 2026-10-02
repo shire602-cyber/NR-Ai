@@ -16,8 +16,10 @@
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
+import type { db } from "../db";
 import { withDocumentLock, LOCK_NS } from "./document-lock";
 import { allocateRevenueCredits, buildRevenueCreditLines } from "./revenue-allocation.service";
+import { splitRevenueLegsByProject } from "./project-revenue-split";
 import { resolveInvoiceFx, toBaseCurrencyAmount } from "./invoice-fx";
 
 const log = createLogger("invoice-posting");
@@ -50,15 +52,25 @@ export async function postInvoiceRevenueJournal(
   // entry — measured at 10 duplicate entries for 10 parallel requests, i.e.
   // revenue and output VAT overstated 10x. Hold an advisory lock on the invoice
   // so exactly one caller can pass the idempotency check.
-  return await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, async () =>
-    postInvoiceRevenueJournalLocked(invoice, userId)
+  return await withDocumentLock(invoice.id, LOCK_NS.INVOICE_POSTING, async (tx) =>
+    postInvoiceRevenueJournalInTx(tx, invoice, userId)
   );
 }
 
-async function postInvoiceRevenueJournalLocked(
-  invoice: InvoiceLike,
+/**
+ * The same posting inside a transaction the caller owns. The caller MUST already hold the INVOICE_POSTING
+ * document lock of this invoice (withDocumentLock / acquireDocumentLock). The journal is written on `tx`, so it
+ * commits or rolls back together with whatever else the caller does there (the issue path also sets the status).
+ */
+export async function postInvoiceRevenueJournalInTx(
+  tx: typeof db,
+  passed: InvoiceLike,
   userId: string
 ): Promise<boolean> {
+  // Post from the committed row, not the caller's copy: an edit or an advance application that held the
+  // same lock just before us may have changed the totals after the route read the invoice.
+  const fresh = await storage.getInvoice(passed.id, passed.companyId);
+  const invoice: InvoiceLike = fresh ? { ...passed, ...(fresh as any) } : passed;
   const existing = await storage.getJournalEntriesBySource(
     invoice.companyId,
     "invoice",
@@ -140,12 +152,23 @@ async function postInvoiceRevenueJournalLocked(
       ...fx(docTotal, "debit"),
     },
   ];
+  // Phase 8 D2: lines billed from a project post their revenue tagged with it (project profitability).
   journalLines.push(
-    ...buildRevenueCreditLines(allocation, {
-      defaultAccountId: salesRevenue.id,
-      zeroRatedAccountId: zeroRatedSales?.id ?? null,
-      invoiceNumber: invoice.number,
-    })
+    ...splitRevenueLegsByProject(
+      buildRevenueCreditLines(allocation, {
+        defaultAccountId: salesRevenue.id,
+        zeroRatedAccountId: zeroRatedSales?.id ?? null,
+        invoiceNumber: invoice.number,
+      }),
+      invoiceLines.map((l) => ({
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        vatRate: l.vatRate,
+        revenueAccountId: l.revenueAccountId,
+        projectId: (l as any).projectId ?? null,
+      })),
+      { defaultAccountId: salesRevenue.id, zeroRatedAccountId: zeroRatedSales?.id ?? null }
+    )
   );
   if (vatAmount > 0 && vatPayable) {
     journalLines.push({
@@ -156,13 +179,12 @@ async function postInvoiceRevenueJournalLocked(
     });
   }
 
-  const entryNumber = await storage.generateEntryNumber(invoice.companyId, invoiceDate);
-  await storage.createJournalEntry(
+  const entry = await storage.createJournalEntry(
     {
       companyId: invoice.companyId,
       date: invoiceDate,
       memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
-      entryNumber,
+      entryNumber: "PENDING", // assigned inside the transaction (createJournalEntry holds the numbering lock)
       status: "posted",
       source: "invoice",
       sourceId: invoice.id,
@@ -170,9 +192,10 @@ async function postInvoiceRevenueJournalLocked(
       postedBy: userId,
       postedAt: invoiceDate,
     } as any,
-    journalLines as any
+    journalLines as any,
+    { tx }
   );
 
-  log.info({ entryNumber, invoiceId: invoice.id }, "Revenue recognition journal entry created");
+  log.info({ entryNumber: entry.entryNumber, invoiceId: invoice.id }, "Revenue recognition journal entry created");
   return true;
 }

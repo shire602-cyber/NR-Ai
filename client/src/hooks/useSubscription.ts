@@ -47,6 +47,8 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: false,
     costCenters: false,
+    projects: false,
+    approvals: false,
   },
   starter: {
     quotes: true,
@@ -64,6 +66,8 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: false,
     costCenters: false,
+    projects: false,
+    approvals: false,
   },
   professional: {
     quotes: true,
@@ -73,7 +77,7 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     bankImport: true,
     bulkOps: true,
     advancedReports: true,
-    apiAccess: false,
+    apiAccess: true,
     invoicePayment: true,
     recurringInvoices: true,
     multiCurrency: true,
@@ -81,6 +85,8 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: false,
     fixedAssets: true,
     costCenters: true,
+    projects: true,
+    approvals: true,
   },
   enterprise: {
     quotes: true,
@@ -98,6 +104,8 @@ const TIER_FEATURES: Record<string, Record<string, boolean>> = {
     webhooks: true,
     fixedAssets: true,
     costCenters: true,
+    projects: true,
+    approvals: true,
   },
 };
 
@@ -109,7 +117,7 @@ const FEATURE_MIN_TIER: Record<string, string> = {
   bankImport: "starter",
   bulkOps: "professional",
   advancedReports: "professional",
-  apiAccess: "enterprise",
+  apiAccess: "professional",
   invoicePayment: "starter",
   recurringInvoices: "starter",
   multiCurrency: "starter",
@@ -117,6 +125,8 @@ const FEATURE_MIN_TIER: Record<string, string> = {
   webhooks: "enterprise",
   fixedAssets: "professional",
   costCenters: "professional",
+  projects: "professional",
+  approvals: "professional",
 };
 
 export function useSubscription() {

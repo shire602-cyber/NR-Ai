@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Landmark,
   MoreHorizontal,
+  UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -52,8 +53,11 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: "invoices", url: "/invoices" },
       { titleKey: "quotes", url: "/quotes" },
+      { titleKey: "salesOrders", url: "/sales-orders" },
+      { titleKey: "customerAdvances", url: "/customer-advances" },
       { titleKey: "creditNotes", url: "/credit-notes" },
       { titleKey: "recurringInvoices", url: "/recurring-invoices" },
+      { titleKey: "projects", url: "/projects" },
       { titleKey: "contacts", url: "/contacts" },
     ],
   },
@@ -76,6 +80,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: "bankReconciliation", url: "/bank-reconciliation" },
       { titleKey: "autoReconcile", url: "/auto-reconcile" },
+      { titleKey: "cashFlowForecast", url: "/cashflow-forecast" },
     ],
   },
   {
@@ -85,6 +90,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: "chartOfAccounts", url: "/chart-of-accounts" },
       { titleKey: "journal", url: "/journal" },
+      { titleKey: "approvals", url: "/approvals" },
       { titleKey: "fixedAssets", url: "/fixed-assets" },
       { titleKey: "monthEndClose", url: "/month-end" },
       { titleKey: "exchangeRates", url: "/exchange-rates" },
@@ -128,6 +134,8 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     icon: Settings,
     items: [
       { titleKey: "companySettings", url: "/settings/company" },
+      { titleKey: "salesSettings", url: "/settings/sales" },
+      { titleKey: "navSecurity", url: "/settings/security" },
       { titleKey: "teamManagement", url: "/team" },
       { titleKey: "subscription", url: "/subscription" },
       { titleKey: "integrations", url: "/integrations" },
@@ -156,7 +164,9 @@ export const MORE_GROUP: NavGroup = {
     { titleKey: "documentVersions", url: "/document-versions" },
     { titleKey: "companyProfile", url: "/company-profile" },
     { titleKey: "notificationPreferences", url: "/notification-preferences" },
-    { titleKey: "webhooks", url: "/developer-settings" },
+    { titleKey: "navDevelopers", url: "/developer-settings" },
+    { titleKey: "navDataPrivacy", url: "/settings/data" },
+    { titleKey: "navImportData", url: "/import" },
     { titleKey: "backupRestore", url: "/backup-restore" },
     { titleKey: "history", url: "/history" },
   ],
@@ -194,6 +204,26 @@ export const ADMIN_GROUP: NavGroup = {
   ],
 };
 
+/**
+ * The menu of a plain employee: their own payslips, leave and loans, account settings and help. Every other
+ * screen is refused by the server for this role (403 ROLE_REQUIRED), so it is not offered.
+ */
+export const EMPLOYEE_GROUPS: NavGroup[] = [
+  {
+    key: "my-work",
+    titleKey: "navMyWork",
+    icon: UserRound,
+    items: [
+      { titleKey: "navMyPayroll", url: "/payroll" },
+      { titleKey: "navMyLeave", url: "/payroll?tab=leave" },
+      { titleKey: "navMyLoans", url: "/payroll?tab=loans" },
+      { titleKey: "navMyExpenses", url: "/expense-claims" },
+      { titleKey: "navMyAccount", url: "/settings/security" },
+      { titleKey: "navHelp", url: "/help" },
+    ],
+  },
+];
+
 /** The always-visible Dashboard entry above the groups. */
 export const DASHBOARD_URL = "/dashboard";
 
@@ -203,7 +233,6 @@ export const DASHBOARD_URL = "/dashboard";
  * here when a feature is hidden; remove it when the feature ships.
  */
 export const HIDDEN_FEATURE_ROUTES: readonly string[] = [
-  "/api-keys", // API keys: no public API verifies them (POST returns 501)
   "/ecommerce", // Shopify / WooCommerce sync: not built (returns 501)
 ];
 

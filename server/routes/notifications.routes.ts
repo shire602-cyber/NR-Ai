@@ -95,7 +95,7 @@ export function registerNotificationRoutes(app: Express) {
 
       // Verify user has access to the company if specified
       if (validated.companyId) {
-        const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
+        const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId, { employeeSelfService: true });
         if (!hasAccess) {
           return res.status(403).json({ message: "Access denied to this company" });
         }

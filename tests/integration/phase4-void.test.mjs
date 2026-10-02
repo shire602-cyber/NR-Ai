@@ -146,6 +146,8 @@ async function engines(C, start, end) {
   };
 }
 const allEqual = (b, want) => Object.values(b).every((v) => close(v, want));
+// a FILED period cannot be generated again (the filed return is final): its figures are read by the other engines and from the filed snapshot
+const allEqualFiled = (b, want) => Object.entries(b).filter(([k]) => k !== "vat201").every(([, v]) => close(v, want));
 const voidInvoice = (C, id) => api("PATCH", `/api/invoices/${id}/status`, { token: C.token, body: { status: "void" } });
 /** Test-only: move the reversal entry of a void to the day the scenario needs (the endpoint always dates it today). */
 async function dateVoidOn(C, invoiceId, day) {
@@ -236,31 +238,32 @@ async function sectionJ() {
 // V: a void is reported in the period of the void
 // ═════════════════════════════════════════════════════════════════════════════
 async function sectionV() {
-  // ── V1: the real endpoint (the void is dated today, in the open current month) ──────────────
+  // ── V1: the real endpoint, UNFILED period (Teardown 8 / CTO rule) ───────────────────────────
+  // A document voided while its period has no filed return is dropped from that period: the void reverses on the document's own
+  // date (S1), so the ledger holds nothing for it, and the return, workpaper, audit rows and every engine agree.
   {
     const X = await newCompany("v1real");
     const a = await X.invoice(lastMid, 1000);
     const b = await X.invoice(lastMid, 1000);
     const v = await voidInvoice(X, b.id);
     ok("V1: (setup) the second August invoice is voided today", v.status === 200, { s: v.status, t: v.text.slice(0, 200) });
-    const rev = (await db.query("SELECT date::date::text AS d, to_char(posted_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS p FROM journal_entries WHERE company_id = $1 AND source = 'invoice' AND reversed_entry_id IS NOT NULL", [X.cid])).rows[0];
-    const uaeToday = new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10);
-    ok("V1: the reversal is dated the UAE calendar day of the void", rev && rev.d === uaeToday, { rev, uaeToday });
+    const rev = (await db.query("SELECT date::date::text AS d FROM journal_entries WHERE company_id = $1 AND source = 'invoice' AND reversed_entry_id IS NOT NULL", [X.cid])).rows[0];
+    ok("V1: the reversal is dated the document's own day (its period is open and unfiled)", rev && rev.d === lastMid, { rev, lastMid });
 
     const led = await ledgerVat(X, lastStart, lastEnd);
-    ok("V1: the LEDGER for August holds 100 of output VAT (both invoices)", close(led.output, 100), led);
+    ok("V1: the LEDGER for August holds 50 of output VAT (the voided invoice and its reversal net to zero)", close(led.output, 50), led);
     const aug = await engines(X, lastStart, lastEnd);
-    ok("V1: August: VAT 201, autopilot, firm workpaper and FAF all report box 12 = 100 (the ledger's figure)", allEqual(aug.box12, 100), aug.box12);
-    ok("V1: August FAF supply listing has both invoices", aug.supplies.length === 2 && aug.supplies.every((r) => close(r.value, 1000)), aug.supplies);
+    ok("V1: August: VAT 201, autopilot, firm workpaper and FAF all report box 12 = 50 (the voided invoice is out)", allEqual(aug.box12, 50), aug.box12);
+    ok("V1: August FAF supply listing has the surviving invoice only", aug.supplies.length === 1 && close(aug.supplies[0].value, 1000), aug.supplies);
     {
       // The reports module's VAT summary must read the same calculation.
       const rep = await api("GET", `/api/companies/${X.cid}/reports/vat-return?from=${lastStart}&to=${lastEnd}`, { token: X.token });
-      ok("V1: the reports VAT summary agrees with the VAT 201 for the month of the voided invoice (supplies 2,000, VAT 100)",
-        rep.status === 200 && close(rep.json?.box1_standardRatedSupplies, 2000) && close(rep.json?.box5_outputVat, 100) && close(rep.json?.box8_netVatDue, 100),
+      ok("V1: the reports VAT summary agrees with the VAT 201 for the month of the voided invoice (supplies 1,000, VAT 50)",
+        rep.status === 200 && close(rep.json?.box1_standardRatedSupplies, 1000) && close(rep.json?.box5_outputVat, 50) && close(rep.json?.box8_netVatDue, 50),
         { s: rep.status, j: rep.json });
       const repCur = await api("GET", `/api/companies/${X.cid}/reports/vat-return?from=${curStart}&to=${curEnd}`, { token: X.token });
-      ok("V1: and shows the -50 reversal in the month of the void",
-        repCur.status === 200 && close(repCur.json?.box5_outputVat, -50) && close(repCur.json?.box1_standardRatedSupplies, -1000),
+      ok("V1: and the month of the void shows no reversal (nothing was declared to reverse)",
+        repCur.status === 200 && close(repCur.json?.box5_outputVat, 0) && close(repCur.json?.box1_standardRatedSupplies, 0),
         { s: repCur.status, j: repCur.json });
     }
     const filed = await X.file(aug.gen.json?.id);
@@ -270,36 +273,67 @@ async function sectionV() {
 
     const cur = await engines(X, curStart, curEnd);
     const curLedger = await ledgerVat(X, curStart, curEnd);
-    ok("V1: the ledger of the current month holds the -50 (reversal of the voided invoice)", close(curLedger.output, -50), curLedger);
-    ok("V1: the current month's draft preview shows the -50 reversal in every engine", allEqual(cur.box12, -50), cur.box12);
-    ok("V1: the FAF supply listing of the void's period has the negative line of the voided invoice",
-      cur.supplies.length === 1 && close(cur.supplies[0].value, -1000) && close(cur.supplies[0].vat, -50) && cur.supplies[0].number === b.number, cur.supplies);
+    ok("V1: the ledger of the current month holds nothing for it", close(curLedger.output, 0), curLedger);
+    ok("V1: the current month's draft preview shows no reversal in any engine", allEqual(cur.box12, 0), cur.box12);
+    ok("V1: the FAF supply listing of the current month is empty", cur.supplies.length === 0, cur.supplies);
     ok("V1: the preview is labelled a draft preview", cur.gen.json?.isDraftPreview === true && cur.gen.json?.id === null, { p: cur.gen.json?.isDraftPreview });
     const list = await api("GET", `/api/companies/${X.cid}/vat-returns`, { token: X.token });
     const augRow = (list.json ?? []).find((r) => String(r.periodStart).slice(0, 10) === lastStart);
-    ok("V1: the filed August return still displays its snapshot (box 12 = 100)", close(augRow?.box12TotalDueTax, 100), augRow?.box12TotalDueTax);
+    ok("V1: the filed August return displays its snapshot (box 12 = 50)", close(augRow?.box12TotalDueTax, 50), augRow?.box12TotalDueTax);
   }
 
-  // ── V2: a closed month M with a void dated in month M+1 ───────────────────────────────────────
+  // ── V1F: the same void AFTER the period is filed: an adjustment in the period of the void ──────
+  {
+    const X = await newCompany("v1filed");
+    await X.invoice(lastMid, 1000);
+    const b = await X.invoice(lastMid, 1000);
+    const aug = await engines(X, lastStart, lastEnd);
+    ok("V1F: (setup) August holds both invoices: box 12 = 100 in every engine", allEqual(aug.box12, 100), aug.box12);
+    const filed = await X.file(aug.gen.json?.id);
+    ok("V1F: (setup) August is filed (100)", filed.status === 201, { s: filed.status, t: filed.text.slice(0, 300) });
+    const v = await voidInvoice(X, b.id);
+    ok("V1F: (setup) the invoice is voided after the filing", v.status === 200, { s: v.status, t: v.text.slice(0, 200) });
+    const rev = (await db.query("SELECT date::date::text AS d FROM journal_entries WHERE company_id = $1 AND source = 'invoice' AND reversed_entry_id IS NOT NULL", [X.cid])).rows[0];
+    ok("V1F: the reversal falls after the filed period (first open day), not inside it", rev && rev.d > lastEnd, { rev, lastEnd });
+    ok("V1F: the LEDGER for the filed August still holds 100 of output VAT", close((await ledgerVat(X, lastStart, lastEnd)).output, 100), await ledgerVat(X, lastStart, lastEnd));
+    const augAgain = await engines(X, lastStart, lastEnd);
+    ok("V1F: August (filed) still reports box 12 = 100 in the other engines (the filed return is final)", allEqualFiled(augAgain.box12, 100), augAgain.box12);
+    const cur = await engines(X, curStart, curEnd);
+    ok("V1F: the month of the reversal carries the -50 adjustment in every engine and in the ledger", allEqual(cur.box12, -50) && close((await ledgerVat(X, curStart, curEnd)).output, -50), { b: cur.box12 });
+    ok("V1F: the FAF supply listing and the VAT audit rows of that month show the negative line of the voided invoice",
+      cur.supplies.length === 1 && close(cur.supplies[0].value, -1000) && close(cur.supplies[0].vat, -50) && cur.supplies[0].number === b.number, cur.supplies);
+    const audit = await api("GET", `/api/companies/${X.cid}/reports/run/vat-audit-sales?from=${curStart}&to=${curEnd}`, { token: X.token });
+    ok("V1F: ... in the VAT Audit sales report too (one row, -1,000 / -50)", (audit.json?.rows ?? []).filter((r) => r.kind === "detail").length === 1 && close(audit.json?.totals?.vat, -50), audit.json?.totals);
+    const wp = await api("POST", `/api/companies/${X.cid}/vat-workpapers`, { token: X.token, body: { periodStart: curStart, periodEnd: curEnd } });
+    await api("POST", `/api/companies/${X.cid}/vat-workpapers/${wp.json?.id}/pull-from-books`, { token: X.token, body: {} });
+    const wpRows = ((await api("GET", `/api/companies/${X.cid}/vat-workpapers/${wp.json?.id}`, { token: X.token })).json?.rows ?? []).filter((r) => /standard/i.test(String(r.rowCategory)));
+    ok("V1F: ... and in the workpaper of that month (one standard row, -1,000 / -50)", wpRows.length === 1 && close(wpRows[0]?.taxableAmount, -1000) && close(wpRows[0]?.vatAmount, -50), wpRows.map((r) => [r.rowCategory, r.taxableAmount, r.vatAmount]));
+    const list = await api("GET", `/api/companies/${X.cid}/vat-returns`, { token: X.token });
+    const augRow = (list.json ?? []).find((r) => String(r.periodStart).slice(0, 10) === lastStart);
+    ok("V1F: the filed August return keeps its snapshot (box 12 = 100)", close(augRow?.box12TotalDueTax, 100), augRow?.box12TotalDueTax);
+  }
+
+  // ── V2: a filed month M, then a void dated in month M+1 (the first open month after it) ──────────
   {
     const Y = await newCompany("v2cross");
     const a = await Y.invoice(twoMid, 1000);
     const b = await Y.invoice(twoMid, 1000);
+    const jul = await engines(Y, twoStart, twoEnd);
+    const fJul = await Y.file(jul.gen.json?.id);
+    ok("V2: filing July succeeds (100)", fJul.status === 201 && allEqual(jul.box12, 100), { s: fJul.status, t: fJul.text.slice(0, 300), b: jul.box12 });
+    ok("V2: after filing July the July VAT accounts are zero", close(await vatAccountForPeriod(Y, "2020", twoStart, twoEnd, jul.gen.json?.id), 0), null);
     await voidInvoice(Y, b.id);
     const moved = await dateVoidOn(Y, b.id, lastEnd.slice(0, 8) + "20");
-    ok("V2: (setup) the void is dated 20 August, invoices are in July", moved === 1, moved);
+    ok("V2: (setup) the void is dated 20 August, invoices are in the filed July", moved === 1, moved);
 
-    const jul = await engines(Y, twoStart, twoEnd);
-    ok("V2: July: all engines report box 12 = 100 and the ledger agrees", allEqual(jul.box12, 100) && close((await ledgerVat(Y, twoStart, twoEnd)).output, 100), { b: jul.box12 });
-    ok("V2: July FAF supply listing includes both invoices", jul.supplies.length === 2, jul.supplies);
+    const julAgain = await engines(Y, twoStart, twoEnd);
+    ok("V2: July (filed): the other engines still report box 12 = 100", allEqualFiled(julAgain.box12, 100), { b: julAgain.box12 });
+    ok("V2: July FAF supply listing includes both invoices", julAgain.supplies.length === 2, julAgain.supplies);
     const auga = await engines(Y, lastStart, lastEnd);
     ok("V2: August: the void is a -50 reversal in every engine and in the ledger", allEqual(auga.box12, -50) && close((await ledgerVat(Y, lastStart, lastEnd)).output, -50), { b: auga.box12 });
     ok("V2: August FAF supply listing has the negative line dated the day of the void",
       auga.supplies.length === 1 && close(auga.supplies[0].value, -1000) && auga.supplies[0].date === lastEnd.slice(0, 8) + "20", auga.supplies);
 
-    const fJul = await Y.file(jul.gen.json?.id);
-    ok("V2: filing July succeeds", fJul.status === 201, { s: fJul.status, t: fJul.text.slice(0, 300) });
-    ok("V2: after filing July the July VAT accounts are zero", close(await vatAccountForPeriod(Y, "2020", twoStart, twoEnd, jul.gen.json?.id), 0), null);
     const fAug = await Y.file(auga.gen.json?.id);
     ok("V2: filing August succeeds (return -50 = ledger -50)", fAug.status === 201, { s: fAug.status, t: fAug.text.slice(0, 300) });
     ok("V2: after filing August the August VAT accounts are zero", close(await vatAccountForPeriod(Y, "2020", lastStart, lastEnd, auga.gen.json?.id), 0), null);
@@ -349,7 +383,7 @@ async function sectionV() {
     ok("V5: corporate tax pull-from-books puts the ledger's revenue in the return", pull.status === 200 && close(pull.json?.totalRevenue, ledgerRevenue), { s: pull.status, t: pull.text.slice(0, 250) });
   }
 
-  // ── V4: a credit note voided in a later period comes back as a positive line ───────────────────
+  // ── V4: a credit note of a FILED period voided later comes back as a positive line in the month of the void ──
   {
     const K = await newCompany("v4cn");
     const inv = await K.invoice(twoMid, 1000);
@@ -360,14 +394,35 @@ async function sectionV() {
     const augDay = lastEnd.slice(0, 8) + "10";
     await db.query("UPDATE invoices SET date = $2::timestamp WHERE id = $1", [cnId, `${augDay}T00:00:00`]);
     await db.query("UPDATE journal_entries SET date = $3::timestamp WHERE company_id = $1 AND source = 'invoice' AND source_id = $2", [K.cid, cnId, `${augDay}T00:00:00`]);
+    const augBefore = await engines(K, lastStart, lastEnd);
+    ok("V4: (setup) August holds the credit note (-50)", allEqual(augBefore.box12, -50), augBefore.box12);
+    const fAug = await K.file(augBefore.gen.json?.id);
+    ok("V4: (setup) August is filed", fAug.status === 201, { s: fAug.status, t: fAug.text.slice(0, 300) });
     const v = await voidInvoice(K, cnId);
-    ok("V4: (setup) the credit note is voided (dated today, in September)", v.status === 200, { s: v.status, t: v.text.slice(0, 300) });
+    ok("V4: (setup) the credit note is voided after the filing", v.status === 200, { s: v.status, t: v.text.slice(0, 300) });
     const aug = await engines(K, lastStart, lastEnd);
-    ok("V4: August: the credit note is still a credit of August (-50) in every engine and in the ledger",
-      allEqual(aug.box12, -50) && close((await ledgerVat(K, lastStart, lastEnd)).output, -50), { b: aug.box12, l: await ledgerVat(K, lastStart, lastEnd) });
+    ok("V4: August (filed): the credit note is still a credit of August (-50) in every engine and in the ledger",
+      allEqualFiled(aug.box12, -50) && close((await ledgerVat(K, lastStart, lastEnd)).output, -50), { b: aug.box12, l: await ledgerVat(K, lastStart, lastEnd) });
     const cur = await engines(K, curStart, curEnd);
-    ok("V4: September: the voided credit note is a POSITIVE +50 line in every engine and in the ledger",
+    ok("V4: the month of the void: the voided credit note is a POSITIVE +50 line in every engine and in the ledger",
       allEqual(cur.box12, 50) && close((await ledgerVat(K, curStart, curEnd)).output, 50), { b: cur.box12 });
+  }
+
+  // ── V4U: the same credit note voided while its period is UNFILED: out of the return, no line anywhere else ──
+  {
+    const K = await newCompany("v4cnu");
+    const inv = await K.invoice(twoMid, 1000);
+    const cn = await api("POST", `/api/companies/${K.cid}/invoices/${inv.id}/credit-note`, { token: K.token, body: { reason: "Goods returned" } });
+    const cnId = cn.json?.creditNote?.id ?? cn.json?.id;
+    const augDay = lastEnd.slice(0, 8) + "10";
+    await db.query("UPDATE invoices SET date = $2::timestamp WHERE id = $1", [cnId, `${augDay}T00:00:00`]);
+    await db.query("UPDATE journal_entries SET date = $3::timestamp WHERE company_id = $1 AND source = 'invoice' AND source_id = $2", [K.cid, cnId, `${augDay}T00:00:00`]);
+    const v = await voidInvoice(K, cnId);
+    ok("V4U: (setup) the credit note is voided while August is unfiled", v.status === 200, { s: v.status, t: v.text.slice(0, 300) });
+    const aug = await engines(K, lastStart, lastEnd);
+    ok("V4U: August: the voided credit note is out of every engine (box 12 = 0)", allEqual(aug.box12, 0), aug.box12);
+    const cur = await engines(K, curStart, curEnd);
+    ok("V4U: the month of the void shows no positive line either", allEqual(cur.box12, 0), cur.box12);
   }
 }
 
@@ -553,7 +608,8 @@ async function sectionS() {
   const rMan = await reverse(man.json?.id);
   ok("S: reversing a MANUAL journal -> 200 as before", man.status === 200 && rMan.status === 200 && !!rMan.json?.reversalId, { m: man.status, s: rMan.status, j: rMan.json });
   const reRev = await reverse(rMan.json?.reversalId);
-  ok("S: the reversal of a manual journal can itself be reversed (200)", reRev.status === 200, { s: reRev.status, j: reRev.json });
+  // Teardown 8: a reversal is not reversed again (that posted a second reversal, a third leg); it is voided, which re-opens the original.
+  ok("S: the reversal of a manual journal cannot be reversed again (409 REVERSAL_NOT_REVERSIBLE)", reRev.status === 409 && reRev.json?.code === "REVERSAL_NOT_REVERSIBLE", { s: reRev.status, j: reRev.json });
   const delMan = await C.journal(curStart, lines, { status: "draft", memo: "manual draft" });
   const delOk = await api("DELETE", `/api/journal/${delMan.json?.id}`, { token: C.token });
   // (the 5-year FTA retention rule refuses every delete, manual or not; what matters is that the manual draft is not treated as a system entry)
@@ -582,9 +638,11 @@ async function sectionA() {
     ok("A1: the same journal saved as a DRAFT without a description is accepted", draft.status === 200, { s: draft.status, t: draft.text.slice(0, 200) });
     const post = await api("POST", `/api/journal/${draft.json?.id}/post`, { token: C.token });
     ok("A1: posting that draft without a description is refused", post.status === 400 && post.json?.code === "VAT_JOURNAL_DESCRIPTION_REQUIRED", { s: post.status, j: post.json });
+    // Posting by editing is refused outright (C1, Phase 8 D2): a draft is posted only with the post action.
     const put = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, status: "posted", confirmBackdated: true, lines } });
-    ok("A1: posting it through PUT without a description is refused", put.status === 400 && put.json?.code === "VAT_JOURNAL_DESCRIPTION_REQUIRED", { s: put.status, j: put.json });
-    const putOk = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, status: "posted", memo: "Correct over-declared output VAT (client credit)", confirmBackdated: true, lines } });
+    ok("A1: posting it through PUT is refused (409 USE_POST_ROUTE)", put.status === 409 && put.json?.code === "USE_POST_ROUTE", { s: put.status, j: put.json });
+    const putMemo = await api("PUT", `/api/journal/${draft.json?.id}`, { token: C.token, body: { date: lastMid, memo: "Correct over-declared output VAT (client credit)", confirmBackdated: true, lines } });
+    const putOk = putMemo.status === 200 ? await api("POST", `/api/journal/${draft.json?.id}/post`, { token: C.token }) : putMemo;
     ok("A1: with a description the draft posts (200)", putOk.status === 200, { s: putOk.status, t: putOk.text.slice(0, 200) });
     const other = await C.journal(lastMid, [{ accountId: bank, debit: 5, credit: 0 }, { accountId: (await C.account("4010")).id, debit: 0, credit: 5 }]);
     ok("A1: a journal that does not touch VAT needs no description", other.status === 200, { s: other.status });

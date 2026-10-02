@@ -1,216 +1,134 @@
 import type { Express, Request, Response } from "express";
-import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { z } from "zod";
+import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
+import { validate } from "../middleware/validate";
+import { db } from "../db";
+import { bankTransactions } from "../../shared/schema";
+import { and, eq } from "drizzle-orm";
 import { storage } from "../storage";
+import { AppError } from "../errors";
 import { createLogger } from "../config/logger";
-import { insertReconciliationRuleSchema } from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
+import { assertCanPostBanking } from "../services/bank-access";
+import { ruleMatches } from "../services/bank-rule-split";
+import { ruleColumns, ruleInputSchema, validateRuleBusiness } from "../services/bank-rules.service";
 
 const logger = createLogger("reconciliation-rules-routes");
 
-export function registerReconciliationRuleRoutes(app: Express) {
-  // =====================================
-  // Reconciliation Rules Routes
-  // =====================================
+const uuid = z.string().uuid();
+const companyParams = z.object({ companyId: uuid }).passthrough();
+const ruleParams = z.object({ id: uuid }).passthrough();
 
-  // List all reconciliation rules for a company
+/** Partial update: every field optional, validated as a whole against the merged rule. */
+const ruleUpdateSchema = ruleInputSchema.partial();
+
+export function registerReconciliationRuleRoutes(app: Express) {
+  const companyGuard = [authMiddleware, requireCustomer, requireFeature("bankImport"), validate({ params: companyParams }), requireCompanyAccess("params")];
+
+  async function loadRule(req: Request) {
+    const rule = await storage.getReconciliationRule(req.params.id);
+    // a rule of another company is indistinguishable from a missing one
+    if (!rule || !(await storage.hasCompanyAccess(req.user!.id, rule.companyId))) {
+      throw new AppError({ message: "Reconciliation rule not found", statusCode: 404, code: "RULE_NOT_FOUND" });
+    }
+    return rule;
+  }
+
   app.get(
     "/api/companies/:companyId/reconciliation-rules",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...companyGuard,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const rules = await storage.getReconciliationRulesByCompanyId(companyId);
-      res.json(rules);
+      res.json(await storage.getReconciliationRulesByCompanyId(req.params.companyId));
     })
   );
 
-  // Create a new reconciliation rule
   app.post(
     "/api/companies/:companyId/reconciliation-rules",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...companyGuard,
+    validate({ body: ruleInputSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const rule = await storage.createReconciliationRule({
-        ...pickAllowed(req.body, insertReconciliationRuleSchema, ["companyId"]),
-        companyId,
-      } as any);
+      await assertCanPostBanking(req.user!.id, companyId);
+      await validateRuleBusiness(companyId, req.body);
+      const rule = await storage.createReconciliationRule({ ...ruleColumns(req.body), companyId } as any);
       logger.info({ ruleId: rule.id, companyId }, "Reconciliation rule created");
       res.status(201).json(rule);
     })
   );
 
-  // Update a reconciliation rule
   app.put(
     "/api/reconciliation-rules/:id",
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
+    validate({ params: ruleParams, body: ruleUpdateSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const existing = await storage.getReconciliationRule(id);
-      if (!existing) {
-        return res.status(404).json({ message: "Reconciliation rule not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // S-M1: allowlist update fields (tenant scope cannot be changed here).
-      const updated = await storage.updateReconciliationRule(
-        id,
-        pickAllowed(req.body, insertReconciliationRuleSchema, ["companyId"]) as any
-      );
+      const existing = await loadRule(req);
+      await assertCanPostBanking(req.user!.id, existing.companyId);
+      // merge onto the stored rule so the whole result is validated (split sums, VAT with direction, accounts)
+      const merged = ruleInputSchema.parse({
+        name: existing.name,
+        matchField: existing.matchField,
+        matchType: existing.matchType,
+        matchValue: existing.matchValue,
+        direction: existing.direction,
+        bankAccountId: existing.bankAccountId,
+        amountMin: existing.amountMin,
+        amountMax: existing.amountMax,
+        splitLines: existing.splitLines,
+        vatRate: Number(existing.vatRate),
+        priority: existing.priority,
+        isActive: existing.isActive,
+        category: existing.category,
+        memo: existing.memo,
+        ...req.body,
+      });
+      await validateRuleBusiness(existing.companyId, merged);
+      const updated = await storage.updateReconciliationRule(existing.id, ruleColumns(merged) as any);
       res.json(updated);
     })
   );
 
-  // Delete a reconciliation rule
   app.delete(
     "/api/reconciliation-rules/:id",
     authMiddleware,
     requireCustomer,
     requireFeature("bankImport"),
+    validate({ params: ruleParams }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const existing = await storage.getReconciliationRule(id);
-      if (!existing) {
-        return res.status(404).json({ message: "Reconciliation rule not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.deleteReconciliationRule(id);
+      const existing = await loadRule(req);
+      await assertCanPostBanking(req.user!.id, existing.companyId);
+      await storage.deleteReconciliationRule(existing.id);
       res.json({ message: "Reconciliation rule deleted" });
     })
   );
 
-  // Run auto-matching against unreconciled bank transactions
+  // Suggest only: mark the open bank lines a rule fits as `suggested`. Nothing is posted here.
+  // POST /bank-statements/apply-rules (or /:tid/apply-rule) posts, after the preview has been seen.
   app.post(
     "/api/companies/:companyId/reconciliation-rules/auto-match",
-    authMiddleware,
-    requireCustomer,
-    requireFeature("bankImport"),
+    ...companyGuard,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const unreconciled = (await storage.getUnreconciledBankTransactions(companyId)).filter((t) => t.matchStatus !== "matched");
+      const rules = (await storage.getReconciliationRulesByCompanyId(companyId)).filter((r) => r.isActive);
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      let matched = 0;
+      for (const txn of unreconciled) {
+        // a category-only rule (no split lines) still suggests and tags; only posting needs the split
+        const rule = rules.find((r) => ruleMatches(r as any, { description: txn.description, reference: txn.reference, amount: Number(txn.amount), bankStatementAccountId: txn.bankStatementAccountId }));
+        if (!rule) continue;
+        await db
+          .update(bankTransactions)
+          .set({ matchStatus: "suggested", suggestedRuleId: rule.id, category: rule.category ?? txn.category })
+          .where(and(eq(bankTransactions.id, txn.id), eq(bankTransactions.companyId, companyId)));
+        matched++;
       }
-
-      // Get all bank transactions and filter to unreconciled
-      const allTransactions = await storage.getBankTransactionsByCompanyId(companyId);
-      const unreconciledTransactions = allTransactions.filter((tx) => !tx.isReconciled);
-
-      // Get all active rules ordered by priority
-      const allRules = await storage.getReconciliationRulesByCompanyId(companyId);
-      const activeRules = allRules.filter((rule) => rule.isActive);
-
-      let matchCount = 0;
-
-      for (const transaction of unreconciledTransactions) {
-        for (const rule of activeRules) {
-          const fieldValue = getFieldValue(transaction, rule.matchField);
-          if (fieldValue === null || fieldValue === undefined) continue;
-
-          const isMatch = testMatch(String(fieldValue), rule.matchType, rule.matchValue);
-
-          if (isMatch) {
-            // Update the transaction: set matchedJournalEntryId to the rule's target account and mark reconciled
-            await storage.updateBankTransaction(transaction.id, companyId, {
-              isReconciled: true,
-              category: rule.category || transaction.category,
-            });
-
-            // Increment the rule's applied counter
-            await storage.incrementRuleAppliedCount(rule.id);
-
-            matchCount++;
-            break; // Move to next transaction after first matching rule
-          }
-        }
-      }
-
-      logger.info({ companyId, matchCount }, "Reconciliation auto-match completed");
-      res.json({
-        matched: matchCount,
-        totalUnreconciled: unreconciledTransactions.length,
-        rulesEvaluated: activeRules.length,
-      });
+      logger.info({ companyId, matched }, "Reconciliation rule suggestions completed");
+      res.json({ matched, suggested: matched, posted: 0, totalUnreconciled: unreconciled.length, rulesEvaluated: rules.length });
     })
   );
 }
 
-/**
- * Extract the field value from a bank transaction based on the match field name.
- */
-function getFieldValue(
-  transaction: { description: string; reference: string | null; amount: number },
-  matchField: string
-): string | number | null {
-  switch (matchField) {
-    case "description":
-      return transaction.description;
-    case "reference":
-      return transaction.reference;
-    case "amount":
-      return transaction.amount;
-    default:
-      return null;
-  }
-}
 
-/**
- * Test whether a field value matches a rule's match criteria.
- */
-function testMatch(fieldValue: string, matchType: string, matchValue: string): boolean {
-  const normalizedField = fieldValue.toLowerCase();
-  const normalizedMatch = matchValue.toLowerCase();
-
-  switch (matchType) {
-    case "contains":
-      return normalizedField.includes(normalizedMatch);
-    case "exact":
-      return normalizedField === normalizedMatch;
-    case "starts_with":
-      return normalizedField.startsWith(normalizedMatch);
-    case "regex":
-      try {
-        const regex = new RegExp(matchValue, "i");
-        return regex.test(fieldValue);
-      } catch {
-        return false;
-      }
-    default:
-      return false;
-  }
-}

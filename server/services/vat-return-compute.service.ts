@@ -10,11 +10,22 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { AppError } from "../errors";
-import { companies, receipts as receiptsTable } from "../../shared/schema";
+import { companies } from "../../shared/schema";
 import { round2 } from "./financial-statements";
 import { aggregateReturnSalesLines } from "./vat-sales-lines";
+import { EMIRATE_BOX_PREFIX, supplyEmirate, type VatEmirate } from "./vat-emirate";
 import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
+import {
+  loadPeriodBills,
+  loadPeriodExpenseClaimItems,
+  loadPeriodReceipts,
+  loadPeriodVendorCredits,
+  totalPurchases,
+  journalPurchaseRows,
+  type PurchaseDocRow,
+} from "./vat-period-purchases.service";
 import { loadVatJournalAdjustments } from "./vat-adjustments.service";
+import { journalLinesForReturn } from "./vat-adjustments";
 import { buildGeneratedVatReturnValues } from "./vat-return-payload.service";
 
 export async function computeVatReturnForPeriod(args: {
@@ -65,9 +76,6 @@ export async function computeVatReturnForPeriod(args: {
   }
   const companyEmirate = company.emirate;
 
-  // Calculate VAT from invoices and receipts
-  const receipts: any[] = await ex.select().from(receiptsTable).where(eq(receiptsTable.companyId, companyId));
-
   const startDate = new Date(periodStart);
   // periodEnd is a calendar date — include the entire final day so
   // invoices timestamped during it aren't dropped from the return.
@@ -91,150 +99,58 @@ export async function computeVatReturnForPeriod(args: {
   // Placement of every line is decided by the shared classifyVatLineForReturn
   // rule (also used by the autopilot and the firm workpaper pull), so the
   // three engines cannot disagree: 0% out-of-scope lines land in no box.
-  const salesTotals = aggregateReturnSalesLines(sales.lines as any[], sales.rateByInvoiceId);
+  const salesTotals = aggregateReturnSalesLines(sales.lines as any[], sales.rateByInvoiceId, sales.emirateByInvoiceId, companyEmirate);
   standardRatedAmount = salesTotals.standardRatedAmount;
   standardRatedVat = salesTotals.standardRatedVat;
   zeroRatedAmount = salesTotals.zeroRatedAmount;
   exemptAmount = salesTotals.exemptAmount;
 
+  // Taxable sales recorded by manual journal (Cr revenue + Cr 2020, no document): reported as a supply in box 1 of the
+  // company's emirate, amount and VAT, once. Their 2020 line is not also an adjustment (vat-adjustments.ts).
+  const journalAdjustments = await loadVatJournalAdjustments(ex, companyId, periodStart, periodEnd, companyEmirate);
+  standardRatedAmount += journalAdjustments.salesAmount;
+  standardRatedVat += journalAdjustments.salesVat;
+  const journalLines = journalLinesForReturn(journalAdjustments);
+
   // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
   // with negative invoice lines after A-B11, so the invoice loop above
   // captures them exactly once and applies the invoice exchange rate.
 
-  // Calculate input tax from receipts — only posted receipts can be
-  // claimed for input VAT recovery on a VAT return.
-  const periodReceipts = receipts.filter((rec) => {
-    if (!rec.posted) return false;
-    const recDate = new Date(rec.date || rec.createdAt);
-    return recDate >= startDate && recDate <= endDate;
-  });
-
-  // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
-  // (input side, subject to partial-exemption recovery), ordinary receipts
-  // feed Box 9.
-  const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
-  const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
-
-  // FTA reporting is in AED. A receipt stores its DOCUMENT-currency amount
-  // plus the transaction-date rate, so both the expense base and the input
-  // VAT must be converted before they reach Boxes 9/10/11 — exactly as the
-  // invoice lines above and the vendor bills below already do.
-  //
-  // Without this, a USD 1,000 receipt (VAT USD 50) at 3.6725 reported AED
-  // 1,000 of expenses and AED 50 of recoverable input VAT instead of AED
-  // 3,672.50 and AED 183.63 — the business under-claims and OVERPAYS the
-  // FTA. For AED receipts the rate is 1, so this is a no-op.
-  const recRate = (rec: { exchangeRate?: number | string | null }): number => {
-    const r = Number(rec.exchangeRate);
-    return Number.isFinite(r) && r > 0 ? r : 1;
+  // Purchase documents of the period: posted receipts, approved bills, approved vendor credits (negative) and
+  // approved / paid expense claims. The loaders live in vat-period-purchases.service.ts so the VAT Audit: Purchases
+  // Detail report reads the very same rows. Reverse-charge documents feed Boxes 3 (output) and 10 (input side,
+  // subject to partial-exemption recovery); ordinary ones feed Box 9. Amounts are AED: the rate booked on each
+  // document (a USD 1,000 receipt with VAT USD 50 at 3.6725 is AED 3,672.50 and AED 183.63).
+  const receiptRows = await loadPeriodReceipts(ex, companyId, startDate, endDate);
+  const periodReceipts = receiptRows;
+  const fromDay = startDate.toISOString().slice(0, 10);
+  const toDay = endDate.toISOString().slice(0, 10);
+  // Bills, vendor credits and expense claims: the bill-pay / claims schema may not be installed in dev, so fail
+  // open (inside a caller's transaction a failed statement aborts it: propagate).
+  const tolerant = async (load: () => Promise<PurchaseDocRow[]>): Promise<PurchaseDocRow[]> => {
+    try {
+      return await load();
+    } catch (err) {
+      if (args.executor) throw err;
+      return [];
+    }
   };
+  const billRows = await tolerant(() => loadPeriodBills(ex, companyId, fromDay, toDay));
+  const creditRows = await tolerant(() => loadPeriodVendorCredits(ex, companyId, fromDay, toDay));
+  const claimRows = await tolerant(() => loadPeriodExpenseClaimItems(ex, companyId, fromDay, toDay));
+  const purchaseTotals = totalPurchases([
+    ...receiptRows,
+    ...billRows,
+    ...creditRows,
+    ...claimRows,
+    // purchases recorded by manual journal (Dr expense + Dr 1050): net in box 9 amount, VAT in box 9 VAT, once
+    ...journalPurchaseRows(journalAdjustments.purchases),
+  ]);
 
-  let totalExpenses = ordinaryReceipts.reduce(
-    (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-    0
-  );
-  let inputTaxGross = ordinaryReceipts.reduce(
-    (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-    0
-  );
-
-  let reverseChargeAmount = reverseChargeReceipts.reduce(
-    (sum, rec) => sum + (rec.amount || 0) * recRate(rec),
-    0
-  );
-  let reverseChargeVatGross = reverseChargeReceipts.reduce(
-    (sum, rec) => sum + (rec.vatAmount || 0) * recRate(rec),
-    0
-  );
-
-  // Vendor bills — pulled direct from vendor_bills since the bill module
-  // isn't in Drizzle yet. Reverse-charge bills feed Boxes 3/10; ordinary
-  // approved bills carry recoverable input VAT into Box 9 alongside
-  // posted receipts. Pending bills are excluded: input VAT is only
-  // claimable once the bill is approved (matching when it posts to GL).
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const billRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-        FROM vendor_bills
-        WHERE company_id = ${companyId}
-          AND bill_date >= ${fromDay}::date
-          AND bill_date <= ${toDay}::date
-          AND status NOT IN ('void','cancelled','draft','pending')
-          AND COALESCE(is_opening_balance, false) = false`)
-    );
-    // Compare calendar dates, not timestamps — casting the JS Date to
-    // timestamptz shifts period boundaries in non-UTC server timezones.
-    reverseChargeAmount += Number(billRes[0]?.rc_amount || 0);
-    reverseChargeVatGross += Number(billRes[0]?.rc_vat || 0);
-    totalExpenses += Number(billRes[0]?.std_amount || 0);
-    inputTaxGross += Number(billRes[0]?.std_vat || 0);
-  } catch (err) {
-    // Bill-pay schema may not be installed in dev — fail open, log via parent.
-    // (Inside a caller's transaction a failed statement aborts it: propagate.)
-    if (args.executor) throw err;
-  }
-
-  // Approved vendor credit notes dated in the period reduce the bill purchases above by
-  // their net and VAT (same date rule and rate conversion; Box 9 drops by the credit).
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const creditRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-          COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-          COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
-        FROM vendor_credit_notes
-        WHERE company_id = ${companyId}
-          AND "date" >= ${fromDay}::date
-          AND "date" <= ${toDay}::date
-          AND status = 'approved'`)
-    );
-    reverseChargeAmount -= Number(creditRes[0]?.rc_amount || 0);
-    reverseChargeVatGross -= Number(creditRes[0]?.rc_vat || 0);
-    totalExpenses -= Number(creditRes[0]?.std_amount || 0);
-    inputTaxGross -= Number(creditRes[0]?.std_vat || 0);
-  } catch (err) {
-    if (args.executor) throw err;
-  }
-
-  // Expense claims — TD5 (found by blind-accountant audit): approval posts
-  // net→expense and VAT→input VAT (1050) to the GL, but the return never
-  // read them, so box 9/13 under-claimed recoverable input VAT and the GL
-  // could never reconcile to the filed return. Approved/paid claims with
-  // item dates inside the period now feed Box 9 exactly like bills.
-  // Entertainment-category items are excluded from VAT recovery
-  // (Art. 53 blocked input tax) to mirror the posting service.
-  try {
-    const fromDay = startDate.toISOString().slice(0, 10);
-    const toDay = endDate.toISOString().slice(0, 10);
-    const claimRes = rowsOf(
-      await ex.execute(sql`
-        SELECT
-          COALESCE(SUM(i.amount), 0) AS claim_amount,
-          COALESCE(SUM(i.vat_amount) FILTER (WHERE LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%'), 0) AS claim_vat
-        FROM expense_claim_items i
-        JOIN expense_claims c ON c.id = i.claim_id
-        WHERE c.company_id = ${companyId}
-          AND c.status IN ('approved','paid')
-          AND i.expense_date >= ${fromDay}::date
-          AND i.expense_date <= ${toDay}::date`)
-    );
-    totalExpenses += Number(claimRes[0]?.claim_amount || 0);
-    inputTaxGross += Number(claimRes[0]?.claim_vat || 0);
-  } catch (err) {
-    // Expense-claims schema may not be installed — fail open like bills.
-    if (args.executor) throw err;
-  }
+  let totalExpenses = purchaseTotals.totalExpenses;
+  let inputTaxGross = purchaseTotals.inputTaxGross;
+  let reverseChargeAmount = purchaseTotals.reverseChargeAmount;
+  let reverseChargeVatGross = purchaseTotals.reverseChargeVatGross;
 
   // Summing float line amounts leaves binary noise (3428.3300000000017);
   // settle every accumulator to fils before deriving boxes from them.
@@ -291,43 +207,24 @@ export async function computeVatReturnForPeriod(args: {
     box1gFujairahAdj: 0,
   };
 
-  // Assign standard rated sales to company's emirate
-  switch (companyEmirate) {
-    case "abu_dhabi":
-      emirateBreakdown.box1aAbuDhabiAmount = standardRatedAmount;
-      emirateBreakdown.box1aAbuDhabiVat = standardRatedVat;
-      break;
-    case "sharjah":
-      emirateBreakdown.box1cSharjahAmount = standardRatedAmount;
-      emirateBreakdown.box1cSharjahVat = standardRatedVat;
-      break;
-    case "ajman":
-      emirateBreakdown.box1dAjmanAmount = standardRatedAmount;
-      emirateBreakdown.box1dAjmanVat = standardRatedVat;
-      break;
-    case "umm_al_quwain":
-      emirateBreakdown.box1eUmmAlQuwainAmount = standardRatedAmount;
-      emirateBreakdown.box1eUmmAlQuwainVat = standardRatedVat;
-      break;
-    case "ras_al_khaimah":
-      emirateBreakdown.box1fRasAlKhaimahAmount = standardRatedAmount;
-      emirateBreakdown.box1fRasAlKhaimahVat = standardRatedVat;
-      break;
-    case "fujairah":
-      emirateBreakdown.box1gFujairahAmount = standardRatedAmount;
-      emirateBreakdown.box1gFujairahVat = standardRatedVat;
-      break;
-    case "dubai":
-    default:
-      emirateBreakdown.box1bDubaiAmount = standardRatedAmount;
-      emirateBreakdown.box1bDubaiVat = standardRatedVat;
-      break;
+  // Box 1 is split by the emirate of each supply: the document's own emirate (invoices.emirate), else the company's.
+  // The rows add up to the standard-rated totals (document-level rounding, vat-sales-lines.ts).
+  for (const [emirate, figures] of Object.entries(salesTotals.standardByEmirate)) {
+    const prefix = EMIRATE_BOX_PREFIX[emirate as VatEmirate];
+    (emirateBreakdown as Record<string, number>)[`${prefix}Amount`] = figures!.amount;
+    (emirateBreakdown as Record<string, number>)[`${prefix}Vat`] = figures!.vat;
+  }
+  // Taxable sales recorded by manual journal have no document, hence no emirate of their own: they are the company's.
+  if (journalAdjustments.salesAmount !== 0 || journalAdjustments.salesVat !== 0) {
+    const prefix = EMIRATE_BOX_PREFIX[supplyEmirate(null, companyEmirate)];
+    const row = emirateBreakdown as Record<string, number>;
+    row[`${prefix}Amount`] = round2((row[`${prefix}Amount`] ?? 0) + journalAdjustments.salesAmount);
+    row[`${prefix}Vat`] = round2((row[`${prefix}Vat`] ?? 0) + journalAdjustments.salesVat);
   }
 
   // Manual journals to the VAT accounts dated in the period are VAT adjustments (shared with the
   // autopilot and the firm workpaper): output side in the adjustment column of the company's own
   // emirate, input side in box 9, both flowing into boxes 8/11 adjustment and boxes 12-14.
-  const journalAdjustments = await loadVatJournalAdjustments(ex, companyId, periodStart, periodEnd, companyEmirate);
   (emirateBreakdown as Record<string, number>)[journalAdjustments.outputBox] = journalAdjustments.outputAdjustment;
 
   // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
@@ -361,11 +258,12 @@ export async function computeVatReturnForPeriod(args: {
     totalInputVat,
     outputAdjustment: journalAdjustments.outputAdjustment,
     inputAdjustment: journalAdjustments.inputAdjustment,
-    vatAdjustments: journalAdjustments.lines,
+    vatAdjustments: journalLines,
   });
 
   const metadata = {
     invoicesProcessed: periodInvoices.length,
+    journalSalesProcessed: journalAdjustments.sales.length,
     receiptsProcessed: periodReceipts.length,
     companyEmirate,
     trnNumber: company.trnVatNumber,
@@ -379,7 +277,7 @@ export async function computeVatReturnForPeriod(args: {
     netVatPayable: round2(returnValues.box12TotalDueTax - returnValues.box13RecoverableTax),
     // Manual journals to the VAT accounts in the period, reported as adjustments on the return
     // (journal number and description, so the accountant can see what each one is).
-    vatAdjustments: journalAdjustments.lines,
+    vatAdjustments: journalLines,
     outputAdjustment: journalAdjustments.outputAdjustment,
     inputAdjustment: journalAdjustments.inputAdjustment,
     // Input VAT the return does not recover by design (standard input plus the reverse-charge

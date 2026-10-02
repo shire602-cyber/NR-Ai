@@ -23,6 +23,8 @@ export interface GenericExportColumn {
   header: string;
   key: string;
   width?: number;
+  /** Excel number format for numeric cells of this column (defaults to "#,##0.00"). */
+  numFmt?: string;
 }
 
 export interface GenericExportSheet {
@@ -183,7 +185,7 @@ export async function buildOcrReceiptsWorkbook(
 
 export async function buildGenericWorkbook(
   sheets: GenericExportSheet[],
-  options: { title?: string } = {}
+  options: { title?: string; rightToLeft?: boolean } = {}
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Muhasib.ai";
@@ -197,7 +199,7 @@ export async function buildGenericWorkbook(
     const sheet = workbook.addWorksheet(
       safeSheetName(sourceSheet.sheetName || `Sheet ${index + 1}`),
       {
-        views: [{ state: "frozen", ySplit: 1 }],
+        views: [{ state: "frozen", ySplit: 1, ...(options.rightToLeft ? { rightToLeft: true } : {}) }],
         properties: { defaultRowHeight: 18 },
       }
     );
@@ -225,11 +227,11 @@ export async function buildGenericWorkbook(
 
       const dataRow = sheet.addRow(normalized);
       const isZebra = rowIndex % 2 === 1;
-      dataRow.eachCell((cell) => {
+      dataRow.eachCell((cell, colNumber) => {
         cell.font = { name: "Calibri", size: 11 };
         cell.alignment = { vertical: "middle", indent: 1 };
         if (typeof cell.value === "number") {
-          cell.numFmt = "#,##0.00";
+          cell.numFmt = sourceSheet.columns[colNumber - 1]?.numFmt ?? "#,##0.00";
           cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
         }
         if (isZebra) {

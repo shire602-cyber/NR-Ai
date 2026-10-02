@@ -11,6 +11,8 @@ import {
   isStripeConfigured,
 } from "../services/stripe.service";
 import { createLogger } from "../config/logger";
+import { isFakeGatewayOn, webhookSecrets, webhookVerifier } from "../services/payment-gateway";
+import { handleConnectEvent } from "../services/payment-gateway/webhook.service";
 import { getCompanyStorageBytes } from "../services/document-upload.service";
 import { ensureSubscription } from "../services/billing-trial.service";
 import { parseGrandfatherDate, resolveEffectivePlan, type EffectivePlan } from "../services/billing-plan";
@@ -249,19 +251,22 @@ export function registerBillingRoutes(app: Express) {
     })
   );
 
-  // Stripe webhook (no auth — verified via signature)
+  // Stripe webhook (no auth — verified via signature). One endpoint, two kinds of event:
+  //  - platform events (subscriptions): signed with STRIPE_WEBHOOK_SECRET -> billing handler;
+  //  - Connect events (`event.account`: a company's own Stripe account, Phase 8 D1): signed with
+  //    STRIPE_CONNECT_WEBHOOK_SECRET -> payment-gateway handler. Each secret is tried in turn.
   app.post(
     "/api/webhooks/stripe",
     asyncHandler(async (req: Request, res: Response) => {
-      const stripeClient = getStripe();
+      const stripeClient = webhookVerifier() ?? getStripe();
       if (!stripeClient) {
         return res.status(503).json({ message: "Stripe not configured" });
       }
 
       const sig = req.headers["stripe-signature"];
-      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      const secrets = webhookSecrets();
 
-      if (!sig || !webhookSecret) {
+      if (!sig || secrets.length === 0) {
         return res.status(400).json({ message: "Missing signature or webhook secret" });
       }
 
@@ -271,15 +276,31 @@ export function registerBillingRoutes(app: Express) {
         return res.status(400).json({ message: "Webhook body must be the raw request payload" });
       }
 
-      let event;
-      try {
-        event = stripeClient.webhooks.constructEvent(req.body, sig, webhookSecret);
-      } catch (err: any) {
-        log.error({ error: err.message }, "Stripe webhook signature verification failed");
-        return res.status(400).json({ message: `Webhook Error: ${err.message}` });
+      let event: any;
+      let lastError = "";
+      for (const secret of secrets) {
+        try {
+          event = stripeClient.webhooks.constructEvent(req.body, sig, secret);
+          break;
+        } catch (err: any) {
+          lastError = err.message;
+        }
+      }
+      if (!event) {
+        // The test gateway verifies with its own fake secrets, so a real Stripe key can be absent: an event it cannot
+        // verify then still answers "not configured" (503), exactly as a server without any Stripe keys does.
+        if (isFakeGatewayOn() && !getStripe()) {
+          return res.status(503).json({ message: "Stripe not configured" });
+        }
+        log.error({ error: lastError }, "Stripe webhook signature verification failed");
+        return res.status(400).json({ message: `Webhook Error: ${lastError}` });
       }
 
-      await handleWebhookEvent(event);
+      if (event.account) {
+        await handleConnectEvent(event);
+      } else {
+        await handleWebhookEvent(event);
+      }
       res.json({ received: true });
     })
   );

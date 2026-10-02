@@ -11,6 +11,8 @@ export const messages = defineMessages(
     whatAreMyBiggestExpenses: "What are my biggest expenses?",
     howManyInvoicesAreUnpaid: "How many invoices are unpaid?",
     giveMeFinancialInsights: "Give me financial insights",
+    statsPeriod: "Revenue and expenses from {from} to {to}. Outstanding is as at today.",
+    overdueAmount: "Overdue {amount}",
   },
   {
     error: "خطأ",
@@ -21,5 +23,7 @@ export const messages = defineMessages(
     whatAreMyBiggestExpenses: "ما أكبر مصروفاتي؟",
     howManyInvoicesAreUnpaid: "كم عدد الفواتير غير المدفوعة؟",
     giveMeFinancialInsights: "أعطني رؤى مالية",
+    statsPeriod: "الإيرادات والمصروفات من {from} إلى {to}. المستحق كما في اليوم.",
+    overdueAmount: "المتأخر {amount}",
   }
 );

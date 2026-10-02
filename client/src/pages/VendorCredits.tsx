@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { useI18n } from "@/lib/i18n";
+import { accountName } from "@/lib/account-name";
+import { todayYmd } from "@/lib/calendar-date";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +32,11 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { CALENDAR_DATE_SHORT_FORMAT, formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PageHeader } from "@/components/ui/page-header";
-import { CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
+import { Package, CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { useConfirmAction } from "@/components/ConfirmDialog";
+import { LineProductPicker, type PickerProduct } from "@/components/sales/LineProductPicker";
+import { VendorCreditStockDialog } from "@/components/purchases/VendorCreditStockDialog";
 import { messages as pageMessages } from "./VendorCredits.i18n";
 
 // ===========================
@@ -38,6 +45,7 @@ import { messages as pageMessages } from "./VendorCredits.i18n";
 
 interface VendorCredit {
   id: string;
+  vendor_id?: string | null;
   vendor_name: string;
   vendor_trn: string | null;
   bill_id: string | null;
@@ -56,6 +64,7 @@ interface VendorCredit {
 }
 
 interface CreditLine {
+  product_id: string;
   description: string;
   quantity: string;
   unit_price: string;
@@ -70,11 +79,13 @@ interface CreditDetail extends VendorCredit {
     unit_price: string;
     vat_rate: string;
     account_id: string | null;
+    product_id?: string | null;
   }>;
 }
 
 interface BillRow {
   id: string;
+  vendor_id?: string | null;
   vendor_name: string;
   vendor_trn: string | null;
   bill_number: string | null;
@@ -85,10 +96,9 @@ interface BillRow {
   reverse_charge?: boolean;
 }
 
-const EMPTY_LINE: CreditLine = { description: "", quantity: "1", unit_price: "", vat_rate: "5", account_id: "" };
+const EMPTY_LINE: CreditLine = { product_id: "", description: "", quantity: "1", unit_price: "", vat_rate: "5", account_id: "" };
 const NO_BILL = "none";
 const OPEN_BILL_STATUSES = ["approved", "partial", "overdue"];
-const todayYmd = () => new Date().toISOString().slice(0, 10);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function statusBadge(status: string, label: (s: "draft" | "approved" | "void") => string) {
@@ -106,6 +116,8 @@ function statusBadge(status: string, label: (s: "draft" | "approved" | "void") =
 }
 
 export default function VendorCredits() {
+  const [askConfirm, confirmDialog] = useConfirmAction();
+  const locale = useI18n((s) => s.locale);
   const tr = pageMessages.useT();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -115,6 +127,7 @@ export default function VendorCredits() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [applying, setApplying] = useState<VendorCredit | null>(null);
+  const [stockFor, setStockFor] = useState<VendorCredit | null>(null);
 
   const base = `/api/companies/${companyId}/vendor-credits`;
   const statusLabel = (s: "draft" | "approved" | "void") => tr(s);
@@ -281,13 +294,19 @@ export default function VendorCredits() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
-                                  if (confirm(tr("confirmApprove"))) approveMutation.mutate(c.id);
+                                  askConfirm(tr("confirmApprove"), () => approveMutation.mutate(c.id));
                                 }}
                               >
                                 <CheckCircle className="w-4 h-4 me-2" />
                                 {tr("approve")}
                               </DropdownMenuItem>
                             </>
+                          )}
+                          {c.status !== "draft" && (
+                            <DropdownMenuItem onClick={() => setStockFor(c)} data-testid={`menu-credit-stock-${c.id}`}>
+                              <Package className="w-4 h-4 me-2" />
+                              {tr("viewStockMovement")}
+                            </DropdownMenuItem>
                           )}
                           {c.status === "approved" && Number(c.remaining_amount) > 0 && (
                             <DropdownMenuItem onClick={() => setApplying(c)}>
@@ -301,7 +320,7 @@ export default function VendorCredits() {
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => {
-                                  if (confirm(tr("confirmVoid"))) voidMutation.mutate(c.id);
+                                  askConfirm(tr("confirmVoid"), () => voidMutation.mutate(c.id), { destructive: true });
                                 }}
                               >
                                 <Trash2 className="w-4 h-4 me-2" />
@@ -340,6 +359,8 @@ export default function VendorCredits() {
           onApplied={refresh}
         />
       )}
+      {companyId && <VendorCreditStockDialog companyId={companyId} credit={stockFor} onClose={() => setStockFor(null)} />}
+      {confirmDialog}
     </div>
   );
 }
@@ -358,10 +379,12 @@ function CreditFormDialog(props: {
 }) {
   const { companyId, editingId, bills, accounts, onClose, onSaved } = props;
   const tr = pageMessages.useT();
+  const locale = useI18n((s) => s.locale);
   const { toast } = useToast();
   const base = `/api/companies/${companyId}/vendor-credits`;
 
   const [billId, setBillId] = useState(NO_BILL);
+  const [vendorId, setVendorId] = useState<string | null>(null);
   const [vendorName, setVendorName] = useState("");
   const [vendorTrn, setVendorTrn] = useState("");
   const [date, setDate] = useState(todayYmd());
@@ -369,12 +392,19 @@ function CreditFormDialog(props: {
   const [reverseCharge, setReverseCharge] = useState(false);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<CreditLine[]>([{ ...EMPTY_LINE }]);
+  // Stock items can be returned to the supplier on a line: approving the credit takes the quantity out of stock.
+  const { data: allProducts = [] } = useQuery<Array<PickerProduct>>({
+    queryKey: ["/api/companies", companyId, "products"],
+    enabled: !!companyId,
+  });
+  const stockItems = allProducts.filter((p) => p.trackInventory && p.isActive !== false);
 
   useQuery<CreditDetail>({
     queryKey: ["/api/companies", companyId, "vendor-credits", editingId],
     queryFn: async () => {
       const d: CreditDetail = await apiRequest("GET", `${base}/${editingId}`);
       setBillId(d.bill_id ?? NO_BILL);
+      setVendorId(d.vendor_id ?? null);
       setVendorName(d.vendor_name);
       setVendorTrn(d.vendor_trn ?? "");
       setDate(d.date);
@@ -383,6 +413,7 @@ function CreditFormDialog(props: {
       setNotes(d.notes ?? "");
       setLines(
         d.lines.map((l) => ({
+          product_id: l.product_id ?? "",
           description: l.description,
           quantity: String(Number(l.quantity)),
           unit_price: String(Number(l.unit_price)),
@@ -396,7 +427,7 @@ function CreditFormDialog(props: {
   });
 
   const linkedBill = bills.find((b) => b.id === billId);
-  const selectableBills = bills.filter((b) => b.status !== "pending");
+  const selectableBills = bills.filter((b) => b.status !== "pending" && b.status !== "pending_approval");
 
   const totals = useMemo(() => {
     let subtotal = 0;
@@ -417,6 +448,7 @@ function CreditFormDialog(props: {
     setBillId(id);
     const bill = bills.find((b) => b.id === id);
     if (bill) {
+      setVendorId(bill.vendor_id ?? null);
       setVendorName(bill.vendor_name);
       setVendorTrn(bill.vendor_trn ?? "");
     }
@@ -426,6 +458,7 @@ function CreditFormDialog(props: {
     mutationFn: () => {
       const payload = {
         bill_id: billId === NO_BILL ? null : billId,
+        vendor_id: vendorId,
         vendor_name: vendorName.trim() || undefined,
         vendor_trn: vendorTrn.trim() || null,
         vendor_reference: vendorReference.trim() || null,
@@ -433,6 +466,7 @@ function CreditFormDialog(props: {
         reverse_charge: reverseCharge,
         notes: notes.trim() || null,
         line_items: lines.map((l) => ({
+          product_id: l.product_id || null,
           description: l.description,
           quantity: l.quantity || "1",
           unit_price: l.unit_price,
@@ -497,7 +531,17 @@ function CreditFormDialog(props: {
             </div>
             <div className="space-y-2">
               <Label>{tr("vendorName")}</Label>
-              <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} disabled={billId !== NO_BILL} />
+              <VendorPicker
+                companyId={companyId}
+                vendorId={vendorId}
+                fallbackName={vendorName}
+                disabled={billId !== NO_BILL}
+                onSelect={(vendor) => {
+                  setVendorId(vendor.id);
+                  setVendorName(vendor.name);
+                  if (vendor.trnNumber) setVendorTrn(vendor.trnNumber);
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label>{tr("vendorTrn")}</Label>
@@ -565,6 +609,25 @@ function CreditFormDialog(props: {
                   value={line.unit_price}
                   onChange={(e) => updateLine(index, { unit_price: e.target.value })}
                 />
+                {stockItems.length > 0 && (
+                  <div className="col-span-12 order-first" data-testid={`credit-line-stock-${index}`}>
+                    <LineProductPicker
+                      products={stockItems}
+                      value={line.product_id || null}
+                      testId={`select-credit-line-product-${index}`}
+                      onPick={(picked) => {
+                        if (!picked) return updateLine(index, { product_id: "" });
+                        updateLine(index, {
+                          product_id: picked.id,
+                          description: locale === "ar" && picked.nameAr ? picked.nameAr : picked.name,
+                          ...(Number(picked.costPrice) > 0 ? { unit_price: String(Number(picked.costPrice)) } : {}),
+                          vat_rate: String(Math.round(Number(picked.vatRate ?? 0.05) * 100)),
+                        });
+                      }}
+                    />
+                    {line.product_id && <p className="mt-1 text-xs text-muted-foreground">{tr("stockReturnHint")}</p>}
+                  </div>
+                )}
                 <Select value={line.vat_rate} onValueChange={(v) => updateLine(index, { vat_rate: v })}>
                   <SelectTrigger className="col-span-4 sm:col-span-2" aria-label={tr("vatPercent")}>
                     <SelectValue />
@@ -585,7 +648,7 @@ function CreditFormDialog(props: {
                     <SelectItem value="default">{tr("defaultAccount")}</SelectItem>
                     {accounts.map((a: any) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {`${a.code} ${a.nameEn || a.name}`}
+                        {`${a.code} ${accountName(a, locale)}`}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -2,6 +2,9 @@ import { createPdfDocument } from "./pdf-fonts";
 import type { Quote, QuoteLine, Company } from "../../shared/schema";
 import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency } from "../../shared/format-unit-price";
+import { buildPdfRows, SALES_ROW_LABELS } from "./pdf-sales-rows";
+import { pdfFieldsFor } from "./custom-fields.service";
+import { getSignature } from "./quote-acceptance.service";
 
 /**
  * Generate a professional quotation/estimate PDF on the server side using PDFKit.
@@ -11,9 +14,29 @@ export async function generateQuotePDF(
   quote: Quote,
   lines: QuoteLine[],
   company: Company,
-  options: { variant?: "quote" | "proforma" } = {}
+  options: {
+    variant?: "quote" | "proforma";
+    customFields?: Array<{ labelEn: string; labelAr: string; value: string }>;
+    signature?: { action: string; signerName: string; signedAt: Date | string } | null;
+  } = {}
 ): Promise<Buffer> {
   const isProforma = options.variant === "proforma";
+  let customFields = options.customFields;
+  if (!customFields) {
+    try {
+      customFields = await pdfFieldsFor(quote.companyId, "quote", quote.id);
+    } catch {
+      customFields = [];
+    }
+  }
+  let signature = options.signature;
+  if (signature === undefined) {
+    try {
+      signature = (await getSignature(quote.companyId, quote.id)).current;
+    } catch {
+      signature = null;
+    }
+  }
   return new Promise((resolve, reject) => {
     try {
       const doc = createPdfDocument({
@@ -139,15 +162,25 @@ export async function generateQuotePDF(
         y += 14;
       }
 
+      if (customFields && customFields.length > 0) {
+        doc.fontSize(9).fillColor("#374151").font("Helvetica");
+        for (const field of customFields) {
+          const text = `${field.labelEn} / ${field.labelAr}: ${field.value}`;
+          doc.text(text, margin, y, { width: contentWidth });
+          y += Math.max(12, doc.heightOfString(text, { width: contentWidth }) + 2);
+        }
+      }
+
       y += 10;
 
       // --- Line Items Table ---
       const tableTop = y;
       const colX = {
         description: margin + 5,
-        qty: margin + 250,
-        price: margin + 310,
-        vat: margin + 380,
+        qty: margin + 222,
+        price: margin + 258,
+        disc: margin + 318,
+        vat: margin + 366,
         amount: margin + contentWidth - 10,
       };
       const rowHeight = 25;
@@ -156,8 +189,9 @@ export async function generateQuotePDF(
       doc.rect(margin, tableTop, contentWidth, rowHeight).fill("#1E40AF");
       doc.fontSize(9).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text("Description", colX.description, tableTop + 8);
-      doc.text("Qty", colX.qty, tableTop + 8, { width: 50, align: "center" });
-      doc.text("Price", colX.price, tableTop + 8, { width: 60, align: "center" });
+      doc.text("Qty", colX.qty, tableTop + 8, { width: 36, align: "center" });
+      doc.text("Price", colX.price, tableTop + 8, { width: 58, align: "center" });
+      doc.text(SALES_ROW_LABELS.discountColumn.en, colX.disc, tableTop + 8, { width: 44, align: "right" });
       doc.text("VAT", colX.vat, tableTop + 8, { width: 40, align: "center" });
       doc.text("Amount", colX.amount - 60, tableTop + 8, { width: 60, align: "right" });
 
@@ -165,26 +199,31 @@ export async function generateQuotePDF(
 
       // Table Rows
       doc.font("Helvetica").fillColor("#1F2937").fontSize(9);
-      lines.forEach((line, index) => {
+      const printRows = buildPdfRows(lines as any[]);
+      printRows.forEach((row, index) => {
         const bgColor = index % 2 === 0 ? "#FFFFFF" : "#F9FAFB";
         doc.rect(margin, y, contentWidth, rowHeight).fill(bgColor);
 
-        const lineTotal = line.quantity * line.unitPrice;
-        const vatPercent = ((line.vatRate || 0.05) * 100).toFixed(0);
+        const vatPercent = (row.vatRate * 100).toFixed(0);
+        const description =
+          row.kind === "discount"
+            ? `${SALES_ROW_LABELS.discount.en} / ${SALES_ROW_LABELS.discount.ar}`
+            : row.kind === "shipping"
+              ? `${row.description || SALES_ROW_LABELS.shipping.en} / ${SALES_ROW_LABELS.shipping.ar}`
+              : row.description;
 
         doc.fillColor("#1F2937");
-        doc.text(line.description, colX.description, y + 8, { width: 230 });
-        doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
-        const unitPriceText = formatUnitPriceCurrency(line.unitPrice, quote.currency);
-        doc.fontSize(fitFontSize(doc, unitPriceText, 60, 9));
-        doc.text(unitPriceText, colX.price, y + 8, {
-          width: 60,
-          align: "center",
-          lineBreak: false,
-        });
-        doc.fontSize(9);
+        doc.text(description, colX.description, y + 8, { width: 212 });
+        if (row.quantity !== null) doc.text(row.quantity.toString(), colX.qty, y + 8, { width: 36, align: "center" });
+        if (row.unitPrice !== null) {
+          const unitPriceText = formatUnitPriceCurrency(row.unitPrice, quote.currency);
+          doc.fontSize(fitFontSize(doc, unitPriceText, 58, 9));
+          doc.text(unitPriceText, colX.price, y + 8, { width: 58, align: "center", lineBreak: false });
+          doc.fontSize(9);
+        }
+        if (row.discountLabel) doc.text(row.discountLabel, colX.disc, y + 8, { width: 44, align: "right", lineBreak: false });
         doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: "center" });
-        doc.text(formatAmount(lineTotal, quote.currency), colX.amount - 60, y + 8, {
+        doc.text(formatAmount(row.amount, quote.currency), colX.amount - 60, y + 8, {
           width: 60,
           align: "right",
         });
@@ -233,6 +272,19 @@ export async function generateQuotePDF(
         y += 14;
         doc.font("Helvetica").fontSize(8);
         doc.text(quote.notes, margin, y, { width: contentWidth });
+      }
+
+      // --- Acceptance record (who answered, when) ---
+      if (signature) {
+        y += 40;
+        const accepted = signature.action === "accepted";
+        doc.fontSize(9).fillColor(accepted ? "#166534" : "#991B1B").font("Helvetica-Bold");
+        doc.text(
+          `${accepted ? "Accepted" : "Declined"} by ${signature.signerName} on ${new Date(signature.signedAt).toLocaleDateString("en-AE", { year: "numeric", month: "short", day: "numeric" })}`,
+          margin,
+          y,
+          { width: contentWidth }
+        );
       }
 
       // --- Footer ---

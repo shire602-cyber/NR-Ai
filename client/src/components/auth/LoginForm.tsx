@@ -26,6 +26,7 @@ import { useTranslation } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { LogIn } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
+import { TwoFactorStep } from "./TwoFactorStep";
 import { messages as pageMessages } from "./LoginForm.i18n";
 
 const loginSchema = z.object({
@@ -36,7 +37,9 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
-  onSuccess: (user: any) => void | Promise<void>;
+  onSuccess: (user: any, extra?: { twoFactorEnrolmentRequired: boolean }) => void | Promise<void>;
+  /** Start on the second step: the OAuth callback leaves its challenge in an httpOnly cookie. */
+  startAtTwoFactor?: boolean;
 }
 
 function currentEpochMs(): number {
@@ -46,7 +49,7 @@ function currentEpochMs(): number {
   return new Date().getTime();
 }
 
-export function LoginForm({ onSuccess }: LoginFormProps) {
+export function LoginForm({ onSuccess, startAtTwoFactor = false }: LoginFormProps) {
   const tr = pageMessages.useT();
 
   const { t } = useTranslation();
@@ -54,6 +57,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  // The second step: a challenge token from /login, or none when the cookie from the OAuth callback carries it.
+  const [challenge, setChallenge] = useState<{ token?: string } | null>(startAtTwoFactor ? {} : null);
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -106,7 +111,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       }
 
       const result = await response.json();
-      await onSuccess(result.user);
+      if (result.twoFactorRequired) {
+        setChallenge({ token: typeof result.challengeToken === "string" ? result.challengeToken : undefined });
+        return;
+      }
+      await onSuccess(result.user, { twoFactorEnrolmentRequired: result.twoFactorEnrolmentRequired === true });
 
       toast({
         title: tr("welcomeBack"),
@@ -123,9 +132,26 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     }
   };
 
+  if (challenge) {
+    return (
+      <TwoFactorStep
+        challengeToken={challenge.token}
+        onVerified={(user, extra) => onSuccess(user, extra)}
+        onBack={() => {
+          setChallenge(null);
+          if (typeof window !== "undefined" && window.location.search.includes("step=2fa")) {
+            window.history.replaceState({}, "", "/login");
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <Card className="w-full max-w-md border-border/60 shadow-xl">
       <CardHeader className="space-y-1.5">
+        {/* The marketing headline in AuthLayout is the h1 on large screens; on phones this is the page heading. */}
+        <h1 className="sr-only lg:hidden">{tr("welcomeBack2")}</h1>
         <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
           {tr("welcomeBack2")}
           <span className="text-accent">.</span>

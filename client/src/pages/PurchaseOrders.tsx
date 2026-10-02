@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -72,18 +73,29 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { VendorPicker } from "@/components/purchases/VendorPicker";
+import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
+import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
+import { useApprovalProgress } from "@/hooks/useApprovalProgress";
+import { failureToast } from "@/lib/approval-feedback";
+import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./PurchaseOrders.i18n";
+import { LineProductPicker, type PickerProduct } from "@/components/sales/LineProductPicker";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 
 const poLineSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
   quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
   unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
+  // A stock item on the line (a receipt of the goods adds it to stock).
+  productId: z.string().nullable().optional(),
 });
 
 const purchaseOrderSchema = z.object({
   companyId: z.string().uuid(),
   number: z.string().min(1, pageMessages.marker("poNumberIsRequired")),
+  vendorId: z.string().optional().nullable(),
   vendorName: z.string().min(1, pageMessages.marker("vendorNameIsRequired")),
   vendorTrn: z.string().optional(),
   date: z.date(),
@@ -99,6 +111,7 @@ interface PurchaseOrder {
   id: string;
   companyId: string;
   number: string;
+  vendorId?: string | null;
   vendorName: string;
   vendorTrn?: string;
   date: string;
@@ -118,6 +131,11 @@ export default function PurchaseOrders() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { data: allProducts = [] } = useQuery<PickerProduct[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
+    enabled: !!selectedCompanyId,
+  });
+  const stockItems = allProducts.filter((p) => p.trackInventory && p.isActive !== false);
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
@@ -132,9 +150,10 @@ export default function PurchaseOrders() {
     defaultValues: {
       companyId: selectedCompanyId || "",
       number: `PO-${Date.now()}`,
+      vendorId: null,
       vendorName: "",
       vendorTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -233,18 +252,22 @@ export default function PurchaseOrders() {
       if (!action) throw new Error(`Unknown status: ${status}`);
       return apiRequest("POST", `/api/purchase-orders/${id}/${action}`);
     },
-    onSuccess: () => {
+    onSuccess: (body: unknown) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "approvals"] });
+      if (isPendingApprovalBody(body)) {
+        toast({
+          title: approvalMessages.t("pendingApprovalSteps", { done: body.approval.completedSteps, total: body.approval.requiredSteps }),
+          description: body.approval.nextRole ? approvalMessages.t("nextRole", { role: approverRoleLabel(body.approval.nextRole) }) : undefined,
+        });
+        return;
+      }
       toast({ title: tr("statusUpdated"), description: tr("purchaseOrderStatusHasBeenUpdated") });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: tr("failedToUpdateStatus"),
-        description: error?.message || tr("pleaseTryAgain"),
-      });
+      toast(failureToast(error, tr("failedToUpdateStatus")));
     },
   });
 
@@ -252,9 +275,10 @@ export default function PurchaseOrders() {
     form.reset({
       companyId: selectedCompanyId || "",
       number: `PO-${Date.now()}`,
+      vendorId: null,
       vendorName: "",
       vendorTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -270,10 +294,11 @@ export default function PurchaseOrders() {
       form.reset({
         companyId: full.companyId,
         number: full.number,
+        vendorId: full.vendorId ?? null,
         vendorName: full.vendorName,
         vendorTrn: full.vendorTrn || "",
-        date: new Date(full.date),
-        expectedDeliveryDate: new Date(full.expectedDeliveryDate),
+        date: (pickerDate(full.date) as Date),
+        expectedDeliveryDate: (pickerDate(full.expectedDeliveryDate) as Date),
         currency: full.currency,
         notes: full.notes || "",
         lines: full.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
@@ -297,6 +322,7 @@ export default function PurchaseOrders() {
         quantity: Number(data.lines[index].quantity),
         unitPrice: Number(data.lines[index].unitPrice),
         vatRate: Number(data.lines[index].vatRate),
+        productId: data.lines[index].productId || null,
       })),
     };
 
@@ -306,6 +332,8 @@ export default function PurchaseOrders() {
       createMutation.mutate(poData);
     }
   };
+
+  const approvalProgress = useApprovalProgress(selectedCompanyId ?? undefined, "purchase_order", (purchaseOrders ?? []).some((p) => p.status === "pending_approval"));
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -417,7 +445,7 @@ export default function PurchaseOrders() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -447,7 +475,16 @@ export default function PurchaseOrders() {
                       <FormItem>
                         <FormLabel>{tr("vendorName")}</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <VendorPicker
+                            companyId={selectedCompanyId ?? undefined}
+                            vendorId={form.watch("vendorId")}
+                            fallbackName={field.value}
+                            onSelect={(vendor) => {
+                              form.setValue("vendorId", vendor.id, { shouldDirty: true });
+                              form.setValue("vendorName", vendor.name, { shouldDirty: true, shouldValidate: true });
+                              if (vendor.trnNumber) form.setValue("vendorTrn", vendor.trnNumber, { shouldDirty: true });
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -487,7 +524,7 @@ export default function PurchaseOrders() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -676,6 +713,22 @@ export default function PurchaseOrders() {
                           </Button>
                         )}
                       </div>
+                      {stockItems.length > 0 && (
+                        <div className="col-span-12" data-testid={`po-line-stock-${index}`}>
+                          <LineProductPicker
+                            products={stockItems}
+                            value={watchLines[index]?.productId}
+                            testId={`select-po-line-product-${index}`}
+                            onPick={(picked) => {
+                              form.setValue(`lines.${index}.productId`, picked?.id ?? null);
+                              if (!picked) return;
+                              form.setValue(`lines.${index}.description`, locale === "ar" && picked.nameAr ? picked.nameAr : picked.name);
+                              if (Number(picked.costPrice) > 0) form.setValue(`lines.${index}.unitPrice`, Number(picked.costPrice));
+                              form.setValue(`lines.${index}.vatRate`, Number(picked.vatRate) === 0 ? 0 : 0.05);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -759,9 +812,13 @@ export default function PurchaseOrders() {
                         {formatCurrency(po.total, po.currency, locale)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge className={cn("capitalize", getStatusBadgeColor(po.status))}>
-                          {po.status}
-                        </Badge>
+                        {po.status === "pending_approval" ? (
+                          <ApprovalStatusBadge status="pending_approval" completedSteps={approvalProgress.get(po.id)?.completedSteps} requiredSteps={approvalProgress.get(po.id)?.requiredSteps} />
+                        ) : (
+                          <Badge className={cn("capitalize", getStatusBadgeColor(po.status))}>
+                            {po.status}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <DropdownMenu>
@@ -791,7 +848,7 @@ export default function PurchaseOrders() {
                               onClick={() =>
                                 updateStatusMutation.mutate({ id: po.id, status: "approved" })
                               }
-                              disabled={po.status !== "sent"}
+                              disabled={po.status !== "sent" && po.status !== "pending_approval"}
                             >
                               <CheckCircle className="w-4 h-4 me-2" />
                               {tr("approve")}

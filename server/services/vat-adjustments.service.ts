@@ -6,6 +6,7 @@
 // correcting a correction). Anything else that touches the VAT accounts (invoices, bills,
 // receipts, clearing entries, ...) is document / filing activity, not an adjustment.
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { sql } from "drizzle-orm";
 import { periodYmd } from "./vat-period-status.service";
 import {
@@ -29,16 +30,21 @@ export async function loadVatJournalAdjustmentRows(
   const end = periodYmd(periodEnd);
   const res = await ex.execute(sql`
     SELECT je.id AS entry_id, je.entry_number, COALESCE(NULLIF(BTRIM(je.memo), ''), '') AS description,
-           to_char(je.date, 'YYYY-MM-DD') AS d, a.code, jl.debit, jl.credit
+           ${sql.raw(dubaiDayTextSql("je.date"))} AS d, a.code, a.type AS account_type, a.sub_type, a.name_en, a.name_ar, jl.debit, jl.credit
       FROM journal_lines jl
       JOIN journal_entries je ON je.id = jl.entry_id
       JOIN accounts a ON a.id = jl.account_id
       LEFT JOIN journal_entries orig ON orig.id = je.reversed_entry_id
      WHERE je.company_id = ${companyId} AND je.status = 'posted'
-       AND je.date::date >= ${start}::date AND je.date::date <= ${end}::date
+       AND ${sql.raw(dubaiDaySql("je.date"))} >= ${start}::date AND ${sql.raw(dubaiDaySql("je.date"))} <= ${end}::date
        AND (je.source = 'manual' OR (je.source = 'reversal' AND orig.source = 'manual'))
-       AND ((a.code = ${VAT_OUTPUT_ACCOUNT.code} AND a.type = ${VAT_OUTPUT_ACCOUNT.type})
-         OR (a.code = ${VAT_INPUT_ACCOUNT.code} AND a.type = ${VAT_INPUT_ACCOUNT.type}))
+       -- every line of an entry that touches a VAT account: the revenue and cost lines next to the VAT line tell a
+       -- taxable sale or purchase (Cr revenue + Cr 2020, Dr expense + Dr 1050) from a correction of tax already declared
+       AND EXISTS (
+         SELECT 1 FROM journal_lines jv JOIN accounts av ON av.id = jv.account_id
+          WHERE jv.entry_id = je.id
+            AND ((av.code = ${VAT_OUTPUT_ACCOUNT.code} AND av.type = ${VAT_OUTPUT_ACCOUNT.type})
+              OR (av.code = ${VAT_INPUT_ACCOUNT.code} AND av.type = ${VAT_INPUT_ACCOUNT.type})))
      ORDER BY je.date, je.entry_number, jl.id`);
   return rowsOf(res).map((r) => ({
     entryId: String(r.entry_id),
@@ -46,6 +52,10 @@ export async function loadVatJournalAdjustmentRows(
     description: r.description ?? "",
     date: String(r.d),
     accountCode: String(r.code),
+    accountType: r.account_type ?? null,
+    accountSubType: r.sub_type ?? null,
+    accountName: r.name_en ?? null,
+    accountNameAr: r.name_ar ?? null,
     debit: Number(r.debit) || 0,
     credit: Number(r.credit) || 0,
   }));

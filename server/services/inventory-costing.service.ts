@@ -84,7 +84,7 @@ import {
 // Account resolution (5200 is created on demand for charts that predate it)
 // ---------------------------------------------------------------------------
 
-async function findAccount(tx: Tx, companyId: string, code: string, type: string) {
+export async function findAccount(tx: Tx, companyId: string, code: string, type: string) {
   const [row] = await tx
     .select({ id: accounts.id })
     .from(accounts)
@@ -96,7 +96,7 @@ async function findAccount(tx: Tx, companyId: string, code: string, type: string
  * A system account of the default chart, created from the template for a chart that predates it
  * (5200 COGS, 5210 Inventory Adjustments, 2015 Goods Received Not Invoiced).
  */
-async function ensureSystemAccount(tx: Tx, companyId: string, code: string, type: string): Promise<{ id: string }> {
+export async function ensureSystemAccount(tx: Tx, companyId: string, code: string, type: string): Promise<{ id: string }> {
   const existing = await findAccount(tx, companyId, code, type);
   if (existing) return existing;
   const template = defaultChartOfAccounts.find((a) => a.code === code);
@@ -197,7 +197,7 @@ async function lockProducts(tx: Tx, companyId: string, productIds: string[]): Pr
 export type MovementType = "purchase" | "sale" | "adjustment" | "return";
 
 export type MovementOutcome =
-  | { ok: true; movementId: string; newStock: number; averageCost: number; inventoryValue: number }
+  | { ok: true; movementId: string; newStock: number; averageCost: number; inventoryValue: number; amount: number; unitCost: number | null; tracked: boolean }
   | { ok: false; onHand: number; requested: number };
 
 /** Post a balanced two-leg journal of an inventory source, dated `date`, inside the caller's transaction. */
@@ -277,6 +277,15 @@ export async function applyMovementInTx(
     notes?: string | null;
     sourceInvoiceId?: string | null;
     userId?: string;
+    /** The day the stock moved (UTC midnight of the calendar day); default today. The journal is dated the same day. */
+    date?: Date | null;
+    /** Value that moves with the stock, instead of qty x cost (a bill line's exact amount in AED). */
+    valueOverride?: number | null;
+    /** The caller posts the journal itself (a bill or a vendor credit that books the stock leg in its own entry). */
+    skipJournal?: boolean;
+    purchaseOrderId?: string | null;
+    sourceBillId?: string | null;
+    sourceVendorCreditId?: string | null;
   }
 ): Promise<MovementOutcome & { productFound: boolean }> {
   const locked = await lockProducts(tx, input.companyId, [input.productId]);
@@ -318,11 +327,14 @@ export async function applyMovementInTx(
   } else if (inbound) {
     // A manual return always comes back at the average (that is what the sale took out).
     const unit = input.type === "return" && product.averageCost > 0 ? product.averageCost : hasCost ? suppliedCost! : product.averageCost;
-    amount = valueOfUnits(qty, unit);
+    const override = input.valueOverride !== null && input.valueOverride !== undefined && input.valueOverride >= 0 ? input.valueOverride : null;
+    amount = override ?? valueOfUnits(qty, unit);
     after = addStock(before, qty, amount);
-    recordedCost = unit;
+    recordedCost = override !== null && qty > 0 ? Number((override / qty).toFixed(6)) : unit;
   } else {
-    amount = valueOut(before, qty);
+    const override = input.valueOverride !== null && input.valueOverride !== undefined && input.valueOverride >= 0 ? input.valueOverride : null;
+    // Out at the average, or at an exact value (a return to the supplier leaves at what the credit note says), never more than is on hand.
+    amount = override === null ? valueOut(before, qty) : newStock <= 0 ? Math.max(before.value, 0) : Math.min(override, Math.max(before.value, 0));
     after = removeStock(before, qty, amount);
     recordedCost = product.averageCost; // consumed at the average
   }
@@ -339,6 +351,10 @@ export async function applyMovementInTx(
       reference: input.reference ?? null,
       notes: input.notes ?? null,
       sourceInvoiceId: input.sourceInvoiceId ?? null,
+      movementDate: input.date ?? uaeCalendarDate(),
+      purchaseOrderId: input.purchaseOrderId ?? null,
+      sourceBillId: input.sourceBillId ?? null,
+      sourceVendorCreditId: input.sourceVendorCreditId ?? null,
     })
     .returning({ id: inventoryMovements.id });
   await tx
@@ -346,14 +362,14 @@ export async function applyMovementInTx(
     .set({ currentStock: newStock, averageCost: after.averageCost, inventoryValue: after.value })
     .where(eq(products.id, input.productId));
 
-  if (product.trackInventory && amount > 0 && input.userId && (await isCostingEnabled(tx, input.companyId))) {
+  if (!input.skipJournal && product.trackInventory && amount > 0 && input.userId && (await isCostingEnabled(tx, input.companyId))) {
     const ids = await movementAccounts(tx, input.companyId);
     const legs = movementJournalLegs(input.type, inbound);
     const label = `${product.name} (${input.type}${input.reference ? `, ${input.reference}` : ""})`;
     await postInventoryJournal(tx, {
       companyId: input.companyId,
       userId: input.userId,
-      date: uaeCalendarDate(),
+      date: input.date ?? uaeCalendarDate(),
       memo: `Inventory ${input.type} - ${product.name}`,
       source: MOVEMENT_SOURCE,
       sourceId: movement.id,
@@ -363,7 +379,17 @@ export async function applyMovementInTx(
       label,
     });
   }
-  return { ok: true, movementId: movement.id, newStock, averageCost: after.averageCost, inventoryValue: after.value, productFound: true };
+  return {
+    ok: true,
+    movementId: movement.id,
+    newStock,
+    averageCost: after.averageCost,
+    inventoryValue: after.value,
+    amount,
+    unitCost: recordedCost,
+    tracked: !!product.trackInventory,
+    productFound: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +406,8 @@ export async function applyMovementInTx(
 export async function postInventoryOpeningInTx(
   tx: Tx,
   companyId: string,
-  userId: string
+  userId: string,
+  date: Date = uaeCalendarDate()
 ): Promise<{ amount: number; journalEntryId: string | null }> {
   const inventory = await findAccount(tx, companyId, ACCOUNT_CODES.INVENTORY, "asset");
   if (!inventory) return { amount: 0, journalEntryId: null };
@@ -392,7 +419,9 @@ export async function postInventoryOpeningInTx(
     SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net
       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
      WHERE je.company_id = ${companyId} AND je.status = 'posted' AND jl.account_id = ${inventory.id}
-       AND je.source IN (${COGS_SOURCE}, ${MOVEMENT_SOURCE}, ${OPENING_SOURCE})`);
+       AND ( je.source IN (${COGS_SOURCE}, ${MOVEMENT_SOURCE}, ${OPENING_SOURCE}, 'opening_balance', 'opening_balance_reversal')
+          OR (je.source = 'bill' AND EXISTS (SELECT 1 FROM inventory_movements m WHERE m.source_bill_id::text = je.source_id::text))
+          OR (je.source = 'vendor_credit_note' AND EXISTS (SELECT 1 FROM inventory_movements m WHERE m.source_vendor_credit_id::text = je.source_id::text)) )`);
   const posted = new Decimal((ledgerRes.rows ?? ledgerRes)[0]?.net ?? 0);
   const delta = wanted.minus(posted).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   if (delta.isZero()) return { amount: 0, journalEntryId: null };
@@ -404,7 +433,7 @@ export async function postInventoryOpeningInTx(
   const entry = await postInventoryJournal(tx, {
     companyId,
     userId,
-    date: uaeCalendarDate(),
+    date,
     memo: delta.gt(0) ? "Opening inventory (stock on hand at average cost)" : "Inventory write-down to stock value",
     source: OPENING_SOURCE,
     sourceId: companyId,
@@ -518,6 +547,8 @@ export async function postCogsForInvoiceInTx(tx: Tx, invoice: InvoiceRef, userId
       totalCost: item.amount,
       reference: `Invoice ${invoice.number}`,
       sourceInvoiceId: invoice.id,
+      // The stock leaves on the invoice's date (what the COGS entry is dated), not the day the status changed.
+      movementDate: uaeCalendarDate(invoice.date instanceof Date ? invoice.date : new Date(invoice.date)),
     });
     const product = locked.get(item.productId)!;
     const after = removeStock(stateOf(product), item.quantity, item.amount);
@@ -633,6 +664,8 @@ export async function restockInvoiceInTx(
       reference: `${reason} ${invoice.number}`,
       notes: movementNotes ?? null,
       sourceInvoiceId: invoice.id,
+      // A restock is dated like its reversal entry (the credit note's date, or the void day).
+      movementDate: reversalDate,
     });
     const after = addStock(stateOf(product), item.quantity, amount);
     await tx
@@ -779,6 +812,7 @@ export async function undoCreditNoteRestockInTx(
       reference: `Void credit note ${creditNote.number}`,
       notes: `void_${creditNoteRestockTag(creditNote.id)}`,
       sourceInvoiceId: creditNote.originalInvoiceId,
+      movementDate: reversalDate,
     });
     const after = removeStock(stateOf(product), b.quantity, b.value);
     await tx

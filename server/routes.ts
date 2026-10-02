@@ -14,6 +14,12 @@ import { createLogger } from "./config/logger";
 
 // ─── Route modules ──────────────────────────────────────────
 import { registerAuthRoutes } from "./routes/auth.routes";
+import { registerTwoFactorRoutes } from "./routes/two-factor.routes";
+import { registerApiV1 } from "./api-v1";
+import { refusedActionAudit } from "./middleware/refused-action-audit";
+import { employeeDenialContext } from "./middleware/employee-denial";
+import { registerCompanyLifecycleRoutes } from "./routes/company-lifecycle.routes";
+import { registerImportJobRoutes } from "./routes/import-jobs.routes";
 import { registerCompanyRoutes } from "./routes/companies.routes";
 import { registerAccountRoutes } from "./routes/accounts.routes";
 import { registerInvoiceRoutes } from "./routes/invoices.routes";
@@ -24,6 +30,9 @@ import { registerJournalRoutes } from "./routes/journal.routes";
 import { registerAIRoutes } from "./routes/ai.routes";
 import { registerDashboardRoutes } from "./routes/dashboard.routes";
 import { registerReportRoutes } from "./routes/reports.routes";
+import { registerReportAccessGate } from "./routes/report-access";
+import { registerReportRunRoutes } from "./routes/report-run.routes";
+import { registerReportScheduleRoutes } from "./routes/report-schedules.routes";
 import { registerReportDeliveryRoutes } from "./routes/report-delivery.routes";
 import { registerIntegrationRoutes } from "./routes/integrations.routes";
 import { registerWhatsAppRoutes } from "./routes/whatsapp.routes";
@@ -54,6 +63,7 @@ import { registerPayrollRoutes } from "./routes/payroll.routes";
 import { registerBillPayRoutes } from "./routes/bill-pay.routes";
 import { registerVendorCreditRoutes } from "./routes/vendor-credits.routes";
 import { registerFixedAssetRoutes } from "./routes/fixed-assets.routes";
+import { registerFixedAssetReportRoutes } from "./routes/fixed-asset-reports.routes";
 import { registerBudgetRoutes } from "./routes/budgets.routes";
 import { registerExpenseClaimRoutes } from "./routes/expense-claims.routes";
 import { registerCashFlowRoutes } from "./routes/cashflow.routes";
@@ -64,8 +74,20 @@ import { registerMonthEndRoutes } from "./routes/month-end.routes";
 import { registerComplianceDashboardRoutes } from "./routes/compliance-dashboard.routes";
 import { registerQuoteRoutes } from "./routes/quotes.routes";
 import { registerStatementRoutes } from "./routes/statements.routes";
+import { registerVendorStatementRoutes } from "./routes/vendor-statements.routes";
+import { registerApprovalRoutes } from "./routes/approvals.routes";
+import { registerProjectRoutes } from "./routes/projects.routes";
+import { registerLeaveRoutes } from "./routes/leave.routes";
+import { registerEmployeeLoanRoutes } from "./routes/employee-loans.routes";
+import { registerFinalSettlementRoutes } from "./routes/final-settlements.routes";
 import { registerCreditNoteRoutes } from "./routes/credit-notes.routes";
 import { registerCustomerRefundRoutes } from "./routes/customer-refunds.routes";
+import { registerCustomerAdvanceRoutes } from "./routes/customer-advances.routes";
+import { registerCustomFieldRoutes } from "./routes/custom-fields.routes";
+import { registerPublicQuoteRoutes } from "./routes/public-quotes.routes";
+import { registerSalesOrderRoutes } from "./routes/sales-orders.routes";
+import { registerPaymentGatewayRoutes } from "./routes/payment-gateway.routes";
+import { registerPriceListRoutes } from "./routes/price-lists.routes";
 import { registerPurchaseOrderRoutes } from "./routes/purchase-orders.routes";
 import { registerCostCenterRoutes } from "./routes/cost-centers.routes";
 import { registerFinancialStatementRoutes } from "./routes/financial-statements.routes";
@@ -81,6 +103,9 @@ import { registerIntegrationStatusRoutes } from "./routes/integration-status.rou
 import { registerEmailIntakeRoutes } from "./routes/email-intake.routes";
 import { registerAdminHealthRoutes } from "./routes/admin-health.routes";
 import { registerBankStatementRoutes } from "./routes/bank-statements.routes";
+import { registerBankStatementImportRoutes } from "./routes/bank-statement-imports.routes";
+import { registerBankFeedRoutes } from "./routes/bank-feeds.routes";
+import { registerBankReconciliationRoutes } from "./routes/bank-reconciliations.routes";
 import { registerExchangeRateRoutes } from "./routes/exchange-rates.routes";
 import { registerNRARoutes } from "./routes/nra.routes";
 import { registerFirmRoutes } from "./routes/firm.routes";
@@ -101,8 +126,19 @@ const log = createLogger("routes");
 export async function registerRoutes(app: Express): Promise<Server> {
   log.info("Registering route modules...");
 
+  // An employee-role member is limited to their own HR records: a refusal of that role answers 403 ROLE_REQUIRED everywhere.
+  app.use("/api", employeeDenialContext);
+  // ─── Public API v1 (mounted first: it hands writes to the routes below) ───
+  registerApiV1(app);
+  // Refused attempts on money routes go to the audit trail (after v1, which logs its own requests).
+  app.use("/api", refusedActionAudit);
+  registerReportAccessGate(app);
+
   // ─── Core Accounting ────────────────────────────────────
   registerAuthRoutes(app);
+  registerTwoFactorRoutes(app);
+  registerCompanyLifecycleRoutes(app);
+  registerImportJobRoutes(app);
   registerCompanyRoutes(app);
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);
@@ -111,8 +147,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerReceiptRoutes(app);
   registerContactRoutes(app);
   registerJournalRoutes(app);
+  registerSalesOrderRoutes(app); // before the inventory routes: /products/availability must beat /products/:id
   registerInventoryRoutes(app);
   registerBankStatementRoutes(app);
+  registerBankStatementImportRoutes(app);
+  registerBankFeedRoutes(app);
+  registerBankReconciliationRoutes(app);
 
   // ─── HR & Payroll ───────────────────────────────────────
   registerPayrollRoutes(app);
@@ -123,6 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerVendorCreditRoutes(app);
 
   // ─── Asset Management ───────────────────────────────────
+  registerFixedAssetReportRoutes(app);
   registerFixedAssetRoutes(app);
   registerBudgetRoutes(app);
 
@@ -139,8 +180,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerComplianceDashboardRoutes(app);
   registerQuoteRoutes(app);
   registerStatementRoutes(app);
+  registerVendorStatementRoutes(app);
+  registerApprovalRoutes(app);
+  registerProjectRoutes(app);
+  registerLeaveRoutes(app);
+  registerEmployeeLoanRoutes(app);
+  registerFinalSettlementRoutes(app);
   registerCreditNoteRoutes(app);
   registerCustomerRefundRoutes(app);
+  registerCustomerAdvanceRoutes(app);
+  registerCustomFieldRoutes(app);
+  registerPublicQuoteRoutes(app);
+  registerPaymentGatewayRoutes(app);
+  registerPriceListRoutes(app);
   registerPurchaseOrderRoutes(app);
   registerCostCenterRoutes(app);
   registerFinancialStatementRoutes(app);
@@ -158,6 +210,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);
   registerReportRoutes(app);
+  registerReportRunRoutes(app);
+  registerReportScheduleRoutes(app);
   registerReportDeliveryRoutes(app);
   registerAnalyticsRoutes(app);
 

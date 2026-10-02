@@ -62,6 +62,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { messages as pageMessages } from "./PaymentChasing.i18n";
+import { LateFeeSettings, type LateFeeConfig } from "@/components/sales/LateFeeSettings";
 
 // Threshold above which "Chase all" requires explicit confirmation. Picked to
 // match a conservative "is this batch big enough to be embarrassing if wrong"
@@ -177,6 +178,7 @@ interface ChaseConfig {
   preferredMethod: string;
   doNotChaseContactIds: string;
   defaultLanguage: string;
+  lateFee?: LateFeeConfig;
 }
 
 interface BulkSendResult {
@@ -1070,6 +1072,11 @@ export default function PaymentChasing() {
               )}
             </CardContent>
           </Card>
+          {companyId && !configQuery.isLoading && !configQuery.isError && (
+            <div className="mt-6">
+              <LateFeeSettings companyId={companyId} lateFee={configQuery.data?.lateFee} />
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

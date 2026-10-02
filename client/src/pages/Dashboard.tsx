@@ -9,10 +9,16 @@ import {
   type ReportLaunchDeliveryPreview,
 } from "@/components/reports/ReportLaunchPicker";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import {
+  DashboardAgeingPanel,
+  DashboardPeriodToggle,
+} from "@/components/dashboard/DashboardAgeingPanel";
+import { dashboardStatsPath, marginPercent, type DashboardPeriodKind } from "@/lib/dashboardStats";
 import {
   fetchReportCatalogDiscovery,
   reportCatalogDiscoveryQueryKey,
@@ -124,7 +130,9 @@ function useCountUp(target: number, duration = 1400): number {
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const effectiveDuration = reduceMotion ? 0 : duration;
+    // A hidden tab never runs animation frames: show the target at once rather than a stale 0.
+    const hidden = typeof document !== "undefined" && document.hidden;
+    const effectiveDuration = reduceMotion || hidden ? 0 : duration;
     const from = fromRef.current;
     const start = performance.now();
     let raf = 0;
@@ -139,7 +147,15 @@ function useCountUp(target: number, duration = 1400): number {
       }
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // The tab can be hidden mid-animation, which pauses frames: land on the target regardless.
+    const settle = setTimeout(() => {
+      setValue(target);
+      fromRef.current = target;
+    }, effectiveDuration + 150);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(settle);
+    };
   }, [target, duration]);
 
   return value;
@@ -1282,8 +1298,11 @@ function CustomerDashboard() {
       : undefined;
   }, [preferredReportWorkspace.persona, reportAutomationPreferencesQuery.data?.preferences]);
 
+  // Phase 8 D4: the dashboard always shows one period (month to date or fiscal year to date), never all time.
+  const [statsPeriod, setStatsPeriod] = useState<DashboardPeriodKind>("month");
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
-    queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats", { period: statsPeriod }],
+    queryFn: () => apiRequest("GET", dashboardStatsPath(selectedCompanyId as string, statsPeriod)),
     enabled: !!selectedCompanyId,
     retry: 1,
   });
@@ -1947,9 +1966,14 @@ function CustomerDashboard() {
     !acknowledgedDashboardReportDeliveryHandoffGaps[preferredAutomationNextAction.subscriptionId]
   );
 
-  const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
-  const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
-  const margin = stats?.revenue > 0 ? (profit / stats.revenue) * 100 : 0;
+  const monthLabel =
+    statsPeriod === "ytd" && stats?.period
+      ? `${stats.period.from} - ${stats.period.to}`
+      : new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
+  const profit = stats?.netProfit ?? (stats?.revenue || 0) - (stats?.expenses || 0);
+  // No margin on a month with no (or negative) revenue: a percentage of nothing says nothing.
+  const margin = marginPercent(profit, stats?.revenue);
+  const marginText = margin === null ? "—" : `${margin.toFixed(1)}%`;
   const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 
   return (
@@ -1983,7 +2007,9 @@ function CustomerDashboard() {
             <div className="rounded-2xl border border-card-border bg-card/70 p-5 backdrop-blur-xl shadow-lg">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                  {(t as any).netProfitThisMonth ?? tr("netProfitThisMonth")}
+                  {statsPeriod === "ytd"
+                    ? tr("netProfitYearToDate")
+                    : ((t as any).netProfitThisMonth ?? tr("netProfitThisMonth"))}
                 </div>
                 <Badge variant={profit >= 0 ? "success" : "danger"} dot>
                   {profit >= 0
@@ -1996,7 +2022,18 @@ function CustomerDashboard() {
                   <Skeleton className="h-10 w-40" />
                 ) : (
                   <>
-                    <span className="font-display text-[24px] md:text-[28px] leading-none tracking-tight tabular-nums text-foreground">
+                    {/* The real figure is always in the DOM for screen readers and hidden tabs; the count-up is only visual. */}
+                    <span
+                      className="sr-only"
+                      aria-live="polite"
+                      data-testid="dashboard-net-profit-value"
+                    >
+                      {formatCurrency(profit, "AED", locale)}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="font-display text-[24px] md:text-[28px] leading-none tracking-tight tabular-nums text-foreground"
+                    >
                       {formatCurrency(animatedProfit, "AED", locale)}
                     </span>
                   </>
@@ -2007,7 +2044,7 @@ function CustomerDashboard() {
                   <>
                     {(t as any).margin ?? tr("margin")}{" "}
                     <span dir="ltr" className="font-mono tabular-nums font-medium text-foreground">
-                      {margin.toFixed(1)}%
+                      {marginText}
                     </span>{" "}
                     · {(t as any).revenue ?? tr("revenue")}{" "}
                     <span dir="ltr" className="font-mono tabular-nums">
@@ -2088,6 +2125,16 @@ function CustomerDashboard() {
           isLoading={statsLoading}
           delay={0.2}
         />
+      </section>
+
+      {/* ── Period, receivables and payables ageing, VAT due ──────────────── */}
+      <section>
+        <SectionHeader
+          eyebrow={tr("moneyOwedEyebrow")}
+          title={tr("moneyOwedTitle")}
+          action={<DashboardPeriodToggle value={statsPeriod} onChange={setStatsPeriod} />}
+        />
+        <DashboardAgeingPanel stats={stats} isLoading={statsLoading} />
       </section>
 
       {/* ── Compliance pulse ─────────────────────────────────────────────── */}
@@ -2243,7 +2290,7 @@ function CustomerDashboard() {
                         <>
                           {tr("yourProfitMarginIs")}
                           <span dir="ltr" className="font-mono font-semibold text-foreground">
-                            {margin.toFixed(1)}%
+                            {marginText}
                           </span>
                           .
                           {stats.outstanding > 0 && (
@@ -2828,6 +2875,9 @@ function CustomerDashboard() {
                             ? tr("localCatalog")
                             : tr("syncedReports", {
                                 syncedReadyReports: preferredReportPackReadiness.syncedReadyReports,
+                                catalogReadyReports: reportCatalog.filter(
+                                  (report) => report.status !== "planned"
+                                ).length,
                               })}
                       </Badge>
                       <Badge variant="outline" data-testid="dashboard-report-catalog-pack-count">
@@ -4278,7 +4328,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
-                          {entry.memo || tr("journalEntry2")}
+                          {entry.memo ? localizeJournalText(entry.memo, locale) : tr("journalEntry2")}
                         </div>
                         <div
                           dir="ltr"

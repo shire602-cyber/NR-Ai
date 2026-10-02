@@ -9,6 +9,7 @@ import { computeRevaluation, type RevaluedItem } from "../services/fx-revaluatio
 import { loadRevaluationItems } from "../services/fx-revaluation.db";
 import { withDocumentLock, LOCK_NS } from "../services/document-lock";
 import { ACCOUNT_CODES } from "../constants";
+import { ensureUnrealisedFxAccount } from "../services/fx-unrealised-account";
 import { assertPeriodNotLocked, assertNotFutureDate } from "../services/period-lock.service";
 import type {
   UnrealizedFxGainLoss,
@@ -136,10 +137,11 @@ export function registerExchangeRateRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { from, to, amount } = req.query as {
+      const { from, to, amount, date } = req.query as {
         from?: string;
         to?: string;
         amount?: string;
+        date?: string;
       };
 
       if (!(await requireAccess(req, res, companyId))) return;
@@ -164,7 +166,14 @@ export function registerExchangeRateRoutes(app: Express) {
       }
 
       // Own rate, then system rate, then the inverse pair (see resolveRate).
-      const found = await getLatestRateDetailed(from, to, undefined, companyId);
+      // The rate on file for that day (the screens pass the payment date); today's when none is given.
+      let asOf: Date | undefined;
+      if (date !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: "date must be YYYY-MM-DD" });
+        asOf = new Date(`${date}T23:59:59.999Z`);
+        if (Number.isNaN(asOf.getTime())) return res.status(400).json({ message: "date is not a valid date" });
+      }
+      const found = await getLatestRateDetailed(from, to, asOf, companyId);
       if (!found) {
         return res.status(404).json({ message: `No exchange rate found for ${from}/${to}` });
       }
@@ -513,14 +522,16 @@ export function registerExchangeRateRoutes(app: Express) {
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
       const byCode = (code: string) => accounts.find((a) => a.code === code)?.id ?? null;
+      // unrealised results go to their own account (4095), apart from the realised 4090 / 5140
+      const unrealisedFxId = await ensureUnrealisedFxAccount(companyId);
       const built = buildFxRevaluationLines({
         receivableRevalAed: revalued.receivableRevalAed,
         payableRevalAed: revalued.payableRevalAed,
         accounts: {
           arId: byCode(ACCOUNT_CODES.AR),
           apId: byCode(ACCOUNT_CODES.AP),
-          fxGainId: byCode(ACCOUNT_CODES.FX_GAIN),
-          fxLossId: byCode(ACCOUNT_CODES.FX_LOSS),
+          fxGainId: unrealisedFxId,
+          fxLossId: unrealisedFxId,
         },
       });
       if (!built.ok) {

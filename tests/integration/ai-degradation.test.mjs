@@ -36,7 +36,6 @@ async function main() {
     ["cfo-advice", "POST", "/api/ai/cfo-advice", { companyId: cid, question: "how is my cash flow?" }],
     ["detect-anomalies", "POST", "/api/ai/detect-anomalies", { companyId: cid }],
     ["forecast-cashflow", "POST", "/api/ai/forecast-cashflow", { companyId: cid, days: 90 }],
-    ["parse-bank-statement", "POST", "/api/ai/parse-bank-statement", { companyId: cid, text: "01/01 PMT 500" }],
     ["nl-gateway", "POST", "/api/ai/nl-gateway", { companyId: cid, message: "what is my revenue" }],
     ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgo=" }],
   ];
@@ -50,6 +49,10 @@ async function main() {
         { status: r.s, code: r.j?.code, msg: String(r.j?.message).slice(0, 60) });
     }
   }
+
+  // The AI bank-statement parser was retired in Phase 8 (statement import owns parsing); it must say so, never 500.
+  const retired = await api("POST", "/api/ai/parse-bank-statement", { token, body: { companyId: cid, text: "01/01 PMT 500" } });
+  ok("AI parse-bank-statement is retired with 410 USE_STATEMENT_IMPORT", retired.s === 410 && retired.j?.code === "USE_STATEMENT_IMPORT", { status: retired.s, code: retired.j?.code });
 
   // Auth must be enforced on the AI surface.
   const noAuth = await api("POST", "/api/ai/categorize", { body: { companyId: cid, description: "x", amount: 1, currency: "AED" } });

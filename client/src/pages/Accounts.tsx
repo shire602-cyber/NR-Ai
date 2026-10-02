@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { accountName } from "@/lib/account-name";
+import { nextAccountCode } from "@/components/banking/gl-account-code";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -60,20 +62,27 @@ import { messages as pageMessages } from "./Accounts.i18n";
 
 const accountSchema = z.object({
   companyId: z.string().uuid(),
+  code: z.string().trim().min(1, pageMessages.marker("accountCodeIsRequired")).max(20),
   nameEn: z.string().min(1, pageMessages.marker("accountNameEnIsRequired")),
   nameAr: z.string().optional(),
   type: z.enum(["asset", "liability", "equity", "income", "expense"]),
   isActive: z.boolean().default(true),
+  // Phase 8 D4: the group company on the other side of an intercompany account (consolidated statements).
+  intercompanyCompanyId: z.string().uuid().nullable().optional(),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
+
+/** Select value that means "no counterparty" (a Radix Select item cannot have an empty value). */
+const NO_COUNTERPARTY = "__none__";
 
 export default function Accounts() {
   const tr = pageMessages.useT();
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: selectedCompanyId, companies = [] } = useDefaultCompany();
+  const counterpartyCompanies = companies.filter((c) => c.id !== selectedCompanyId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -87,10 +96,12 @@ export default function Accounts() {
     resolver: zodResolver(accountSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
+      code: "",
       nameEn: "",
       nameAr: "",
       type: "asset",
       isActive: true,
+      intercompanyCompanyId: null,
     },
   });
 
@@ -173,10 +184,12 @@ export default function Accounts() {
     setEditingAccount(account);
     form.reset({
       companyId: account.companyId,
+      code: account.code,
       nameEn: account.nameEn,
       nameAr: account.nameAr || "",
       type: account.type as "asset" | "liability" | "equity" | "income" | "expense",
       isActive: account.isActive,
+      intercompanyCompanyId: account.intercompanyCompanyId ?? null,
     });
     setDialogOpen(true);
   };
@@ -238,7 +251,22 @@ export default function Accounts() {
         title={t.accounts}
         description={tr("uaeChartOfAccountsWithBilingual")}
         actions={
-          <Button onClick={() => setDialogOpen(true)} data-testid="button-create-account">
+          <Button
+            onClick={() => {
+              setEditingAccount(null);
+              form.reset({
+                companyId: selectedCompanyId || "",
+                code: nextAccountCode((accounts ?? []).map((a) => a.code), "asset"),
+                nameEn: "",
+                nameAr: "",
+                type: "asset",
+                isActive: true,
+                intercompanyCompanyId: null,
+              });
+              setDialogOpen(true);
+            }}
+            data-testid="button-create-account"
+          >
             <Plus className="w-4 h-4 me-2" />
             {tr("addAccount")}
           </Button>
@@ -263,6 +291,19 @@ export default function Accounts() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tr("accountCode")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} dir="ltr" className="text-start font-mono" maxLength={20} data-testid="input-account-code" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="nameEn"
@@ -317,6 +358,39 @@ export default function Accounts() {
                   </FormItem>
                 )}
               />
+              {counterpartyCompanies.length > 0 ? (
+                <FormField
+                  control={form.control}
+                  name="intercompanyCompanyId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("intercompanyCounterparty")}</FormLabel>
+                      <Select
+                        onValueChange={(value) =>
+                          field.onChange(value === NO_COUNTERPARTY ? null : value)
+                        }
+                        value={field.value ?? NO_COUNTERPARTY}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-intercompany-counterparty">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={NO_COUNTERPARTY}>{tr("intercompanyNone")}</SelectItem>
+                          {counterpartyCompanies.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">{tr("intercompanyHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
               <div className="flex gap-3 pt-4">
                 <Button
                   type="button"
@@ -371,6 +445,18 @@ export default function Accounts() {
                     <TableRow key={account.id} data-testid={`account-row-${account.id}`}>
                       <TableCell>
                         {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
+                        {account.intercompanyCompanyId ? (
+                          <span
+                            className="block text-xs text-muted-foreground"
+                            data-testid={`intercompany-note-${account.id}`}
+                          >
+                            {tr("intercompanyWith", {
+                              company:
+                                companies.find((c) => c.id === account.intercompanyCompanyId)
+                                  ?.name ?? tr("intercompanyUnknownCompany"),
+                            })}
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getTypeBadgeColor(account.type)}>
@@ -400,6 +486,7 @@ export default function Accounts() {
                                 size="icon"
                                 data-testid={`button-delete-account-${account.id}`}
                                 disabled={deleteMutation.isPending}
+                                aria-label={tr("deleteAccount")}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
@@ -409,7 +496,7 @@ export default function Accounts() {
                                 <AlertDialogTitle>{tr("deleteAccount")}</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   {tr("areYouSureYouWantTo")}
-                                  <strong>{account.nameEn}</strong>
+                                  <strong>{accountName(account, locale)}</strong>
                                   {tr("thisActionCannotBeUndone")}
                                   {account.isActive && (
                                     <span className="block mt-2 text-destructive font-medium">

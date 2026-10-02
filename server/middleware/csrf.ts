@@ -15,6 +15,7 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/register$/,
   /^\/api\/auth\/refresh$/,
   /^\/api\/auth\/refresh-token$/,
+  /^\/api\/auth\/2fa\/verify$/,
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
   /^\/api\/portal\//,
@@ -22,6 +23,9 @@ const CSRF_BEARER_EXEMPT = [
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
+  // The simulated checkout page of the fake payment gateway (a plain form post; the routes answer 404 unless
+  // PAYMENT_GATEWAY_FAKE=1, which the boot refuses in production).
+  /^\/api\/public\/fake-pay\//,
   // Client-side error telemetry sink: a fire-and-forget endpoint that returns
   // 204 and takes no state-changing action. It MUST accept reports even when
   // the app is broken (e.g. a chunk failed to load before a CSRF token was
@@ -38,6 +42,9 @@ const PUBLIC_CSRF_PROTECTED = [
   /^\/api\/referral\/track-signup$/,
   /^\/api\/invitations\/accept\//,
   /^\/api\/auth\/logout$/,
+  // Phase 8 D1: public quote answers and public invoice checkout (a visitor without credentials, but CSRF-protected).
+  /^\/api\/public\/quotes\//,
+  /^\/api\/public\/invoices\/[^/]+\/checkout$/,
 ];
 
 const SESSION_COOKIE_NAME = "connect.sid";

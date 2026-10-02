@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -32,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Badge, statusText } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -70,6 +71,8 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CreditNoteRefunds, type RefundableCreditNote } from "@/components/CreditNoteRefunds";
 import { messages as pageMessages } from "./CreditNotes.i18n";
+import { CreditNoteDialog } from "@/components/sales/CreditNoteDialog";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 
 const creditNoteLineSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
@@ -123,6 +126,10 @@ export default function CreditNotes() {
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickedInvoiceId, setPickedInvoiceId] = useState<string | null>(null);
+  const [creditInvoiceId, setCreditInvoiceId] = useState<string | null>(null);
+  const salesTr = salesMessages.useT();
   const [editingCreditNote, setEditingCreditNote] = useState<CreditNote | null>(null);
   const [refundTarget, setRefundTarget] = useState<RefundableCreditNote | null>(null);
 
@@ -144,7 +151,7 @@ export default function CreditNotes() {
       invoiceId: "",
       customerName: "",
       customerTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       reason: "",
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
@@ -223,7 +230,7 @@ export default function CreditNotes() {
       invoiceId: "",
       customerName: "",
       customerTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       reason: "",
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     });
@@ -240,7 +247,7 @@ export default function CreditNotes() {
         invoiceId: full.invoiceId || "",
         customerName: full.customerName,
         customerTrn: full.customerTrn || "",
-        date: new Date(full.date),
+        date: (pickerDate(full.date) as Date),
         reason: full.reason || "",
         lines: full.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
@@ -330,12 +337,10 @@ export default function CreditNotes() {
             if (!open) resetForm();
           }}
         >
-          <DialogTrigger asChild>
-            <Button disabled title={tr("createCreditNotesFromTheOriginal")}>
-              <Plus className="w-4 h-4 me-2" />
-              {tr("createFromInvoice")}
-            </Button>
-          </DialogTrigger>
+          <Button onClick={() => setPickerOpen(true)} data-testid="button-credit-from-invoice">
+            <Plus className="w-4 h-4 me-2" />
+            {tr("createFromInvoice")}
+          </Button>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
@@ -437,7 +442,7 @@ export default function CreditNotes() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -679,7 +684,7 @@ export default function CreditNotes() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge className={cn("capitalize", getStatusBadgeColor(creditNote.status))}>
-                          {creditNote.status}
+                          {statusText(creditNote.status)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
@@ -736,8 +741,8 @@ export default function CreditNotes() {
                           (t as any).creditNotesEmptyDesc ?? tr("issueACreditNoteToCorrect")
                         }
                         action={{
-                          label: (t as any).newCreditNote ?? tr("newCreditNote"),
-                          onClick: () => setDialogOpen(true),
+                          label: tr("createFromInvoice"),
+                          onClick: () => setPickerOpen(true),
                         }}
                         testId="empty-credit-notes"
                       />
@@ -757,6 +762,42 @@ export default function CreditNotes() {
           if (!open) setRefundTarget(null);
         }}
       />
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-w-md" data-testid="credit-invoice-picker">
+          <DialogHeader>
+            <DialogTitle>{salesTr("pickInvoiceToCredit")}</DialogTitle>
+            <DialogDescription>{salesTr("pickInvoiceToCreditHelp")}</DialogDescription>
+          </DialogHeader>
+          <Select value={pickedInvoiceId ?? undefined} onValueChange={setPickedInvoiceId}>
+            <SelectTrigger data-testid="select-credit-invoice">
+              <SelectValue placeholder={salesTr("selectInvoice")} />
+            </SelectTrigger>
+            <SelectContent>
+              {(invoices as Array<Invoice & { status?: string; invoiceType?: string }>)
+                .filter((i) => i.invoiceType !== "credit_note" && i.invoiceType !== "advance" && i.status && !["draft", "void", "cancelled"].includes(i.status))
+                .map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.number} - {i.customerName}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <Button
+            disabled={!pickedInvoiceId}
+            onClick={() => {
+              setCreditInvoiceId(pickedInvoiceId);
+              setPickerOpen(false);
+            }}
+            data-testid="button-continue-credit"
+          >
+            {salesTr("continueLabel")}
+          </Button>
+        </DialogContent>
+      </Dialog>
+      {selectedCompanyId && (
+        <CreditNoteDialog companyId={selectedCompanyId} invoiceId={creditInvoiceId} onClose={() => setCreditInvoiceId(null)} />
+      )}
     </div>
   );
 }

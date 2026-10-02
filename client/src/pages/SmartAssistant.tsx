@@ -88,9 +88,11 @@ export default function SmartAssistant() {
 
   // Get quick stats
   const { data: stats } = useQuery<{
+    period?: { kind: string; from: string; to: string };
     revenue: number;
     expenses: number;
     outstanding: number;
+    overdueReceivables?: number;
     totalInvoices: number;
     totalEntries: number;
   }>({
@@ -234,52 +236,66 @@ export default function SmartAssistant() {
 
       {/* Quick Stats */}
       {stats && messages.length === 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <Card className="bg-success-subtle border-success/30 ">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-success ">
-                <TrendingUp className="w-4 h-4" />
-                <span className="text-xs font-medium">{t.revenue}</span>
-              </div>
-              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.revenue || 0, "AED")}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="bg-danger-subtle border-destructive/30 ">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-destructive ">
-                <TrendingDown className="w-4 h-4" />
-                <span className="text-xs font-medium">{t.expenses}</span>
-              </div>
-              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.expenses || 0, "AED")}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="bg-warning-subtle border-warning/30 ">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-warning ">
-                <DollarSign className="w-4 h-4" />
-                <span className="text-xs font-medium">{t.outstanding}</span>
-              </div>
-              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.outstanding || 0, "AED")}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="bg-info-subtle border-info/30 ">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-info ">
-                <FileText className="w-4 h-4" />
-                <span className="text-xs font-medium">{t.invoices}</span>
-              </div>
-              <p dir="ltr" className="text-lg font-bold font-mono mt-1">
-                {stats.totalInvoices}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <>
+          {stats.period ? (
+            <p className="mb-2 text-xs text-muted-foreground" data-testid="assistant-stats-period">
+              {tr("statsPeriod", { from: stats.period.from, to: stats.period.to })}
+            </p>
+          ) : null}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <Card className="bg-success-subtle border-success/30 ">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-success ">
+                  <TrendingUp className="w-4 h-4" />
+                  <span className="text-xs font-medium">{t.revenue}</span>
+                </div>
+                <p dir="ltr" className="text-lg font-bold font-mono mt-1">
+                  {formatCurrency(stats.revenue || 0, "AED")}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-danger-subtle border-destructive/30 ">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-destructive ">
+                  <TrendingDown className="w-4 h-4" />
+                  <span className="text-xs font-medium">{t.expenses}</span>
+                </div>
+                <p dir="ltr" className="text-lg font-bold font-mono mt-1">
+                  {formatCurrency(stats.expenses || 0, "AED")}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-warning-subtle border-warning/30 ">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-warning ">
+                  <DollarSign className="w-4 h-4" />
+                  <span className="text-xs font-medium">{t.outstanding}</span>
+                </div>
+                <p dir="ltr" className="text-lg font-bold font-mono mt-1">
+                  {formatCurrency(stats.outstanding || 0, "AED")}
+                </p>
+                {stats.overdueReceivables ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    {tr("overdueAmount", {
+                      amount: formatCurrency(stats.overdueReceivables, "AED"),
+                    })}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+            <Card className="bg-info-subtle border-info/30 ">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-info ">
+                  <FileText className="w-4 h-4" />
+                  <span className="text-xs font-medium">{t.invoices}</span>
+                </div>
+                <p dir="ltr" className="text-lg font-bold font-mono mt-1">
+                  {stats.totalInvoices}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
 
       {/* Chat Area */}

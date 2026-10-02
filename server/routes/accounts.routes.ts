@@ -17,6 +17,26 @@ async function findAccountForUser(userId: string, accountId: string): Promise<Ac
   return undefined;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Phase 8 D4: `intercompanyCompanyId` names the group company on the other side of an intercompany account, for the
+ * consolidated statements. It must be a company other than the account's own, and one the user can access.
+ * Returns null when the value is fine (or absent / null), else the 422 body.
+ */
+async function invalidIntercompany(
+  userId: string,
+  ownCompanyId: string,
+  value: unknown
+): Promise<{ message: string; code: "INVALID_INTERCOMPANY" } | null> {
+  if (value === undefined || value === null) return null;
+  const bad = (message: string) => ({ message, code: "INVALID_INTERCOMPANY" as const });
+  if (typeof value !== "string" || !UUID_RE.test(value)) return bad("intercompanyCompanyId must be a company id or null.");
+  if (value === ownCompanyId) return bad("An intercompany account must name a different company than its own.");
+  if (!(await storage.hasCompanyAccess(userId, value))) return bad("You do not have access to the intercompany counterparty company.");
+  return null;
+}
+
 export function registerAccountRoutes(app: Express) {
   // =====================================
   // Account Routes
@@ -56,6 +76,9 @@ export function registerAccountRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      const icProblem = await invalidIntercompany(userId, companyId, req.body?.intercompanyCompanyId);
+      if (icProblem) return res.status(422).json(icProblem);
 
       const validated = insertAccountSchema.parse({ ...req.body, companyId });
 
@@ -103,7 +126,12 @@ export function registerAccountRoutes(app: Express) {
         }
       }
 
-      const updatedAccount = await storage.updateAccount(id, account.companyId, req.body);
+      const icProblem = await invalidIntercompany(userId, account.companyId, req.body?.intercompanyCompanyId);
+      if (icProblem) return res.status(422).json(icProblem);
+
+      // The owning company and the id are never taken from the body (an account cannot be moved to another company).
+      const { companyId: _ignoredCompany, id: _ignoredId, ...changes } = (req.body ?? {}) as Record<string, unknown>;
+      const updatedAccount = await storage.updateAccount(id, account.companyId, changes as Partial<Account>);
 
       // Account-type changes are especially sensitive — they re-classify how
       // every existing balance rolls into the trial balance / financial

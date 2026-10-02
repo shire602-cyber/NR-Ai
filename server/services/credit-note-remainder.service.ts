@@ -54,7 +54,7 @@ export function effectiveRevenueAccountId(
 const netOf = (l: RemainderLine) => D(l.quantity).abs().times(D(l.unitPrice));
 
 export interface RemainingByAccount {
-  /** Net (document currency) still standing per revenue account; always > 0. */
+  /** Net (document currency) still standing per revenue account; never 0, negative for a contra account (discounts). */
   accounts: Array<{ accountId: string; net: number }>;
   /** Output VAT (document currency) still standing; never negative. */
   vat: number;
@@ -94,10 +94,13 @@ export function remainingByAccount(args: {
 
   const accounts = order
     .map((accountId) => {
-      const rest = Decimal.max(0, posted.get(accountId)!.minus(credited.get(accountId) ?? 0));
+      const was = posted.get(accountId)!;
+      const left = was.minus(credited.get(accountId) ?? 0);
+      // A contra group (negative, e.g. discounts) shrinks towards zero from below, a normal one from above.
+      const rest = was.isNegative() ? Decimal.min(0, left) : Decimal.max(0, left);
       return { accountId, net: round2(rest).toNumber() };
     })
-    .filter((a) => a.net > 0);
+    .filter((a) => a.net !== 0);
   return { accounts, vat: round2(Decimal.max(0, vatPosted.minus(vatCredited))).toNumber() };
 }
 
@@ -107,7 +110,7 @@ export interface RemainingLine {
   vatRate: number;
   vatSupplyType?: string | null;
   revenueAccountId: string;
-  /** Net (document currency) of this original line still not credited. */
+  /** Net (document currency) of this original line still not credited; negative for a discount line. */
   net: number;
 }
 
@@ -123,20 +126,28 @@ export function remainingLines(args: {
   ctx: RevenueCtx;
 }): RemainingLine[] {
   const { originalLines, creditedLines, ctx } = args;
-  const key = (l: RemainderLine) => `${effectiveRevenueAccountId(l, ctx)}|${Number(l.vatRate)}`;
+  // Credit-note lines do not record which original line they came from, so credited amounts are
+  // consumed from the original lines sharing their (revenue account, VAT rate) and SIGN: a
+  // discount line (negative net) is only ever offset by a negative credited amount.
+  const key = (l: RemainderLine, net: Decimal) =>
+    `${effectiveRevenueAccountId(l, ctx)}|${Number(l.vatRate)}|${net.isNegative() ? "-" : "+"}`;
   const pool = new Map<string, Decimal>();
-  for (const c of creditedLines) pool.set(key(c), (pool.get(key(c)) ?? new Decimal(0)).plus(netOf(c)));
+  for (const c of creditedLines) {
+    const n = netOf(c);
+    pool.set(key(c, n), (pool.get(key(c, n)) ?? new Decimal(0)).plus(n.abs()));
+  }
 
   const out: RemainingLine[] = [];
   for (const o of originalLines) {
-    let net = netOf(o);
-    const k = key(o);
+    const signed = netOf(o);
+    const k = key(o, signed);
     const available = pool.get(k) ?? new Decimal(0);
-    const take = Decimal.min(net, available);
-    net = net.minus(take);
+    const take = Decimal.min(signed.abs(), available);
     pool.set(k, available.minus(take));
+    const leftAbs = signed.abs().minus(take);
+    const net = signed.isNegative() ? leftAbs.negated() : leftAbs;
     const rounded = net.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
-    if (rounded > 0) {
+    if (rounded !== 0) {
       out.push({
         originalLineId: o.id,
         description: o.description ?? "",
@@ -146,6 +157,37 @@ export function remainingLines(args: {
         net: rounded,
       });
     }
+  }
+  return out;
+}
+
+/**
+ * Quantity of each original line that live credit notes already took back (the credit dialog's "creditable" column).
+ * Derived from the net still left per line (remainingLines); a voided credit note is simply not among `creditedLines`.
+ */
+export function creditedQuantityByLine(args: {
+  originalLines: Array<RemainderLine & { id?: string; quantity?: number | string | null }>;
+  creditedLines: RemainderLine[];
+  ctx: RevenueCtx;
+}): Record<string, number> {
+  const left = new Map(remainingLines(args).map((r) => [r.originalLineId, r.net]));
+  // A line's own discount is a derived negative child line; the customer paid the discounted price per unit, and a
+  // credit line is entered at that price, so the credited quantity is the credited net over the discounted unit net.
+  const discountOf = new Map<string, Decimal>();
+  for (const l of args.originalLines as Array<RemainderLine & { parentLineId?: string | null }>) {
+    if (l.parentLineId) discountOf.set(l.parentLineId, (discountOf.get(l.parentLineId) ?? new Decimal(0)).plus(netOf(l)));
+  }
+  const out: Record<string, number> = {};
+  for (const o of args.originalLines) {
+    if (!o.id) continue;
+    const signed = netOf(o);
+    const quantity = new Decimal(o.quantity ?? 0);
+    if (signed.isZero() || quantity.lte(0)) continue;
+    const creditedNet = signed.minus(new Decimal(left.get(o.id) ?? 0));
+    const unit = signed.plus(discountOf.get(o.id) ?? 0).div(quantity);
+    if (creditedNet.lte(0) || unit.lte(0)) continue;
+    const credited = Decimal.min(quantity, creditedNet.div(unit)).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber();
+    if (credited > 0) out[o.id] = credited;
   }
   return out;
 }
@@ -192,6 +234,8 @@ export interface LedgerLine {
   accountId: string;
   debit: number;
   credit: number;
+  /** Phase 8 D2: a project-tagged leg is netted and reversed per (account, project), so the tag survives a void. */
+  projectId?: string | null;
 }
 
 /**
@@ -208,19 +252,22 @@ export function reverseToZero(
     vatAccountId?: string | null;
     labels: { revenue: string; vat: string; ar: string };
   }
-): JournalLine[] {
+): Array<JournalLine & { projectId?: string }> {
   const net = new Map<string, Decimal>();
   const order: string[] = [];
+  const keyOf = (l: LedgerLine) => (l.projectId ? `${l.accountId}|${l.projectId}` : l.accountId);
   for (const l of lines) {
-    if (!net.has(l.accountId)) {
-      net.set(l.accountId, new Decimal(0));
-      order.push(l.accountId);
+    const key = keyOf(l);
+    if (!net.has(key)) {
+      net.set(key, new Decimal(0));
+      order.push(key);
     }
-    net.set(l.accountId, net.get(l.accountId)!.plus(D(l.debit)).minus(D(l.credit)));
+    net.set(key, net.get(key)!.plus(D(l.debit)).minus(D(l.credit)));
   }
-  const out: JournalLine[] = [];
-  for (const accountId of order) {
-    const bal = round2(net.get(accountId)!);
+  const out: Array<JournalLine & { projectId?: string }> = [];
+  for (const key of order) {
+    const [accountId, projectId] = key.split("|");
+    const bal = round2(net.get(key)!);
     if (bal.isZero()) continue;
     const description =
       accountId === opts.arAccountId
@@ -231,8 +278,8 @@ export function reverseToZero(
     // Standing debit balance -> credit it back, and vice versa.
     out.push(
       bal.gt(0)
-        ? { accountId, debit: 0, credit: bal.toNumber(), description }
-        : { accountId, debit: bal.negated().toNumber(), credit: 0, description }
+        ? { accountId, debit: 0, credit: bal.toNumber(), description, ...(projectId ? { projectId } : {}) }
+        : { accountId, debit: bal.negated().toNumber(), credit: 0, description, ...(projectId ? { projectId } : {}) }
     );
   }
   return out;

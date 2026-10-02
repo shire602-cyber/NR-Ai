@@ -38,6 +38,11 @@ export const ACCOUNT_CODES = {
   INVENTORY_ADJUSTMENTS: "5210",
   /** Cost of Goods Sold (expense): weighted-average cost of inventory sold; created on demand for older charts. */
   COGS: "5200",
+  /** Employee Loans (asset): loans and salary advances to staff; created on demand for older charts. */
+  EMPLOYEE_LOANS: "1080",
+  /** Leave Pay Expense (expense) and Leave Pay Provision (liability): monthly accrual of unused annual leave; created on demand. */
+  LEAVE_PAY_EXPENSE: "5029",
+  LEAVE_PROVISION: "2037",
   /** Office equipment (fixed asset). */
   EQUIPMENT: "1210",
   /** Zero-rated sales (income). */
@@ -48,14 +53,28 @@ export const ACCOUNT_CODES = {
   REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */
   REVENUE_ALT: "4020",
-  /** Deferred Revenue / customer advances (holds invoice overpayments). */
+  /** 2050 Customer Credit (holds invoice overpayments until applied or refunded). */
   DEFERRED_REVENUE: "2050",
+  /** Customer Advances (liability): advance tax invoices and deposits until applied or refunded; created on demand. */
+  CUSTOMER_ADVANCES: "2055",
+  /** Payment Gateway Clearing (asset, cash-like): online card receipts until the provider pays out. */
+  GATEWAY_CLEARING: "1025",
+  /** Shipping Income (revenue): delivery charged on sales documents. */
+  SHIPPING_INCOME: "4035",
+  /** Late-fee income (revenue): compensatory late-payment fees; the chart's 4040 account. */
+  LATE_FEE_INCOME: "4040",
+  /** Discounts Given (contra-revenue): line and document discounts. */
+  DISCOUNTS_GIVEN: "4050",
+  /** Bank charges and fees (expense): payment gateway fees. */
+  GATEWAY_FEES: "5110",
   /** Employee Reimbursements Payable (owed to staff for approved expense claims). */
   EMP_REIMBURSEMENT_PAYABLE: "2045",
-  /** Foreign-exchange gain (income) — realised + unrealised FX differences. */
+  /** Foreign-exchange gain (income) — REALISED FX differences (settlements). */
   FX_GAIN: "4090",
-  /** Foreign-exchange loss (expense) — realised + unrealised FX differences. */
+  /** Foreign-exchange loss (expense) — REALISED FX differences (settlements). */
   FX_LOSS: "5140",
+  /** Unrealised exchange gain / (loss), one income account (credit = gain, debit = loss): revaluations only. Created on demand. */
+  FX_UNREALISED: "4095",
 } as const;
 
 /**

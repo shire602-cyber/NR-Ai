@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -457,6 +458,7 @@ export default function TeamManagement() {
                         variant="ghost"
                         onClick={() => handleEditMember(member)}
                         disabled={member.role === "owner"}
+                        aria-label={iconLabels.t("edit")}
                         data-testid={`button-edit-${member.id}`}
                       >
                         <Edit className="w-4 h-4" />
@@ -467,6 +469,7 @@ export default function TeamManagement() {
                         onClick={() => handleRemoveMember(member)}
                         disabled={member.role === "owner"}
                         className="text-destructive hover:text-destructive"
+                        aria-label={iconLabels.t("remove")}
                         data-testid={`button-remove-${member.id}`}
                       >
                         <Trash2 className="w-4 h-4" />

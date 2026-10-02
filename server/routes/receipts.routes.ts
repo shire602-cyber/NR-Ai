@@ -1,4 +1,6 @@
+import { isBlockedInputCategory } from "../services/blocked-input-vat";
 import { Router, type Express, type Request, type Response } from "express";
+import { assertNotBankRuleReceipt } from "../services/bank-rules.service";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -26,6 +28,7 @@ import {
 } from "../services/excel-export.service";
 // @ts-ignore
 import PDFDocument from "pdfkit";
+import { parseCalendarDay } from "../utils/date";
 
 const log = createLogger("receipts");
 
@@ -203,8 +206,8 @@ export function registerReceiptRoutes(app: Express) {
       // The client sends date as an ISO string; the Drizzle timestamp column
       // needs a Date object (string input crashes mapToDriverValue).
       if (receiptData.date && typeof receiptData.date === "string") {
-        const parsed = new Date(receiptData.date);
-        if (Number.isNaN(parsed.getTime())) {
+        const parsed = parseCalendarDay(receiptData.date);
+        if (!parsed) {
           return res.status(400).json({ message: "Invalid receipt date" });
         }
         receiptData.date = parsed;
@@ -384,8 +387,8 @@ export function registerReceiptRoutes(app: Express) {
 
       // ISO date string → Date for the Drizzle timestamp column.
       if (req.body.date && typeof req.body.date === "string") {
-        const parsed = new Date(req.body.date);
-        if (Number.isNaN(parsed.getTime())) {
+        const parsed = parseCalendarDay(req.body.date);
+        if (!parsed) {
           return res.status(400).json({ message: "Invalid receipt date" });
         }
         req.body.date = parsed;
@@ -395,6 +398,7 @@ export function registerReceiptRoutes(app: Express) {
       if (!before) {
         return res.status(404).json({ message: "Receipt not found" });
       }
+      await assertNotBankRuleReceipt(id);
       const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
       await recordAudit({
         userId,
@@ -438,6 +442,7 @@ export function registerReceiptRoutes(app: Express) {
         existing as { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
         "Receipt"
       );
+      await assertNotBankRuleReceipt(id);
 
       if (existing.imagePath) {
         await deleteReceiptImage(existing.imagePath);
@@ -539,6 +544,9 @@ export function registerReceiptRoutes(app: Express) {
       // Look up Input VAT (recoverable) and, for reverse-charge receipts, Output
       // VAT (payable) accounts by vatType to avoid hardcoded name matching.
       const isReverseCharge = !!(receipt as any).reverseCharge;
+      // Blocked input VAT (Art. 53, e.g. entertainment): the VAT is part of the expense, nothing goes to Input VAT (the
+      // 2-line entry below books expense = total). The VAT return leaves the receipt out of box 9 by the same rule.
+      const vatBlocked = !isReverseCharge && vatAmount > 0 && isBlockedInputCategory(receipt.category);
       let vatRecoverableAccount: Account | null = null;
       let vatPayableAccount: Account | null = null;
       if (vatAmount > 0) {
@@ -663,7 +671,7 @@ export function registerReceiptRoutes(app: Express) {
             subtotalForeign
           )
         );
-      } else if (vatAmount > 0 && vatRecoverableAccount) {
+      } else if (vatAmount > 0 && vatRecoverableAccount && !vatBlocked) {
         // 3-line entry: Debit Expense (subtotal), Debit VAT Recoverable (VAT), Credit Cash (total)
         journalLineInputs.push(
           withFx(

@@ -2,6 +2,7 @@
 // void rule of vat-document-effect.ts (used by the VAT 201, the autopilot and the firm workpaper
 // pull). Read-only; runs on whatever executor the caller has (the pool, or a filing transaction).
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { sql } from "drizzle-orm";
 import { periodYmd } from "./vat-period-status.service";
 import { neverDeclaredAmong } from "./vat-void-history.service";
@@ -22,6 +23,8 @@ export interface PeriodSalesInvoice extends VatSalesInvoiceRow {
   exchangeRate: number;
   customerName: string | null;
   customerTrn: string | null;
+  /** Emirate of the supply (invoices.emirate); null = the company's own emirate. */
+  emirate: string | null;
   voidedOn: string | null;
   voidedAtMs: number | null;
   /** Voided after its period, but the filed return that covers it never declared it. */
@@ -37,6 +40,16 @@ export interface PeriodSalesLine {
   vatSupplyType: string | null;
 }
 
+/**
+ * The return equals the ledger for every document the ledger posted. Issuing posts the revenue journal and only
+ * afterwards sets the status, so for a moment a document has a POSTED revenue entry and still says "draft". Such a
+ * document is an issued supply (its VAT is in the ledger): it is read as "sent" until the status catches up.
+ */
+const ISSUED_WHILE_DRAFT = sql.raw(`(i.status = 'draft' AND EXISTS (
+  SELECT 1 FROM journal_entries pje
+   WHERE pje.company_id = i.company_id AND pje.source = 'invoice' AND pje.source_id = i.id AND pje.status = 'posted'))`);
+const STATUS_AS_ISSUED = sql.raw(`(CASE WHEN i.status = 'draft' THEN 'sent' ELSE i.status END)`);
+
 /** Invoices dated in the period, plus older ones whose void falls in it (unsigned lines, no decision yet). */
 export async function fetchPeriodSalesCandidates(
   ex: Executor,
@@ -47,15 +60,15 @@ export async function fetchPeriodSalesCandidates(
   const start = periodYmd(periodStart);
   const end = periodYmd(periodEnd);
   const where = sql`
-    i.company_id = ${companyId} AND i.status <> 'draft' AND COALESCE(i.is_opening_balance, false) = false
-    AND ( (i.date::date >= ${start}::date AND i.date::date <= ${end}::date)
+    i.company_id = ${companyId} AND (i.status <> 'draft' OR ${ISSUED_WHILE_DRAFT}) AND COALESCE(i.is_opening_balance, false) = false
+    AND ( (${sql.raw(dubaiDaySql("i.date"))} >= ${start}::date AND ${sql.raw(dubaiDaySql("i.date"))} <= ${end}::date)
        OR (i.status IN ('void', 'cancelled') AND rev.d >= ${start}::date AND rev.d <= ${end}::date) )`;
   const lateral = sql.raw(VOID_DATE_LATERAL_SQL);
 
   const inv = rowsOf(
     await ex.execute(sql`
-      SELECT i.id, i.number, to_char(i.date, 'YYYY-MM-DD') AS date_ymd, i.status, i.invoice_type,
-             i.exchange_rate, i.customer_name, i.customer_trn, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
+      SELECT i.id, i.number, ${sql.raw(dubaiDayTextSql("i.date"))} AS date_ymd, ${STATUS_AS_ISSUED} AS status, i.invoice_type,
+             i.exchange_rate, i.customer_name, i.customer_trn, i.emirate, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
         FROM invoices i ${lateral}
        WHERE ${where}
        ORDER BY i.date, i.id`)
@@ -89,6 +102,7 @@ export async function fetchPeriodSalesCandidates(
       exchangeRate: Number(r.exchange_rate) > 0 ? Number(r.exchange_rate) : 1,
       customerName: r.customer_name ?? null,
       customerTrn: r.customer_trn ?? null,
+      emirate: r.emirate ?? null,
       voidedOn: r.voided_on ?? null,
       voidedAtMs: r.at_ms == null ? null : Number(r.at_ms),
       neverDeclared: declared.has(String(r.id)),
@@ -115,5 +129,6 @@ export async function loadPeriodSalesDocuments(
   const candidates = await fetchPeriodSalesCandidates(ex, companyId, periodStart, periodEnd);
   const selected = selectPeriodSalesDocuments({ ...candidates, periodStart, periodEnd });
   const rateByInvoiceId = new Map(selected.invoices.map((i) => [i.id, i.exchangeRate]));
-  return { ...selected, rateByInvoiceId };
+  const emirateByInvoiceId = new Map<string, string | null>(selected.invoices.map((i) => [i.id, i.emirate ?? null]));
+  return { ...selected, rateByInvoiceId, emirateByInvoiceId };
 }

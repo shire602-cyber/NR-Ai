@@ -15,15 +15,18 @@ const BOTTOM = 700; // leaves room for the signature block on the last page
  */
 export async function generateDeliveryNotePDF(
   invoice: Invoice,
-  lines: InvoiceLine[],
-  company: Company
+  allLines: InvoiceLine[],
+  company: Company,
+  options: { referenceLabel?: string; title?: string } = {}
 ): Promise<Buffer> {
+  // Goods only: discounts, delivery charges and advance deductions are money lines, not things handed over.
+  const lines = allLines.filter((l) => !l.lineKind || l.lineKind === "item");
   return new Promise((resolve, reject) => {
     try {
       const doc = createPdfDocument({
         size: "A4",
         margin: MARGIN,
-        info: { Title: `Delivery Note ${invoice.number}`, Author: company.name },
+        info: { Title: `${options.title ?? "Delivery Note"} ${invoice.number}`, Author: company.name },
       });
       const chunks: Buffer[] = [];
       doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -42,7 +45,7 @@ export async function generateDeliveryNotePDF(
       let y = 120;
       doc.rect(MARGIN, y, CONTENT_WIDTH, 50).fill("#F9FAFB").stroke("#E5E7EB");
       doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text("Ref. Invoice:", MARGIN + 10, y + 12);
+      doc.text(options.referenceLabel ?? "Ref. Invoice:", MARGIN + 10, y + 12);
       doc.font("Helvetica").text(invoice.number, MARGIN + 85, y + 12);
       doc.font("Helvetica-Bold").text("Date:", MARGIN + 10, y + 30);
       doc.font("Helvetica").text(formatPdfDate(invoice.date), MARGIN + 85, y + 30);
@@ -139,5 +142,26 @@ export async function generateDeliveryNotePDF(
     } catch (err) {
       reject(err);
     }
+  });
+}
+
+/** A delivery recorded against a sales order: same layout, no prices. */
+export async function generateSalesOrderDeliveryPDF(args: {
+  delivery: { number: string; date: Date | string; notes?: string | null };
+  salesOrder: { number: string; customerName: string; customerTrn?: string | null };
+  lines: Array<{ description: string; quantity: number | string }>;
+  company: Company;
+}): Promise<Buffer> {
+  const pseudoInvoice = {
+    number: args.delivery.number,
+    date: args.delivery.date,
+    customerName: args.salesOrder.customerName,
+    customerTrn: args.salesOrder.customerTrn ?? null,
+    customerAddress: null,
+  } as unknown as Invoice;
+  const pseudoLines = args.lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), lineKind: "item" })) as unknown as InvoiceLine[];
+  return generateDeliveryNotePDF(pseudoInvoice, pseudoLines, args.company, {
+    referenceLabel: `Order ${args.salesOrder.number} /`,
+    title: "Delivery Note",
   });
 }

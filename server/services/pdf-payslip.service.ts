@@ -20,6 +20,8 @@ export interface PayslipInput {
   periodMonth: number;
   periodYear: number;
   payDate?: Date | string | null;
+  /** The run is not approved yet: the slip is marked "DRAFT - not yet approved" (English and Arabic). */
+  draft?: boolean;
   item: {
     basicSalary: number | string;
     housingAllowance: number | string;
@@ -32,6 +34,11 @@ export interface PayslipInput {
     pensionEmployer: number | string;
     gratuityAccrual: number | string;
     netSalary: number | string;
+    /** Phase 8 D2: pay withheld for unpaid, half-pay and sick-tier leave, and the loan instalment recovered. */
+    leaveDeduction?: number | string | null;
+    loanDeduction?: number | string | null;
+    unpaidLeaveDays?: number | string | null;
+    halfPayLeaveDays?: number | string | null;
   };
 }
 
@@ -92,11 +99,17 @@ export async function generatePayslipPDF(input: PayslipInput): Promise<Buffer> {
       ].filter((r, i) => i === 0 || r.amount !== 0);
       const gross = earnings.reduce((s, r) => s + r.amount, 0);
 
+      const leaveNote = [
+        n(item.unpaidLeaveDays) > 0 ? `${n(item.unpaidLeaveDays)} unpaid day(s)` : "",
+        n(item.halfPayLeaveDays) > 0 ? `${n(item.halfPayLeaveDays)} half-pay day(s)` : "",
+      ].filter(Boolean).join(", ");
       const deductions: Row[] = [
         { en: "Deductions", ar: "خصومات", amount: n(item.deductions), note: item.deductionNotes },
         { en: "Employee Pension Contribution", ar: "اشتراك المعاش للموظف", amount: n(item.pensionEmployee) },
+        { en: "Leave Deduction", ar: "خصم الإجازة", amount: n(item.leaveDeduction), note: leaveNote || undefined },
+        { en: "Loan Instalment", ar: "قسط القرض", amount: n(item.loanDeduction) },
       ].filter((r) => r.amount !== 0);
-      const totalDeductions = n(item.deductions) + n(item.pensionEmployee);
+      const totalDeductions = n(item.deductions) + n(item.pensionEmployee) + n(item.leaveDeduction) + n(item.loanDeduction);
 
       // --- Header bar ---
       doc.rect(0, 0, PAGE_WIDTH, 100).fill("#1E40AF");
@@ -106,8 +119,16 @@ export async function generatePayslipPDF(input: PayslipInput): Promise<Buffer> {
       doc.fontSize(12).fillColor("#DBEAFE").font("Helvetica");
       doc.text("قسيمة الراتب", MARGIN, 57, { width: CONTENT_WIDTH, align: "right" });
 
+      // --- Draft banner: a slip of a run that is not approved yet is never mistaken for the issued one ---
+      if (input.draft) {
+        doc.rect(0, 100, PAGE_WIDTH, 22).fill("#B91C1C");
+        doc.fontSize(10).fillColor("#FFFFFF").font("Helvetica-Bold");
+        doc.text("DRAFT - not yet approved", MARGIN, 106, { width: CONTENT_WIDTH * 0.55, align: "left", lineBreak: false });
+        doc.fontSize(10).text("مسودة - لم تُعتمد بعد", MARGIN + CONTENT_WIDTH * 0.45, 105, { width: CONTENT_WIDTH * 0.55, align: "right", lineBreak: false });
+      }
+
       // --- Company details ---
-      let y = 112;
+      let y = input.draft ? 130 : 112;
       doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       if (company.trnVatNumber) {
         doc.text(`TRN: ${company.trnVatNumber}`, MARGIN, y);

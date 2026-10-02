@@ -1,4 +1,6 @@
+import { accountName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
+import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -29,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { useTranslation } from "@/lib/i18n";
+import { localizeJournalText } from "@/lib/journal-text";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
@@ -332,6 +335,7 @@ export default function AccountLedger() {
             variant="ghost"
             size="icon"
             onClick={() => navigate("/chart-of-accounts")}
+            aria-label={iconLabels.t("back")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -343,10 +347,8 @@ export default function AccountLedger() {
             >
               {isLoading ? (
                 <Skeleton className="h-8 w-48" />
-              ) : locale === "ar" && ledger?.account.nameAr ? (
-                ledger.account.nameAr
               ) : (
-                ledger?.account.nameEn || tr("accountLedger")
+                accountName(ledger?.account, locale) || tr("accountLedger")
               )}
             </h1>
             {isLoading ? (
@@ -386,6 +388,7 @@ export default function AccountLedger() {
             variant="outline"
             size="icon"
             onClick={() => refetch()}
+            aria-label={iconLabels.t("refresh")}
             data-testid="button-refresh"
           >
             <RefreshCw className="h-4 w-4" />
@@ -525,7 +528,7 @@ export default function AccountLedger() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className="truncate max-w-[300px]">
-                              {entry.description || entry.memo || "-"}
+                              {localizeJournalText(entry.description || entry.memo || "-", locale)}
                             </span>
                             <Badge variant="outline" className="shrink-0 text-xs">
                               {entry.source}

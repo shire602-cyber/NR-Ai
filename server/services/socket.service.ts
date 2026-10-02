@@ -1,9 +1,10 @@
 import { Server as SocketServer } from "socket.io";
 import type { Server as HttpServer } from "http";
-import jwt from "jsonwebtoken";
 import { getEnv, isProduction } from "../config/env";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
+import { verifyAccessJwt } from "../middleware/auth";
+import { isSessionActive } from "./sessions";
 import type { InsertNotification, Notification } from "../../shared/schema";
 
 const log = createLogger("socket");
@@ -66,7 +67,14 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
     }
 
     try {
-      const decoded = jwt.verify(rawToken, getEnv().JWT_SECRET) as { userId: string };
+      // Access tokens only (a refresh token must not open a socket), and a
+      // revoked session loses its sockets' next connection too.
+      const decoded = verifyAccessJwt(rawToken);
+      // A token confined to 2FA enrolment must not open a live data channel.
+      if (decoded.scope === "2fa_enrol") return next(new Error("Two-factor enrolment required"));
+      if (decoded.sid && !(await isSessionActive(decoded.sid))) {
+        return next(new Error("Session revoked"));
+      }
       const user = await storage.getUser(decoded.userId);
       if (!user || user.isActive === false) {
         return next(new Error("User not found"));

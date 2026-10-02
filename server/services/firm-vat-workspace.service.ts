@@ -1,3 +1,4 @@
+import { normalizeVatEmirate } from "./vat-emirate";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "../db";
@@ -11,6 +12,7 @@ import { classifyVatLineForReturn } from "./vat-supply-type";
 import { selectPeriodSalesDocuments } from "./vat-document-effect";
 import { fetchPeriodSalesCandidates } from "./vat-period-documents.service";
 import { loadVatJournalAdjustmentRows } from "./vat-adjustments.service";
+import { loadPeriodBills, loadPeriodVendorCredits, type PurchaseDocRow } from "./vat-period-purchases.service";
 import { summariseVatJournalAdjustments, type VatJournalLineRow } from "./vat-adjustments";
 import { buildVatRowJournalLines } from "./vat-workpaper-posting";
 import {
@@ -354,7 +356,8 @@ async function assertWorkpaperEditable(workpaper: VatWorkpaper): Promise<void> {
       "VAT_WORKPAPER_LOCKED"
     );
   }
-  await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd);
+  // Editing a workpaper, pulling its rows from the books and computing the return from it post nothing, so the period lock
+  // is not consulted here; posting a row to the ledger checks it (postVatWorkpaperRowToLedger).
 }
 
 export async function listVatWorkpapers(
@@ -442,7 +445,7 @@ export async function createVatWorkpaper(input: {
   if (!periodStart || !periodEnd) throw new ValidationError("Valid VAT period dates are required");
   if (periodEnd < periodStart)
     throw new ValidationError("VAT period end must be after period start");
-  await assertPeriodNotLocked(input.companyId, periodEnd);
+  // Creating or opening the workpaper of a period is a read of the books: a locked month does not stop it.
 
   const dueDate = parseDate(input.dueDate) ?? defaultVatDueDate(periodEnd);
   const [existing] = await db
@@ -926,8 +929,13 @@ export function mapBooksToVatWorkpaperRows(input: {
   periodEnd: Date;
   existingSourceIds: Set<string>;
   defaultVatRate?: number;
-  /** Lines of the period's manual journals on the VAT accounts (they become adjustment rows). */
+  /** Lines of the period's manual journals on the VAT accounts (they become adjustment rows, or sale rows). */
   vatJournalLines?: VatJournalLineRow[];
+  /**
+   * The period's vendor bills and vendor credits, as the VAT return reads them (vat-period-purchases.service.ts):
+   * AED amounts, a credit negative. Bills land as box 9 rows (box 10 and box 3 when reverse charge).
+   */
+  purchaseDocs?: PurchaseDocRow[];
 }): VatWorkpaperRowInput[] {
   const {
     invoices,
@@ -991,7 +999,8 @@ export function mapBooksToVatWorkpaperRows(input: {
       documentDate: reversal && invoice.voidedOn ? invoice.voidedOn : invoice.date,
       counterpartyName: invoice.customerName ?? null,
       counterpartyTrn: invoice.customerTrn ?? null,
-      emirate: companyEmirate,
+      // the emirate of the supply: the document's own, else the company's (box 1a-1g)
+      emirate: normalizeVatEmirate((invoice as { emirate?: string | null }).emirate) ?? companyEmirate,
       status: "draft" as const,
       sourceMethod: "generated" as const,
       sourceDocumentType: "invoice",
@@ -1029,6 +1038,46 @@ export function mapBooksToVatWorkpaperRows(input: {
   // VAT 201 and the autopilot): one manual_adjustment row per journal and side, in the adjustment
   // column, carrying the journal number and its description.
   const journalAdjustments = summariseVatJournalAdjustments(input.vatJournalLines ?? [], companyEmirate);
+  // A manual journal that credits revenue and output VAT together is a taxable SALE: a box 1 row (amount and VAT),
+  // like the return reports it, and not also an adjustment.
+  for (const sale of journalAdjustments.sales) {
+    if (existingSourceIds.has(sale.entryId)) continue;
+    rows.push({
+      rowCategory: "standard_sale",
+      invoiceNumber: sale.entryNumber,
+      documentDate: sale.date,
+      counterpartyName: null,
+      counterpartyTrn: null,
+      emirate: companyEmirate,
+      taxableAmount: sale.amount,
+      vatAmount: sale.vat,
+      status: "draft",
+      sourceMethod: "generated",
+      sourceDocumentType: "journal_entry",
+      sourceDocumentId: sale.entryId,
+      notes: `${PULL_AUDIT_NOTE} - taxable sale recorded by manual journal ${sale.entryNumber}: ${sale.description || "(no description)"}`,
+    });
+  }
+  // A manual journal that debits an expense (or fixed asset) and input VAT together is a PURCHASE: a box 9 row (amount and VAT)
+  // like a bill. A blocked category (Art. 53) counts nowhere and gets no row.
+  for (const purchase of journalAdjustments.purchases) {
+    if (purchase.blocked || existingSourceIds.has(purchase.entryId)) continue;
+    rows.push({
+      rowCategory: "standard_expense",
+      invoiceNumber: purchase.entryNumber,
+      documentDate: purchase.date,
+      counterpartyName: null,
+      counterpartyTrn: null,
+      emirate: companyEmirate,
+      taxableAmount: purchase.amount,
+      vatAmount: purchase.vat,
+      status: "draft",
+      sourceMethod: "generated",
+      sourceDocumentType: "journal_entry",
+      sourceDocumentId: purchase.entryId,
+      notes: `${PULL_AUDIT_NOTE} - purchase recorded by manual journal ${purchase.entryNumber}: ${purchase.description || "(no description)"}`,
+    });
+  }
   for (const adj of journalAdjustments.lines) {
     if (existingSourceIds.has(adj.entryId)) continue;
     const why = `Manual VAT journal ${adj.entryNumber}: ${adj.description || "(no description)"}`;
@@ -1074,12 +1123,34 @@ export function mapBooksToVatWorkpaperRows(input: {
     });
   }
 
+  // Vendor bills and vendor credits: the same rows the VAT return's boxes 9, 10 and 3 add up (a credit is negative).
+  for (const doc of input.purchaseDocs ?? []) {
+    if (existingSourceIds.has(doc.id)) continue;
+    const base = {
+      invoiceNumber: doc.number,
+      documentDate: doc.date,
+      counterpartyName: doc.vendor,
+      counterpartyTrn: doc.vendorTrn,
+      emirate: companyEmirate,
+      taxableAmount: toMoney(doc.net),
+      vatAmount: toMoney(doc.vat),
+      status: "draft" as const,
+      sourceMethod: "generated" as const,
+      sourceDocumentType: doc.kind === "vendor_credit" ? "vendor_credit_note" : "vendor_bill",
+      sourceDocumentId: doc.id,
+      notes: PULL_AUDIT_NOTE,
+    };
+    rows.push({ ...base, rowCategory: doc.reverseCharge ? "reverse_charge_input" : "standard_expense" });
+    // Reverse charge is self-accounted: the return also declares it as output (box 3), so the workspace does too.
+    if (doc.reverseCharge) rows.push({ ...base, rowCategory: "reverse_charge_output" });
+  }
+
   return rows;
 }
 
 /**
  * Populates a workpaper from the client's actual books for its period —
- * issued invoices (split standard / zero-rated / exempt) and posted receipts.
+ * issued invoices (split standard / zero-rated / exempt), posted receipts, vendor bills and vendor credits.
  * Documents already pulled into this workpaper are skipped, so the action is
  * safe to repeat as new documents arrive during the period.
  */
@@ -1118,11 +1189,19 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   const invoiceLines = candidates.lines as unknown as BookInvoiceLine[];
 
   const vatJournalLines = await loadVatJournalAdjustmentRows(db, workpaper.companyId, periodStart, periodEnd);
+  // Vendor bills and credits through the VAT return's own loaders, so the workspace equals the return.
+  const fromDay = periodStart.toISOString().slice(0, 10);
+  const toDay = periodEnd.toISOString().slice(0, 10);
+  const purchaseDocs = [
+    ...(await loadPeriodBills(db, workpaper.companyId, fromDay, toDay)),
+    ...(await loadPeriodVendorCredits(db, workpaper.companyId, fromDay, toDay)),
+  ];
   const rows = mapBooksToVatWorkpaperRows({
     invoices,
     invoiceLines,
     receipts,
     vatJournalLines,
+    purchaseDocs,
     companyEmirate: normalizeEmirate(company?.emirate),
     periodStart,
     periodEnd,
