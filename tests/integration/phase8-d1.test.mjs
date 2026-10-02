@@ -764,7 +764,7 @@ async function onlinePayments() {
   const pub1 = await api("GET", `/api/public/invoices/${share}`);
   ok("public invoice now offers Pay now", pub1.json?.onlinePayment?.configured === true && pub1.json?.onlinePayment?.payable === true && pub1.json?.onlinePayment?.allowPartial === false, pub1.json?.onlinePayment);
   const co1 = await publicPost(`/api/public/invoices/${share}/checkout`, {});
-  ok("checkout returns a payment URL", co1.status === 200 && /^https:\/\//.test(co1.json?.url || ""), co1.text?.slice(0, 200));
+  ok("checkout returns a payment URL", co1.status === 200 && /^https?:\/\/[^/]+\/(api\/public\/fake-pay\/cs_fake_|c\/)/.test(co1.json?.url || ""), co1.text?.slice(0, 200));
   const link1 = (await db.query(`SELECT * FROM payment_links WHERE invoice_id = $1 AND status = 'open'`, [inv.id])).rows;
   ok("one open payment link for 997.50", link1.length === 1 && n(link1[0].amount) === 997.5, link1);
   const co1b = await publicPost(`/api/public/invoices/${share}/checkout`, {});
@@ -911,7 +911,7 @@ async function onlinePayments() {
   const payX = await api("POST", `/api/portal/${portalX}/invoices/${iy.id}/checkout`, { body: {} });
   ok("portal: contact X's token cannot pay Y's invoice (404)", payX.status === 404, payX.text?.slice(0, 200));
   const payY = await api("POST", `/api/portal/${portalY}/invoices/${iy.id}/checkout`, { body: {} });
-  ok("portal: contact Y's token can start the payment", payY.status === 200 && /^https:/.test(payY.json?.url || ""), payY.text?.slice(0, 200));
+  ok("portal: contact Y's token can start the payment", payY.status === 200 && /^https?:\/\/[^/]+\/(api\/public\/fake-pay\/|c\/)/.test(payY.json?.url || ""), payY.text?.slice(0, 200));
   const pdfY = await api("GET", `/api/portal/${portalX}/invoices/${iy.id}/pdf`, { raw: true });
   ok("portal: contact X cannot download Y's invoice PDF (403)", pdfY.status === 403, pdfY.status);
 }

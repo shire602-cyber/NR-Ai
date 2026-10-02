@@ -25,6 +25,7 @@ import { createLogger } from "../config/logger";
 import { LOCK_NS, withDocumentLock } from "./document-lock";
 import { canQuoteTransition, isQuoteExpiredByDate, quoteContentHash } from "./quote-state-machine";
 import { assertEmailSent, emailStatus, EMAIL_NOT_CONFIGURED_MESSAGE, escapeHtml, sendEmail } from "./email.service";
+import { bilingualSubject, bilingualText, htmlSections, localized, tx } from "./email-i18n";
 import { pdfFieldsFor } from "./custom-fields.service";
 import { uaeTodayYmd } from "./late-fee.service";
 
@@ -108,12 +109,14 @@ export async function sendQuote(args: {
     if (!company) throw new Error("Company not found");
     const link = `${(args.origin || "").replace(/\/$/, "")}${shareUrl}`;
     const intro = args.message ? `${args.message}\n\n` : "";
-    const body = `${intro}Please review quote ${updated.number} from ${company.name} and accept or decline it online:\n${link}`;
+    // Arabic, then English (email-i18n.ts); the sender's own message stays as written.
+    const request = localized("quoteBody", { number: updated.number, company: company.name });
+    const body = `${intro}${bilingualText({ en: `${request.en.replace(/<\/?strong>/g, "")}\n${link}`, ar: `${request.ar.replace(/<\/?strong>/g, "")}\n${link}` })}`;
     const html =
       `${args.message ? `<p>${escapeHtml(args.message).replace(/\n/g, "<br>")}</p>` : ""}` +
-      `<p>Please review quote <strong>${escapeHtml(updated.number)}</strong> from ${escapeHtml(company.name)} and accept or decline it online:</p>` +
-      `<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>`;
-    assertEmailSent(await sendEmail(to, `Quote ${updated.number} from ${company.name}`, body, { fromName: company.name, html }));
+      htmlSections(null, (lang) => `<p>${tx("quoteBody", lang, { number: escapeHtml(updated.number), company: escapeHtml(company.name) })}</p>`) +
+      `<p dir="ltr"><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>`;
+    assertEmailSent(await sendEmail(to, bilingualSubject(localized("quoteSubject", { number: updated.number, company: company.name })), body, { fromName: company.name, html }));
     result.emailed = true;
   } catch (err: any) {
     result.emailError = err?.message || "The email could not be sent.";

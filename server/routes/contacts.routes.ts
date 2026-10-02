@@ -9,6 +9,7 @@ import { insertCustomerContactSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { checkPriceListsForCompany } from "../services/price-list.service";
 import { pool } from "../db";
+import { recordAudit } from "../services/audit.service";
 
 const log = createLogger("contacts");
 
@@ -93,6 +94,11 @@ function mapContactImportRow(row: Record<string, any>): Record<string, string> {
   };
 }
 
+/** The parts of a contact an auditor cares about (identity, tax number, type); not the portal token. */
+function contactAuditView(c: any) {
+  return { name: c?.name ?? null, type: c?.contactType ?? null, email: c?.email ?? null, trn: c?.trnNumber ?? null, isActive: c?.isActive ?? null, paymentTerms: c?.paymentTerms ?? null };
+}
+
 export function registerContactRoutes(app: Express) {
   // =====================================
   // Customer Contacts Routes (for Customer users)
@@ -172,6 +178,16 @@ export function registerContactRoutes(app: Express) {
       }
 
       const contact = await storage.createCustomerContact(contactData as any);
+      await recordAudit({
+        userId,
+        companyId,
+        action: "contact.create",
+        entityType: "customer_contact",
+        entityId: contact.id,
+        before: null,
+        after: contactAuditView(contact),
+        req,
+      });
       res.json(contact);
     })
   );
@@ -420,6 +436,16 @@ export function registerContactRoutes(app: Express) {
       }
       // S-L3: scope the write to the company.
       const contact = await storage.updateCustomerContact(id, updateData as any, companyId);
+      await recordAudit({
+        userId,
+        companyId,
+        action: "contact.update",
+        entityType: "customer_contact",
+        entityId: id,
+        before: contactAuditView(existing),
+        after: contactAuditView(contact),
+        req,
+      });
       res.json(contact);
     })
   );
@@ -445,6 +471,7 @@ export function registerContactRoutes(app: Express) {
       }
 
       await storage.deleteCustomerContact(id, companyId); // S-L3: tenant-scoped delete
+      await recordAudit({ userId, companyId, action: "contact.delete", entityType: "customer_contact", entityId: id, before: contactAuditView(existing), after: null, req });
       res.json({ message: "Contact deleted successfully" });
     })
   );

@@ -3,9 +3,10 @@
 
 import Decimal from "decimal.js";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { computeCtComputation, type CtBridgeAdjustment } from "../../../shared/ct-workpaper";
+import { CT_ADJUSTMENT_CATEGORIES, computeCtComputation, type CtBridgeAdjustment } from "../../../shared/ct-workpaper";
 import { computeVatReturnForPeriod } from "../../services/vat-return-compute.service";
 import { loadPeriodSalesDocuments } from "../../services/vat-period-documents.service";
+import { loadVatJournalAdjustments } from "../../services/vat-adjustments.service";
 import { loadPeriodPurchases, totalPurchases, type PurchaseDocKind } from "../../services/vat-period-purchases.service";
 import { aggregateReturnSalesLines, allocateReturnSalesLines } from "../../services/vat-sales-lines";
 import { round2 } from "../../services/financial-statements";
@@ -164,6 +165,30 @@ async function vatAuditSales(ctx: ReportContext): Promise<ReportOutput> {
       )
     );
   });
+  // Taxable sales recorded by manual journal (Cr revenue + Cr 2020, no document): supplies of the return too (box 1).
+  const journalSales = (await loadVatJournalAdjustments(snapshotExecutor(ctx.q), ctx.companyId, from, to, ctx.company.emirate)).sales;
+  for (const sale of journalSales) {
+    buckets.standard.amount = buckets.standard.amount.plus(sale.amount);
+    buckets.standard.vat = buckets.standard.vat.plus(sale.vat);
+    rows.push(
+      detail(
+        `journal:${sale.entryId}`,
+        {
+          date: sale.date,
+          number: `${pick(ctx, "Journal", "قيد")} ${sale.entryNumber}`,
+          customer: "",
+          trn: "",
+          description: sale.description,
+          supply: pick(ctx, SUPPLY_LABEL.standard[0], SUPPLY_LABEL.standard[1]),
+          emirate: ctx.company.emirate ?? "",
+          rate: sale.amount === 0 ? round2(UAE_VAT_RATE * 100) : round2((sale.vat / sale.amount) * 100),
+          amount: sale.amount,
+          vat: sale.vat,
+        },
+        { target: "journal_entry", id: sale.entryId }
+      )
+    );
+  }
   const subtotals = (["standard", "zero_rated", "exempt", "excluded"] as const)
     .filter((k) => !buckets[k].amount.isZero() || !buckets[k].vat.isZero())
     .map((k) => subtotal(`total:${k}`, { description: pick(ctx, SUPPLY_LABEL[k][0], SUPPLY_LABEL[k][1]), amount: buckets[k].amount.toNumber(), vat: buckets[k].vat.toNumber() }));
@@ -197,13 +222,15 @@ const KIND_LABEL: Record<PurchaseDocKind, [string, string]> = {
   bill: ["Bill", "فاتورة مورد"],
   vendor_credit: ["Vendor credit", "إشعار دائن مورد"],
   expense_claim: ["Expense claim", "مطالبة مصروفات"],
+  journal: ["Journal", "قيد يومية"],
 };
 /** Where a purchase row leads, by document kind. The id is the document's own id (a claim row carries its claim, not the item). */
-const KIND_DRILL: Record<PurchaseDocKind, "bill" | "vendor_credit" | "expense_claim" | "receipt"> = {
+const KIND_DRILL: Record<PurchaseDocKind, "bill" | "vendor_credit" | "expense_claim" | "receipt" | "journal_entry"> = {
   bill: "bill",
   vendor_credit: "vendor_credit",
   expense_claim: "expense_claim",
   receipt: "receipt",
+  journal: "journal_entry",
 };
 
 async function vatAuditPurchases(ctx: ReportContext): Promise<ReportOutput> {
@@ -227,10 +254,13 @@ async function vatAuditPurchases(ctx: ReportContext): Promise<ReportOutput> {
         number: d.number ?? "",
         vendor: d.vendor ?? "",
         trn: d.vendorTrn ?? "",
-        treatment: d.reverseCharge ? pick(ctx, "Reverse charge", "احتساب عكسي") : pick(ctx, "Standard", "عادي"),
+        treatment: d.blocked
+          ? pick(ctx, "Blocked (Art. 53)", "محظور (المادة 53)")
+          : d.reverseCharge ? pick(ctx, "Reverse charge", "احتساب عكسي") : pick(ctx, "Standard", "عادي"),
         net: d.reverseCharge ? null : net,
         vat: d.reverseCharge ? null : vat,
-        recoverable: d.reverseCharge ? null : round2(vat * recoverable),
+        // blocked input VAT is never recoverable: it is part of the expense and outside box 9
+        recoverable: d.reverseCharge ? null : d.blocked ? 0 : round2(vat * recoverable),
         rcNet: d.reverseCharge ? net : null,
         rcVat: d.reverseCharge ? vat : null,
       },
@@ -238,6 +268,13 @@ async function vatAuditPurchases(ctx: ReportContext): Promise<ReportOutput> {
     );
   });
   const t = totalPurchases(docs);
+  const purchaseWarnings: string[] = [];
+  if (exempt > 0) purchaseWarnings.push(pick(ctx, `Partial exemption: ${round2(recoverable * 100)}% of input VAT is recoverable.`, `إعفاء جزئي: ${round2(recoverable * 100)}% من ضريبة المدخلات قابلة للاسترداد.`));
+  if (docs.some((d) => d.blocked)) {
+    purchaseWarnings.push(
+      pick(ctx, "Blocked input VAT (Art. 53, e.g. entertainment) is listed but is not part of the totals or box 9: it is part of the expense.", "ضريبة المدخلات المحظورة (المادة 53، مثل الضيافة) مدرجة لكنها ليست ضمن الإجماليات ولا الخانة 9: فهي جزء من المصروف.")
+    );
+  }
   return {
     rows,
     totals: {
@@ -247,7 +284,7 @@ async function vatAuditPurchases(ctx: ReportContext): Promise<ReportOutput> {
       rcNet: round2(t.reverseChargeAmount),
       rcVat: round2(t.reverseChargeVatGross),
     },
-    warnings: exempt > 0 ? [pick(ctx, `Partial exemption: ${round2(recoverable * 100)}% of input VAT is recoverable.`, `إعفاء جزئي: ${round2(recoverable * 100)}% من ضريبة المدخلات قابلة للاسترداد.`)] : undefined,
+    warnings: purchaseWarnings.length ? purchaseWarnings : undefined,
   };
 }
 
@@ -344,10 +381,10 @@ const BRIDGE_AR: Record<string, string> = {
   expenses: "إجمالي المصروفات",
   accounting_profit: "الربح المحاسبي / (الخسارة)",
   adjusted_taxable_income: "الدخل الخاضع للضريبة قبل تخفيف الخسائر",
-  small_business_relief: "إعفاء الأعمال الصغيرة: الدخل الخاضع للضريبة يُعتبر صفرًا",
+  small_business_relief: "إعفاء الأعمال الصغيرة المختار (القرار الوزاري 73/2023؛ إيرادات حتى 3,000,000 درهم): الدخل الخاضع للضريبة يُعتبر صفرًا",
   loss_relief: "الخسائر الضريبية المستخدمة",
   taxable_income: "الدخل الخاضع للضريبة",
-  zero_band: "شريحة 0٪ (أول 375,000 درهم)",
+  zero_band: "شريحة 0٪ (المادة 3: أول 375,000 درهم من الدخل الخاضع للضريبة)",
   taxable_amount: "الدخل الخاضع بنسبة 9٪",
   tax_payable: "ضريبة الشركات المستحقة",
   legacy_deductions: "خصومات أخرى",
@@ -355,7 +392,8 @@ const BRIDGE_AR: Record<string, string> = {
 
 function bridgeRows(ctx: ReportContext, bridge: Array<{ key: string; label: string; amount: number }>) {
   return bridge.map((line) => {
-    const name = ctx.params.lang === "ar" && BRIDGE_AR[line.key] ? BRIDGE_AR[line.key] : line.label;
+    const adjCategory = line.key.startsWith("adj_") ? (Object.keys(CT_ADJUSTMENT_CATEGORIES).find((c) => line.key.startsWith(`adj_${c}_`)) as keyof typeof CT_ADJUSTMENT_CATEGORIES | undefined) : undefined;
+    const name = ctx.params.lang === "ar" ? (BRIDGE_AR[line.key] ?? (adjCategory ? CT_ADJUSTMENT_CATEGORIES[adjCategory].labelAr : line.label)) : line.label;
     const emphasised = ["accounting_profit", "taxable_income", "tax_payable"].includes(line.key);
     return (emphasised ? subtotal : detail)(`bridge:${line.key}`, { name, amount: line.amount });
   });
@@ -365,17 +403,24 @@ async function corporateTaxEstimate(ctx: ReportContext): Promise<ReportOutput> {
   const { from, to } = ctx.window as { from: string; to: string };
   // Accounting profit before the corporate-tax charge itself (the accrual is left out).
   const p = await periodProfit(ctx.q, ctx.companyId, from, to, KPI_EXCLUDED_SOURCES);
-  const last = (
+  // The election belongs to the tax period: the saved return covering these dates carries it (and its add-backs and deductions),
+  // so the estimate is the return's computation on the books' figures. No return yet: no election, no adjustments.
+  const saved = (
     await ctx.q.query(
-      `SELECT small_business_relief FROM corporate_tax_returns WHERE company_id = $1 AND tax_period_end < $2::date ORDER BY tax_period_end DESC LIMIT 1`,
-      [ctx.companyId, to]
+      `SELECT small_business_relief, workpaper, loss_brought_forward FROM corporate_tax_returns
+        WHERE company_id = $1 AND tax_period_start::date <= $3::date AND tax_period_end::date >= $2::date AND COALESCE(is_amendment, false) = false
+          AND status <> 'void' ORDER BY tax_period_end DESC, created_at DESC LIMIT 1`,
+      [ctx.companyId, from, to]
     )
   ).rows[0];
+  const savedWp = (saved?.workpaper ?? {}) as { adjustments?: CtBridgeAdjustment[]; sbrElected?: boolean };
   const exceeded = await storage.getCtPriorPeriodRevenueExceededCap(ctx.companyId, new Date(from));
   const computation = computeCtComputation({
     totalRevenue: p.revenue,
     totalExpenses: p.expenses,
-    smallBusinessReliefElected: last?.small_business_relief === true,
+    adjustments: savedWp.adjustments ?? [],
+    lossBroughtForward: Number(saved?.loss_brought_forward) || 0,
+    smallBusinessReliefElected: typeof savedWp.sbrElected === "boolean" ? savedWp.sbrElected : saved?.small_business_relief === true,
     priorPeriodsExceededRevenueCap: exceeded,
     taxPeriodEnd: to,
   });
@@ -407,7 +452,7 @@ async function ctWorkpaper(ctx: ReportContext): Promise<ReportOutput> {
   if (!ret) {
     return { rows: [], warnings: [pick(ctx, "No corporate tax return exists for this period yet.", "لا يوجد إقرار ضريبة شركات لهذه الفترة بعد.")] };
   }
-  const wp = (ret.workpaper ?? {}) as { adjustments?: CtBridgeAdjustment[]; computation?: { smallBusinessRelief?: { elected?: boolean } } };
+  const wp = (ret.workpaper ?? {}) as { adjustments?: CtBridgeAdjustment[]; sbrElected?: boolean; computation?: { smallBusinessRelief?: { elected?: boolean } } };
   const exceeded = await storage.getCtPriorPeriodRevenueExceededCap(ctx.companyId, new Date(`${ret.ps}T00:00:00Z`), String(ret.id));
   const computation = computeCtComputation({
     totalRevenue: Number(ret.total_revenue) || 0,
@@ -415,7 +460,7 @@ async function ctWorkpaper(ctx: ReportContext): Promise<ReportOutput> {
     totalDeductions: Number(ret.total_deductions) || 0,
     adjustments: wp.adjustments ?? [],
     lossBroughtForward: Number(ret.loss_brought_forward) || 0,
-    smallBusinessReliefElected: wp.computation?.smallBusinessRelief?.elected ?? ret.small_business_relief === true,
+    smallBusinessReliefElected: typeof wp.sbrElected === "boolean" ? wp.sbrElected : (wp.computation?.smallBusinessRelief?.elected ?? ret.small_business_relief === true),
     priorPeriodsExceededRevenueCap: exceeded,
     exemptionThreshold: Number(ret.exemption_threshold) || undefined,
     taxRate: Number(ret.tax_rate) || undefined,

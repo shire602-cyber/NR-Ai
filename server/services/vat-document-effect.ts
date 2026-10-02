@@ -68,7 +68,7 @@ export function vatDocumentEffectForPeriod(args: {
  * when there is none; `rev.at_ms` is the instant (epoch ms) the reversal was recorded.
  */
 export const VOID_DATE_LATERAL_SQL = `LEFT JOIN LATERAL (
-  SELECT MIN(je.date::date) AS d,
+  SELECT MIN(((je.date) + INTERVAL '4 hours')::date) AS d,
          (extract(epoch from MIN(je.created_at)) * 1000)::float8 AS at_ms
     FROM journal_entries je
     JOIN journal_entries orig ON orig.id = je.reversed_entry_id

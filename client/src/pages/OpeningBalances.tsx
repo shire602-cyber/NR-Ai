@@ -33,6 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { useComplianceText } from "@/lib/i18n-compliance";
 import { messages as pageMessages } from "./OpeningBalances.i18n";
+import { OpeningStockCard, openingStockPayload, type OpeningStock } from "@/components/inventory/OpeningStockCard";
 
 interface OverviewAccount {
   id: string;
@@ -117,6 +118,7 @@ export default function OpeningBalances() {
   const [grid, setGrid] = useState<Record<string, { debit: string; credit: string }>>({});
   const [invoices, setInvoices] = useState<DocRow[]>([]);
   const [bills, setBills] = useState<DocRow[]>([]);
+  const [stock, setStock] = useState<OpeningStock>({});
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewedFor, setPreviewedFor] = useState<string>("");
   const [reverseOpen, setReverseOpen] = useState(false);
@@ -169,8 +171,18 @@ export default function OpeningBalances() {
   });
 
   const postMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload),
+    mutationFn: async () => {
+      const posted = await apiRequest("POST", `/api/companies/${companyId}/opening-balances`, payload);
+      // Opening stock by item: the product update sets quantity and cost, and the server journals the
+      // value to Inventory (Dr 1070 / Cr Opening Balance Equity).
+      for (const row of openingStockPayload(stock)) {
+        await apiRequest("PATCH", `/api/products/${row.productId}`, { currentStock: row.quantity, costPrice: row.unitCost });
+      }
+      return posted;
+    },
     onSuccess: () => {
+      setStock({});
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "products"] });
       queryClient.invalidateQueries({ queryKey: overviewKey });
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal"] });
       toast({ title: c.obPosted });
@@ -561,6 +573,13 @@ export default function OpeningBalances() {
           )}
         </CardContent>
       </Card>
+
+      <OpeningStockCard
+        companyId={companyId}
+        value={stock}
+        onChange={setStock}
+        gridStockAmount={Math.max(num(grid["1070"]?.debit ?? ""), num(grid["1070"]?.credit ?? ""))}
+      />
 
       <Card>
         <CardHeader>

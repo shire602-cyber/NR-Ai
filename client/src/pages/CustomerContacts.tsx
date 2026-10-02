@@ -21,7 +21,10 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  MoreHorizontal,
+  Wallet,
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +70,7 @@ import type { CustomerContact } from "@shared/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { CustomerStatementDialog } from "@/components/CustomerStatementDialog";
+import { CustomerCreditDialog } from "@/components/sales/CustomerCreditDialog";
 import { VendorStatementDialog } from "@/components/VendorStatementDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { messages as pageMessages } from "./CustomerContacts.i18n";
@@ -291,6 +295,7 @@ function ContactForm({
 
 export default function CustomerContacts() {
   const tr = pageMessages.useT();
+  const salesTr = salesMessages.useT();
 
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -303,7 +308,10 @@ export default function CustomerContacts() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [editContact, setEditContact] = useState<CustomerContact | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  // a new key per opening gives the form fresh state, so nothing typed for the previous contact is still there
+  const [addFormKey, setAddFormKey] = useState(0);
   const [statementContact, setStatementContact] = useState<CustomerContact | null>(null);
+  const [creditContact, setCreditContact] = useState<CustomerContact | null>(null);
   const [vendorStatementContact, setVendorStatementContact] = useState<CustomerContact | null>(null);
   const [typeFilter, setTypeFilter] = useState<"all" | "customer" | "vendor">("all");
   const [portalLinkDialog, setPortalLinkDialog] = useState<{
@@ -585,27 +593,41 @@ export default function CustomerContacts() {
         testId="text-contacts-title"
         actions={
           <>
-            <Button
-              variant="outline"
-              onClick={downloadTemplate}
-              data-testid="button-download-template"
-            >
-              <Download className="w-4 h-4 me-2" />
-              {tr("downloadTemplate")}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setClearAllConfirmation("");
-                setShowClearAllDialog(true);
+            {/* The destructive "Clear all" lives in a menu, away from the everyday buttons. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" aria-label={salesTr("moreActions")} data-testid="button-contacts-more">
+                  <MoreHorizontal className="w-4 h-4 me-2" />
+                  {salesTr("moreActions")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={downloadTemplate} data-testid="button-download-template">
+                  <Download className="w-4 h-4 me-2" />
+                  {tr("downloadTemplate")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  disabled={contacts.length === 0}
+                  onClick={() => {
+                    setClearAllConfirmation("");
+                    setShowClearAllDialog(true);
+                  }}
+                  data-testid="button-clear-all-contacts"
+                >
+                  <Trash2 className="w-4 h-4 me-2" />
+                  {tr("clearAll")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Dialog
+              open={showAddDialog}
+              onOpenChange={(open) => {
+                if (open) setAddFormKey((k) => k + 1);
+                setShowAddDialog(open);
               }}
-              disabled={contacts.length === 0}
-              data-testid="button-clear-all-contacts"
             >
-              <Trash2 className="w-4 h-4 me-2" />
-              {tr("clearAll")}
-            </Button>
-            <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-add-contact">
                   <Plus className="w-4 h-4 me-2" />
@@ -618,6 +640,7 @@ export default function CustomerContacts() {
                   <DialogDescription>{tr("addANewCustomerOrBusiness")}</DialogDescription>
                 </DialogHeader>
                 <ContactForm
+                  key={addFormKey}
                   onSubmit={(data) => createMutation.mutate(data)}
                   onCancel={() => setShowAddDialog(false)}
                 />
@@ -692,6 +715,55 @@ export default function CustomerContacts() {
                   }
                 />
               ) : (
+                <>
+                <div className="grid gap-3 md:hidden" data-testid="mobile-contact-cards">
+                  {filteredContacts.map((contact) => (
+                    <div key={contact.id} className="space-y-2 rounded-lg border p-3" data-testid={`card-contact-${contact.id}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{contact.name}</p>
+                          {contact.email && <p className="truncate text-sm text-muted-foreground" dir="ltr">{contact.email}</p>}
+                          {contact.phone && <p className="text-sm text-muted-foreground" dir="ltr">{contact.phone}</p>}
+                        </div>
+                        <Badge variant="secondary" className="shrink-0">
+                          {typeOf(contact) === "vendor" ? tr("typeVendor") : typeOf(contact) === "both" ? tr("typeBoth") : tr("typeCustomer")}
+                        </Badge>
+                      </div>
+                      {(contact.trnNumber || contact.city || contact.country) && (
+                        <dl className="space-y-0.5 text-xs">
+                          {contact.trnNumber && (
+                            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{tr("trnNumber")}</dt><dd dir="ltr" className="font-mono">{contact.trnNumber}</dd></div>
+                          )}
+                          {(contact.city || contact.country) && (
+                            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{tr("location")}</dt><dd>{[contact.city, contact.country].filter(Boolean).join(", ")}</dd></div>
+                          )}
+                        </dl>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {typeOf(contact) !== "vendor" && (
+                          <Button size="sm" variant="outline" onClick={() => setStatementContact(contact)} data-testid={`mobile-button-statement-${contact.id}`}>
+                            <FileText className="w-4 h-4 me-1" />
+                            {tr("statement")}
+                          </Button>
+                        )}
+                        {typeOf(contact) !== "vendor" && (
+                          <Button size="sm" variant="outline" onClick={() => setCreditContact(contact)} data-testid={`mobile-button-credit-${contact.id}`}>
+                            <Wallet className="w-4 h-4 me-1" />
+                            {salesTr("customerCreditAction")}
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => setEditContact(contact)} data-testid={`mobile-button-edit-contact-${contact.id}`}>
+                          <Edit className="w-4 h-4 me-1" />
+                          {iconLabels.t("edit")}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setContactToDelete(contact)} aria-label={iconLabels.t("delete")} data-testid={`mobile-button-delete-contact-${contact.id}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden md:block">
                 <VirtualTable<CustomerContact>
                   rows={filteredContacts}
                   height={500}
@@ -792,6 +864,18 @@ export default function CustomerContacts() {
                               <FileText className="w-4 h-4" />
                             </Button>
                           )}
+                          {typeOf(contact) !== "vendor" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title={salesTr("customerCreditAction")}
+                              aria-label={salesTr("customerCreditAction")}
+                              onClick={() => setCreditContact(contact)}
+                              data-testid={`button-credit-${contact.id}`}
+                            >
+                              <Wallet className="w-4 h-4" />
+                            </Button>
+                          )}
                           {typeOf(contact) !== "customer" && (
                             <Button
                               size="icon"
@@ -826,6 +910,8 @@ export default function CustomerContacts() {
                     },
                   ]}
                 />
+                </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -1028,6 +1114,7 @@ export default function CustomerContacts() {
           </DialogHeader>
           {editContact && (
             <ContactForm
+              key={editContact.id}
               contact={editContact}
               onSubmit={(data) => updateMutation.mutate({ id: editContact.id, data })}
               onCancel={() => setEditContact(null)}
@@ -1035,6 +1122,10 @@ export default function CustomerContacts() {
           )}
         </DialogContent>
       </Dialog>
+
+      {companyId && (
+        <CustomerCreditDialog companyId={companyId} contact={creditContact} onClose={() => setCreditContact(null)} />
+      )}
 
       {companyId && (
         <CustomerStatementDialog

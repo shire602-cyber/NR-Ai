@@ -16,6 +16,7 @@ import { companyDataExports, storedFiles } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import { deleteDocument, readDocument, readReceiptImage, saveDocument } from "./fileStorage";
 import { hasEmailProvider, sendGenericEmail } from "./email.service";
+import { bilingualSubject, bilingualText, localized } from "./email-i18n";
 import { storage } from "../storage";
 
 const log = createLogger("company-export");
@@ -391,8 +392,8 @@ async function notifyExportReady(userId: string | null, companyId: string): Prom
     if (!user) return;
     await sendGenericEmail(
       user.email,
-      "Your company data export is ready",
-      `Your export is ready. Download it from Settings > Data & privacy within ${EXPORT_TTL_HOURS} hours; after that the link expires and you can request a new one.`,
+      bilingualSubject(localized("exportReadySubject")),
+      bilingualText(localized("exportReadyBody", { hours: EXPORT_TTL_HOURS })),
       "Muhasib.ai"
     );
   } catch (err) {

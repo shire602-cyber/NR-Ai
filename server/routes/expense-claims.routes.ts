@@ -16,6 +16,7 @@ import { assertProjectsOfCompany, recordProjectExpensesForClaim } from "../servi
 import { loadApprovalDocument } from "../services/approval-queue.service";
 import {
   auditApprovalStep,
+  assertNotRejected,
   beginApprovalStep,
   notifyApprovalProgress,
   pendingApprovalBody,
@@ -483,6 +484,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         const claim = fresh.rows[0];
         if (!claim) return { status: 404, body: { message: "Expense claim not found" } };
 
+        await assertNotRejected("expense_claim", id);
         if (claim.status !== "submitted" && claim.status !== "pending_approval") {
           return { status: 400, body: { message: "Only submitted claims can be approved" } };
         }
@@ -503,7 +505,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         // Approval rules (amount and role); the submitter never approves their own claim.
         const doc = await loadApprovalDocument("expense_claim", id);
         const actor = await resolveActor(req.user!, claim.company_id);
-        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: claim.status }) : ({ kind: "none" } as const);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: claim.status, acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
         const { review_notes } = req.body ?? {};
 
         if (step.kind === "step" && !step.isFinal) {

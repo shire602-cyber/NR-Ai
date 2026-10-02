@@ -1,12 +1,6 @@
 {
   "_comment": "reserved: files being rewritten by the compliance work (VAT filing, corporate tax, evidence, onboarding, month-end). They are skipped by the gate. THIS LIST MUST BE EMPTIED once that work has merged - then translate those pages with scripts/i18n-codemod.mjs. todo: pages/components not translated yet with today's violation count; the count can only go down (run `node scripts/check-i18n.mjs --update-todo` after translating, and delete entries that reach zero).",
   "reserved": [
-    "client/src/pages/CorporateTax.tsx",
-    "client/src/pages/EvidenceCenter.tsx",
-    "client/src/pages/MonthEndClose.tsx",
-    "client/src/pages/Onboarding.tsx",
-    "client/src/pages/TaxReturnArchive.tsx",
-    "client/src/pages/VATAutopilot.tsx",
     "client/src/pages/VATFiling.tsx"
   ],
   "todo": {}

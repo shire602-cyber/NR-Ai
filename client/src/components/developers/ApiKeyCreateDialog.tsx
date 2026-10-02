@@ -117,7 +117,7 @@ export function ApiKeyCreateDialog({ open, onClose, onCreate }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...SCOPE_RESOURCES, "reports" as const].map((resource) => {
+                  {[...SCOPE_RESOURCES, "reports" as const, "accounts" as const].map((resource) => {
                     const label = tr(`resource_${resource}` as const);
                     const readScope = `read:${resource}`;
                     const writeScope = `write:${resource}`;
@@ -128,7 +128,7 @@ export function ApiKeyCreateDialog({ open, onClose, onCreate }: Props) {
                           <Checkbox checked={scopes.includes(readScope)} onCheckedChange={(v) => setScopes((s) => toggleScope(s, readScope, v === true))} aria-label={`${tr("read")}: ${label}`} />
                         </td>
                         <td className="px-3 py-2 text-center">
-                          {resource !== "reports" && (
+                          {resource !== "reports" && resource !== "accounts" && (
                             <Checkbox checked={scopes.includes(writeScope)} onCheckedChange={(v) => setScopes((s) => toggleScope(s, writeScope, v === true))} aria-label={`${tr("write")}: ${label}`} />
                           )}
                         </td>

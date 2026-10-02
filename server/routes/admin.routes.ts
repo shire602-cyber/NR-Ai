@@ -14,6 +14,7 @@ import { db } from "../db";
 import { eq, and, desc, gte, lte, like } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
+import { vatSetupProblem } from "../services/company-setup-rules";
 
 const logger = createLogger("admin-routes");
 
@@ -307,6 +308,8 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
 
+      const setupProblem = vatSetupProblem({ taxRegistrationType: req.body.taxRegistrationType, vatFilingFrequency: req.body.vatFilingFrequency });
+      if (setupProblem) return res.status(422).json({ message: setupProblem.message, code: setupProblem.code, field: setupProblem.field });
       const company = await storage.createCompany({
         name: req.body.name,
         baseCurrency: req.body.baseCurrency || "AED",

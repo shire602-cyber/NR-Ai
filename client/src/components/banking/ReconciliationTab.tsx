@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { todayYmd as todayIso, formatCalendarDate } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Download, Loader2, Lock, RotateCcw, Scale, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,13 +13,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { downloadPdf } from "@/lib/download-pdf";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { parseAmountText } from "@/lib/statement-review";
 import type { BankAccount, BankReconciliationSession, ReconciliationStatement } from "@/lib/banking-api-types";
 import { messages } from "./ReconciliationTab.i18n";
 import { messages as common } from "./BankingCommon.i18n";
 import { bankKey, bankingErrorText } from "./banking-common";
+import { reconciliationVerdict, type ExplainedItem, type ItemType } from "./reconciliation-explain";
 
 interface Props {
   companyId: string;
@@ -26,7 +28,6 @@ interface Props {
   initialBankAccountId?: string;
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountId }: Props) {
   const tr = messages.useT();
@@ -57,7 +58,9 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
 
   const currency = bankAccounts.find((a) => a.id === bankAccountId)?.currency ?? report?.currency ?? "AED";
   const money = (n: number) => formatCurrency(n, currency, locale);
-  const balanced = report?.difference != null && Math.abs(report.difference) < 0.005;
+  const verdict = useMemo(() => (report ? reconciliationVerdict(report) : null), [report]);
+  // "balanced" only when the difference is 0 AND no item is half of an unmatched pair
+  const balanced = verdict?.verdict === "balanced";
   const latestCompleted = useMemo(() => {
     const done = (sessions ?? []).filter((s) => s.status === "completed");
     return done.sort((a, b) => b.statementDate.localeCompare(a.statementDate))[0];
@@ -73,7 +76,7 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
       apiRequest("POST", `/api/companies/${companyId}/bank-reconciliations`, { bankAccountId, statementDate: asOf, statementBalance: report!.statementBalance }),
     onSuccess: () => {
       refresh();
-      toast({ title: tr("completedTitle"), description: tr("completedBody", { date: formatDate(asOf, locale) }) });
+      toast({ title: tr("completedTitle"), description: tr("completedBody", { date: formatCalendarDate(asOf, locale, "short") }) });
     },
     onError: (err: unknown) => toast({ variant: "destructive", title: tr("completeFailed"), description: bankingErrorText(trc, err, locale) }),
   });
@@ -104,45 +107,12 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
     </div>
   );
 
-  const ItemTable = ({ title, rows }: { title: string; rows: Array<{ key: string; date: string; text: string; ref: string | null; amount: number }> }) => (
-    <div className="space-y-1" data-testid="reconciliation-items">
-      <p className="text-sm font-medium">
-        {title} <span className="text-muted-foreground">({rows.length})</span>
-      </p>
-      {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{tr("noItems")}</p>
-      ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-28">{tr("colDate")}</TableHead>
-                <TableHead>{tr("colDescription")}</TableHead>
-                <TableHead className="w-28">{tr("colRef")}</TableHead>
-                <TableHead className="text-end w-32">{tr("colAmount")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.key}>
-                  <TableCell className="font-mono text-xs">{formatDate(r.date, locale)}</TableCell>
-                  <TableCell className="text-sm" dir="auto">
-                    {r.text}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground" dir="ltr">
-                    {r.ref || "-"}
-                  </TableCell>
-                  <TableCell dir="ltr" className="text-end font-mono text-sm">
-                    {money(r.amount)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </div>
-  );
+  const typeText = (t: ItemType) =>
+    t === "DEPOSIT_IN_TRANSIT" ? tr("typeDeposit") : t === "OUTSTANDING_PAYMENT" ? tr("typeOutstanding") : t === "STATEMENT_CREDIT" ? tr("typeStatementCredit") : tr("typeStatementDebit");
+  const sourceLabel = (source: string | null) =>
+    !source ? "" : source === "payment" ? tr("docPayment") : source === "bill_payment" ? tr("docBillPayment") : source === "bank_reconciliation" ? tr("docBankEntry") : source === "bank_rule" ? tr("docBankRule") : source === "manual" ? tr("docManual") : tr("docOther");
+  const documentText = (i: ExplainedItem) =>
+    i.document.number ? `${sourceLabel(i.document.source)} ${i.document.number}`.trim() : i.document.reference ? `${tr("docStatementLine")} ${i.document.reference}` : tr("docStatementLine");
 
   return (
     <div className="space-y-6" data-testid="reconciliation-tab">
@@ -224,6 +194,7 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
                 role="status"
                 data-testid="recon-difference"
                 data-balanced={balanced ? "true" : "false"}
+                data-verdict={verdict?.verdict}
                 className={`flex items-center justify-between gap-3 flex-wrap rounded-md border p-3 ${
                   balanced ? "border-[hsl(var(--chart-5)/0.4)] bg-[hsl(var(--chart-5)/0.08)]" : "border-[hsl(var(--chart-4)/0.4)] bg-[hsl(var(--chart-4)/0.08)]"
                 }`}
@@ -235,7 +206,13 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
                     {report.difference === null ? "-" : money(report.difference)}
                   </span>
                   <StatusBadge tone={balanced ? "success" : "warning"}>
-                    {report.difference === null ? tr("unknownDifference") : balanced ? tr("balanced") : tr("notBalanced")}
+                    {verdict?.verdict === "needs_statement_balance"
+                      ? tr("unknownDifference")
+                      : balanced
+                        ? tr("balanced")
+                        : verdict?.verdict === "balanced_with_unmatched"
+                          ? tr("balancedUnmatched")
+                          : tr("notBalanced")}
                   </StatusBadge>
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -250,12 +227,53 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <p className="text-sm font-semibold">{tr("itemsHeading")}</p>
-                <ItemTable title={tr("itemsDeposits")} rows={report.items.depositsInTransit.map((i) => ({ key: i.entryId, date: i.date, text: i.memo || i.entryNumber, ref: i.entryNumber, amount: i.amount }))} />
-                <ItemTable title={tr("itemsOutstanding")} rows={report.items.outstandingPayments.map((i) => ({ key: i.entryId, date: i.date, text: i.memo || i.entryNumber, ref: i.entryNumber, amount: i.amount }))} />
-                <ItemTable title={tr("itemsCredits")} rows={report.items.unreconciledCredits.map((i) => ({ key: i.transactionId, date: i.date, text: i.description, ref: i.reference, amount: i.amount }))} />
-                <ItemTable title={tr("itemsDebits")} rows={report.items.unreconciledDebits.map((i) => ({ key: i.transactionId, date: i.date, text: i.description, ref: i.reference, amount: i.amount }))} />
+              {verdict?.verdict === "balanced_with_unmatched" && (
+                <p className="text-sm rounded-md border border-[hsl(var(--chart-4)/0.4)] bg-[hsl(var(--chart-4)/0.08)] p-3" data-testid="recon-unmatched-note">
+                  {tr("unmatchedNote", { count: verdict.unmatchedPairs })}
+                </p>
+              )}
+
+              <div className="space-y-2" data-testid="reconciliation-items">
+                <p className="text-sm font-semibold">
+                  {tr("itemsHeading")} <span className="text-muted-foreground font-normal">({verdict?.items.length ?? 0})</span>
+                </p>
+                {!verdict || verdict.items.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{tr("noItems")}</p>
+                ) : (
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr("colType")}</TableHead>
+                          <TableHead>{tr("colDocument")}</TableHead>
+                          <TableHead className="w-28">{tr("colDate")}</TableHead>
+                          <TableHead>{tr("colDescription")}</TableHead>
+                          <TableHead className="text-end w-32">{tr("colAmount")}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {verdict.items.map((i) => (
+                          <TableRow key={i.key} data-testid={`recon-item-${i.type}`} data-paired={i.pairedWith ? "true" : "false"}>
+                            <TableCell className="text-sm whitespace-nowrap">
+                              {typeText(i.type)}
+                              {i.pairedWith && <span className="block text-[11px] text-[hsl(var(--chart-4))]">{tr("pairedHint")}</span>}
+                            </TableCell>
+                            <TableCell className="text-xs" dir="auto">
+                              {documentText(i)}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs whitespace-nowrap">{formatCalendarDate(i.date, locale, "short")}</TableCell>
+                            <TableCell className="text-sm" dir="auto">
+                              {i.description}
+                            </TableCell>
+                            <TableCell dir="ltr" className="text-end font-mono text-sm">
+                              {money(i.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -284,7 +302,7 @@ export function ReconciliationTab({ companyId, bankAccounts, initialBankAccountI
                 <TableBody>
                   {sessions.map((s) => (
                     <TableRow key={s.id} data-testid={`session-${s.id}`}>
-                      <TableCell className="font-mono text-sm">{formatDate(s.statementDate, locale)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatCalendarDate(s.statementDate, locale, "short")}</TableCell>
                       <TableCell dir="ltr" className="text-end font-mono">
                         {money(Number(s.statementBalance))}
                       </TableCell>

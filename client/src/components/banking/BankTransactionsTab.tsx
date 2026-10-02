@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BankAccount, BankTransaction, BulkMatchItem, BulkMatchResult, MatchSuggestion } from "@/lib/banking-api-types";
 import { messages } from "./BankTransactionsTab.i18n";
@@ -25,7 +26,7 @@ import { MatchDialog } from "./MatchDialog";
 
 const PAGE = 200;
 /** A suggestion that only links to something posted or settles a document: safe to accept from the list row. */
-const QUICK_KINDS = new Set(["invoice", "bill", "journal", "receipt"]);
+const QUICK_KINDS = new Set(["invoice", "invoices", "bill", "journal", "receipt"]);
 const TONE = { success: "text-[hsl(var(--chart-5))]", warning: "text-[hsl(var(--chart-4))]", danger: "text-destructive" } as const;
 
 interface Props {
@@ -78,15 +79,22 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
   const visible = filtered.slice(0, limit);
 
   const stats = useMemo(() => {
-    const all = transactions ?? [];
+    // the net is per currency: a USD line is never added into an AED total
+    const all = (transactions ?? []).filter((t) => !accountFilter || t.bankStatementAccountId === accountFilter);
+    const net = new Map<string, number>();
+    for (const t of all) {
+      const cur = currencyOf(t);
+      net.set(cur, Math.round(((net.get(cur) ?? 0) + t.amount) * 100) / 100);
+    }
     const reconciled = all.filter((t) => t.isReconciled).length;
     return {
       total: all.length,
       reconciled,
       suggested: all.filter((t) => !t.isReconciled && (t.matchStatus === "suggested" || best.has(t.id))).length,
-      net: all.reduce((s, t) => s + t.amount, 0),
+      net: [...net.entries()].sort(([a], [b]) => a.localeCompare(b)),
     };
-  }, [transactions, best]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, best, accountFilter, bankAccounts]);
 
   const selectable = (tx: BankTransaction) => !tx.isReconciled && best.has(tx.id) && QUICK_KINDS.has(best.get(tx.id)!.kind);
   const selectableIds = visible.filter(selectable).map((t) => t.id);
@@ -123,7 +131,7 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
   const toItems = (ids: string[]): BulkMatchItem[] =>
     ids.flatMap((id) => {
       const s = best.get(id);
-      return s ? [{ transactionId: id, kind: s.kind, targetId: s.targetId }] : [];
+      return s ? [{ transactionId: id, kind: s.kind, targetId: s.targetId, ...(s.targetIds ? { targetIds: s.targetIds } : {}) }] : [];
     });
 
   const quickAccept = useMutation({
@@ -238,8 +246,12 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{tr("netAmount")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div dir="ltr" className={`text-2xl font-bold text-start ${stats.net >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
-              {formatCurrency(stats.net, "AED", locale)}
+            <div className="space-y-0.5" data-testid="stat-net">
+              {(stats.net.length ? stats.net : [["AED", 0] as [string, number]]).map(([cur, amount]) => (
+                <div key={cur} dir="ltr" className={`${stats.net.length > 1 ? "text-lg" : "text-2xl"} font-bold text-start whitespace-nowrap ${amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
+                  {formatCurrency(amount, cur, locale)}
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -314,7 +326,7 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
                         <div className="min-w-0 flex items-start gap-2">
                           {selectable(tx) && <Checkbox checked={selected.has(tx.id)} onCheckedChange={() => toggle(tx.id)} aria-label={tr("selectRow")} className="mt-1" />}
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{formatDate(tx.transactionDate, locale)}</p>
+                            <p className="text-xs text-muted-foreground">{formatCalendarDate(tx.transactionDate, locale, "short")}</p>
                             <p className="font-medium break-words" dir="auto">
                               {tx.description}
                             </p>
@@ -360,7 +372,7 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
                         <TableCell>
                           {selectable(tx) && <Checkbox checked={selected.has(tx.id)} onCheckedChange={() => toggle(tx.id)} aria-label={tr("selectRow")} data-testid={`checkbox-${tx.id}`} />}
                         </TableCell>
-                        <TableCell className="font-mono text-sm whitespace-nowrap">{formatDate(tx.transactionDate, locale)}</TableCell>
+                        <TableCell className="font-mono text-sm whitespace-nowrap">{formatCalendarDate(tx.transactionDate, locale, "short")}</TableCell>
                         <TableCell className="max-w-xs">
                           <div className="truncate font-medium" dir="auto" title={tx.description}>
                             {tx.description}
@@ -395,6 +407,8 @@ export function BankTransactionsTab({ companyId, bankAccounts, onImport }: Props
         companyId={companyId}
         transaction={matchTx}
         currency={matchTx ? currencyOf(matchTx) : "AED"}
+        transactions={transactions ?? []}
+        bankAccounts={bankAccounts}
       />
     </div>
   );

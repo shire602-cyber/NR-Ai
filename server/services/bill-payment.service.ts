@@ -46,19 +46,37 @@ export interface RecordBillPaymentResult {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** A bank or cash account of this company that can take the credit of a bill payment. */
+/**
+ * A bank or cash account of this company that can take the credit of a bill payment.
+ *
+ * "1020 Bank Accounts" is a header once the company has its own bank accounts (1021, 1022 ... or managed bank accounts):
+ * crediting it parks the payment where no bank reconciliation sees it, so a company with bank accounts must choose one.
+ * A company with no bank account of its own keeps the 1020 / 1010 default.
+ */
 export async function resolvePaymentAccount(
   companyId: string,
   paymentAccountId: string | null | undefined,
   method: string | null | undefined
 ): Promise<{ id: string }> {
-  const accounts = await storage.getAccountsByCompanyId(companyId);
+  const [accounts, banks] = await Promise.all([storage.getAccountsByCompanyId(companyId), storage.getBankAccountsByCompanyId(companyId)]);
+  const managedGl = new Set(banks.filter((b) => b.isActive !== false).map((b) => b.glAccountId).filter((v): v is string => !!v));
+  // a bank account the company added itself (not a system account such as 1025 Payment Gateway Clearing)
+  const childBank = accounts.some((a) => a.type === "asset" && a.isActive !== false && a.isSystemAccount !== true && /^102[1-9]$/.test(a.code));
+  const headerId = accounts.find((a) => a.code === ACCOUNT_CODES.BANK && a.type === "asset")?.id;
+  const isHeader = (id: string) => !!headerId && id === headerId && !managedGl.has(id) && (childBank || managedGl.size > 0);
+
   if (paymentAccountId) {
     const account = accounts.find((a) => a.id === paymentAccountId);
     if (!account || account.isActive === false || account.type !== "asset") {
       throw new AppError({ message: "The payment account must be an active asset (bank or cash) account of this company.", statusCode: 422, code: "PAYMENT_ACCOUNT_INVALID" });
     }
+    if (isHeader(account.id)) {
+      throw new AppError({ message: "1020 Bank Accounts is a header account. Choose the bank account the money leaves.", statusCode: 422, code: "PAYMENT_ACCOUNT_INVALID" });
+    }
     return { id: account.id };
+  }
+  if (managedGl.size > 0 || childBank) {
+    throw new AppError({ message: "Choose the bank or cash account the payment leaves (payment_account_id).", statusCode: 422, code: "PAYMENT_ACCOUNT_REQUIRED" });
   }
   const code = method === "cash" ? ACCOUNT_CODES.CASH : ACCOUNT_CODES.BANK;
   const fallback = accounts.find((a) => a.code === code && a.type === "asset") || accounts.find((a) => a.code === ACCOUNT_CODES.BANK && a.type === "asset");
@@ -79,6 +97,7 @@ async function run(input: RecordBillPaymentInput, tx: Tx): Promise<RecordBillPay
     throw new AppError({ message: `A ${lock.status} bill cannot be paid. Approve it first.`, statusCode: 422, code: "BILL_NOT_PAYABLE" });
   }
 
+  const account = await resolvePaymentAccount(input.companyId, input.paymentAccountId, input.paymentMethod);
   const sums = rowsOf(
     await tx.execute(sql`
       SELECT COALESCE((SELECT SUM(amount) FROM bill_payments WHERE bill_id = ${input.billId}), 0)
@@ -100,7 +119,6 @@ async function run(input: RecordBillPaymentInput, tx: Tx): Promise<RecordBillPay
     });
   }
 
-  const account = await resolvePaymentAccount(input.companyId, input.paymentAccountId, input.paymentMethod);
   const accounts = await storage.getAccountsByCompanyId(input.companyId);
   const ap = accounts.find((a) => a.code === ACCOUNT_CODES.AP && a.type === "liability");
   if (!ap) throw new AppError({ message: "Accounts Payable not found in the chart of accounts.", statusCode: 422, code: "AP_ACCOUNT_MISSING" });

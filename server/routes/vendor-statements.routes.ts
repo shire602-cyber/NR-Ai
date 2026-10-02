@@ -20,6 +20,7 @@ import {
   sendStatementEmail,
 } from "../services/email.service";
 import { formatPdfDate } from "../services/pdf-format";
+import { bilingualSubject, bilingualText, localized } from "../services/email-i18n";
 import { toCalendarYmd } from "../utils/date";
 
 const emailBodySchema = z.object({
@@ -137,10 +138,11 @@ export function registerVendorStatementRoutes(app: Express) {
       assertEmailSent(
         await sendStatementEmail({
           to: recipient,
-          subject: body.subject || `Statement of account from ${company.name} (${period})`,
+          // Defaults are Arabic then English; a subject or message the sender typed is sent as written.
+          subject: body.subject || bilingualSubject(localized("statementSubject", { company: company.name, period })),
           message:
             body.message ||
-            `Dear ${statement.contact.name},\n\nPlease find attached our record of your account for ${period}.\nBalance we show as payable to you: AED ${statement.closingBalance.toFixed(2)}.\nPlease tell us if your records differ.\n\nKind regards,\n${company.name}`,
+            bilingualText(localized("statementVendorBody", { name: statement.contact.name, period, balance: statement.closingBalance.toFixed(2), company: company.name })),
           fromName: company.name,
           pdf,
           filename: `vendor-statement-${safeFileKey(statement.contact.name)}-${statement.to}.pdf`,

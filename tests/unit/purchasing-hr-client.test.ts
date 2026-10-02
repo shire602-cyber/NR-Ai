@@ -13,6 +13,8 @@ import {
   filterVendors,
   inclusiveCalendarDays,
   isOwnerRole,
+  isForeignVendorCountry,
+  reverseChargePreview,
   isCashOrBankAccount,
   canWriteHrRole,
   parseDurationInput,
@@ -47,6 +49,21 @@ describe("vendor picker helpers", () => {
     const vendors = vendorContactsOf(contacts);
     expect(exactVendorMatch(vendors, "  ACME   supplies ")?.id).toBe("1");
     expect(exactVendorMatch(vendors, "Acme")).toBeNull();
+  });
+});
+
+describe("reverse charge on bills", () => {
+  it("defaults on for a vendor in a known non-UAE country, never for the UAE or an unknown country", () => {
+    expect(isForeignVendorCountry("United States")).toBe(true);
+    expect(isForeignVendorCountry("India")).toBe(true);
+    for (const uae of ["UAE", "AE", " united arab emirates ", "الإمارات", "", null, undefined]) expect(isForeignVendorCountry(uae as string | null)).toBe(false);
+  });
+
+  it("previews the same VAT as output (box 3) and input (box 10), payable without VAT", () => {
+    const p = reverseChargePreview([{ quantity: 1, unit_price: 3600, vat_rate: 5 }]);
+    expect(p).toEqual({ net: 3600, outputVatBox3: 180, inputVatBox10: 180, payable: 3600 });
+    expect(reverseChargePreview([{ quantity: 3, unit_price: "33.33", vat_rate: "5" }]).outputVatBox3).toBe(5);
+    expect(reverseChargePreview([])).toEqual({ net: 0, outputVatBox3: 0, inputVatBox10: 0, payable: 0 });
   });
 });
 

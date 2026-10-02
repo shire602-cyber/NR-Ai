@@ -15,6 +15,7 @@ import { invoices } from "../../shared/schema";
 import { LOCK_NS, withDocumentLock } from "./document-lock";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
 import { replaceInvoiceLines } from "./sales-lines.service";
+import { serviceRevenueAccountId } from "./service-revenue";
 import { resolveDocumentExchangeRate } from "./document-fx-rate";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { buildProjectInvoiceLines } from "./project-billing";
@@ -121,6 +122,8 @@ export async function createProjectInvoice(args: { companyId: string; project: a
       } as any)
       .returning();
 
+    // Time and recharged costs are service income: 4020, not the 4010 Product Sales default.
+    const serviceAccountId = await serviceRevenueAccountId(tx, companyId);
     await replaceInvoiceLines(tx, {
       companyId,
       invoiceId: invoice.id,
@@ -131,6 +134,7 @@ export async function createProjectInvoice(args: { companyId: string; project: a
         unitPrice: d.unitPrice,
         vatRate: d.vatRate,
         vatSupplyType: d.vatSupplyType,
+        revenueAccountId: serviceAccountId,
       })),
       exchangeRate: fx.rate,
       itemExtras: (_source, index) => ({ projectId: drafts[index].projectId }),

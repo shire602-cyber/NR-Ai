@@ -3,6 +3,9 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storeUploadedFile, removeStoredFile } from "../services/document-upload.service";
+import { recordAudit } from "../services/audit.service";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function registerPortalRoutes(app: Express) {
   // =====================================
@@ -122,6 +125,43 @@ export function registerPortalRoutes(app: Express) {
       await storage.deleteDocument(documentId);
       await removeStoredFile(document.fileUrl);
       res.json({ success: true });
+    })
+  );
+
+  // Share a document with the client portal, or take it back. Firm side only: portal accounts are confined to
+  // /api/client-portal/* by authMiddleware, and the user type is checked as well. The portal listing and
+  // download honour documents.shared_with_portal (client-portal.routes.ts, documents.routes.ts).
+  app.patch(
+    "/api/documents/:documentId/portal-sharing",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { documentId } = req.params;
+      const user = (req as any).user;
+      if (user?.userType === "client_portal") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (typeof req.body?.sharedWithPortal !== "boolean") {
+        return res.status(400).json({ message: "sharedWithPortal must be true or false", code: "INVALID_BODY" });
+      }
+      const document = UUID_RE.test(documentId) ? await storage.getDocument(documentId) : undefined;
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      if (!(await storage.hasCompanyAccess(user.id, document.companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const updated = await storage.updateDocument(documentId, { sharedWithPortal: req.body.sharedWithPortal });
+      await recordAudit({
+        userId: user.id,
+        companyId: document.companyId,
+        action: req.body.sharedWithPortal ? "document.share_portal" : "document.unshare_portal",
+        entityType: "document",
+        entityId: documentId,
+        before: { sharedWithPortal: document.sharedWithPortal === true },
+        after: { sharedWithPortal: req.body.sharedWithPortal },
+        req,
+      });
+      res.json(updated);
     })
   );
 

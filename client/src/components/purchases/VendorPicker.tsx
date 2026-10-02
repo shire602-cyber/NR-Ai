@@ -14,6 +14,8 @@ export interface PickedVendor {
   id: string;
   name: string;
   trnNumber: string | null;
+  /** The contact's country as saved ("UAE" by default); drives the reverse-charge default on bills. */
+  country: string | null;
 }
 
 interface Props {
@@ -45,7 +47,7 @@ export function VendorPicker({ companyId, vendorId, fallbackName, onSelect, disa
     onSuccess: (contact: TypedContact) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "customer-contacts"] });
       toast({ title: tr("created") });
-      onSelect({ id: contact.id, name: contact.name, trnNumber: contact.trnNumber ?? null });
+      onSelect({ id: contact.id, name: contact.name, trnNumber: contact.trnNumber ?? null, country: contact.country ?? null });
       setOpen(false);
       setQuery("");
     },
@@ -53,7 +55,7 @@ export function VendorPicker({ companyId, vendorId, fallbackName, onSelect, disa
   });
 
   const pick = (v: TypedContact) => {
-    onSelect({ id: v.id, name: v.name, trnNumber: v.trnNumber ?? null });
+    onSelect({ id: v.id, name: v.name, trnNumber: v.trnNumber ?? null, country: v.country ?? null });
     setOpen(false);
     setQuery("");
   };

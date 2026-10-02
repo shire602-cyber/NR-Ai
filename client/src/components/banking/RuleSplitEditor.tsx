@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
 import { formatNumber } from "@/lib/format";
+import { accountName } from "@/lib/account-name";
 import type { LedgerAccount, RuleDirection, RuleSplitLine } from "@/lib/banking-api-types";
 import { messages } from "./RuleSplitEditor.i18n";
 import { MAX_SPLIT_LINES, evenSplit, previewPosting, splitIssues, splitTotal, type SplitIssue } from "./rule-split";
@@ -57,9 +58,9 @@ export function RuleSplitEditor({ lines, onChange, accounts, vatRate, direction 
   const issues = splitIssues(lines);
   // a fresh rule has no account yet: say so only once something else has been touched
   const shownIssues = issues.filter((code) => code !== "ACCOUNT_MISSING" || lines.some((l) => l.accountId));
-  const accountName = (id: string) => {
+  const lineName = (id: string) => {
     const a = accounts.find((x) => x.id === id);
-    return a ? `${a.code} ${a.nameEn}` : id;
+    return a ? `${a.code} ${accountName(a, locale)}` : id;
   };
 
   const preview = useMemo(
@@ -93,7 +94,7 @@ export function RuleSplitEditor({ lines, onChange, accounts, vatRate, direction 
                       <span dir="ltr" className="font-mono">
                         {a.code}
                       </span>{" "}
-                      {a.nameEn}
+                      {accountName(a, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -148,7 +149,7 @@ export function RuleSplitEditor({ lines, onChange, accounts, vatRate, direction 
           {preview.shares.map((s, i) => (
             <p key={i} className="flex justify-between gap-3">
               <span dir="auto" className="truncate">
-                {accountName(s.accountId)}
+                {lineName(s.accountId)}
               </span>
               <span dir="ltr" className="font-mono">
                 {money(s.amount)}

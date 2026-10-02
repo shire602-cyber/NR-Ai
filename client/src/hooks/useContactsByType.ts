@@ -9,6 +9,7 @@ export interface TypedContact {
   email?: string | null;
   phone?: string | null;
   trnNumber?: string | null;
+  country?: string | null;
   contactType?: ContactType | null;
 }
 

@@ -9,9 +9,11 @@ export interface PickerProduct {
   nameAr?: string | null;
   sku?: string | null;
   unitPrice?: number | string | null;
+  costPrice?: number | string | null;
   vatRate?: number | string | null;
   isActive?: boolean | null;
   trackInventory?: boolean | null;
+  vatSupplyType?: string | null;
 }
 
 const MANUAL = "__manual__";

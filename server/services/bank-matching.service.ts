@@ -2,6 +2,9 @@
 // account explains this line? Read-only (nothing is posted here); bank-posting.service.ts applies a suggestion.
 // Candidates are loaded once per request and scored in memory with bank-match-scoring.ts.
 
+import { dubaiDayTextSql } from "./vat-dubai-day";
+const linkedToSql = (bt: string, je: string) =>
+  `(${bt}.matched_journal_entry_id = ${je}.id OR EXISTS (SELECT 1 FROM bank_transaction_entries e_l WHERE e_l.bank_transaction_id = ${bt}.id AND e_l.journal_entry_id = ${je}.id))`;
 import { pool } from "../db";
 import { storage } from "../storage";
 import type { Account, BankAccount, BankTransaction, ReconciliationRule } from "../../shared/schema";
@@ -10,16 +13,19 @@ import { outstandingSql, openReceivableSql } from "./invoice-outstanding.db";
 import {
   CONFIDENT_SCORE,
   assignGreedy,
+  daysBetween,
+  nameSimilarity,
   scoreCandidate,
   type ReasonCode,
 } from "./bank-match-scoring";
+import { getLatestRate } from "./exchange-rate.service";
 import { computeRulePosting, ruleMatches, type SplitLine } from "./bank-rule-split";
 
 export const CLEARING_ACCOUNT_CODE = "1025";
 export const RULE_CONFIDENCE = 75;
 export const CLEARING_CONFIDENCE = 70;
 
-export type SuggestionKind = "invoice" | "bill" | "journal" | "receipt" | "rule" | "account";
+export type SuggestionKind = "invoice" | "bill" | "journal" | "receipt" | "rule" | "account" | "invoices" | "transfer";
 
 export interface ProposedLine {
   accountId: string;
@@ -34,6 +40,8 @@ export interface Suggestion {
   transactionId: string;
   kind: SuggestionKind;
   targetId: string;
+  /** kind "invoices": the invoices one receipt settles, in order. */
+  targetIds?: string[];
   confidence: number;
   reasons: ReasonCode[];
   label: string;
@@ -77,6 +85,10 @@ export interface CandidatePool {
   journals: Map<string, JournalCandidate[]>; // by bank GL account id
   rules: ReconciliationRule[];
   clearingBalance: number | null;
+  /** Unmatched bank lines of the whole company (the other leg of an own-account transfer is among them). */
+  openTxns: BankTransaction[];
+  /** AED per unit of each foreign bank currency, latest. */
+  rates: Map<string, number>;
 }
 
 const num = (v: unknown): number => Number(v) || 0;
@@ -86,7 +98,7 @@ const dayToDate = (s: string): Date => new Date(`${s}T00:00:00Z`);
 
 async function loadOpenInvoices(companyId: string): Promise<OpenDoc[]> {
   const res = await pool.query(
-    `SELECT i.id, i.number, i.customer_name, i.currency, to_char(i.date, 'YYYY-MM-DD') AS date_s, to_char(i.due_date, 'YYYY-MM-DD') AS due_s,
+    `SELECT i.id, i.number, i.customer_name, i.currency, ${dubaiDayTextSql("i.date")} AS date_s, ${dubaiDayTextSql("i.due_date")} AS due_s,
             ${outstandingSql("i")}::float8 AS open
        FROM invoices i
       WHERE i.company_id = $1 AND ${openReceivableSql("i")}`,
@@ -105,7 +117,7 @@ async function loadOpenInvoices(companyId: string): Promise<OpenDoc[]> {
 /** Open (approved or part-paid) bills with what is still owed after payments and applied vendor credits. */
 export async function loadOpenBills(companyId: string, billId?: string): Promise<OpenDoc[]> {
   const res = await pool.query(
-    `SELECT b.id, b.bill_number, b.vendor_name, b.currency, to_char(b.bill_date, 'YYYY-MM-DD') AS date_s, to_char(b.due_date, 'YYYY-MM-DD') AS due_s,
+    `SELECT b.id, b.bill_number, b.vendor_name, b.currency, ${dubaiDayTextSql("b.bill_date")} AS date_s, ${dubaiDayTextSql("b.due_date")} AS due_s,
             GREATEST(COALESCE(b.total_amount, 0)
               - COALESCE((SELECT SUM(p.amount) FROM bill_payments p WHERE p.bill_id = b.id), 0)
               - COALESCE((SELECT SUM(a.amount) FROM vendor_credit_applications a WHERE a.bill_id = b.id), 0), 0)::float8 AS open
@@ -130,7 +142,7 @@ async function loadJournalCandidates(companyId: string, glIds: string[], from: D
   const out = new Map<string, JournalCandidate[]>();
   if (glIds.length === 0) return out;
   const res = await pool.query(
-    `SELECT jl.account_id AS gl_id, je.id AS entry_id, je.source, je.source_id, je.memo, je.entry_number, to_char(je.date, 'YYYY-MM-DD') AS date_s,
+    `SELECT jl.account_id AS gl_id, je.id AS entry_id, je.source, je.source_id, je.memo, je.entry_number, ${dubaiDayTextSql("je.date")} AS date_s,
             SUM(jl.debit - jl.credit)::float8 AS net, MAX(r.merchant) AS merchant
        FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
@@ -139,7 +151,7 @@ async function loadJournalCandidates(companyId: string, glIds: string[], from: D
         AND je.date >= $3 AND je.date <= $4
         AND je.reversed_entry_id IS NULL
         AND NOT EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted')
-        AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND bt.matched_journal_entry_id = je.id
+        AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedToSql("bt", "je")}
                          AND bt.bank_account_id = jl.account_id)
       GROUP BY jl.account_id, je.id
      HAVING ABS(SUM(jl.debit - jl.credit)) > 0.005`,
@@ -196,7 +208,17 @@ export async function loadCandidatePool(companyId: string, txns: BankTransaction
       : Promise.resolve(null),
   ]);
 
+  const openTxns = (await storage.getUnreconciledBankTransactions(companyId)).filter((t) => t.matchStatus !== "matched").slice(0, 500);
+  const rates = new Map<string, number>();
+  for (const cur of new Set(bankAccountList.map((b) => (b.currency || "AED").toUpperCase()))) {
+    if (cur === "AED") continue;
+    const r = await getLatestRate(cur, "AED", undefined, companyId);
+    if (r && r > 0) rates.set(cur, r);
+  }
+
   return {
+    openTxns,
+    rates,
     accounts,
     accountsByCode,
     bankAccounts,
@@ -233,6 +255,30 @@ export function proposeRuleLines(pool_: Pick<CandidatePool, "accounts" | "accoun
 }
 
 /** Every suggestion at or above `minConfidence` for one bank line, best first (not yet one-to-one). */
+const rateOf = (pool_: Pick<CandidatePool, "rates">, currency: string): number | null => (currency === "AED" ? 1 : (pool_.rates.get(currency) ?? null));
+
+/** Up to 3 sets of 2-4 open invoices that add up to the bank amount exactly, best matches of the bank text first. */
+export function invoiceCombinations(docs: OpenDoc[], amount: number, text: string): OpenDoc[][] {
+  const target = Math.round(amount * 100);
+  const pool = docs
+    .filter((d) => d.open <= amount + 0.005)
+    .map((d) => ({ d, sim: nameSimilarity(text, d.name ?? ""), cents: Math.round(d.open * 100) }))
+    .sort((a, b) => b.sim - a.sim || a.d.open - b.d.open)
+    .slice(0, 14);
+  const found: OpenDoc[][] = [];
+  const walk = (start: number, picked: typeof pool, sum: number) => {
+    if (found.length >= 3) return;
+    if (picked.length >= 2 && sum === target) {
+      found.push(picked.map((p) => p.d));
+      return;
+    }
+    if (picked.length >= 4 || sum >= target) return;
+    for (let i = start; i < pool.length; i++) walk(i + 1, [...picked, pool[i]], sum + pool[i].cents);
+  };
+  walk(0, [], 0);
+  return found;
+}
+
 export function suggestionsFor(pool_: CandidatePool, txn: BankTransaction, minConfidence = 60): Suggestion[] {
   if (txn.isReconciled || txn.matchStatus === "matched") return [];
   const amount = Math.abs(Number(txn.amount));
@@ -315,6 +361,59 @@ export function suggestionsFor(pool_: CandidatePool, txn: BankTransaction, minCo
     }
   }
 
+  // one receipt that pays several invoices exactly (nothing single fits)
+  if (inflow && txn.bankAccountId && !out.some((s) => s.kind === "invoice" && s.amountMatches)) {
+    const control = pool_.accountsByCode.get(ACCOUNT_CODES.AR);
+    for (const combo of invoiceCombinations(pool_.invoices.filter((d) => d.currency.toUpperCase() === bankCurrency), amount, text)) {
+      const sameCustomer = new Set(combo.map((d) => (d.name ?? "").trim().toLowerCase())).size === 1;
+      const named = combo.some((d) => nameSimilarity(text, d.name ?? "") >= 0.25);
+      const confidence = Math.min(90, 70 + (sameCustomer ? 10 : 0) + (named ? 10 : 0));
+      if (confidence < minConfidence) continue;
+      out.push({
+        ...base,
+        kind: "invoices",
+        targetId: combo[0].id,
+        targetIds: combo.map((d) => d.id),
+        confidence,
+        reasons: ["AMOUNT_EXACT", "COMBINATION_OF_INVOICES", ...(named ? (["NAME_STRONG"] as ReasonCode[]) : [])],
+        label: `Invoices ${combo.map((d) => d.number ?? "").join(", ")}${combo[0].name ? ` · ${combo[0].name}` : ""}`,
+        posts: true,
+        amountMatches: true,
+        proposedLines: control ? [line(pool_, txn.bankAccountId, amount, 0, txn.description), line(pool_, control.id, 0, amount, combo.map((d) => d.number).join(", "))] : [],
+      });
+    }
+  }
+
+  // the other leg of a transfer between two own bank accounts (maybe in another currency)
+  if (txn.bankStatementAccountId) {
+    const mine = rateOf(pool_, bankCurrency);
+    for (const o of pool_.openTxns) {
+      if (o.id === txn.id || o.bankStatementAccountId === txn.bankStatementAccountId || !o.bankStatementAccountId) continue;
+      if (Number(o.amount) > 0 === inflow) continue;
+      if (daysBetween(new Date(o.transactionDate), date) > 5) continue;
+      const otherCur = (pool_.bankAccounts.get(o.bankStatementAccountId)?.currency || "AED").toUpperCase();
+      const theirs = rateOf(pool_, otherCur);
+      if (!mine || !theirs) continue;
+      const otherAbs = Math.abs(Number(o.amount));
+      const same = otherCur === bankCurrency;
+      const fits = same ? Math.abs(otherAbs - amount) < 0.005 : Math.abs(otherAbs * theirs - amount * mine) / Math.max(amount * mine, 0.01) <= 0.03;
+      if (!fits) continue;
+      const confidence = same ? 85 : 75;
+      if (confidence < minConfidence) continue;
+      out.push({
+        ...base,
+        kind: "transfer",
+        targetId: o.id,
+        confidence,
+        reasons: ["TRANSFER_BETWEEN_OWN_ACCOUNTS"],
+        label: `Transfer · ${o.description}`,
+        posts: true,
+        amountMatches: true,
+        proposedLines: [],
+      });
+    }
+  }
+
   const clearing = pool_.accountsByCode.get(CLEARING_ACCOUNT_CODE);
   if (inflow && txn.bankAccountId && clearing && pool_.clearingBalance !== null && Math.abs(pool_.clearingBalance - amount) < 0.005 && CLEARING_CONFIDENCE >= minConfidence) {
     out.push({
@@ -351,7 +450,9 @@ export async function suggestForTransactions(companyId: string, txns: BankTransa
       .map((s) => ({ candidate: s, score: s.confidence })),
   }));
   // a rule may serve many lines; documents, entries and the clearing account are exclusive targets
-  const pairs = assignGreedy(options, (s: Suggestion) => (s.kind === "rule" ? `rule:${s.transactionId}` : `${s.kind}:${s.targetId}`));
+  const pairs = assignGreedy(options, (s: Suggestion) =>
+    s.kind === "rule" ? `rule:${s.transactionId}` : s.kind === "transfer" ? `transfer:${[s.transactionId, s.targetId].sort().join(",")}` : s.kind === "invoices" ? `invoices:${(s.targetIds ?? []).sort().join(",")}` : `${s.kind}:${s.targetId}`
+  );
   return pairs.map((p) => p.candidate).sort((a, b) => b.confidence - a.confidence);
 }
 

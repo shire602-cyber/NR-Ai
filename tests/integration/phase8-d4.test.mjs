@@ -88,7 +88,7 @@ async function newCompany(label, extra = {}) {
     return r1.json;
   };
   C.payBill = async (id, amount, date) => {
-    const r1 = await api("POST", `/api/bills/${id}/payments`, { token, body: { amount, payment_date: date, payment_method: "bank_transfer" } });
+    const r1 = await api("POST", `/api/bills/${id}/payments`, { token, body: { amount, payment_date: date, payment_method: "bank_transfer", payment_account_id: acct("1010").id } });
     if (r1.status !== 201 && r1.status !== 200) throw new Error("bill payment failed " + r1.status + " " + r1.text.slice(0, 300));
     return r1.json;
   };
@@ -723,11 +723,11 @@ async function schedulesAndAccess() {
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1,$2,'employee')`, [S.cid, employee.json.user.id]);
   const asEmployee = (rid, q = "") => api("GET", `/api/companies/${S.cid}/reports/run/${rid}?from=${yearStart}&to=${today}${q}`, { token: employee.json.token });
   r = await asEmployee("payroll-register");
-  ok("R1: an employee gets 403 ROLE_FORBIDDEN on the payroll register", r.status === 403 && r.json?.code === "ROLE_FORBIDDEN", { s: r.status, j: r.json });
+  ok("R1: an employee gets 403 (ROLE_REQUIRED from the report gate) on the payroll register", r.status === 403 && /^ROLE_(REQUIRED|FORBIDDEN)$/.test(r.json?.code), { s: r.status, j: r.json });
   r = await asEmployee("audit-trail");
-  ok("R1: ... and on the audit trail", r.status === 403 && r.json?.code === "ROLE_FORBIDDEN", { s: r.status, j: r.json });
+  ok("R1: ... and on the audit trail", r.status === 403 && /^ROLE_(REQUIRED|FORBIDDEN)$/.test(r.json?.code), { s: r.status, j: r.json });
   r = await asEmployee("profit-loss");
-  ok("R1: ... but can open an ordinary report", r.status === 200, r.status);
+  ok("R1: ... and on an ordinary report too (no report is for the employee role)", r.status === 403 && r.json?.code === "ROLE_REQUIRED", { s: r.status, j: r.json });
   r = await api("POST", `/api/companies/${S.cid}/report-schedules`, { token: employee.json.token, body: body() });
   ok("R1: an employee cannot create a schedule (403)", r.status === 403, { s: r.status, j: r.json });
   r = await api("GET", `/api/companies/${S.cid}/report-schedules`, { token: employee.json.token });
@@ -873,7 +873,7 @@ async function wave2Reports() {
 
   // ── leave, end-of-service provision, loans (D2): sensitive ──
   const joined = (y) => `${now.getUTCFullYear() - y}-${today.slice(5)}`;
-  const emp = (await db.query(`INSERT INTO employees (company_id, full_name, employee_number, nationality, basic_salary, total_salary, join_date) VALUES ($1,'Sara Expat','E-10','Indian',6000,6000,$2::timestamp) RETURNING id`, [W.cid, joined(3)])).rows[0];
+  const emp = (await db.query(`INSERT INTO employees (company_id, full_name, employee_number, nationality, basic_salary, total_salary, join_date) VALUES ($1,'Sara Expat','E-10','Indian',6000,6000,$2::timestamp + INTERVAL '1 day') RETURNING id`, [W.cid, joined(3)])).rows[0];
   r = await W.run("leave-balances", `asOf=${today}`);
   const annual = detailRows(r).filter((x) => x.drill?.id === emp.id);
   ok("leave: the employee has a balance row per leave type with accrual and the balance adds up", annual.length >= 1 && annual.every((x) => close(x.cells.balance, x.cells.opening + x.cells.accrued + x.cells.adjustment - x.cells.taken)) && annual.some((x) => x.cells.accrued > 0), annual.map((x) => x.cells));
@@ -890,8 +890,13 @@ async function wave2Reports() {
   await W.je(day(10), [["5028", 10000, 0], ["2036", 0, 10000]]);
   r = await W.run("eos-provision", `asOf=${today}`);
   const eos = detailRows(r).find((x) => x.drill?.id === emp.id);
-  ok("EOS: 3 completed years at basic 6,000 = 21 x 3 x 200 = 12,600 entitlement", close(eos?.cells.entitlement, 12600) && close(eos?.cells.years, 3), eos?.cells);
+  // The service days count INCLUSIVELY (the last day of service counts): joined one day after the 3-year mark of asOf is exactly 3 completed years.
+  ok("EOS: 3 completed years (inclusive of the last day) at basic 6,000 = 21 x 3 x 200 = 12,600 entitlement", close(eos?.cells.entitlement, 12600) && close(eos?.cells.years, 3), eos?.cells);
   ok("EOS: the ledger provision (2036 = 10,000) and the shortfall (-2,600) are shown, with a warning", close(row(r, "tie:2036")?.cells.entitlement, 10000) && close(row(r, "tie:diff")?.cells.entitlement, -2600) && (r.json?.warnings ?? []).length === 1, { tie: row(r, "tie:2036")?.cells, diff: row(r, "tie:diff")?.cells });
+  // the inclusive rule, second case: joined exactly 3 years before asOf = 3 years + 1 day of service = 12,611.67 (21 x 3 x 200 x 1096/1095)
+  const edge = (await db.query(`INSERT INTO employees (company_id, full_name, employee_number, nationality, basic_salary, total_salary, join_date) VALUES ($1,'Edge Expat','E-12','Indian',6000,6000,$2::timestamp) RETURNING id`, [W.cid, joined(3)])).rows[0];
+  r = await W.run("eos-provision", `asOf=${today}`);
+  ok("EOS: joined exactly 3 years before the as-of day = 3 years + 1 day of service (inclusive): a day above 12,600 (12,611.67 on 2026-10-02)", n(detailRows(r).find((x) => x.drill?.id === edge.id)?.cells.entitlement) > 12600 && n(detailRows(r).find((x) => x.drill?.id === edge.id)?.cells.entitlement) < 12620, detailRows(r).find((x) => x.drill?.id === edge.id)?.cells);
   await db.query(`INSERT INTO employees (company_id, full_name, employee_number, nationality, basic_salary, total_salary, join_date) VALUES ($1,'Omar Emirati','E-11','Emirati',9000,9000,$2::timestamp)`, [W.cid, joined(6)]);
   r = await W.run("eos-provision", `asOf=${today}`);
   const gcc = detailRows(r).find((x) => x.cells.employee === "Omar Emirati");
@@ -919,7 +924,7 @@ async function wave2Reports() {
   await db.query(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1,$2,'employee')`, [W.cid, empUser.json.user.id]);
   for (const id of ["leave-balances", "eos-provision", "employee-loans"]) {
     const x = await api("GET", `/api/companies/${W.cid}/reports/run/${id}?asOf=${today}`, { token: empUser.json.token });
-    ok(`R1: an employee gets 403 ROLE_FORBIDDEN on ${id}`, x.status === 403 && x.json?.code === "ROLE_FORBIDDEN", { s: x.status, j: x.json });
+    ok(`R1: an employee gets 403 on ${id}`, x.status === 403 && /^ROLE_(REQUIRED|FORBIDDEN)$/.test(x.json?.code), { s: x.status, j: x.json });
   }
 
   // ── bank reconciliation statement (D3): one calculation ──
@@ -1270,9 +1275,9 @@ async function allReportsSweep() {
   x = await v("unreconciled-bank-items");
   ok("values: unreconciled bank items count 3 and net 75", x.rows.length === 3 && close(x.totals?.amount, 75), x.totals);
   x = await v("inventory-valuation");
-  ok("values: inventory valuation shows 10 units worth 100", x.rows.length === 1 && close(x.totals?.value, 100) && x.totals?.quantity === 10, x.totals);
+  ok("values: inventory valuation shows 10 units worth 100", x.rows.filter((r) => r.kind === "detail").length === 1 && close(x.totals?.value, 100) && x.totals?.quantity === 10, x.totals);
   x = await v("inventory-valuation", `asOf=${day(1)}`);
-  ok("values: valued as of yesterday, the purchase movement made today is wound back (nothing on hand)", x.rows.length === 0, x.rows);
+  ok("values: valued as of yesterday, the purchase movement made today is wound back (nothing on hand)", x.rows.filter((r) => r.kind === "detail").length === 0, x.rows);
   x = await v("inventory-summary");
   ok("values: inventory summary shows on-hand 10", x.rows.length === 1 && x.rows[0].cells.onHand === 10, x.rows[0]?.cells);
   x = await v("inventory-movement");

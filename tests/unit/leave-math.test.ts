@@ -19,6 +19,34 @@ describe("accrualRateForServiceMonth", () => {
   });
 });
 
+describe("service months are earned at the END of the month (teardown: Fatima 2025 = 12 days)", () => {
+  it("joined 1 Jan 2025: service months 7-12 earn 2 days each in 2025 = 12", () => {
+    const b = leaveBalance({ type: annual, joinYmd: "2025-01-01", asOfYmd: "2025-12-31", takenInYear: () => 0, overrides: new Map() });
+    expect(b.accrued).toBe(12);
+  });
+  it("...and 22.5 more by 30 Sep 2026 (nine months of 2.5), not 25 on 2 Oct", () => {
+    const b = leaveBalance({ type: { ...annual, carryForwardMaxDays: 30 }, joinYmd: "2025-01-01", asOfYmd: "2026-10-02", takenInYear: () => 0, overrides: new Map() });
+    expect(b.accrued).toBe(22.5);
+    expect(b.opening).toBe(12);
+    expect(b.balance).toBe(34.5);
+  });
+});
+
+describe("no invented carry-forward", () => {
+  it("nothing carries into the company's first year in the system unless entered", () => {
+    const type = { ...annual, carryForwardMaxDays: 30 };
+    const base = { type, joinYmd: "2019-04-01", asOfYmd: "2026-09-30", takenInYear: () => 0, trackingStartYear: 2026 };
+    expect(leaveBalance({ ...base, overrides: new Map() }).opening).toBe(0);
+    expect(leaveBalance({ ...base, overrides: new Map() }).balance).toBe(22.5);
+    expect(leaveBalance({ ...base, overrides: new Map([[2026, { opening: 12 }]]) }).balance).toBe(34.5);
+  });
+  it("later years carry forward as usual", () => {
+    const type = { ...annual, carryForwardMaxDays: 30 };
+    const b = leaveBalance({ type, joinYmd: "2019-04-01", asOfYmd: "2027-03-31", takenInYear: () => 0, trackingStartYear: 2026, overrides: new Map() });
+    expect(b.opening).toBe(30);
+  });
+});
+
 describe("annual days of the type", () => {
   it("from service month 13 the rate is annualDays / 12 (24 days -> 2)", () => {
     expect(accrualRateForServiceMonth(13, 24)).toBe(2);
@@ -29,9 +57,10 @@ describe("annual days of the type", () => {
 
 describe("completedServiceMonths", () => {
   it("counts a month once its day-of-month has come round", () => {
-    expect(completedServiceMonths("2024-01-01", "2026-09-30")).toBe(32);
-    expect(completedServiceMonths("2024-01-15", "2024-02-14")).toBe(0);
-    expect(completedServiceMonths("2024-01-15", "2024-02-15")).toBe(1);
+    expect(completedServiceMonths("2024-01-01", "2026-09-30")).toBe(33);
+    expect(completedServiceMonths("2024-01-01", "2026-09-29")).toBe(32);
+    expect(completedServiceMonths("2024-01-15", "2024-02-13")).toBe(0);
+    expect(completedServiceMonths("2024-01-15", "2024-02-14")).toBe(1);
     expect(completedServiceMonths("2024-01-31", "2024-03-01")).toBe(1);
     expect(completedServiceMonths("2026-10-01", "2026-09-30")).toBe(0);
   });
@@ -58,7 +87,7 @@ describe("annual leave balance (D2-6)", () => {
   });
 
   it("accrues nothing in the first six service months", () => {
-    const b = leaveBalance({ type: annual, joinYmd: "2026-03-01", asOfYmd: "2026-09-30", takenInYear: () => 0, overrides: new Map() });
+    const b = leaveBalance({ type: annual, joinYmd: "2026-04-01", asOfYmd: "2026-09-30", takenInYear: () => 0, overrides: new Map() });
     expect(b.accrued).toBe(0);
   });
 
@@ -100,23 +129,23 @@ describe("sickTierSplit (Art. 31: 15 full, 30 half, then unpaid)", () => {
 
 describe("leaveDeduction", () => {
   it("20 sick days at basic 6,000 deduct 500 (5 half-pay days)", () => {
-    const d = leaveDeduction({ payPolicy: "sick_tiered", basic: 6000, days: 20, sickDaysBefore: 0 });
+    const d = leaveDeduction({ payPolicy: "sick_tiered", wage: 6000, days: 20, sickDaysBefore: 0 });
     expect(d).toEqual({ unpaidDays: 0, halfDays: 5, deduction: 500 });
   });
   it("unpaid leave takes basic/30 a day, half-pay leave basic/60", () => {
-    expect(leaveDeduction({ payPolicy: "unpaid", basic: 6000, days: 3, sickDaysBefore: 0 }).deduction).toBe(600);
-    expect(leaveDeduction({ payPolicy: "half", basic: 6000, days: 4, sickDaysBefore: 0 }).deduction).toBe(400);
+    expect(leaveDeduction({ payPolicy: "unpaid", wage: 6000, days: 3, sickDaysBefore: 0 }).deduction).toBe(600);
+    expect(leaveDeduction({ payPolicy: "half", wage: 6000, days: 4, sickDaysBefore: 0 }).deduction).toBe(400);
   });
   it("full-pay and manual types never deduct", () => {
-    expect(leaveDeduction({ payPolicy: "full", basic: 6000, days: 10, sickDaysBefore: 0 }).deduction).toBe(0);
-    expect(leaveDeduction({ payPolicy: "manual", basic: 6000, days: 10, sickDaysBefore: 0 }).deduction).toBe(0);
+    expect(leaveDeduction({ payPolicy: "full", wage: 6000, days: 10, sickDaysBefore: 0 }).deduction).toBe(0);
+    expect(leaveDeduction({ payPolicy: "manual", wage: 6000, days: 10, sickDaysBefore: 0 }).deduction).toBe(0);
   });
   it("a 31-day unpaid month deducts 30/30 of basic, never more", () => {
-    expect(leaveDeduction({ payPolicy: "unpaid", basic: 6000, days: 31, sickDaysBefore: 0 }).deduction).toBe(6000);
-    expect(leaveDeduction({ payPolicy: "half", basic: 6000, days: 31, sickDaysBefore: 0 }).deduction).toBe(3100);
-    expect(leaveDeduction({ payPolicy: "half", basic: 6000, days: 62, sickDaysBefore: 0 }).deduction).toBe(6000);
+    expect(leaveDeduction({ payPolicy: "unpaid", wage: 6000, days: 31, sickDaysBefore: 0 }).deduction).toBe(6000);
+    expect(leaveDeduction({ payPolicy: "half", wage: 6000, days: 31, sickDaysBefore: 0 }).deduction).toBe(3100);
+    expect(leaveDeduction({ payPolicy: "half", wage: 6000, days: 62, sickDaysBefore: 0 }).deduction).toBe(6000);
   });
   it("rounds to fils", () => {
-    expect(leaveDeduction({ payPolicy: "unpaid", basic: 5000, days: 1, sickDaysBefore: 0 }).deduction).toBe(166.67);
+    expect(leaveDeduction({ payPolicy: "unpaid", wage: 5000, days: 1, sickDaysBefore: 0 }).deduction).toBe(166.67);
   });
 });

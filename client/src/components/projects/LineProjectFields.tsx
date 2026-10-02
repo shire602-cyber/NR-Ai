@@ -10,12 +10,14 @@ interface Props {
   isBillable: boolean | undefined;
   onChange: (next: { projectId: string | null; isBillable: boolean }) => void;
   testIdSuffix?: string;
+  /** Sales lines carry a project but are not "billable" (that switch is for cost lines). */
+  hideBillable?: boolean;
 }
 
 const NONE = "none";
 
 /** Project and "billable" on a cost line (bill line, claim item). Renders nothing when the company has no active projects. */
-export function LineProjectFields({ companyId, projectId, isBillable, onChange, testIdSuffix = "" }: Props) {
+export function LineProjectFields({ companyId, projectId, isBillable, onChange, testIdSuffix = "", hideBillable }: Props) {
   const tr = messages.useT();
   const { data: projects = [] } = useActiveProjects(companyId);
   // A line that already carries a project keeps its picker even if that project has since been closed.
@@ -38,7 +40,7 @@ export function LineProjectFields({ companyId, projectId, isBillable, onChange, 
           </SelectContent>
         </Select>
       </div>
-      {projectId && (
+      {projectId && !hideBillable && (
         <div className="flex items-center gap-2">
           <Switch checked={!!isBillable} onCheckedChange={(checked) => onChange({ projectId: projectId ?? null, isBillable: checked })} data-testid={`switch-line-billable${testIdSuffix}`} />
           <Label className="text-xs">{tr("billable")}</Label>

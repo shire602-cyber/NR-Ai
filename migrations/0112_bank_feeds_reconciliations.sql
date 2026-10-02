@@ -54,3 +54,15 @@ DO $$ BEGIN
     ADD CONSTRAINT "bank_transactions_reconciliation_fk" FOREIGN KEY ("reconciliation_id")
     REFERENCES "bank_reconciliations"("id") ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- One bank line can settle several ledger entries (a receipt that pays three invoices posts three payment entries).
+-- bank_transactions.matched_journal_entry_id holds the first; the others are listed here. Both count as matched.
+CREATE TABLE IF NOT EXISTS "bank_transaction_entries" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+  "bank_transaction_id" uuid NOT NULL REFERENCES "bank_transactions"("id") ON DELETE CASCADE,
+  "journal_entry_id" uuid NOT NULL REFERENCES "journal_entries"("id") ON DELETE CASCADE,
+  "created_at" timestamp NOT NULL DEFAULT now(),
+  CONSTRAINT "uq_bank_transaction_entry" UNIQUE ("bank_transaction_id", "journal_entry_id")
+);
+CREATE INDEX IF NOT EXISTS "idx_bank_txn_entries_entry" ON "bank_transaction_entries"("journal_entry_id");

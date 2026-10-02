@@ -5,6 +5,7 @@
 import type { Request } from "express";
 import { createLogger } from "../config/logger";
 import { hasEmailProvider, sendGenericEmail } from "./email.service";
+import { bilingualSubject, bilingualText, localized } from "./email-i18n";
 import { parseUserAgent } from "./sessions";
 
 const log = createLogger("new-device");
@@ -24,10 +25,12 @@ export async function notifyNewDevice(user: { id: string; email: string; name?: 
   const ua = (req?.headers["user-agent"] as string | undefined) ?? null;
   const ip = req?.ip || req?.socket?.remoteAddress || "unknown";
   try {
+    // Bilingual (Arabic, then English): the device description is the same text in both blocks.
+    const name = user.name ? " " + user.name : "";
     await sendGenericEmail(
       user.email,
-      "New sign-in to your Muhasib.ai account",
-      `Hello${user.name ? " " + user.name : ""},\n\nYour account was just signed in to from ${describeDevice(ua)} (IP ${ip}).\n\nIf this was you, no action is needed. If it was not, change your password and revoke other sessions under Settings > Security right away.`,
+      bilingualSubject(localized("newDeviceSubject")),
+      bilingualText(localized("newDeviceBody", { name, device: describeDevice(ua), ip })),
       "Muhasib.ai"
     );
   } catch (err) {

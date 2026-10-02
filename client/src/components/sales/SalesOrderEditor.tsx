@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,11 +30,11 @@ import { CustomFieldsEditor } from "./CustomFieldsEditor";
 import { DocumentAdjustments, SalesTotalsSummary } from "./DocumentAdjustments";
 import { LineDiscountFields } from "./LineDiscountFields";
 import { LineProductPicker, type PickerProduct } from "./LineProductPicker";
+import { vatChoiceOf, vatFieldsOf, vatFromSelectValue, vatSelectValue } from "@/lib/vat-choice";
 import { messages } from "./SalesShared.i18n";
 import { useCustomFieldDraft } from "./useCustomFieldDraft";
 import { useSalesAdjustments } from "./useSalesAdjustments";
 
-const todayYmd = () => new Date().toISOString().slice(0, 10);
 const ymdOf = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : "");
 const blankLine = (): ItemLineForm => ({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05, discountType: null, discountValue: null });
 
@@ -221,13 +222,14 @@ export function SalesOrderEditor({ companyId, open, order, onClose }: Props) {
                     />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
-                    <Select value={String(Math.round(line.vatRate * 100))} onValueChange={(v) => setLine(index, { vatRate: parseFloat(v) / 100, vatSupplyType: null })}>
+                    <Select value={vatSelectValue(line.vatRate, line.vatSupplyType)} onValueChange={(v) => { const picked = vatFromSelectValue(v); setLine(index, { vatRate: picked.vatRate, vatSupplyType: picked.vatRate === 0 ? picked.vatSupplyType : null }); }}>
                       <SelectTrigger className="font-mono" aria-label={tr("lineVat", { line: index + 1 })}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="0">0%</SelectItem>
                         <SelectItem value="5">5%</SelectItem>
+                        <SelectItem value="0:zero_rated">{tr("vatZeroRated")}</SelectItem>
+                        <SelectItem value="0:exempt">{tr("vatExempt")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -261,8 +263,8 @@ export function SalesOrderEditor({ companyId, open, order, onClose }: Props) {
                           description: locale === "ar" && picked.nameAr ? picked.nameAr : picked.name,
                           unitPrice: priced.unitPrice,
                           priceListId: priced.priceListId,
-                          vatRate: Number(picked.vatRate) === 0 ? 0 : 0.05,
-                          vatSupplyType: null,
+                          vatRate: vatFieldsOf(vatChoiceOf(picked.vatRate, picked.vatSupplyType)).vatRate,
+                          vatSupplyType: vatChoiceOf(picked.vatRate, picked.vatSupplyType) === "standard_rated" ? null : vatChoiceOf(picked.vatRate, picked.vatSupplyType),
                         });
                       }}
                     />

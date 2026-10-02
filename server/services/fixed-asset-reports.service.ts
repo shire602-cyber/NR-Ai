@@ -1,6 +1,7 @@
 // Fixed-asset register (as of a day) and depreciation schedule (posted months plus a projection to the end of life).
 // Read-only. The register's totals are tied to the ledger: cost on 1290 less accumulated depreciation on 1240.
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { pool } from "../db";
 import { AppError } from "../errors";
 import { calculateDepreciation } from "./fixed-asset-depreciation-math";
@@ -30,15 +31,15 @@ export interface AssetRegister {
 
 export async function assetRegister(companyId: string, asOf: string): Promise<AssetRegister> {
   const assets = await pool.query(
-    `SELECT fa.id, fa.asset_number, fa.asset_name, fa.category, to_char(fa.purchase_date, 'YYYY-MM-DD') AS purchase_day, fa.purchase_cost::float8 AS cost, fa.status,
+    `SELECT fa.id, fa.asset_number, fa.asset_name, fa.category, ${dubaiDayTextSql("fa.purchase_date")} AS purchase_day, fa.purchase_cost::float8 AS cost, fa.status,
             fa.disposal_date, fa.needs_capitalization_je,
             COALESCE((SELECT SUM(ds.amount) FROM depreciation_schedules ds
                        LEFT JOIN journal_entries dje ON dje.id = ds.journal_entry_id
                        WHERE ds.asset_id = fa.id
-                         AND COALESCE(dje.date::date, (make_date(ds.period_year, ds.period_month, 1) + interval '1 month - 1 day')::date) <= $2::date), 0)::float8 AS accumulated
+                         AND COALESCE(${dubaiDaySql("dje.date")}, (make_date(ds.period_year, ds.period_month, 1) + interval '1 month - 1 day')::date) <= $2::date), 0)::float8 AS accumulated
        FROM fixed_assets fa
-      WHERE fa.company_id = $1 AND fa.purchase_date::date <= $3::date
-        AND (fa.status IS DISTINCT FROM 'disposed' OR fa.disposal_date IS NULL OR fa.disposal_date::date > $3::date)
+      WHERE fa.company_id = $1 AND ${dubaiDaySql("fa.purchase_date")} <= $3::date
+        AND (fa.status IS DISTINCT FROM 'disposed' OR fa.disposal_date IS NULL OR ${dubaiDaySql("fa.disposal_date")} > $3::date)
       ORDER BY fa.purchase_date, fa.asset_number NULLS LAST, fa.asset_name`,
     [companyId, asOf, asOf]
   );
@@ -70,7 +71,7 @@ export async function assetRegister(companyId: string, asOf: string): Promise<As
     `SELECT a.code, COALESCE(SUM(jl.debit - jl.credit), 0)::float8 AS net
        FROM accounts a
        LEFT JOIN journal_lines jl ON jl.account_id = a.id
-       LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.status = 'posted' AND je.date::date <= $2::date
+       LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.status = 'posted' AND ${dubaiDaySql("je.date")} <= $2::date
       WHERE a.company_id = $1 AND a.code IN ('1290', '1240') AND (jl.id IS NULL OR je.id IS NOT NULL)
       GROUP BY a.code`,
     [companyId, asOf]
@@ -101,6 +102,8 @@ export interface ScheduleRow {
   accumulated: number;
   nbv: number;
   projected: boolean;
+  /** Booked in a catch-up journal because the month lies in a closed or locked period. */
+  catchUp: boolean;
   journalEntryId: string | null;
 }
 
@@ -109,12 +112,12 @@ const MAX_PROJECTED_MONTHS = 600;
 /** Posted depreciation within [from, to] and, with projectToEnd, the months still to come until each asset reaches salvage. */
 export async function depreciationSchedule(companyId: string, args: { from?: string; to?: string; projectToEnd: boolean }): Promise<ScheduleRow[]> {
   const assets = await pool.query(
-    `SELECT id, asset_number, asset_name, category, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day, purchase_cost, salvage_value, useful_life_years, depreciation_method, status
+    `SELECT id, asset_number, asset_name, category, ${dubaiDayTextSql("purchase_date")} AS purchase_day, purchase_cost, salvage_value, useful_life_years, depreciation_method, status
        FROM fixed_assets WHERE company_id = $1 ORDER BY purchase_date, asset_name`,
     [companyId]
   );
   const posted = await pool.query(
-    `SELECT asset_id, period_year, period_month, amount::float8 AS amount, journal_entry_id
+    `SELECT asset_id, period_year, period_month, amount::float8 AS amount, catch_up, journal_entry_id
        FROM depreciation_schedules WHERE company_id = $1 ORDER BY asset_id, period_year, period_month`,
     [companyId]
   );
@@ -136,7 +139,7 @@ export async function depreciationSchedule(companyId: string, args: { from?: str
       months++;
       lastKey = key(p.period_year, p.period_month);
       if (lastKey >= fromKey && lastKey <= toKey) {
-        out.push({ assetId: a.id, number: a.asset_number, name: a.asset_name, year: p.period_year, month: p.period_month, amount: round2(num(p.amount)), accumulated, nbv: round2(cost - accumulated), projected: false, journalEntryId: p.journal_entry_id ?? null });
+        out.push({ assetId: a.id, number: a.asset_number, name: a.asset_name, year: p.period_year, month: p.period_month, amount: round2(num(p.amount)), accumulated, nbv: round2(cost - accumulated), projected: false, catchUp: p.catch_up === true, journalEntryId: p.journal_entry_id ?? null });
       }
     }
     if (!args.projectToEnd || a.status === "disposed") continue;
@@ -159,7 +162,7 @@ export async function depreciationSchedule(companyId: string, args: { from?: str
       accumulated = calc.newAccumulatedDepreciation;
       months++;
       if (key(y, m) >= fromKey) {
-        out.push({ assetId: a.id, number: a.asset_number, name: a.asset_name, year: y, month: m, amount: calc.monthlyDepreciation, accumulated, nbv: calc.newNetBookValue, projected: true, journalEntryId: null });
+        out.push({ assetId: a.id, number: a.asset_number, name: a.asset_name, year: y, month: m, amount: calc.monthlyDepreciation, accumulated, nbv: calc.newNetBookValue, projected: true, catchUp: false, journalEntryId: null });
       }
       if (calc.fullyDepreciated) break; // the last charge brings the asset to salvage
       m += 1;

@@ -34,6 +34,7 @@ import {
   recordJournalCreateApproval,
   resolveActor,
 } from "../services/approval-gate.service";
+import { parseCalendarDay } from "../utils/date";
 
 const log = createLogger("journal");
 
@@ -223,7 +224,7 @@ export function registerJournalRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
+      const entryDate = (parseCalendarDay(date) ?? date) as Date;
 
       // Block posting into a locked period. Drafts are also blocked because
       // their existence implies they will eventually be posted on this date.
@@ -465,7 +466,7 @@ export function registerJournalRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const entryDate = typeof date === "string" ? new Date(date) : date;
+      const entryDate = (parseCalendarDay(date) ?? date) as Date;
 
       // Block updates that would land in a locked period (either the existing
       // entry date or the requested new date).
@@ -605,7 +606,7 @@ export function registerJournalRoutes(app: Express) {
         }
         const doc = await loadApprovalDocument("manual_journal", id);
         const actor = await resolveActor((req as any).user, entry.companyId);
-        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: "draft" }) : ({ kind: "none" } as const);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: "draft", acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
 
         if (step.kind === "step" && !step.isFinal) {
           const request = await recordApprovalStep(tx, step, actor);

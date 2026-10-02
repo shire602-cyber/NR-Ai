@@ -78,7 +78,15 @@ export type StatusKind =
   | "posted"
   | "active"
   | "inactive"
-  | "submitted";
+  | "submitted"
+  | "partial"
+  | "cancelled"
+  | "open"
+  | "closed"
+  | "accepted"
+  | "declined"
+  | "expired"
+  | "issued";
 
 const getStatusMap = (): Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> => ({
   paid: { variant: "success", label: pageMessages.t("paid") },
@@ -94,7 +102,22 @@ const getStatusMap = (): Record<StatusKind, { variant: BadgeProps["variant"]; la
   void: { variant: "neutral", label: pageMessages.t("void") },
   draft: { variant: "neutral", label: pageMessages.t("draft") },
   inactive: { variant: "neutral", label: pageMessages.t("inactive") },
+  partial: { variant: "warning", label: pageMessages.t("partial") },
+  cancelled: { variant: "neutral", label: pageMessages.t("cancelled") },
+  open: { variant: "info", label: pageMessages.t("open") },
+  closed: { variant: "neutral", label: pageMessages.t("closed") },
+  accepted: { variant: "success", label: pageMessages.t("accepted") },
+  declined: { variant: "danger", label: pageMessages.t("declined") },
+  expired: { variant: "warning", label: pageMessages.t("expired") },
+  issued: { variant: "info", label: pageMessages.t("issued") },
 });
+
+/** A document status in the reader's language (for toasts and text; badges use StatusBadge). Unknown values are shown as they are. */
+export function statusText(status: string | null | undefined): string {
+  const key = (status || "").toLowerCase();
+  const entry = (getStatusMap() as Record<string, { label: string } | undefined>)[key];
+  return entry?.label ?? (status || "");
+}
 
 interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
   status: string;

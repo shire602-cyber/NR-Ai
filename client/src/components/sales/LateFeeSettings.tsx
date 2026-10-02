@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { salesErrorMessage } from "@/lib/sales-api";
+import { jobCreatedCount, salesEndpoints } from "@/lib/sales-endpoints";
+import { useCanManageFinance } from "@/hooks/useCanManageFinance";
 import { messages } from "./SalesShared.i18n";
 
 export interface LateFeeConfig {
@@ -39,6 +41,17 @@ export function LateFeeSettings({ companyId, lateFee }: { companyId: string; lat
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/config", companyId] });
     },
     onError: (error: unknown) => toast({ variant: "destructive", title: tr("lateFeeSaveFailed"), description: salesErrorMessage(error, (k) => tr(k), tr("pleaseTryAgain")) }),
+  });
+
+  const canManageFinance = useCanManageFinance(companyId);
+  const runNow = useMutation({
+    mutationFn: () => apiRequest("POST", salesEndpoints.runLateFeesNow(companyId), {}),
+    onSuccess: (result: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices"] });
+      const n = jobCreatedCount(result);
+      toast({ title: tr("runNowDone"), description: n > 0 ? tr("lateFeesRaised", { count: n }) : tr("runNowNothingDue") });
+    },
+    onError: (error: unknown) => toast({ variant: "destructive", title: tr("runNowFailed"), description: salesErrorMessage(error, (k) => tr(k), tr("pleaseTryAgain")) }),
   });
 
   return (
@@ -91,6 +104,14 @@ export function LateFeeSettings({ companyId, lateFee }: { companyId: string; lat
         <Button disabled={percentTooHigh || valueMissing || !daysOk || save.isPending} onClick={() => save.mutate()} data-testid="button-save-late-fee">
           {save.isPending ? tr("saving") : tr("save")}
         </Button>
+        {canManageFinance && (
+          <div className="border-t pt-4">
+            <Button variant="outline" disabled={!lateFee?.enabled || runNow.isPending} onClick={() => runNow.mutate()} data-testid="button-run-late-fees">
+              {tr("runLateFeesNow")}
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">{lateFee?.enabled ? tr("runLateFeesHelp") : tr("runLateFeesOff")}</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

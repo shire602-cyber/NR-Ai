@@ -23,7 +23,7 @@ import {
   updateLeaveType,
 } from "../services/leave.service";
 import { toCalendarYmd } from "../utils/date";
-import { hrCompanyAccess } from "./hr-access";
+import { employeeFilterFor, hrCompanyAccess, hrReadScope } from "./hr-access";
 import { storage } from "../storage";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").refine((v) => new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v, "Not a real date");
@@ -86,9 +86,13 @@ export function registerLeaveRoutes(app: Express) {
     ...base,
     validate({ query: z.object({ asOf: ymd.optional(), employeeId: uuid.optional() }) }),
     asyncHandler(async (req: Request, res: Response) => {
-      if (!(await hrCompanyAccess(req, res, req.params.companyId, { write: false }))) return;
+      const scope = await hrReadScope(req, res, req.params.companyId);
+      if (!scope) return;
       const q = req.query as any;
-      res.json(await getLeaveBalances(req.params.companyId, { asOfYmd: q.asOf ?? toCalendarYmd(new Date()), employeeId: q.employeeId }));
+      const filter = employeeFilterFor(res, scope, q.employeeId);
+      if (!filter) return;
+      if (filter.empty) return res.json([]);
+      res.json(await getLeaveBalances(req.params.companyId, { asOfYmd: q.asOf ?? toCalendarYmd(new Date()), employeeId: filter.employeeId }));
     })
   );
 
@@ -104,9 +108,13 @@ export function registerLeaveRoutes(app: Express) {
     ...base,
     validate({ query: z.object({ status: z.enum(["pending", "approved", "rejected", "cancelled", "all"]).optional(), employeeId: uuid.optional(), ...paging }) }),
     asyncHandler(async (req: Request, res: Response) => {
-      if (!(await hrCompanyAccess(req, res, req.params.companyId, { write: false }))) return;
+      const scope = await hrReadScope(req, res, req.params.companyId);
+      if (!scope) return;
       const q = req.query as any;
-      res.json(await listLeaveRequests(req.params.companyId, { status: q.status, employeeId: q.employeeId, limit: q.limit ?? 100, offset: q.offset ?? 0 }));
+      const filter = employeeFilterFor(res, scope, q.employeeId);
+      if (!filter) return;
+      if (filter.empty) return res.json([]);
+      res.json(await listLeaveRequests(req.params.companyId, { status: q.status, employeeId: filter.employeeId, limit: q.limit ?? 100, offset: q.offset ?? 0 }));
     })
   );
 

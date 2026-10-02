@@ -14,11 +14,12 @@
  * those pure helpers using `pool.query` (matching the rest of the codebase).
  */
 
+import { blockedInputSql, isBlockedInputCategory } from "./blocked-input-vat";
 import { randomUUID } from "node:crypto";
 import { db, pool } from "../db";
 import { loadPeriodSalesDocuments } from "./vat-period-documents.service";
 import { loadVatJournalAdjustments } from "./vat-adjustments.service";
-import { applyJournalAdjustmentsToBoxes, type VatJournalAdjustmentLine } from "./vat-adjustments";
+import { applyJournalAdjustmentsToBoxes, journalLinesForReturn, type VatJournalAdjustmentLine, type VatJournalSaleLine, type VatJournalPurchaseLine } from "./vat-adjustments";
 import { UAE_VAT_RATE } from "../constants";
 import { classifyVatLineForReturn } from "./vat-supply-type";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
@@ -66,7 +67,7 @@ export interface VatBoxBreakdown {
   // Manual journals to the VAT accounts (already inside totalOutputVat / totalInputVat)
   outputVatAdjustment?: number;
   inputVatAdjustment?: number;
-  vatAdjustments?: VatJournalAdjustmentLine[];
+  vatAdjustments?: Array<VatJournalAdjustmentLine | VatJournalSaleLine | VatJournalPurchaseLine>;
   // Net
   netVatPayable: number;
 }
@@ -737,7 +738,8 @@ export async function calculateVatReturn(
             COALESCE(vat_amount, 0)::numeric AS vat_amount,
             reverse_charge,
             currency,
-            COALESCE(exchange_rate, 1)::numeric AS exchange_rate
+            COALESCE(exchange_rate, 1)::numeric AS exchange_rate,
+            category
      FROM receipts
      WHERE company_id = $1
        AND posted = true
@@ -763,6 +765,8 @@ export async function calculateVatReturn(
     if (row.reverse_charge) {
       receiptReverseChargeAmount += aedAmount;
       receiptReverseChargeVat += aedVat;
+    } else if (isBlockedInputCategory(row.category as string | null)) {
+      // blocked input VAT (Art. 53): not a box 9 expense (same rule as the VAT 201 loaders)
     } else {
       totalExpenses += aedAmount;
       inputVatGross += aedVat;
@@ -787,7 +791,8 @@ export async function calculateVatReturn(
        WHERE company_id = $1
          AND bill_date >= $2::date AND bill_date <= $3::date
          AND status NOT IN ('void','cancelled','draft','pending','pending_approval')
-         AND COALESCE(is_opening_balance, false) = false`,
+         AND COALESCE(is_opening_balance, false) = false
+         AND NOT (reverse_charge = false AND ${blockedInputSql("category")})`,
       // Calendar-date comparison — timestamptz casts shift boundaries in
       // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).
       [
@@ -836,18 +841,26 @@ export async function calculateVatReturn(
   const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
   const reverseChargeVat = receiptReverseChargeVat + billReverseChargeVat;
 
+  // Manual journals to the VAT accounts in the period (shared with the VAT 201 and the firm workpaper): purchases recorded
+  // by journal (Dr expense + Dr 1050) count as box 9 expenses like a bill, before the partial-exemption apportionment.
+  const journalAdjustments = await loadVatJournalAdjustments(db, companyId, resolvedPeriod.start, resolvedPeriod.end, company.emirate);
+  totalExpenses += journalAdjustments.purchasesAmount;
+  inputVatGross += journalAdjustments.purchasesVat;
+
   const partialExemption = applyPartialExemption(inputVatGross, company.exemptSupplyRatio);
   const reverseChargePartial = applyPartialExemption(reverseChargeVat, company.exemptSupplyRatio);
 
   // Manual journals to the VAT accounts in the period are VAT adjustments (shared with the VAT 201
   // and the firm workpaper): they are part of the tax due / recoverable, like the ledger.
-  const journalAdjustments = await loadVatJournalAdjustments(db, companyId, resolvedPeriod.start, resolvedPeriod.end, company.emirate);
-  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat + journalAdjustments.outputAdjustment);
+  // Taxable sales recorded by manual journal count as standard-rated supplies (amount and VAT), once.
+  const standardRatedSales = round2(sales.standardRatedAmount + journalAdjustments.salesAmount);
+  const standardRatedVat = round2(sales.standardRatedVat + journalAdjustments.salesVat);
+  const totalOutputVat = round2(standardRatedVat + reverseChargeVat + journalAdjustments.outputAdjustment);
   const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable + journalAdjustments.inputAdjustment);
 
   const boxes: VatBoxBreakdown = {
-    standardRatedSales: sales.standardRatedAmount,
-    standardRatedVat: sales.standardRatedVat,
+    standardRatedSales,
+    standardRatedVat,
     zeroRatedSales: sales.zeroRatedAmount,
     exemptSales: sales.exemptAmount,
     reverseChargeAmount: round2(reverseChargeAmount),
@@ -859,11 +872,11 @@ export async function calculateVatReturn(
     inputVatIrrecoverable: partialExemption.irrecoverable,
     reverseChargeVatRecoverable: reverseChargePartial.recoverable,
     totalInputVat,
-    ...(journalAdjustments.lines.length > 0
+    ...(journalAdjustments.lines.length > 0 || journalAdjustments.sales.length > 0 || journalAdjustments.purchases.length > 0
       ? {
           outputVatAdjustment: journalAdjustments.outputAdjustment,
           inputVatAdjustment: journalAdjustments.inputAdjustment,
-          vatAdjustments: journalAdjustments.lines,
+          vatAdjustments: journalLinesForReturn(journalAdjustments),
         }
       : {}),
     netVatPayable: round2(totalOutputVat - totalInputVat),
@@ -900,8 +913,8 @@ export async function calculateVatReturn(
 
   const vat201Base = buildVat201Boxes(
     {
-      standardRatedAmount: sales.standardRatedAmount,
-      standardRatedVat: sales.standardRatedVat,
+      standardRatedAmount: standardRatedSales,
+      standardRatedVat,
       zeroRatedAmount: sales.zeroRatedAmount,
       exemptAmount: sales.exemptAmount,
       reverseChargeAmount: boxes.reverseChargeAmount,

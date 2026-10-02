@@ -46,6 +46,27 @@ export async function loadContact(companyId: string, id: string) {
   return rows[0] ? contactFromRow(rows[0]) : null;
 }
 
+// ───────────────────────── Accounts ─────────────────────────
+export const ACCOUNT_COLUMNS = `a.id, a.code, a.name_en, a.name_ar, a.type, a.sub_type, a.is_system_account, a.is_active, a.is_archived, ${TS_SQL("a.created_at")} AS ts`;
+export function accountFromRow(r: any) {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name_en,
+    nameAr: r.name_ar ?? null,
+    type: r.type,
+    subType: r.sub_type ?? null,
+    isSystem: r.is_system_account === true,
+    isActive: r.is_active !== false && r.is_archived !== true,
+    createdAt: isoTs(r.ts),
+  };
+}
+export async function loadAccount(companyId: string, id: string) {
+  if (!UUID_RE.test(id)) return null;
+  const { rows } = await pool.query(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.company_id = $1 AND a.id = $2`, [companyId, id]);
+  return rows[0] ? accountFromRow(rows[0]) : null;
+}
+
 // ───────────────────────── Items ─────────────────────────
 export const ITEM_COLUMNS = `p.id, p.name, p.name_ar, p.sku, p.description, p.unit_price, p.cost_price, p.vat_rate, p.unit, p.track_inventory,
   p.current_stock, p.low_stock_threshold, p.is_active, ${TS_SQL("p.created_at")} AS ts`;

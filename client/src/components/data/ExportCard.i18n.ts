@@ -8,11 +8,12 @@ export const messages = defineMessages(
     cancel: "Cancel",
     // export
     exportTitle: "Export your data",
+    exportTitleFor: "Export the data of {name}",
     exportBody:
       "Download a ZIP file with every table of this company as CSV, your uploaded documents and a manifest with a checksum for each file. The link stays valid for 24 hours.",
     exportRequest: "Request export",
     exportRequesting: "Requesting...",
-    exportRoleNote: "Only an owner or accountant can export company data.",
+    exportRoleNote: "Only the company owner can export company data.",
     exportInProgress: "An export is already being prepared. It will appear below.",
     exportEmpty: "No exports yet.",
     exportColRequested: "Requested",
@@ -68,11 +69,12 @@ export const messages = defineMessages(
     loading: "جارٍ التحميل...",
     cancel: "إلغاء",
     exportTitle: "صدّر بياناتك",
+    exportTitleFor: "تصدير بيانات {name}",
     exportBody:
       "نزّل ملف ZIP يضم كل جداول هذه الشركة بصيغة CSV، والمستندات التي رفعتها، وملف بيان يحتوي على بصمة تحقق لكل ملف. يبقى الرابط صالحًا 24 ساعة.",
     exportRequest: "طلب تصدير",
     exportRequesting: "جارٍ الطلب...",
-    exportRoleNote: "يمكن للمالك أو المحاسب فقط تصدير بيانات الشركة.",
+    exportRoleNote: "يمكن لمالك الشركة فقط تصدير بيانات الشركة.",
     exportInProgress: "هناك تصدير قيد الإعداد بالفعل. سيظهر في القائمة أدناه.",
     exportEmpty: "لا توجد عمليات تصدير بعد.",
     exportColRequested: "تاريخ الطلب",

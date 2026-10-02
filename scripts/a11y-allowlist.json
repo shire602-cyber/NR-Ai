@@ -13,7 +13,7 @@
     "client/src/pages/BackupRestore.tsx": 3,
     "client/src/pages/BillPay.tsx": 2,
     "client/src/pages/ClientDetails.tsx": 1,
-    "client/src/pages/ClientDocuments.tsx": 4,
+    "client/src/pages/ClientDocuments.tsx": 2,
     "client/src/pages/ClientManagement.tsx": 1,
     "client/src/pages/ClientTasks.tsx": 2,
     "client/src/pages/ComplianceCalendar.tsx": 2,

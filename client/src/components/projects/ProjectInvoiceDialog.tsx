@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loader2 } from "lucide-react";
@@ -25,7 +26,6 @@ interface Props {
   onClose: () => void;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function ProjectInvoiceDialog({ open, project, timeEntryIds, expenseIds, hours, timeAmount, expenseAmount, onClose }: Props) {
   const tr = messages.useT();

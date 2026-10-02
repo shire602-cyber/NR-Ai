@@ -23,6 +23,9 @@ const CSRF_BEARER_EXEMPT = [
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
+  // The simulated checkout page of the fake payment gateway (a plain form post; the routes answer 404 unless
+  // PAYMENT_GATEWAY_FAKE=1, which the boot refuses in production).
+  /^\/api\/public\/fake-pay\//,
   // Client-side error telemetry sink: a fire-and-forget endpoint that returns
   // 204 and takes no state-changing action. It MUST accept reports even when
   // the app is broken (e.g. a chunk failed to load before a CSRF token was

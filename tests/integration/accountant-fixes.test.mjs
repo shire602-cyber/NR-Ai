@@ -30,7 +30,9 @@ ok("input VAT GL = 200(bill)+5(taxi), entertainment 15 NOT recovered",Math.abs(N
 const inv=(await api("POST",`/api/companies/${C}/invoices`,{customerName:"X",date:today,dueDate:today,lines:[{description:"a",quantity:1,unitPrice:15000,vatRate:0.05}]},T)).j;
 await api("PATCH",`/api/invoices/${inv.id}/status`,{status:"sent"},T);
 const vat=(await api("POST",`/api/companies/${C}/vat-returns/generate`,{periodStart:monthStart,periodEnd:today},T)).j;
-ok("box9 includes bill 4000 + claims 400 net",Math.abs(vat.box9ExpensesAmount-4400)<0.01,{box9:vat.box9ExpensesAmount});
+// The 300 dinner is entertainment: its VAT is blocked (Art. 53), so the whole document is outside box 9 (amount and VAT), as the
+// posting keeps that VAT in the expense instead of Input VAT. Box 9 = bill 4000 + taxi 100 = 4100 (was 4400 when only the VAT was excluded).
+ok("box9 = bill 4000 + taxi claim 100 net (the blocked entertainment claim is out of box 9)",Math.abs(vat.box9ExpensesAmount-4100)<0.01,{box9:vat.box9ExpensesAmount});
 ok("box9 VAT = 205 (claims incl., entertainment excl.)",Math.abs(vat.box9ExpensesVat-205)<0.01,{v:vat.box9ExpensesVat});
 ok("box13 recoverable = 205",Math.abs(vat.box13RecoverableTax-205)<0.01,{v:vat.box13RecoverableTax});
 ok("box14 = 750-205 = 545",Math.abs(vat.box14PayableTax-545)<0.01,{v:vat.box14PayableTax});

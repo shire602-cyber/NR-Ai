@@ -25,10 +25,11 @@ import { generateSalesOrderPDF } from "../services/pdf-sales-order.service";
 import { generateSalesOrderDeliveryPDF } from "../services/pdf-delivery-note.service";
 import { pdfFieldsFor } from "../services/custom-fields.service";
 import { db } from "../db";
+import { calendarDaySchema } from "../utils/calendar-day-schema";
 import { salesOrderLines } from "../../shared/schema";
 import { asc, eq } from "drizzle-orm";
 
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+const ymd = calendarDaySchema;
 const dayToDate = (v: string) => new Date(`${v}T00:00:00.000Z`);
 
 const lineSchema = invoiceLineObject.transform(withDerivedSupplyType);

@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { accountName } from "@/lib/account-name";
+import { nextAccountCode } from "@/components/banking/gl-account-code";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -60,6 +62,7 @@ import { messages as pageMessages } from "./Accounts.i18n";
 
 const accountSchema = z.object({
   companyId: z.string().uuid(),
+  code: z.string().trim().min(1, pageMessages.marker("accountCodeIsRequired")).max(20),
   nameEn: z.string().min(1, pageMessages.marker("accountNameEnIsRequired")),
   nameAr: z.string().optional(),
   type: z.enum(["asset", "liability", "equity", "income", "expense"]),
@@ -93,6 +96,7 @@ export default function Accounts() {
     resolver: zodResolver(accountSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
+      code: "",
       nameEn: "",
       nameAr: "",
       type: "asset",
@@ -180,6 +184,7 @@ export default function Accounts() {
     setEditingAccount(account);
     form.reset({
       companyId: account.companyId,
+      code: account.code,
       nameEn: account.nameEn,
       nameAr: account.nameAr || "",
       type: account.type as "asset" | "liability" | "equity" | "income" | "expense",
@@ -246,7 +251,22 @@ export default function Accounts() {
         title={t.accounts}
         description={tr("uaeChartOfAccountsWithBilingual")}
         actions={
-          <Button onClick={() => setDialogOpen(true)} data-testid="button-create-account">
+          <Button
+            onClick={() => {
+              setEditingAccount(null);
+              form.reset({
+                companyId: selectedCompanyId || "",
+                code: nextAccountCode((accounts ?? []).map((a) => a.code), "asset"),
+                nameEn: "",
+                nameAr: "",
+                type: "asset",
+                isActive: true,
+                intercompanyCompanyId: null,
+              });
+              setDialogOpen(true);
+            }}
+            data-testid="button-create-account"
+          >
             <Plus className="w-4 h-4 me-2" />
             {tr("addAccount")}
           </Button>
@@ -271,6 +291,19 @@ export default function Accounts() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tr("accountCode")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} dir="ltr" className="text-start font-mono" maxLength={20} data-testid="input-account-code" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="nameEn"
@@ -463,7 +496,7 @@ export default function Accounts() {
                                 <AlertDialogTitle>{tr("deleteAccount")}</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   {tr("areYouSureYouWantTo")}
-                                  <strong>{account.nameEn}</strong>
+                                  <strong>{accountName(account, locale)}</strong>
                                   {tr("thisActionCannotBeUndone")}
                                   {account.isActive && (
                                     <span className="block mt-2 text-destructive font-medium">

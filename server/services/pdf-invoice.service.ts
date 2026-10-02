@@ -6,6 +6,9 @@ import { fitFontSize } from "./pdf-layout";
 import { formatUnitPriceCurrency, formatUnitPrice } from "../../shared/format-unit-price";
 import { advanceTitles, buildPdfRows, SALES_ROW_LABELS } from "./pdf-sales-rows";
 import { pdfFieldsFor } from "./custom-fields.service";
+import { db } from "../db";
+import { and, eq } from "drizzle-orm";
+import { customerContacts, invoices } from "../../shared/schema";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -50,14 +53,49 @@ export async function generateInvoicePDF(
       customFields = []; // a PDF must never fail because a custom-field read did
     }
   }
-  return generateStandardInvoicePDF(invoice, lines, company, customFields);
+  return generateStandardInvoicePDF(invoice, lines, company, customFields, await loadPdfContext(invoice));
+}
+
+/** What the page needs beyond the invoice row: the invoice a credit note corrects, and the customer's own details. */
+interface PdfContext {
+  original: { number: string; date: Date | string } | null;
+  buyerTrn: string | null;
+  buyerAddress: string | null;
+}
+
+async function loadPdfContext(invoice: Invoice): Promise<PdfContext> {
+  const ctx: PdfContext = { original: null, buyerTrn: null, buyerAddress: null };
+  try {
+    if (invoice.invoiceType === "credit_note" && invoice.originalInvoiceId) {
+      const [orig] = await db
+        .select({ number: invoices.number, date: invoices.date })
+        .from(invoices)
+        .where(and(eq(invoices.id, invoice.originalInvoiceId), eq(invoices.companyId, invoice.companyId)));
+      ctx.original = orig ?? null;
+    }
+    if (invoice.contactId) {
+      const [c] = await db
+        .select()
+        .from(customerContacts)
+        .where(and(eq(customerContacts.id, invoice.contactId), eq(customerContacts.companyId, invoice.companyId)));
+      if (c) {
+        ctx.buyerTrn = c.trnNumber ?? null;
+        const parts = [c.address, c.city, c.country].map((x) => (x ?? "").trim()).filter(Boolean);
+        ctx.buyerAddress = parts.length ? parts.join(", ") : null;
+      }
+    }
+  } catch {
+    // a PDF must never fail because a lookup did: it prints what the invoice itself holds
+  }
+  return ctx;
 }
 
 async function generateStandardInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
   company: Company,
-  customFields: PdfCustomField[] = []
+  customFields: PdfCustomField[] = [],
+  ctx: PdfContext = { original: null, buyerTrn: null, buyerAddress: null }
 ): Promise<Buffer> {
   let qrPng: Buffer | null = null;
   if (company.trnVatNumber) {
@@ -98,12 +136,28 @@ async function generateStandardInvoicePDF(
 
       const isVATRegistered = !!company.trnVatNumber;
       const advanceTitle = advanceTitles(invoice.invoiceType, lines as any);
-      const invoiceLabelEn = advanceTitle ? advanceTitle.en : isVATRegistered ? "TAX INVOICE" : "INVOICE";
-      const invoiceLabelAr = advanceTitle ? advanceTitle.ar : isVATRegistered ? "فاتورة ضريبية" : "فاتورة";
+      // A credit note is a TAX CREDIT NOTE (Art. 60); an opening-balance item is not a supply at all: it prints as the
+      // balance brought forward, with no VAT wording.
+      const isCreditNote = invoice.invoiceType === "credit_note";
+      const isOpeningBalance = !!(invoice as any).isOpeningBalance;
+      const sign = isCreditNote ? -1 : 1;
+      const invoiceLabelEn = isOpeningBalance
+        ? "OPENING BALANCE"
+        : isCreditNote
+          ? isVATRegistered ? "TAX CREDIT NOTE" : "CREDIT NOTE"
+          : advanceTitle ? advanceTitle.en : isVATRegistered ? "TAX INVOICE" : "INVOICE";
+      const invoiceLabelAr = isOpeningBalance
+        ? "رصيد افتتاحي"
+        : isCreditNote
+          ? isVATRegistered ? "إشعار دائن ضريبي" : "إشعار دائن"
+          : advanceTitle ? advanceTitle.ar : isVATRegistered ? "فاتورة ضريبية" : "فاتورة";
+      const showVat = !isOpeningBalance;
 
       doc.rect(0, 0, pageWidth, 110).fill("#1E40AF");
 
-      doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
+      // The name is fitted to one line (22pt down to 12pt): a long legal name used to wrap onto the TRN line below it.
+      doc.font("Helvetica-Bold");
+      doc.fontSize(fitFontSize(doc, company.name, contentWidth * 0.65, 22, 12)).fillColor("#FFFFFF");
       doc.text(company.name, margin, 24, { width: contentWidth * 0.65, align: "left" });
 
       doc.fontSize(18).fillColor("#BFDBFE").font("Helvetica-Bold");
@@ -166,9 +220,18 @@ async function generateStandardInvoicePDF(
       // An advance (deposit) invoice has no payment terms and no due date: it is paid when issued.
       const isAdvanceInvoice = invoice.invoiceType === "advance";
       const metaFields = [
-        { label: "Invoice # / رقم الفاتورة", value: invoice.number },
+        { label: isCreditNote ? "Credit Note # / رقم الإشعار" : "Invoice # / رقم الفاتورة", value: invoice.number },
         { label: "Issue Date / تاريخ الإصدار", value: formatDate(invoice.date) },
-        ...(isAdvanceInvoice
+        // A credit note names the tax invoice it corrects, by number and date (Art. 60).
+        ...(isCreditNote
+          ? [
+              {
+                label: "Original Tax Invoice / الفاتورة الأصلية",
+                value: ctx.original ? `${ctx.original.number} (${formatDate(ctx.original.date)})` : "-",
+              },
+            ]
+          : []),
+        ...(isAdvanceInvoice || isCreditNote
           ? []
           : [
               {
@@ -222,18 +285,18 @@ async function generateStandardInvoicePDF(
       doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
       doc.text(invoice.customerName, toX, toY, { width: halfW });
       toY += Math.max(15, doc.heightOfString(invoice.customerName, { width: halfW }) + 2);
-      if (invoice.customerTrn) {
+      // The recipient's TRN and address come from the invoice, else from the customer contact (Art. 59(1)(d)).
+      const buyerTrn = invoice.customerTrn || ctx.buyerTrn;
+      const buyerAddress = invoice.customerAddress || ctx.buyerAddress;
+      if (buyerTrn && !isOpeningBalance) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(`TRN: ${invoice.customerTrn}`, toX, toY, { width: halfW });
+        doc.text(`TRN: ${buyerTrn}`, toX, toY, { width: halfW });
         toY += 12;
       }
-      if (invoice.customerAddress) {
+      if (buyerAddress) {
         doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        doc.text(invoice.customerAddress, toX, toY, { width: halfW });
-        toY += Math.max(
-          12 * countLines(invoice.customerAddress),
-          doc.heightOfString(invoice.customerAddress, { width: halfW })
-        );
+        doc.text(buyerAddress, toX, toY, { width: halfW });
+        toY += Math.max(12 * countLines(buyerAddress), doc.heightOfString(buyerAddress, { width: halfW }));
       }
 
       y = Math.max(fromY, toY) + 10;
@@ -274,7 +337,7 @@ async function generateStandardInvoicePDF(
       doc.text("Qty", colX.qty, tableTop + 7, { width: colWidths.qty, align: "center" });
       doc.text("Unit Price", colX.price, tableTop + 7, { width: colWidths.price, align: "right" });
       doc.text(SALES_ROW_LABELS.discountColumn.en, colX.disc, tableTop + 7, { width: colWidths.disc, align: "right" });
-      doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
+      if (showVat) doc.text("VAT %", colX.vat, tableTop + 7, { width: colWidths.vat, align: "center" });
       doc.text("Amount", colX.amount - colWidths.amount - 1, tableTop + 7, {
         width: colWidths.amount,
         align: "right",
@@ -309,7 +372,7 @@ async function generateStandardInvoicePDF(
           doc.text(description, colX.desc, y + 7, { width: colWidths.desc });
         }
         if (row.quantity !== null) {
-          doc.text(row.quantity.toString(), colX.qty, y + 7, { width: colWidths.qty, align: "center" });
+          doc.text(Math.abs(row.quantity).toString(), colX.qty, y + 7, { width: colWidths.qty, align: "center" });
         }
         if (row.unitPrice !== null) {
           const unitPriceText = formatUnitPriceCurrency(row.unitPrice, invoice.currency);
@@ -324,9 +387,10 @@ async function generateStandardInvoicePDF(
         if (row.discountLabel) {
           doc.text(row.discountLabel, colX.disc, y + 7, { width: colWidths.disc, align: "right", lineBreak: false });
         }
-        doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
+        if (showVat) doc.text(`${vatPercent}%`, colX.vat, y + 7, { width: colWidths.vat, align: "center" });
+        // A credit note's lines are stored negative; it prints positive amounts (a discount line then shows negative).
         doc.text(
-          formatAmount(row.amount, invoice.currency),
+          formatAmount(row.amount * sign === 0 ? 0 : row.amount * sign, invoice.currency),
           colX.amount - colWidths.amount - 1,
           y + 7,
           { width: colWidths.amount, align: "right" }
@@ -342,7 +406,9 @@ async function generateStandardInvoicePDF(
 
       y += 16;
 
-      const vatBuckets = aggregateVatByRate(lines);
+      const vatBuckets = showVat
+        ? aggregateVatByRate(lines).map((b) => ({ ...b, taxable: b.taxable * sign, vat: b.vat * sign }))
+        : [];
       if (vatBuckets.length > 1) {
         const breakdownTop = y;
         const breakdownH = 18 + vatBuckets.length * 16 + 6;
@@ -389,24 +455,26 @@ async function generateStandardInvoicePDF(
       const valueW = 80;
 
       doc.fontSize(9).fillColor("#374151").font("Helvetica");
-      doc.text("Subtotal:", totalsX, y, { width: labelW });
-      doc.text(formatAmount(invoice.subtotal, invoice.currency), totalsX + labelW, y, {
-        width: valueW,
-        align: "right",
-      });
-      y += 16;
+      if (showVat) {
+        doc.text("Subtotal:", totalsX, y, { width: labelW });
+        doc.text(formatAmount(Math.abs(invoice.subtotal), invoice.currency), totalsX + labelW, y, {
+          width: valueW,
+          align: "right",
+        });
+        y += 16;
 
-      const vatLabel = invoice.reverseCharge
-        ? "VAT (reverse charge):"
-        : vatBuckets.length === 1
-          ? `VAT (${(vatBuckets[0].rate * 100).toFixed(0)}%):`
-          : "VAT:";
-      doc.text(vatLabel, totalsX, y, { width: labelW });
-      doc.text(formatAmount(invoice.vatAmount, invoice.currency), totalsX + labelW, y, {
-        width: valueW,
-        align: "right",
-      });
-      y += 10;
+        const vatLabel = invoice.reverseCharge
+          ? "VAT (reverse charge):"
+          : vatBuckets.length === 1
+            ? `VAT (${(vatBuckets[0].rate * 100).toFixed(0)}%):`
+            : "VAT:";
+        doc.text(vatLabel, totalsX, y, { width: labelW });
+        doc.text(formatAmount(Math.abs(invoice.vatAmount), invoice.currency), totalsX + labelW, y, {
+          width: valueW,
+          align: "right",
+        });
+        y += 10;
+      }
 
       doc
         .moveTo(totalsX, y)
@@ -416,8 +484,8 @@ async function generateStandardInvoicePDF(
 
       doc.rect(totalsX - 8, y - 6, labelW + valueW + 16, 28).fill("#1E40AF");
       doc.fontSize(12).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("TOTAL DUE:", totalsX, y + 2, { width: labelW });
-      doc.text(formatAmount(invoice.total, invoice.currency), totalsX + labelW, y + 2, {
+      doc.text(isCreditNote ? "Credit amount:" : isOpeningBalance ? "Balance:" : "TOTAL DUE:", totalsX, y + 2, { width: labelW });
+      doc.text(formatAmount(Math.abs(invoice.total), invoice.currency), totalsX + labelW, y + 2, {
         width: valueW,
         align: "right",
         lineBreak: false,
@@ -425,7 +493,7 @@ async function generateStandardInvoicePDF(
 
       y += 40;
 
-      if (invoice.paymentTerms && invoice.invoiceType !== "advance") {
+      if (invoice.paymentTerms && invoice.invoiceType !== "advance" && !isCreditNote) {
         doc.fontSize(8).fillColor("#374151").font("Helvetica-Bold");
         doc.text("Payment Terms:", margin, y);
         doc.font("Helvetica").fillColor("#6B7280");
@@ -459,10 +527,18 @@ async function generateStandardInvoicePDF(
         align: "center",
       });
 
-      if (isVATRegistered) {
+      if (isOpeningBalance) {
+        doc.fontSize(7).fillColor("#9CA3AF");
+        doc.text("Opening balance brought forward from the previous system. This is not a tax invoice.", margin, footerY + 12, {
+          width: contentWidth,
+          align: "center",
+        });
+      } else if (isVATRegistered) {
         doc.fontSize(7).fillColor("#9CA3AF");
         doc.text(
-          "This is a computer-generated tax invoice and is valid without a signature.",
+          isCreditNote
+            ? "This is a computer-generated tax credit note and is valid without a signature."
+            : "This is a computer-generated tax invoice and is valid without a signature.",
           margin,
           footerY + 12,
           { width: contentWidth, align: "center" }

@@ -11,6 +11,8 @@ import { deriveSalesLines } from "../../shared/sales-line-math";
 import { db } from "../db";
 import { customerContacts } from "../../shared/schema";
 import { and, eq } from "drizzle-orm";
+import { parseCalendarDay } from "../utils/date";
+import { requireRole } from "../middleware/rbac";
 
 const MAX_TERMS_DAYS = 365;
 
@@ -212,8 +214,8 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       const problem = derivationProblem(linesJson);
       if (problem) return res.status(422).json(problem);
 
-      const parsedStartDate = new Date(startDate);
-      const parsedEndDate = endDate ? new Date(endDate) : null;
+      const parsedStartDate = parseCalendarDay(startDate) ?? new Date(startDate);
+      const parsedEndDate = endDate ? (parseCalendarDay(endDate) ?? new Date(endDate)) : null;
 
       const item = await storage.createRecurringInvoice({
         companyId,
@@ -307,9 +309,9 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       if (customerTrn !== undefined) updateData.customerTrn = customerTrn;
       if (currency !== undefined) updateData.currency = currency;
       if (frequency !== undefined) updateData.frequency = frequency;
-      if (startDate !== undefined) updateData.startDate = new Date(startDate);
-      if (nextRunDate !== undefined) updateData.nextRunDate = new Date(nextRunDate);
-      if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+      if (startDate !== undefined) updateData.startDate = parseCalendarDay(startDate) ?? new Date(startDate);
+      if (nextRunDate !== undefined) updateData.nextRunDate = parseCalendarDay(nextRunDate) ?? new Date(nextRunDate);
+      if (endDate !== undefined) updateData.endDate = endDate ? (parseCalendarDay(endDate) ?? new Date(endDate)) : null;
       if (linesJson !== undefined) {
         const problem = derivationProblem(linesJson);
         if (problem) return res.status(422).json(problem);
@@ -350,6 +352,43 @@ export function registerRecurringInvoiceRoutes(app: Express) {
 
       log.info({ id, isActive: item.isActive }, "Toggled recurring invoice");
       res.json(item);
+    })
+  );
+
+  // Run the recurring-invoice job for THIS company now (what the daily 06:00 UTC job does for every company), so a
+  // bookkeeper can test a template. Idempotent: a template is claimed once per due date, a second call generates nothing.
+  app.post(
+    "/api/companies/:companyId/recurring-invoices/run-now",
+    authMiddleware,
+    requireCustomer,
+    requireRole("owner", "accountant"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await storage.hasCompanyAccess((req as any).user.id, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const { generateDueRecurringInvoices } = await import("../services/scheduler.service");
+      const result = await generateDueRecurringInvoices({ companyId });
+      log.info({ companyId, ...result }, "Recurring invoices run on demand");
+      res.json(result);
+    })
+  );
+
+  // Run the late-fee job for THIS company now (the daily 06:30 UTC job, scoped). Idempotent: an invoice is charged once per rule.
+  app.post(
+    "/api/companies/:companyId/late-fees/run-now",
+    authMiddleware,
+    requireCustomer,
+    requireRole("owner", "accountant"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await storage.hasCompanyAccess((req as any).user.id, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const { runLateFeeJob } = await import("../services/late-fee.service");
+      const result = await runLateFeeJob({ companyId });
+      log.info({ companyId, ...result }, "Late fees run on demand");
+      res.json(result);
     })
   );
 

@@ -2,6 +2,7 @@
 // void rule of vat-document-effect.ts (used by the VAT 201, the autopilot and the firm workpaper
 // pull). Read-only; runs on whatever executor the caller has (the pool, or a filing transaction).
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { sql } from "drizzle-orm";
 import { periodYmd } from "./vat-period-status.service";
 import { neverDeclaredAmong } from "./vat-void-history.service";
@@ -58,13 +59,13 @@ export async function fetchPeriodSalesCandidates(
   const end = periodYmd(periodEnd);
   const where = sql`
     i.company_id = ${companyId} AND (i.status <> 'draft' OR ${ISSUED_WHILE_DRAFT}) AND COALESCE(i.is_opening_balance, false) = false
-    AND ( (i.date::date >= ${start}::date AND i.date::date <= ${end}::date)
+    AND ( (${sql.raw(dubaiDaySql("i.date"))} >= ${start}::date AND ${sql.raw(dubaiDaySql("i.date"))} <= ${end}::date)
        OR (i.status IN ('void', 'cancelled') AND rev.d >= ${start}::date AND rev.d <= ${end}::date) )`;
   const lateral = sql.raw(VOID_DATE_LATERAL_SQL);
 
   const inv = rowsOf(
     await ex.execute(sql`
-      SELECT i.id, i.number, to_char(i.date, 'YYYY-MM-DD') AS date_ymd, ${STATUS_AS_ISSUED} AS status, i.invoice_type,
+      SELECT i.id, i.number, ${sql.raw(dubaiDayTextSql("i.date"))} AS date_ymd, ${STATUS_AS_ISSUED} AS status, i.invoice_type,
              i.exchange_rate, i.customer_name, i.customer_trn, to_char(rev.d, 'YYYY-MM-DD') AS voided_on, rev.at_ms
         FROM invoices i ${lateral}
        WHERE ${where}

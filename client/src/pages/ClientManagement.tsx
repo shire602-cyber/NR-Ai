@@ -352,7 +352,6 @@ export default function ClientManagement() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="standard">{tr("standard")}</SelectItem>
-                    <SelectItem value="flat_rate">{tr("flatRate")}</SelectItem>
                     <SelectItem value="non_registered">{tr("nonRegistered")}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -371,7 +370,6 @@ export default function ClientManagement() {
                   <SelectContent>
                     <SelectItem value="monthly">{tr("monthly")}</SelectItem>
                     <SelectItem value="quarterly">{tr("quarterly")}</SelectItem>
-                    <SelectItem value="annually">{tr("annually")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

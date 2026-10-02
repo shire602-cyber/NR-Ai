@@ -59,6 +59,7 @@ import type {
   EvidenceProofLine,
   EvidenceWorkflowId,
 } from "@shared/evidence-center";
+import { messages as pageMessages } from "./EvidenceCenter.i18n";
 
 const WORKFLOW_ICONS: Record<EvidenceWorkflowId, any> = {
   refund_pack: FolderSearch,
@@ -147,6 +148,8 @@ function getSourceFilter(search: string) {
 }
 
 export default function EvidenceCenter() {
+  const tr = pageMessages.useT();
+
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { toast } = useToast();
   const search = useSearch();
@@ -188,24 +191,24 @@ export default function EvidenceCenter() {
     const openRiskSignalCount = data.filingRiskScan.filter(issueIsOpen).length;
     return [
       {
-        label: "Evidence readiness",
+        label: tr("evidenceReadiness"),
         value: `${data.readinessScore}%`,
-        detail: "All open evidence and filing risks",
+        detail: tr("allOpenEvidenceAndFilingRisks"),
       },
       {
-        label: "Refund exposure",
+        label: tr("refundExposure"),
         value: formatCurrency(data.totals.refundExposure),
-        detail: "Input VAT above output VAT",
+        detail: tr("inputVatAboveOutputVat"),
       },
       {
-        label: "Missing evidence",
+        label: tr("missingEvidence"),
         value: String(openMissingEvidenceCount),
-        detail: "Documents, TRNs, source proof",
+        detail: tr("documentsTrnsSourceProof"),
       },
       {
-        label: "Risk signals",
+        label: tr("riskSignals"),
         value: String(openRiskSignalCount),
-        detail: "Pre-filing detector output",
+        detail: tr("preFilingDetectorOutput"),
       },
     ];
   }, [data]);
@@ -243,8 +246,8 @@ export default function EvidenceCenter() {
     onSuccess: (result: EvidenceCenterResponse) => {
       queryClient.setQueryData(evidenceQueryKey, result);
       toast({
-        title: issueDialog?.action === "resolve" ? "Issue resolved" : "Issue waived",
-        description: "The evidence action was audit-logged.",
+        title: issueDialog?.action === "resolve" ? tr("issueResolved") : tr("issueWaived"),
+        description: tr("theEvidenceActionWasAuditLogged"),
       });
       setIssueDialog(null);
       setIssueReason("");
@@ -252,7 +255,7 @@ export default function EvidenceCenter() {
     onError: (mutationError: any) => {
       toast({
         variant: "destructive",
-        title: "Could not update evidence issue",
+        title: tr("couldNotUpdateEvidenceIssue"),
         description: mutationError?.message,
       });
     },
@@ -275,8 +278,8 @@ export default function EvidenceCenter() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
       toast({
-        title: "Request reviewed",
-        description: "Audit logged for manual delivery. No external message was sent.",
+        title: tr("requestReviewed"),
+        description: tr("auditLoggedForManualDeliveryNo"),
       });
       setRequestDialogOpen(false);
       setRequestAcknowledged(false);
@@ -284,7 +287,7 @@ export default function EvidenceCenter() {
     onError: (mutationError: any) => {
       toast({
         variant: "destructive",
-        title: "Could not log reviewed request",
+        title: tr("couldNotLogReviewedRequest"),
         description: mutationError?.message,
       });
     },
@@ -312,11 +315,11 @@ export default function EvidenceCenter() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
       queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
-      toast({ title: "Evidence pack downloaded", description: link.download });
+      toast({ title: tr("evidencePackDownloaded"), description: link.download });
     } catch (downloadError: any) {
       toast({
         variant: "destructive",
-        title: "Evidence pack download failed",
+        title: tr("evidencePackDownloadFailed"),
         description: downloadError?.message,
       });
     } finally {
@@ -343,10 +346,8 @@ export default function EvidenceCenter() {
       <div className="p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Proof trail unavailable</CardTitle>
-            <CardDescription>
-              The proof workspace could not load. Refresh the page or check company access.
-            </CardDescription>
+            <CardTitle>{tr("proofTrailUnavailable")}</CardTitle>
+            <CardDescription>{tr("theProofWorkspaceCouldNotLoad")}</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -356,19 +357,19 @@ export default function EvidenceCenter() {
   return (
     <div className="space-y-6 p-6" data-testid="evidence-center-page">
       <PageHeader
-        eyebrow="Compliance"
-        title="Proof trail"
-        description="Contextual evidence behind VAT, invoices, purchases, reports, close readiness, and owner actions."
+        eyebrow={tr("compliance")}
+        title={tr("proofTrail")}
+        description={tr("contextualEvidenceBehindVatInvoicesPurchases")}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
-              <Link href="/vat-filing">Open VAT workpaper</Link>
+              <Link href="/vat-filing">{tr("openVatWorkpaper")}</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/corporate-tax">Open corporate tax</Link>
+              <Link href="/corporate-tax">{tr("openCorporateTax")}</Link>
             </Button>
             <Button asChild>
-              <Link href="#owner-actions">What should I do?</Link>
+              <Link href="#owner-actions">{tr("whatShouldIDo")}</Link>
             </Button>
             <Button
               variant="outline"
@@ -382,8 +383,8 @@ export default function EvidenceCenter() {
               disabled={exportingPack !== null}
               data-testid="button-download-refund-bundle"
             >
-              <Archive className="mr-2 h-4 w-4" />
-              ZIP bundle
+              <Archive className="me-2 h-4 w-4" />
+              {tr("zipBundle")}
             </Button>
           </div>
         }
@@ -393,14 +394,14 @@ export default function EvidenceCenter() {
         <section className="rounded-md border bg-muted/40 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="font-semibold">Focused source proof</h2>
+              <h2 className="font-semibold">{tr("focusedSourceProof")}</h2>
               <p className="text-sm text-muted-foreground">
-                Showing proof rows for {sourceFilter.sourceType.replace(/_/g, " ")}
+                {tr("showingProofRowsFor", { replace: sourceFilter.sourceType.replace(/_/g, " ") })}
                 {sourceFilter.sourceId ? ` ${sourceFilter.sourceId}` : ""}.
               </p>
             </div>
             <Badge variant={visibleProofLines.length ? "default" : "secondary"}>
-              {visibleProofLines.length} matching row{visibleProofLines.length === 1 ? "" : "s"}
+              {tr.plural("matchingRows", visibleProofLines.length)}
             </Badge>
           </div>
         </section>
@@ -444,12 +445,12 @@ export default function EvidenceCenter() {
               <CardContent className="space-y-3">
                 <div className="flex items-end justify-between gap-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Score</p>
+                    <p className="text-xs text-muted-foreground">{tr("score")}</p>
                     <p className={`text-2xl font-semibold ${scoreTone(workflow.score)}`}>
                       {workflow.score}%
                     </p>
                   </div>
-                  <p className="max-w-40 text-right text-sm font-medium">{workflow.metric}</p>
+                  <p className="max-w-40 text-end text-sm font-medium">{workflow.metric}</p>
                 </div>
                 <ul className="space-y-1 text-sm text-muted-foreground">
                   {workflow.bullets.slice(0, 3).map((bullet) => (
@@ -459,7 +460,7 @@ export default function EvidenceCenter() {
                 <Button asChild variant="outline" size="sm" className="w-full">
                   <Link href={workflow.primaryHref}>
                     {workflow.primaryAction}
-                    <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                    <ArrowRight className="ms-2 h-3.5 w-3.5" />
                   </Link>
                 </Button>
               </CardContent>
@@ -475,18 +476,24 @@ export default function EvidenceCenter() {
       >
         <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
-            <h2 className="font-semibold">VAT refund support pack</h2>
+            <h2 className="font-semibold">{tr("vatRefundSupportPack")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Download one source-evidence bundle, or export the workbook and cover separately.
+              {tr("downloadOneSourceEvidenceBundleOr")}
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">{data.refundPack.sheetCount} sheets</Badge>
-              <Badge variant="outline">{data.refundPack.proofLineCount} proof lines</Badge>
               <Badge variant="outline">
-                {data.refundPack.readyAttachmentCount} linked source files
+                {tr("sheets", { sheetCount: data.refundPack.sheetCount })}
+              </Badge>
+              <Badge variant="outline">
+                {tr("proofLines", { proofLineCount: data.refundPack.proofLineCount })}
+              </Badge>
+              <Badge variant="outline">
+                {tr("linkedSourceFiles", {
+                  readyAttachmentCount: data.refundPack.readyAttachmentCount,
+                })}
               </Badge>
               <Badge variant={data.refundPack.gapCount ? "secondary" : "default"}>
-                {data.refundPack.gapCount} open gaps
+                {tr("openGaps", { gapCount: data.refundPack.gapCount })}
               </Badge>
             </div>
           </div>
@@ -501,8 +508,8 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <Archive className="mr-2 h-4 w-4" />
-              Source ZIP
+              <Archive className="me-2 h-4 w-4" />
+              {tr("sourceZip")}
             </Button>
             <Button
               variant="outline"
@@ -515,8 +522,8 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <Download className="mr-2 h-4 w-4" />
-              Workbook
+              <Download className="me-2 h-4 w-4" />
+              {tr("workbook")}
             </Button>
             <Button
               variant="outline"
@@ -529,8 +536,8 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <FileDown className="mr-2 h-4 w-4" />
-              Cover PDF
+              <FileDown className="me-2 h-4 w-4" />
+              {tr("coverPdf")}
             </Button>
           </div>
         </div>
@@ -538,9 +545,9 @@ export default function EvidenceCenter() {
 
       <section id="owner-actions" className="rounded-md border bg-card" data-testid="owner-actions">
         <div className="border-b px-4 py-3">
-          <h2 className="font-semibold">Owner-friendly what should I do?</h2>
+          <h2 className="font-semibold">{tr("ownerFriendlyWhatShouldIDo")}</h2>
           <p className="text-sm text-muted-foreground">
-            Plain-language next actions generated from the evidence status.
+            {tr("plainLanguageNextActionsGeneratedFrom")}
           </p>
         </div>
         <div className="grid gap-3 p-4 lg:grid-cols-3">
@@ -565,29 +572,29 @@ export default function EvidenceCenter() {
           className="min-w-0 overflow-hidden rounded-md border bg-card"
         >
           <div className="border-b px-4 py-3">
-            <h2 className="font-semibold">Missing Evidence Inbox</h2>
+            <h2 className="font-semibold">{tr("missingEvidenceInbox")}</h2>
             <p className="text-sm text-muted-foreground">
-              Documents, TRNs, attachments, and source proof blocking clean filings.
+              {tr("documentsTrnsAttachmentsAndSourceProof")}
             </p>
           </div>
           <div className="w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                  <TableHead className="text-right">Audit</TableHead>
+                  <TableHead>{tr("severity")}</TableHead>
+                  <TableHead>{tr("status")}</TableHead>
+                  <TableHead>{tr("item")}</TableHead>
+                  <TableHead>{tr("source")}</TableHead>
+                  <TableHead className="text-end">{tr("amount")}</TableHead>
+                  <TableHead className="text-end">{tr("action")}</TableHead>
+                  <TableHead className="text-end">{tr("audit")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.missingEvidence.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                      No missing evidence items.
+                      {tr("noMissingEvidenceItems")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -598,7 +605,7 @@ export default function EvidenceCenter() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={resolutionBadge(issue) as any}>
-                          {issue.resolutionStatus ?? "open"}
+                          {issue.resolutionStatus ?? tr("open")}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -606,24 +613,24 @@ export default function EvidenceCenter() {
                         <p className="text-sm text-muted-foreground">{issue.detail}</p>
                         {issue.resolutionReason ? (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Audit reason: {issue.resolutionReason}
+                            {tr("auditReason", { resolutionReason: issue.resolutionReason })}
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell>{issue.sourceType || "company"}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>{issue.sourceType || tr("company")}</TableCell>
+                      <TableCell className="text-end">
                         {issue.amount ? formatCurrency(issue.amount) : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {issue.href ? (
                           <Button asChild size="sm" variant="outline">
-                            <Link href={issue.href}>{issue.actionLabel || "Open"}</Link>
+                            <Link href={issue.href}>{issue.actionLabel || tr("open2")}</Link>
                           </Button>
                         ) : (
                           "-"
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             size="sm"
@@ -635,7 +642,7 @@ export default function EvidenceCenter() {
                               setIssueReason("");
                             }}
                           >
-                            Resolve
+                            {tr("resolve")}
                           </Button>
                           <Button
                             size="sm"
@@ -647,7 +654,7 @@ export default function EvidenceCenter() {
                               setIssueReason("");
                             }}
                           >
-                            Waive
+                            {tr("waive")}
                           </Button>
                         </div>
                       </TableCell>
@@ -661,14 +668,12 @@ export default function EvidenceCenter() {
 
         <section id="request-draft" className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
-            <h2 className="font-semibold">Client Request Autopilot</h2>
-            <p className="text-sm text-muted-foreground">
-              Draft only. Nothing is sent from this screen.
-            </p>
+            <h2 className="font-semibold">{tr("clientRequestAutopilot")}</h2>
+            <p className="text-sm text-muted-foreground">{tr("draftOnlyNothingIsSentFrom")}</p>
           </div>
           <div className="space-y-3 p-4">
             <div className="space-y-2">
-              <Label htmlFor="evidence-request-recipient">Recipient email</Label>
+              <Label htmlFor="evidence-request-recipient">{tr("recipientEmail")}</Label>
               <Input
                 id="evidence-request-recipient"
                 type="email"
@@ -679,7 +684,7 @@ export default function EvidenceCenter() {
               />
             </div>
             <div className="rounded-md border p-3">
-              <p className="text-xs text-muted-foreground">Subject</p>
+              <p className="text-xs text-muted-foreground">{tr("subject")}</p>
               <p className="font-medium">{data.clientRequestDraft.subject}</p>
             </div>
             <Textarea
@@ -689,7 +694,7 @@ export default function EvidenceCenter() {
               data-testid="evidence-request-draft"
             />
             <p className="text-xs text-muted-foreground">
-              This draft deliberately warns against sharing OTPs, passwords, or portal credentials.
+              {tr("thisDraftDeliberatelyWarnsAgainstSharing")}
             </p>
             <Button
               className="w-full"
@@ -699,8 +704,8 @@ export default function EvidenceCenter() {
               }}
               data-testid="button-review-evidence-request"
             >
-              <Send className="mr-2 h-4 w-4" />
-              Review exact request
+              <Send className="me-2 h-4 w-4" />
+              {tr("reviewExactRequest")}
             </Button>
           </div>
         </section>
@@ -708,33 +713,29 @@ export default function EvidenceCenter() {
 
       <section id="proof-drilldown" className="min-w-0 overflow-hidden rounded-md border bg-card">
         <div className="border-b px-4 py-3">
-          <h2 className="font-semibold">Every Number Has Proof</h2>
-          <p className="text-sm text-muted-foreground">
-            Source rows behind VAT, sales, purchase, and tax numbers.
-          </p>
+          <h2 className="font-semibold">{tr("everyNumberHasProof")}</h2>
+          <p className="text-sm text-muted-foreground">{tr("sourceRowsBehindVatSalesPurchase")}</p>
         </div>
         <div className="w-full overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Source</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Party</TableHead>
-                <TableHead>Document</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Evidence file</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">VAT</TableHead>
-                <TableHead className="text-right">Open</TableHead>
+                <TableHead>{tr("source")}</TableHead>
+                <TableHead>{tr("date")}</TableHead>
+                <TableHead>{tr("party")}</TableHead>
+                <TableHead>{tr("document")}</TableHead>
+                <TableHead>{tr("status")}</TableHead>
+                <TableHead>{tr("evidenceFile")}</TableHead>
+                <TableHead className="text-end">{tr("amount")}</TableHead>
+                <TableHead className="text-end">{tr("vat")}</TableHead>
+                <TableHead className="text-end">{tr("open2")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {visibleProofLines.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                    {sourceFilter
-                      ? "No proof row is linked to this source yet. Review source documents, VAT workpaper rows, or posting links."
-                      : "No proof rows yet. Start from the VAT evidence workpaper or source documents."}
+                    {sourceFilter ? tr("noProofRowIsLinkedTo") : tr("noProofRowsYetStartFrom")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -772,21 +773,21 @@ export default function EvidenceCenter() {
                         {line.documentHref ? (
                           <Button asChild size="sm" variant="ghost" className="h-7 px-2">
                             <Link href={line.documentHref}>
-                              <Eye className="mr-1.5 h-3.5 w-3.5" />
-                              Preview source
+                              <Eye className="me-1.5 h-3.5 w-3.5" />
+                              {tr("previewSource")}
                             </Link>
                           </Button>
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(line.amount)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">{formatCurrency(line.amount)}</TableCell>
+                    <TableCell className="text-end">
                       {formatCurrency(Number(line.vatAmount || 0))}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {line.href ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={line.href}>Open</Link>
+                          <Link href={line.href}>{tr("open2")}</Link>
                         </Button>
                       ) : (
                         "-"
@@ -803,16 +804,16 @@ export default function EvidenceCenter() {
       <div className="grid min-w-0 gap-6 xl:grid-cols-2">
         <section id="risk-scan" className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
-            <h2 className="font-semibold">Error Detector Before Filing</h2>
+            <h2 className="font-semibold">{tr("errorDetectorBeforeFiling")}</h2>
             <p className="text-sm text-muted-foreground">
-              Risk signals caught before VAT, corporate tax, reports, or close.
+              {tr("riskSignalsCaughtBeforeVatCorporate")}
             </p>
           </div>
           <div className="divide-y">
             {data.filingRiskScan.length === 0 ? (
               <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                 <CheckCircle2 className="h-4 w-4 text-success" />
-                No filing risk signals.
+                {tr("noFilingRiskSignals")}
               </div>
             ) : (
               data.filingRiskScan.slice(0, 12).map((issue) => (
@@ -823,13 +824,13 @@ export default function EvidenceCenter() {
                       <p className="font-medium">{issue.title}</p>
                       <Badge variant={severityBadge(issue)}>{issue.severity}</Badge>
                       <Badge variant={resolutionBadge(issue) as any}>
-                        {issue.resolutionStatus ?? "open"}
+                        {issue.resolutionStatus ?? tr("open")}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{issue.detail}</p>
                     {issue.resolutionReason ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Audit reason: {issue.resolutionReason}
+                        {tr("auditReason", { resolutionReason: issue.resolutionReason })}
                       </p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -843,7 +844,7 @@ export default function EvidenceCenter() {
                           setIssueReason("");
                         }}
                       >
-                        Resolve
+                        {tr("resolve")}
                       </Button>
                       <Button
                         size="sm"
@@ -855,7 +856,7 @@ export default function EvidenceCenter() {
                           setIssueReason("");
                         }}
                       >
-                        Waive
+                        {tr("waive")}
                       </Button>
                     </div>
                   </div>
@@ -867,14 +868,14 @@ export default function EvidenceCenter() {
 
         <section className="min-w-0 overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
-            <h2 className="font-semibold">Filing Timeline With Consequences</h2>
-            <p className="text-sm text-muted-foreground">
-              Deadlines are shown with what breaks if the evidence stays incomplete.
-            </p>
+            <h2 className="font-semibold">{tr("filingTimelineWithConsequences")}</h2>
+            <p className="text-sm text-muted-foreground">{tr("deadlinesAreShownWithWhatBreaks")}</p>
           </div>
           <div className="divide-y">
             {data.filingTimeline.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground">No upcoming filing events.</div>
+              <div className="p-4 text-sm text-muted-foreground">
+                {tr("noUpcomingFilingEvents")}
+              </div>
             ) : (
               data.filingTimeline.slice(0, 12).map((item) => (
                 <div
@@ -889,12 +890,12 @@ export default function EvidenceCenter() {
                     <p className="font-medium">{item.title}</p>
                     <p className="text-sm text-muted-foreground">{item.consequence}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className={`font-semibold ${scoreTone(item.readinessScore)}`}>
                       {item.readinessScore}%
                     </p>
                     <Button asChild size="sm" variant="outline" className="mt-2">
-                      <Link href={item.href}>Open</Link>
+                      <Link href={item.href}>{tr("open2")}</Link>
                     </Button>
                   </div>
                 </div>
@@ -908,17 +909,16 @@ export default function EvidenceCenter() {
         <div className="border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4" />
-            <h2 className="font-semibold">Evidence Audit Trail</h2>
+            <h2 className="font-semibold">{tr("evidenceAuditTrail")}</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Resolve, waiver, request-review, and refund-pack export actions recorded for this
-            company.
+            {tr("resolveWaiverRequestReviewAndRefund")}
           </p>
         </div>
         <div className="divide-y">
           {data.actionTrail.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">
-              No proof trail actions have been logged yet.
+              {tr("noProofTrailActionsHaveBeen")}
             </div>
           ) : (
             data.actionTrail.slice(0, 12).map((entry) => (
@@ -934,7 +934,9 @@ export default function EvidenceCenter() {
                     {entry.entityId ? ` - ${entry.entityId}` : ""}
                   </p>
                   {entry.reason ? (
-                    <p className="mt-1 text-xs text-muted-foreground">Reason: {entry.reason}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {tr("reason", { reason: entry.reason })}
+                    </p>
                   ) : null}
                 </div>
               </div>
@@ -948,13 +950,10 @@ export default function EvidenceCenter() {
           <DialogHeader>
             <DialogTitle>
               {issueDialog?.action === "resolve"
-                ? "Resolve evidence issue"
-                : "Waive evidence issue"}
+                ? tr("resolveEvidenceIssue")
+                : tr("waiveEvidenceIssue")}
             </DialogTitle>
-            <DialogDescription>
-              This action writes an audit trail entry. Use waive only when the accounting risk is
-              accepted and documented.
-            </DialogDescription>
+            <DialogDescription>{tr("thisActionWritesAnAuditTrail")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-md border p-3">
@@ -962,26 +961,26 @@ export default function EvidenceCenter() {
               <p className="text-sm text-muted-foreground">{issueDialog?.issue.detail}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="evidence-action-reason">Reason</Label>
+              <Label htmlFor="evidence-action-reason">{tr("reason2")}</Label>
               <Textarea
                 id="evidence-action-reason"
                 value={issueReason}
                 onChange={(event) => setIssueReason(event.target.value)}
-                placeholder="Explain the evidence received, reviewer conclusion, or waiver rationale."
+                placeholder={tr("explainTheEvidenceReceivedReviewerConclusion")}
                 data-testid="textarea-evidence-action-reason"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIssueDialog(null)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => issueActionMutation.mutate()}
               disabled={issueReason.trim().length < 5 || issueActionMutation.isPending}
               data-testid="button-confirm-evidence-action"
             >
-              Confirm {issueDialog?.action}
+              {tr("confirm", { action: issueDialog?.action })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -990,20 +989,17 @@ export default function EvidenceCenter() {
       <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Review exact evidence request</DialogTitle>
-            <DialogDescription>
-              Confirm the recipient, subject, and full body before logging this for manual delivery.
-              No external email or WhatsApp is sent from this dialog.
-            </DialogDescription>
+            <DialogTitle>{tr("reviewExactEvidenceRequest")}</DialogTitle>
+            <DialogDescription>{tr("confirmTheRecipientSubjectAndFull")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">Recipient</p>
-                <p className="break-all font-medium">{requestRecipient || "No recipient set"}</p>
+                <p className="text-xs text-muted-foreground">{tr("recipient")}</p>
+                <p className="break-all font-medium">{requestRecipient || tr("noRecipientSet")}</p>
               </div>
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">Subject</p>
+                <p className="text-xs text-muted-foreground">{tr("subject")}</p>
                 <p className="font-medium">{data.clientRequestDraft.subject}</p>
               </div>
             </div>
@@ -1020,15 +1016,12 @@ export default function EvidenceCenter() {
                 onChange={(event) => setRequestAcknowledged(event.target.checked)}
                 data-testid="checkbox-evidence-request-ack"
               />
-              <span>
-                I reviewed the exact recipient, subject, and body. I understand this only logs the
-                reviewed request for manual delivery and does not send an external message.
-              </span>
+              <span>{tr("iReviewedTheExactRecipientSubject")}</span>
             </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRequestDialogOpen(false)}>
-              Cancel
+              {tr("cancel")}
             </Button>
             <Button
               onClick={() => requestReviewMutation.mutate()}
@@ -1037,7 +1030,7 @@ export default function EvidenceCenter() {
               }
               data-testid="button-confirm-evidence-request"
             >
-              Confirm reviewed request
+              {tr("confirmReviewedRequest")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,7 +2,7 @@
 title: Team and roles
 summary: Invite people and give each the access they need.
 category: settings
-keywords: team, users, roles, owner, accountant, CFO, employee, invite, permissions
+keywords: team, users, roles, owner, accountant, CFO, employee, own records, invite, permissions
 related: security, approvals, company-settings
 ---
 
@@ -14,9 +14,9 @@ Choose **Invite**, enter their email and pick a role. They receive an email to j
 
 ## Roles
 
-- **Owner** has full control, including billing, approval rules, security and deleting the company.
+- **Owner** has full control, including approval rules, security and deleting the company.
 - **Accountant** and **CFO** work with the books, reports and filings.
-- **Employee** has limited access, such as submitting expense claims.
+- **Employee** sees **only their own records**: their expense claims, payslips and leave. An employee cannot open the company's invoices, bills, ledgers or reports.
 
 ## Change or remove access
 

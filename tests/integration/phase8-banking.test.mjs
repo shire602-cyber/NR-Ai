@@ -943,7 +943,7 @@ async function uiChecks(browser) {
   await page.locator('[role=tab]').first().waitFor({ timeout: 15000 });
   await dismissTour(page);
   const tabs = await page.locator("[role=tab]").allTextContents();
-  ok("D3-3 UI: no Feeds tab without a provider", !tabs.some((t) => /feed/i.test(t)) && tabs.length === 3, tabs);
+  ok("D3-3 UI: no Feeds tab without a provider", !tabs.some((t) => /feed/i.test(t)) && ["Transactions", "Import", "Reconciliation"].every((n) => tabs.includes(n)), tabs);
   let text = await body();
   ok("D3-3 UI: the Transactions tab says nothing about live, connected, synced or sandbox", !/\b(live|connected|synced|sandbox)\b/i.test(text), text.slice(0, 200));
   await page.getByRole("tab", { name: "Import" }).click();

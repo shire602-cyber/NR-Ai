@@ -2,6 +2,8 @@ import type { Control, FieldValues, Path } from "react-hook-form";
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LedgerAccount } from "@/lib/banking-api-types";
+import { useI18n } from "@/lib/i18n";
+import { accountName } from "@/lib/account-name";
 import { messages } from "./DisposalProceedsField.i18n";
 
 export const DEFAULT_PROCEEDS = "default";
@@ -9,6 +11,7 @@ export const DEFAULT_PROCEEDS = "default";
 /** The proceeds account of a disposal: one of the company's bank or cash accounts, or the default cash account. */
 export function DisposalProceedsField<T extends FieldValues>({ control, name, accounts }: { control: Control<T>; name: Path<T>; accounts: LedgerAccount[] }) {
   const tr = messages.useT();
+  const locale = useI18n((s) => s.locale);
   return (
     <FormField
       control={control}
@@ -29,7 +32,7 @@ export function DisposalProceedsField<T extends FieldValues>({ control, name, ac
                   <span dir="ltr" className="font-mono">
                     {a.code}
                   </span>{" "}
-                  {a.nameEn}
+                  {accountName(a, locale)}
                 </SelectItem>
               ))}
             </SelectContent>

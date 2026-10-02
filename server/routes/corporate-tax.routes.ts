@@ -10,11 +10,20 @@ import {
   parseCtWorkbookRows,
 } from "../services/ct-workpaper-export.service";
 import {
+  CT_ENTERTAINMENT_DISALLOWED_SHARE,
+  CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END,
+  CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+  CT_ZERO_RATE_BAND,
   computeCtComputation,
   computeCtLiability,
   computeCtTotals,
+  ctSmallBusinessReliefAvailability,
+  normalizeCtAdjustments,
   type CtBridgeAdjustment,
 } from "../../shared/ct-workpaper";
+import { loadPeriodPurchases } from "../services/vat-period-purchases.service";
+import { recordAudit } from "../services/audit.service";
+import { db } from "../db";
 import { insertCorporateTaxReturnSchema } from "../../shared/schema";
 import { pickAllowed } from "../utils/pick-allowed";
 import { getFilingByReturn } from "../services/tax-filing.service";
@@ -172,13 +181,24 @@ export function registerCorporateTaxRoutes(app: Express) {
         return res.status(400).json({ message: "Only draft returns can be recomputed" });
       }
 
-      const adjustments: CtBridgeAdjustment[] = Array.isArray(req.body?.adjustments)
-        ? req.body.adjustments
-        : ((ctReturn.workpaper as any)?.adjustments ?? []);
+      // Add-backs and deductions are validated and normalised (known category, amount >= 0, a reason for the free-form ones,
+      // the entertainment add-back derived as 50% of its base, Art. 32); what is stored is what the computation used.
+      const checkedAdjustments = normalizeCtAdjustments(
+        Array.isArray(req.body?.adjustments) ? req.body.adjustments : ((ctReturn.workpaper as any)?.adjustments ?? [])
+      );
+      if (!checkedAdjustments.ok) {
+        return res.status(400).json({ message: checkedAdjustments.message, code: "CT_ADJUSTMENT_INVALID" });
+      }
+      const adjustments: CtBridgeAdjustment[] = checkedAdjustments.adjustments;
+      // The election is its own recorded fact (workpaper.sbrElected), not the outcome: an election that the rules refuse
+      // (revenue over 3m, a prior breach, a period after 31 Dec 2026) is kept as elected, applied false, with the reason.
+      const storedElection = (ctReturn.workpaper as any)?.sbrElected;
       const smallBusinessReliefElected =
         typeof req.body?.smallBusinessReliefElected === "boolean"
           ? req.body.smallBusinessReliefElected
-          : ctReturn.smallBusinessRelief === true;
+          : typeof storedElection === "boolean"
+            ? storedElection
+            : ctReturn.smallBusinessRelief === true;
       const relatedPartyNotes =
         typeof req.body?.relatedPartyNotes === "string"
           ? req.body.relatedPartyNotes
@@ -223,12 +243,102 @@ export function registerCorporateTaxRoutes(app: Express) {
         workpaper: {
           ...((ctReturn.workpaper as Record<string, unknown>) ?? {}),
           adjustments,
+          sbrElected: smallBusinessReliefElected,
           computation,
           computedAt: new Date().toISOString(),
         },
       } as any);
 
+      await recordAudit({
+        userId,
+        companyId: ctReturn.companyId,
+        action: "ct.compute",
+        entityType: "corporate_tax_return",
+        entityId: ctReturn.id,
+        before: {
+          adjustments: (ctReturn.workpaper as any)?.adjustments ?? [],
+          sbrElected: (ctReturn.workpaper as any)?.sbrElected ?? ctReturn.smallBusinessRelief === true,
+          taxPayable: Number(ctReturn.taxPayable) || 0,
+        },
+        after: {
+          adjustments,
+          sbrElected: smallBusinessReliefElected,
+          sbrApplied: computation.smallBusinessRelief.applied,
+          sbrReason: computation.smallBusinessRelief.ineligibleReason ?? null,
+          totalAddBacks: computation.totalAddBacks,
+          totalDeductions: computation.totalDeductions,
+          taxableIncome: computation.taxableIncome,
+          taxPayable: computation.taxPayable,
+        },
+        req,
+      });
+
       res.json({ return: updated, computation });
+    })
+  );
+
+  // Small Business Relief: is it OFFERED for this return's period, and is it elected? (MD 73/2023: revenue up to AED 3,000,000 in the
+  // period and every earlier one, and the period ends on or before 31 Dec 2026. The AED 375,000 is the separate 0% band, Art. 3.)
+  app.get(
+    "/api/corporate-tax/returns/:id/small-business-relief",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+      if (!ctReturn) return res.status(404).json({ message: "Corporate tax return not found" });
+      if (!(await storage.hasCompanyAccess(userId, ctReturn.companyId))) return res.status(403).json({ message: "Access denied" });
+      const prior = await storage.getCtPriorPeriodRevenueExceededCap(ctReturn.companyId, ctReturn.taxPeriodStart, ctReturn.id);
+      const availability = ctSmallBusinessReliefAvailability({
+        totalRevenue: Number(ctReturn.totalRevenue) || 0,
+        priorPeriodsExceededRevenueCap: prior,
+        taxPeriodEnd: ctReturn.taxPeriodEnd,
+      });
+      const storedElection = (ctReturn.workpaper as any)?.sbrElected;
+      res.json({
+        available: availability.available,
+        reason: availability.reason ?? null,
+        elected: typeof storedElection === "boolean" ? storedElection : ctReturn.smallBusinessRelief === true,
+        applied: ctReturn.smallBusinessRelief === true,
+        revenue: Number(ctReturn.totalRevenue) || 0,
+        revenueThreshold: CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
+        lastPeriodEnd: CT_SMALL_BUSINESS_RELIEF_LAST_PERIOD_END,
+        zeroRateBand: CT_ZERO_RATE_BAND,
+        note:
+          "Small Business Relief treats taxable income as nil for the period. It is elected on the return, and electing means tax losses of the period are not carried forward.",
+      });
+    })
+  );
+
+  // Add-backs the books suggest for the period. A suggestion changes nothing by itself: the user adds it to the computation.
+  app.get(
+    "/api/corporate-tax/returns/:id/suggested-adjustments",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+      if (!ctReturn) return res.status(404).json({ message: "Corporate tax return not found" });
+      if (!(await storage.hasCompanyAccess(userId, ctReturn.companyId))) return res.status(403).json({ message: "Access denied" });
+      const start = new Date(`${ymdOf(ctReturn.taxPeriodStart)}T00:00:00.000Z`);
+      const end = new Date(`${ymdOf(ctReturn.taxPeriodEnd)}T23:59:59.999Z`);
+      // Entertainment = documents carrying blocked input VAT (Art. 53): their VAT is part of the expense, so net + VAT is spent.
+      const docs = await loadPeriodPurchases(db as any, ctReturn.companyId, start, end);
+      const entertainment = docs.filter((d) => d.blocked && !d.reverseCharge);
+      const base = Math.round(entertainment.reduce((sum, d) => sum + Number(d.net) + Number(d.vat), 0) * 100) / 100;
+      const suggestions =
+        base > 0
+          ? [
+              {
+                category: "entertainment_50",
+                baseAmount: base,
+                amount: Math.round(base * CT_ENTERTAINMENT_DISALLOWED_SHARE * 100) / 100,
+                documents: entertainment.length,
+                note: "50% of client entertainment is not deductible (Art. 32).",
+              },
+            ]
+          : [];
+      res.json({ suggestions });
     })
   );
 
@@ -569,8 +679,13 @@ export function registerCorporateTaxRoutes(app: Express) {
       //
       // This matters commercially: the overwhelming majority of UAE SMEs sit
       // under the threshold, and none of the mainstream competitors model it.
-      const SBR_REVENUE_CAP = 3_000_000;
-      const sbrEligible = totalRevenue <= SBR_REVENUE_CAP;
+      const SBR_REVENUE_CAP = CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP;
+      const sbrAvailability = ctSmallBusinessReliefAvailability({
+        totalRevenue,
+        priorPeriodsExceededRevenueCap: await storage.getCtPriorPeriodRevenueExceededCap(companyId, startDate),
+        taxPeriodEnd: endDate,
+      });
+      const sbrEligible = sbrAvailability.available;
       const sbrElected = String(req.query.sbrElected ?? "").toLowerCase() === "true";
       const sbrApplied = sbrEligible && sbrElected;
 
@@ -591,11 +706,16 @@ export function registerCorporateTaxRoutes(app: Express) {
           elected: sbrElected,
           applied: sbrApplied,
           revenueCap: SBR_REVENUE_CAP,
+          reason: sbrAvailability.reason ?? null,
           taxPayableWithRelief: 0,
           taxPayableWithoutRelief: liability.taxPayable,
           note: sbrEligible
             ? "Revenue is at or below AED 3,000,000, so Small Business Relief may be elected (Ministerial Decision 73 of 2023). Electing treats taxable income as nil, but forfeits the use of tax losses for the period. Eligibility also requires revenue to have stayed below the cap in every prior period since 1 June 2023 — confirm your history before electing."
-            : "Revenue exceeds AED 3,000,000, so Small Business Relief is not available for this period.",
+            : sbrAvailability.reason === "prior_period_breach"
+              ? "Revenue exceeded AED 3,000,000 in an earlier period, so Small Business Relief is not available."
+              : sbrAvailability.reason === "period_after_sunset"
+                ? "Small Business Relief is only available for tax periods ending on or before 31 December 2026."
+                : "Revenue exceeds AED 3,000,000, so Small Business Relief is not available for this period.",
         },
         journalEntriesProcessed: periodEntries.length,
       });

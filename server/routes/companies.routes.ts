@@ -13,9 +13,11 @@ import { ensureSubscription } from "../services/billing-trial.service";
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
+import { recordAudit } from "../services/audit.service";
 import { ensureCriticalSchema, db } from "../db";
 import { postInventoryOpeningInTx } from "../services/inventory-costing.service";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
+import { UAE_BANK_NAMES, vatSetupProblem } from "../services/company-setup-rules";
 
 const log = createLogger("companies");
 
@@ -158,6 +160,23 @@ async function seedChartOfAccounts(
   }
 }
 
+/** Which of the submitted company settings actually changed, as {field: {from, to}}; secrets and blobs are not company settings here. */
+function companyChanges(before: any, submitted: Record<string, unknown>): Record<string, { from: unknown; to: unknown }> {
+  const out: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [key, to] of Object.entries(submitted)) {
+    const from = before?.[key] ?? null;
+    const a = from instanceof Date ? from.toISOString() : from;
+    const b = to instanceof Date ? (to as Date).toISOString() : (to ?? null);
+    if (JSON.stringify(a) !== JSON.stringify(b)) out[key] = { from: a, to: b };
+  }
+  return out;
+}
+
+async function auditCompanySetup(req: Request, userId: string, companyId: string, action: string, before: any, submitted: Record<string, unknown>) {
+  const changes = companyChanges(before, submitted);
+  await recordAudit({ userId, companyId, action, entityType: "company", entityId: companyId, before: Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v.from])), after: Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v.to])), req });
+}
+
 export function registerCompanyRoutes(app: Express) {
   // =====================================
   // Company Routes
@@ -186,6 +205,8 @@ export function registerCompanyRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const parsedCompany = insertCompanySchema.parse(req.body);
+      const setupProblem = vatSetupProblem(parsedCompany);
+      if (setupProblem) return res.status(422).json({ message: setupProblem.message, code: setupProblem.code, field: setupProblem.field });
       // companyType decides billing ("client" = firm-managed, never gated) and
       // firm visibility, so only a platform admin may set it.
       const validated = {
@@ -204,6 +225,7 @@ export function registerCompanyRoutes(app: Express) {
         company = await withCompanySchemaRepair({ route: "POST /api/companies", userId }, () =>
           storage.createCompany(validated)
         );
+        await recordAudit({ userId, companyId: company.id, action: "company.create", entityType: "company", entityId: company.id, before: null, after: { name: company.name, emirate: (company as any).emirate ?? null, vatRegistered: (company as any).vatRegistered ?? null }, req });
       } catch (err: any) {
         if (handleCompanyWriteError(err, { route: "POST /api/companies", userId }, res)) {
           return;
@@ -275,6 +297,8 @@ export function registerCompanyRoutes(app: Express) {
       // set arbitrary real columns (firmId, isActive, subscription/tax fields)
       // beyond what the form exposes.
       const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
+      const setupProblem = vatSetupProblem(updateData);
+      if (setupProblem) return res.status(422).json({ message: setupProblem.message, code: setupProblem.code, field: setupProblem.field });
       if (updateData.taxRegistrationDate) {
         if (typeof updateData.taxRegistrationDate === "string") {
           updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
@@ -286,10 +310,12 @@ export function registerCompanyRoutes(app: Express) {
       }
 
       try {
+        const beforeCompany = await storage.getCompany(id);
         const company = await withCompanySchemaRepair(
           { route: "PUT /api/companies/:id", id, userId },
           () => storage.updateCompany(id, updateData)
         );
+        await auditCompanySetup(req, userId, id, "company.update", beforeCompany, updateData);
         res.json(withNrClientVatGroup(company));
       } catch (err: any) {
         if (handleCompanyWriteError(err, { route: "PUT /api/companies/:id", id, userId }, res)) {
@@ -316,6 +342,8 @@ export function registerCompanyRoutes(app: Express) {
       // Prepare update data with proper type conversions.
       // S-M1: allowlist columns before the spread (see PUT handler above).
       const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
+      const setupProblem = vatSetupProblem(updateData);
+      if (setupProblem) return res.status(422).json({ message: setupProblem.message, code: setupProblem.code, field: setupProblem.field });
 
       // PRIVILEGE ESCALATION GUARD.
       // `companyType` decides whether a company is a self-serve customer or an
@@ -351,10 +379,12 @@ export function registerCompanyRoutes(app: Express) {
       }
 
       try {
+        const beforeCompany = await storage.getCompany(id);
         const company = await withCompanySchemaRepair(
           { route: "PATCH /api/companies/:id", id, userId },
           () => storage.updateCompany(id, updateData)
         );
+        await auditCompanySetup(req, userId, id, "company.update", beforeCompany, updateData);
         log.info({ id: company.id }, "Company profile updated");
         res.json(withNrClientVatGroup(company));
       } catch (err: any) {
@@ -410,7 +440,9 @@ export function registerCompanyRoutes(app: Express) {
         }
       }
 
+      const beforePrefs = await storage.getCompany(id);
       const company = await storage.updateCompany(id, updateData as any);
+      await auditCompanySetup(req, userId, id, "company.preferences", beforePrefs, updateData);
       log.info({ id: company.id }, "Company preferences updated");
       res.json(withNrClientVatGroup(company));
     })
@@ -446,6 +478,15 @@ export function registerCompanyRoutes(app: Express) {
   // The canonical handlers now live in bank-statements.routes.ts alongside the
   // rest of the banking surface. `scripts/check-route-shadowing.mjs` fails the
   // build if a duplicate is ever reintroduced.
+
+  // The banks the server accepts for a bank account: the onboarding and bank screens must offer exactly these.
+  app.get(
+    "/api/banks",
+    authMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ banks: UAE_BANK_NAMES.map((name) => ({ value: name, label: name })) });
+    })
+  );
 
   // Seed Chart of Accounts for company
   // Customer-only: Seed chart of accounts

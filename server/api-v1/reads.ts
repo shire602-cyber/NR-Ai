@@ -5,17 +5,20 @@ import { ctx } from "./context";
 import { TS_SQL, decodeCursor, pageFromRows, parseLimit } from "./cursor";
 import { fail, ok } from "./response";
 import {
+  ACCOUNT_COLUMNS,
   BILL_COLUMNS,
   CONTACT_COLUMNS,
   INVOICE_COLUMNS,
   ITEM_COLUMNS,
   JOURNAL_COLUMNS,
   UUID_RE,
+  accountFromRow,
   billFromRow,
   contactFromRow,
   invoiceFromRow,
   itemFromRow,
   journalFromRow,
+  loadAccount,
   loadBill,
   loadContact,
   loadInvoice,
@@ -74,6 +77,29 @@ export const readContacts = (req: Request, res: Response) =>
       const t = oneOf(r.query.type, ["customer", "vendor"]);
       if (!t) return { error: "type must be customer or vendor" };
       return [`c.contact_type IN (${push(t)}, 'both')`];
+    },
+  });
+
+export const readAccounts = (req: Request, res: Response) =>
+  listResource(req, res, {
+    from: "accounts a",
+    alias: "a",
+    columns: ACCOUNT_COLUMNS,
+    map: accountFromRow,
+    filters: (r, push) => {
+      const out: string[] = [];
+      if (r.query.type !== undefined) {
+        const t = oneOf(r.query.type, ["asset", "liability", "equity", "income", "expense"]);
+        if (!t) return { error: "type must be asset, liability, equity, income or expense" };
+        out.push(`a.type = ${push(t)}`);
+      }
+      if (r.query.code !== undefined) {
+        if (typeof r.query.code !== "string" || r.query.code.length > 20) return { error: "code must be an account code" };
+        out.push(`a.code = ${push(r.query.code)}`);
+      }
+      // Archived accounts are not postable; list them only on request.
+      if (r.query.includeArchived !== "true") out.push(`COALESCE(a.is_archived, false) = false`);
+      return out;
     },
   });
 
@@ -203,6 +229,7 @@ function getById(load: (companyId: string, id: string) => Promise<unknown | null
   };
 }
 export const getContact = getById(loadContact, "Contact");
+export const getAccount = getById(loadAccount, "Account");
 export const getItem = getById(loadItem, "Item");
 export const getInvoice = getById(loadInvoice, "Invoice");
 export const getBill = getById(loadBill, "Bill");

@@ -14,7 +14,8 @@ import { bankTransactions, journalEntries, journalLines, type BankTransaction } 
 import { ACCOUNT_CODES } from "../constants";
 import { storage } from "../storage";
 import { getInvoiceBalance } from "./invoice-outstanding.db";
-import { LOCK_NS, withDocumentLock } from "./document-lock";
+import { LOCK_NS, acquireDocumentLock, withDocumentLock } from "./document-lock";
+import { allocateInvoicesInTx, splitEntryInTx, transferInTx } from "./bank-posting-multi.service";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { resolveSettlementDate } from "./payment-date-guard.service";
 import { recordBillPayment } from "./bill-payment.service";
@@ -26,9 +27,13 @@ import {
   assertOpen,
   bankRate,
   clearedPatch,
+  findUnlinkedPayment,
+  linkedTo,
   matchPatch,
   periodLockedCode,
   readTransaction,
+  rowsOf,
+  save,
   resolveBank,
   resolveContraAccount,
   type PostCtx,
@@ -36,7 +41,7 @@ import {
 } from "./bank-posting-common";
 
 export const BANK_ENTRY_SOURCE = "bank_reconciliation";
-export type MatchKind = "invoice" | "bill" | "journal" | "receipt" | "rule" | "account";
+export type MatchKind = "invoice" | "bill" | "journal" | "receipt" | "rule" | "account" | "invoices" | "split" | "transfer";
 
 export interface MatchInput {
   transactionId: string;
@@ -45,6 +50,12 @@ export interface MatchInput {
   paymentDate?: string | null;
   memo?: string | null;
   confidence?: number | null;
+  /** invoices: one bank receipt over several invoices, in this order (amount optional: the open balance, the last may be partial). */
+  allocations?: Array<{ invoiceId: string; amount?: number }>;
+  /** invoice / invoices: keep what is left after the invoices as customer credit (2050) instead of refusing it. */
+  keepAsCredit?: boolean;
+  /** split: one bank line over several accounts. */
+  lines?: Array<{ accountId: string; amount?: number; percent?: number; description?: string | null }>;
 }
 
 export interface MatchResult {
@@ -54,53 +65,7 @@ export interface MatchResult {
   kind: MatchKind;
 }
 
-const rowsOf = (res: any): any[] => (res?.rows ?? res) as any[];
 const ymdOf = (d: Date): string => d.toISOString().slice(0, 10);
-
-async function save(tx: Tx, ctx: PostCtx, txnId: string, patch: Record<string, unknown>): Promise<BankTransaction> {
-  const [row] = await tx
-    .update(bankTransactions)
-    .set(patch)
-    .where(and(eq(bankTransactions.id, txnId), eq(bankTransactions.companyId, ctx.companyId)))
-    .returning();
-  return row;
-}
-
-// ─── re-link a payment an earlier unmatch left in the ledger ───────────────
-
-/**
- * A posted payment of this document, from this bank GL account, for exactly this amount, whose journal no bank line of
- * the same bank account links to. Returns its journal entry id.
- */
-async function findUnlinkedPayment(
-  tx: Tx,
-  a: { table: "invoice_payments" | "bill_payments"; fk: "invoice_id" | "bill_id"; documentId: string; companyId: string; glAccountId: string; amount: number; source: string; txnId: string }
-): Promise<string | null> {
-  const rows = rowsOf(
-    await tx.execute(
-      a.table === "invoice_payments"
-        ? sql`
-      SELECT je.id FROM invoice_payments p
-        JOIN journal_entries je ON je.id = p.journal_entry_id AND je.company_id = ${a.companyId}
-       WHERE p.invoice_id = ${a.documentId} AND p.payment_account_id = ${a.glAccountId} AND ABS(p.amount - ${a.amount}) < 0.005
-         AND je.status = 'posted' AND je.source = ${a.source}
-         AND NOT EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted')
-         AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND bt.matched_journal_entry_id = je.id
-                          AND bt.bank_account_id = ${a.glAccountId} AND bt.id <> ${a.txnId})
-       ORDER BY je.date LIMIT 1`
-        : sql`
-      SELECT je.id FROM bill_payments p
-        JOIN journal_entries je ON je.company_id = ${a.companyId} AND je.source = ${a.source} AND je.source_id = p.id
-       WHERE p.bill_id = ${a.documentId} AND p.payment_account_id = ${a.glAccountId} AND ABS(p.amount - ${a.amount}) < 0.005
-         AND je.status = 'posted'
-         AND NOT EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted')
-         AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND bt.matched_journal_entry_id = je.id
-                          AND bt.bank_account_id = ${a.glAccountId} AND bt.id <> ${a.txnId})
-       ORDER BY je.date LIMIT 1`
-    )
-  );
-  return rows[0]?.id ?? null;
-}
 
 // ─── invoice ───────────────────────────────────────────────────────────────
 
@@ -136,7 +101,20 @@ async function matchInvoice(tx: Tx, ctx: PostCtx, txn: BankTransaction, bank: { 
   // A bank line above what is owed would be cleared by a smaller payment and leave the difference unexplained. The one
   // accepted case: credit notes reduced what is owed after the customer paid the original amount (line = total - paid).
   if (bankAbs - payAmount > 0.005 && !(balance.credited > 0 && bankAbs <= balance.total - balance.paid + 0.005)) {
-    throw appError(422, "MATCH_AMOUNT_MISMATCH", `The bank line is ${bankAbs.toFixed(2)} but invoice ${invoice.number} has ${balance.outstanding.toFixed(2)} outstanding.`);
+    if (input.keepAsCredit) {
+      // an explicit choice: pay the invoice and keep the excess as customer credit (2050)
+      const done = await allocateInvoicesInTx(tx, ctx, txn, { glAccountId: bank.glAccountId, currency: bank.currency, bank: undefined } as any, {
+        allocations: [{ invoiceId: invoice.id }],
+        keepAsCredit: true,
+        paymentDate: input.paymentDate,
+        confidence: input.confidence,
+      });
+      return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "invoice" };
+    }
+    throw appError(422, "MATCH_AMOUNT_MISMATCH", `The bank line is ${bankAbs.toFixed(2)} but invoice ${invoice.number} has ${balance.outstanding.toFixed(2)} outstanding. Keep the ${(bankAbs - payAmount).toFixed(2)} as customer credit, or match other invoices as well.`, {
+      excess: Math.round((bankAbs - payAmount) * 100) / 100,
+      canKeepAsCredit: true,
+    });
   }
   const { date } = await resolveSettlementDate(ctx.companyId, { requested: input.paymentDate, fallback: txn.transactionDate });
 
@@ -230,7 +208,7 @@ async function matchExisting(tx: Tx, ctx: PostCtx, txn: BankTransaction, bank: {
       SELECT je.id, je.status, je.reversed_entry_id,
              COALESCE((SELECT SUM(jl.debit - jl.credit) FROM journal_lines jl WHERE jl.entry_id = je.id AND jl.account_id = ${bank.glAccountId}), 0)::float8 AS net,
              EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted') AS reversed,
-             EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND bt.matched_journal_entry_id = je.id AND bt.id <> ${txn.id}
+             EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedTo("bt", "je")} AND bt.id <> ${txn.id}
                        AND bt.bank_account_id = ${bank.glAccountId}) AS linked
         FROM journal_entries je WHERE je.id = ${entryId} AND je.company_id = ${ctx.companyId}`)
   )[0];
@@ -301,6 +279,18 @@ export async function applyMatch(ctx: PostCtx, input: MatchInput): Promise<Match
 }
 
 async function applyMatchLocked(ctx: PostCtx, input: MatchInput): Promise<MatchResult> {
+  if (input.kind === "transfer") {
+    // two bank lines: lock both, always the lower id first, so two transfers started from opposite ends cannot deadlock
+    const [first, second] = [input.transactionId, input.targetId].sort();
+    return await withDocumentLock(first, LOCK_NS.BANK_TRANSACTION, async (tx) => {
+      await acquireDocumentLock(tx, second, LOCK_NS.BANK_TRANSACTION);
+      const txn = await readTransaction(tx, ctx.companyId, input.transactionId);
+      assertOpen(txn);
+      const bank = await resolveBank(ctx.companyId, txn);
+      const done = await transferInTx(tx, ctx, txn, bank, input.targetId, input.memo);
+      return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "transfer" as const };
+    });
+  }
   return await withDocumentLock(input.transactionId, LOCK_NS.BANK_TRANSACTION, async (tx) => {
     const txn = await readTransaction(tx, ctx.companyId, input.transactionId);
     assertOpen(txn);
@@ -315,6 +305,23 @@ async function applyMatchLocked(ctx: PostCtx, input: MatchInput): Promise<MatchR
         return await matchExisting(tx, ctx, txn, bank, input);
       case "account":
         return await matchAccount(tx, ctx, txn, bank, input);
+      case "invoices": {
+        const done = await allocateInvoicesInTx(tx, ctx, txn, bank, {
+          allocations: input.allocations ?? [{ invoiceId: input.targetId }],
+          keepAsCredit: input.keepAsCredit,
+          paymentDate: input.paymentDate,
+          confidence: input.confidence,
+        });
+        return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "invoices" as const };
+      }
+      case "split": {
+        const done = await splitEntryInTx(tx, ctx, txn, bank, { lines: input.lines ?? [], memo: input.memo, confidence: input.confidence });
+        return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "split" as const };
+      }
+      case "transfer": {
+        const done = await transferInTx(tx, ctx, txn, bank, input.targetId, input.memo);
+        return { transaction: done.transaction, journalEntryId: done.journalEntryId, receiptId: null, kind: "transfer" as const };
+      }
       case "rule": {
         await assertPeriodNotLocked(ctx.companyId, txn.transactionDate);
         const done = await applyRuleInTx(tx, ctx, txn, bank, input.targetId);
@@ -360,7 +367,7 @@ async function unmatchLocked(ctx: PostCtx, transactionId: string): Promise<Unmat
       if (entry && ownsEntry) {
         // the other side of a transfer links the same entry: reversing it would leave that line pointing at nothing
         const elsewhere = rowsOf(
-          await tx.execute(sql`SELECT 1 FROM bank_transactions WHERE company_id = ${ctx.companyId} AND matched_journal_entry_id = ${entry.id} AND id <> ${txn.id} LIMIT 1`)
+          await tx.execute(sql`SELECT 1 FROM bank_transactions bt JOIN journal_entries je ON je.id = ${entry.id} WHERE bt.company_id = ${ctx.companyId} AND ${linkedTo("bt", "je")} AND bt.id <> ${txn.id} LIMIT 1`)
         );
         if (elsewhere.length > 0) {
           throw appError(409, "ENTRY_LINKED_ELSEWHERE", "Another bank line is matched to this entry (the other side of a transfer). Unmatch that line first.");
@@ -407,6 +414,7 @@ async function unmatchLocked(ctx: PostCtx, transactionId: string): Promise<Unmat
       }
     }
 
+    await tx.execute(sql`DELETE FROM bank_transaction_entries WHERE bank_transaction_id = ${txn.id}`);
     const [saved] = await tx
       .update(bankTransactions)
       .set({ ...clearedPatch })

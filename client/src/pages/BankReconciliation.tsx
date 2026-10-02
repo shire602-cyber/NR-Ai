@@ -8,15 +8,17 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import type { BankAccount, ProvidersResponse } from "@/lib/banking-api-types";
+import type { BankAccount, LedgerAccount, ProvidersResponse } from "@/lib/banking-api-types";
 import { BankTransactionsTab } from "@/components/banking/BankTransactionsTab";
 import { StatementImportsPanel } from "@/components/banking/StatementImportsPanel";
 import { StatementImportDialog } from "@/components/banking/StatementImportDialog";
 import { BankFeedsPanel } from "@/components/banking/BankFeedsPanel";
 import { ReconciliationTab } from "@/components/banking/ReconciliationTab";
+import { BankAccountsPanel } from "@/components/banking/BankAccountsPanel";
+import { BankAccountDialog } from "@/components/banking/BankAccountDialog";
 import { messages as pageMessages } from "./BankReconciliation.i18n";
 
-type TabKey = "transactions" | "import" | "feeds" | "reconciliation";
+type TabKey = "transactions" | "import" | "feeds" | "reconciliation" | "accounts";
 
 export default function BankReconciliation() {
   const tr = pageMessages.useT();
@@ -25,11 +27,18 @@ export default function BankReconciliation() {
   const [tab, setTab] = useState<TabKey>("transactions");
   const [importOpen, setImportOpen] = useState(false);
   const [resumeId, setResumeId] = useState<string | null>(null);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
 
   const { data: bankAccounts = [], isLoading: isLoadingAccounts } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
+  const { data: ledgerAccounts = [] } = useQuery<LedgerAccount[]>({ queryKey: ["/api/companies", companyId, "accounts"], enabled: !!companyId });
+  const openAccountDialog = (account: BankAccount | null = null) => {
+    setEditingAccount(account);
+    setAccountDialogOpen(true);
+  };
   // [] unless a feed provider is configured on the server: the Feeds tab and every "live" wording depend on it.
   const { data: providers } = useQuery<ProvidersResponse>({ queryKey: ["/api/bank/providers"], enabled: !!companyId });
   const feedsAvailable = (providers?.providers.length ?? 0) > 0;
@@ -84,6 +93,9 @@ export default function BankReconciliation() {
             <TabsTrigger value="import">{tr("tabImport")}</TabsTrigger>
             {feedsAvailable && <TabsTrigger value="feeds">{tr("tabFeeds")}</TabsTrigger>}
             <TabsTrigger value="reconciliation">{tr("tabReconciliation")}</TabsTrigger>
+            <TabsTrigger value="accounts" data-testid="tab-bank-accounts">
+              {tr("tabAccounts")}
+            </TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="transactions" className="mt-4">
@@ -100,6 +112,9 @@ export default function BankReconciliation() {
         <TabsContent value="reconciliation" className="mt-4">
           <ReconciliationTab companyId={companyId} bankAccounts={bankAccounts} />
         </TabsContent>
+        <TabsContent value="accounts" className="mt-4">
+          <BankAccountsPanel companyId={companyId} bankAccounts={bankAccounts} onAdd={() => openAccountDialog()} onEdit={(a) => openAccountDialog(a)} />
+        </TabsContent>
       </Tabs>
 
       <StatementImportDialog
@@ -111,7 +126,12 @@ export default function BankReconciliation() {
         companyId={companyId}
         bankAccounts={bankAccounts}
         resumeImportId={resumeId}
+        onAddAccount={() => {
+          setImportOpen(false);
+          openAccountDialog();
+        }}
       />
+      <BankAccountDialog open={accountDialogOpen} onOpenChange={setAccountDialogOpen} companyId={companyId} account={editingAccount} accounts={ledgerAccounts} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { computeVatReturnForPeriod } from "../services/vat-return-compute.service";
 import { overlayVatReturns, recordVatFiling } from "../services/vat-filing.service";
 import { pool } from "../db";
+import { recordAudit } from "../services/audit.service";
 import { round2 } from "../services/financial-statements";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { MIN_MANUAL_EDIT_REASON, editedFigureKeys, mergeManualEdits } from "../services/tax-filing-core";
@@ -113,6 +114,18 @@ async function requireCompanyWorkpaperAccess(
     return null;
   }
   return { userId, detail };
+}
+
+/** The money on a VAT return row (every numeric box and total) plus its period, for the audit trail. */
+function vatDraftFigures(row: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    period: `${new Date(row.periodStart).toISOString().slice(0, 10)}..${new Date(row.periodEnd).toISOString().slice(0, 10)}`,
+    status: row.status ?? null,
+  };
+  for (const [k, v] of Object.entries(row)) {
+    if (typeof v === "number" && /^box|vat|total|net|payable|due|refund/i.test(k)) out[k] = v;
+  }
+  return out;
 }
 
 export function registerVATRoutes(app: Express) {
@@ -558,6 +571,17 @@ export function registerVATRoutes(app: Express) {
 
       // Regenerating replaces every figure with the books' figures: hand edits are gone with them.
       const vatReturn = await persistVatReturn({ ...returnValues, manualEdits: null });
+      // Keep the replaced draft's figures: a regenerated draft used to overwrite the earlier one without a trace.
+      await recordAudit({
+        userId,
+        companyId,
+        action: samePeriod ? "vat.draft.regenerate" : "vat.draft.generate",
+        entityType: "vat_return",
+        entityId: vatReturn.id,
+        before: samePeriod ? vatDraftFigures(samePeriod) : null,
+        after: vatDraftFigures(vatReturn),
+        req,
+      });
 
       // Return with additional metadata for the UI
       res.status(201).json({

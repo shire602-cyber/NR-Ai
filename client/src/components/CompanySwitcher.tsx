@@ -63,6 +63,13 @@ export function CompanySwitcher() {
     if (companyId === active.id) return;
     try {
       await switchActiveCompany(companyId);
+      // Land on the target company's own dashboard, and do not bounce a switch into that company's first-run wizard.
+      try {
+        sessionStorage.setItem("onboarding_redirect_seen", "1");
+      } catch {
+        /* storage may be disabled */
+      }
+      navigate("/dashboard");
       const next = companies.find((c) => c.id === companyId);
       toast({
         title: tr("companySwitched"),

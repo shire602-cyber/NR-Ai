@@ -99,3 +99,62 @@ adversarial review and a fix round with regression tests.
 - Employees can read every employee's leave balances and loans (same as existing payroll reads); restricting that is
   an owner decision.
 - Recurring template lines have no discount or shipping fields.
+
+# Phase 9 (launch gate): five blind accountants, and what they changed
+
+Five independent accountant personas (zero code access; only the running app, the API docs and the help centre)
+each ran a full quarter: a Sharjah trader with inventory, a Dubai services firm with projects and online payment, a
+payroll/HR company, a banking-heavy Abu Dhabi trader with assets and a year-end, and a firm partner acting as auditor
+across three client companies. Their reports are in `docs/superpowers/plans/2026-10-02-teardown6-t1..t5.md`. Before
+the fixes, none would sign. Everything they found that was wrong in money, VAT or compliance is fixed with regression
+tests (`tests/integration/phase9-*.test.mjs`).
+
+## Money and VAT defects they found (all fixed)
+- **Dates stored one day early.** A document dated the 1st from the date picker was stored as UTC and landed in the
+  previous month's VAT return, VAT summary and audit file while the P&L used the local date. Every document date is now a
+  UAE calendar day end to end (server contract: "YYYY-MM-DD" or an ISO instant converted to the UAE day).
+- **Blocked input VAT (Article 53) reached box 9.** Entertainment VAT was correctly not posted to 1050 but still
+  claimed on the return. One blocked-input rule now governs posting, the return, the audit rows, the autopilot and the
+  workpaper.
+- **Month-end "closing entries" wiped the quarter.** Month-end close moved the whole year's profit into retained
+  earnings dated the month end. Month-end posts no P&L closing entries; only year-end does, and never for postings after
+  its date.
+- **VAT by journal.** Sales or purchases recorded by manual journal reached the return as VAT-only adjustments; the net
+  amounts now reach box 1 and box 9 exactly once, and the return screen's boxes 12-14 include adjustments so the screen
+  never differs from the stored return.
+- **Purchase-to-stock chain.** Bills and purchase orders carry products; approving a bill with tracked products posts
+  stock and debits Inventory (1070) instead of expense; receiving a PO posts goods-received-not-invoiced; movements have
+  dates and can be negative; opening stock sets quantity and cost. Inventory always equals stock × average cost.
+- **Depreciation.** Catch-up never posts into a closed or locked period: those months go into one labelled
+  prior-period catch-up journal dated the first open day (closed years against retained earnings), nothing counted
+  twice; disposal catch-up is dated the disposal date; a company owner can reopen their own closed period with a reason.
+- **Payroll.** Mid-month joiners are pro-rated (30-day basis); leave and sick deductions use the full wage; the final
+  settlement uses the whole gratuity provision (opening + accrued); the preparer cannot approve their own run; the WPS
+  SIF uses the MOHRE layout (EDR rows then SCR) and refuses to generate without the establishment and person IDs; a
+  leave-pay provision accrues monthly (5029/2037, company setting); leave balances start at zero carry-forward.
+- **Reconciliation.** One receipt can settle several invoices, an overpayment can be kept as customer credit (2050),
+  a bank line can be split, transfers between own accounts in different currencies reconcile on both sides, USD accounts
+  reconcile in USD, and the reconciliation report never says "balanced" with unexplained items.
+- **Approvals.** A rejection ends the request (document back to draft, reason visible, resubmit required); a sole
+  approver may approve their own document only with an explicit acknowledgement recorded in the audit trail.
+- **Corporate tax.** Small Business Relief can be elected (when eligible, periods ending on or before 31 Dec 2026),
+  add-backs and deductions (entertainment 50%, fines, donations, depreciation differences, other with reason) are part
+  of the computation and the workpaper; labels corrected (375,000 = 0% band; 3m = SBR threshold).
+- **Audit trail** now records bill edits (with old and new values), contacts, invitations, company setup, VAT draft
+  regeneration, rejections and refused actions.
+
+## Also fixed from the teardowns
+Partial credit notes with a chosen date through the screens (one real path); invoice status can no longer be set to
+"Paid" by hand; a local simulated checkout page so online payment can be exercised without Stripe; refund of a payment
+and of a customer credit balance; reverse charge on bills in the UI; bank account and GL account screens; bill payments
+require a real bank account; "run now" for recurring invoices and late fees; tax credit notes titled and referenced per
+FTA rules; customer address and TRN on tax invoices; opening-balance invoices no longer print as tax invoices; FTA
+branding removed from the VAT 201; exports owner-only and scoped to the right company after a deletion request;
+employees see only their own payroll records and no financial reports; Arabic calendars, statuses, account names and
+server messages; 22 help articles rewritten in both languages.
+
+## Still for the owner or an accountant
+WPS SIF field widths and the bank routing code were written from the MOHRE layout as known, not verified against a
+bank's file check; manual payroll deductions post to 2034 (a payroll-deductions payable) and need a policy; the gratuity
+cap and unpaid-leave effect on service years are unchanged; recurring-invoice generation still posts its journal after
+the invoice insert.

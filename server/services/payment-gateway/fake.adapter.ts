@@ -24,7 +24,23 @@ export function fakeFeeAed(settledAed: number): number {
   return new Decimal(settledAed).times(0.029).plus(1).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
 }
 
-const sessions = new Map<string, { amount: number; currency: string; fakeRate?: number; expired: boolean }>();
+export interface FakeSession {
+  amount: number;
+  currency: string;
+  fakeRate?: number;
+  expired: boolean;
+  accountId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  successUrl: string;
+  cancelUrl: string;
+}
+const sessions = new Map<string, FakeSession>();
+
+/** A checkout session the fake gateway created (the simulated checkout page reads it). */
+export function getFakeSession(sessionId: string): FakeSession | undefined {
+  return sessions.get(sessionId);
+}
 
 export class FakeGatewayAdapter implements GatewayProvider {
   readonly name = "fake" as const;
@@ -48,8 +64,25 @@ export class FakeGatewayAdapter implements GatewayProvider {
 
   async createCheckout(req: CheckoutRequest): Promise<CheckoutSession> {
     const sessionId = `cs_fake_${randomBytes(8).toString("hex")}`;
-    sessions.set(sessionId, { amount: req.amount, currency: req.currency.toUpperCase(), fakeRate: req.fakeRate, expired: false });
-    return { sessionId, url: `https://fake-pay.example.test/c/${sessionId}`, expiresAt: new Date(Date.now() + 24 * 3600 * 1000) };
+    sessions.set(sessionId, {
+      amount: req.amount,
+      currency: req.currency.toUpperCase(),
+      fakeRate: req.fakeRate,
+      expired: false,
+      accountId: req.accountId,
+      invoiceId: req.invoiceId,
+      invoiceNumber: req.invoiceNumber,
+      successUrl: req.successUrl,
+      cancelUrl: req.cancelUrl,
+    });
+    // A simulated checkout page served by this server (payment-gateway.routes.ts: Pay / Fail fire the webhook path).
+    let origin = "";
+    try {
+      origin = new URL(req.successUrl).origin;
+    } catch {
+      /* relative return URL: the page is on the same host */
+    }
+    return { sessionId, url: `${origin}/api/public/fake-pay/${sessionId}`, expiresAt: new Date(Date.now() + 24 * 3600 * 1000) };
   }
 
   async expireCheckout(args: { sessionId: string }): Promise<void> {

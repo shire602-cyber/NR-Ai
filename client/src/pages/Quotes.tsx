@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -99,6 +100,7 @@ import {
   type ItemLineForm,
 } from "@/lib/sales-api";
 import { Link } from "wouter";
+import { vatChoiceOf, vatFieldsOf, vatFromSelectValue, vatSelectValue } from "@/lib/vat-choice";
 
 const quoteLineSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
@@ -188,7 +190,7 @@ export default function Quotes() {
       number: `QT-${Date.now()}`,
       customerName: "",
       customerTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -316,7 +318,7 @@ export default function Quotes() {
       number: `QT-${Date.now()}`,
       customerName: "",
       customerTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -335,8 +337,8 @@ export default function Quotes() {
         customerName: fullQuote.customerName,
         customerTrn: fullQuote.customerTrn || "",
         contactId: fullQuote.contactId ?? null,
-        date: new Date(fullQuote.date),
-        expiryDate: new Date(fullQuote.expiryDate),
+        date: (pickerDate(fullQuote.date) as Date),
+        expiryDate: (pickerDate(fullQuote.expiryDate) as Date),
         currency: fullQuote.currency,
         notes: fullQuote.notes || "",
         lines: splitStoredLines(fullQuote.lines).items.length
@@ -458,7 +460,7 @@ export default function Quotes() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -546,7 +548,7 @@ export default function Quotes() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -696,15 +698,20 @@ export default function Quotes() {
                             <FormItem>
                               <FormControl>
                                 <Select
-                                  value={String(field.value * 100)}
-                                  onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                                  value={vatSelectValue(field.value, watchLines[index]?.vatSupplyType)}
+                                  onValueChange={(val) => {
+                                    const picked = vatFromSelectValue(val);
+                                    field.onChange(picked.vatRate);
+                                    form.setValue(`lines.${index}.vatSupplyType`, picked.vatRate === 0 ? picked.vatSupplyType : null);
+                                  }}
                                 >
                                   <SelectTrigger className="font-mono">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="0">0%</SelectItem>
                                     <SelectItem value="5">5%</SelectItem>
+                                    <SelectItem value="0:zero_rated">{salesTr("vatZeroRated")}</SelectItem>
+                                    <SelectItem value="0:exempt">{salesTr("vatExempt")}</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </FormControl>
@@ -762,8 +769,9 @@ export default function Quotes() {
                             const priced = priceForProduct(picked.id, picked.unitPrice, priceResolution.data);
                             form.setValue(`lines.${index}.unitPrice`, priced.unitPrice);
                             form.setValue(`lines.${index}.priceListId`, priced.priceListId);
-                            form.setValue(`lines.${index}.vatRate`, Number(picked.vatRate) === 0 ? 0 : 0.05);
-                            form.setValue(`lines.${index}.vatSupplyType`, null);
+                            const choice = vatChoiceOf(picked.vatRate, (picked as { vatSupplyType?: string | null }).vatSupplyType);
+                            form.setValue(`lines.${index}.vatRate`, vatFieldsOf(choice).vatRate);
+                            form.setValue(`lines.${index}.vatSupplyType`, choice === "standard_rated" ? null : choice);
                           }}
                         />
                         {watchLines[index]?.productId && (

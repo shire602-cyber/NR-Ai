@@ -3,6 +3,8 @@ import { defineMessages } from "@/lib/i18n-messages";
 export const messages = defineMessages(
   "Accounts",
   {
+    accountCodeIsRequired: "Account code is required",
+    accountCode: "Account code",
     accountNameEnIsRequired: "Account name (EN) is required",
     accountCreated: "Account created",
     newAccountHasBeenAddedTo: "New account has been added to the Chart of Accounts.",
@@ -45,6 +47,8 @@ export const messages = defineMessages(
     intercompanyUnknownCompany: "another company",
   },
   {
+    accountCodeIsRequired: "رمز الحساب مطلوب",
+    accountCode: "رمز الحساب",
     accountNameEnIsRequired: "اسم الحساب (بالإنجليزية) مطلوب",
     accountCreated: "تم إنشاء الحساب",
     newAccountHasBeenAddedTo: "تمت إضافة الحساب الجديد إلى دليل الحسابات.",

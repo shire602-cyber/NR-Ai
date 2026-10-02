@@ -90,6 +90,10 @@ export interface CustomerStatement {
    * the receivable balance (the advance invoice is already paid and nets to zero there).
    */
   unappliedAdvances?: StatementAdvanceMemo[];
+  /** AED credit the customer holds from overpayments (refundable from the customer's page). */
+  creditBalance?: number;
+  /** Refunds paid out of that credit in the period's range (memo; not on the receivable). */
+  creditRefunds?: Array<{ date: string; amount: number; reference: string | null }>;
 }
 
 export interface StatementAdvanceMemo {
@@ -326,6 +330,7 @@ export async function buildCustomerStatement(args: {
   to: string;
 }): Promise<(CustomerStatement & { contact: StatementContact }) | null> {
   const { pool } = await import("../db");
+  const { getCustomerCreditBalance } = await import("./customer-credit-refund.service");
   const contactResult = await pool.query(
     `SELECT id::text AS id, name, name_ar AS "nameAr", email, trn_number AS "trnNumber", address
        FROM customer_contacts WHERE id = $1 AND company_id = $2`,
@@ -336,8 +341,8 @@ export async function buildCustomerStatement(args: {
 
   // Invoices are linked by contact_id; older rows only carry the customer name.
   const invoiceResult = await pool.query(
-    `SELECT id::text AS id, number, to_char(date, 'YYYY-MM-DD') AS date,
-            to_char(due_date, 'YYYY-MM-DD') AS "dueDate", total::float8 AS total, currency,
+    `SELECT id::text AS id, number, to_char(date + INTERVAL '4 hours', 'YYYY-MM-DD') AS date,
+            to_char(due_date + INTERVAL '4 hours', 'YYYY-MM-DD') AS "dueDate", total::float8 AS total, currency,
             exchange_rate::float8 AS "exchangeRate", base_currency_amount::float8 AS "baseCurrencyAmount",
             status, invoice_type AS "invoiceType", original_invoice_id::text AS "originalInvoiceId"
        FROM invoices
@@ -349,14 +354,14 @@ export async function buildCustomerStatement(args: {
   const paymentResult = ids.length
     ? await pool.query(
         `SELECT id::text AS id, invoice_id::text AS "invoiceId", amount::float8 AS amount,
-                to_char(date, 'YYYY-MM-DD') AS date, reference, method
+                to_char(date + INTERVAL '4 hours', 'YYYY-MM-DD') AS date, reference, method
            FROM invoice_payments WHERE company_id = $1 AND invoice_id = ANY($2::uuid[])`,
         [args.companyId, ids]
       )
     : { rows: [] };
   const refunds = await loadRefunds(pool, args.companyId, contact);
   const advanceResult = await pool.query(
-    `SELECT a.number, a.kind, i.number AS "invoiceNumber", to_char(i.date, 'YYYY-MM-DD') AS date,
+    `SELECT a.number, a.kind, i.number AS "invoiceNumber", to_char(i.date + INTERVAL '4 hours', 'YYYY-MM-DD') AS date,
             a.net_amount::float8 AS "netAmount", a.vat_amount::float8 AS "vatAmount", a.gross_amount::float8 AS "grossAmount",
             a.vat_rate::float8 AS "vatRate",
             (a.net_amount - COALESCE((SELECT SUM(x.net_amount) FROM customer_advance_applications x
@@ -365,7 +370,7 @@ export async function buildCustomerStatement(args: {
               AS "availableNet"
        FROM customer_advances a JOIN invoices i ON i.id = a.invoice_id
       WHERE a.company_id = $1 AND a.contact_id = $2 AND a.status <> 'void'
-        AND i.status NOT IN ('draft', 'void', 'cancelled') AND to_char(i.date, 'YYYY-MM-DD') <= $3
+        AND i.status NOT IN ('draft', 'void', 'cancelled') AND to_char(i.date + INTERVAL '4 hours', 'YYYY-MM-DD') <= $3
       ORDER BY i.date, a.number`,
     [args.companyId, contact.id, args.to]
   );
@@ -392,6 +397,17 @@ export async function buildCustomerStatement(args: {
       to: args.to,
     }),
     unappliedAdvances,
+    // Overpayments held as customer credit (2050), net of refunds paid out: a memo like the advances.
+    creditBalance: (await getCustomerCreditBalance(args.companyId, contact.id)).available,
+    creditRefunds: (
+      await pool.query(
+        `SELECT to_char(refund_date, 'YYYY-MM-DD') AS date, amount::float8 AS amount, reference
+           FROM customer_credit_refunds
+          WHERE company_id = $1 AND contact_id = $2 AND voided_at IS NULL AND refund_date <= $3::date
+          ORDER BY refund_date, created_at`,
+        [args.companyId, contact.id, args.to]
+      )
+    ).rows as Array<{ date: string; amount: number; reference: string | null }>,
     contact,
   };
 }

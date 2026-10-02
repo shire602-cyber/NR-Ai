@@ -92,7 +92,7 @@ async function main() {
       r = await c.pay(inv.id, 50);
       ok("D1a: a payment of 50 is refused 409 INVOICE_NOTHING_OUTSTANDING", r.status === 409 && r.json?.code === "INVOICE_NOTHING_OUTSTANDING", { s: r.status, j: r.json });
       r = await c.setStatus(inv.id, "paid", { paymentAccountId: c.bank.id });
-      ok("D1a: PATCH status paid on a credited invoice is refused 422 INVOICE_CREDITED_LOCKED", r.status === 422 && r.json?.code === "INVOICE_CREDITED_LOCKED", { s: r.status, j: r.json });
+      ok("D1a: PATCH status paid is refused 400 STATUS_DERIVED (paid comes from payments)", r.status === 400 && r.json?.code === "STATUS_DERIVED", { s: r.status, j: r.json });
       const payRows = (await db.query("SELECT count(*)::int AS c FROM invoice_payments WHERE invoice_id = $1", [inv.id])).rows[0].c;
       ok("D1a: no payment row was written", payRows === 0, payRows);
       r = await c.setStatus(inv.id, "credited");
@@ -152,8 +152,8 @@ async function main() {
       const inv = r.json;
       await c.issue(inv.id);
       await c.creditNote(inv.id, { lines: [{ description: "returned goods", quantity: 1, unitPrice: 400, vatRate: 0.05 }] });
-      r = await c.setStatus(inv.id, "paid", { paymentAccountId: c.bank.id });
-      ok("D1c: marking a partly credited invoice paid works", r.status === 200, { s: r.status, j: r.json });
+      r = await c.pay(inv.id, 630);
+      ok("D1c: paying the remainder of a partly credited invoice works", r.status === 201, { s: r.status, j: r.json });
       const pays = (await db.query("SELECT amount::float8 AS a FROM invoice_payments WHERE invoice_id = $1", [inv.id])).rows;
       ok("D1c: exactly one payment of 630 (not 1050) was recorded", pays.length === 1 && close(pays[0].a, 630), pays);
       const led = await ledger(c.cid);

@@ -16,6 +16,7 @@ export const messages = defineMessages(
     noComment: "No comment",
     decisionApproved: "Approved",
     decisionRejected: "Rejected",
+    selfApproved: "Self-approved (sole approver)",
   },
   {
     title: "سجل الموافقات",
@@ -31,5 +32,6 @@ export const messages = defineMessages(
     noComment: "لا يوجد تعليق",
     decisionApproved: "معتمدة",
     decisionRejected: "مرفوض",
+    selfApproved: "اعتماد ذاتي (المعتمد الوحيد)",
   }
 );

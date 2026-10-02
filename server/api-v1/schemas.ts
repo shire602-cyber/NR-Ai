@@ -146,8 +146,9 @@ export const invoicePaymentCreate = z.strictObject({
   method: z.enum(["cash", "bank", "cheque", "online"]).optional(),
   reference: text(255).nullable().optional(),
   notes: text(2000).nullable().optional(),
-  paymentAccountId: uuid.meta({ description: "Cash or bank account (asset) the money went into" }),
+  paymentAccountId: uuid.meta({ description: "Cash or bank account (asset) the money went into; see GET /accounts" }),
   exchangeRate: rate.optional(),
+  allowCredit: z.boolean().optional().meta({ description: "Record any amount above the invoice balance as a customer advance instead of refusing it" }),
 });
 
 // ───────────────────────── Bills ─────────────────────────
@@ -181,6 +182,7 @@ export const billPaymentCreate = z.strictObject({
   method: z.enum(["bank_transfer", "cash", "cheque", "credit_card", "other"]).optional(),
   reference: text(255).nullable().optional(),
   notes: text(2000).nullable().optional(),
+  paymentAccountId: uuid.meta({ description: "The bank or cash account (asset) the payment leaves; see GET /accounts" }),
 });
 
 // ───────────────────────── Journals ─────────────────────────
@@ -224,6 +226,18 @@ export const contactResponse = z.object({
   contactPerson: nullableStr,
   paymentTermsDays: z.number().nullable(),
   notes: nullableStr,
+  isActive: z.boolean(),
+  createdAt: isoTs,
+});
+
+export const accountResponse = z.object({
+  id: uuid.meta({ description: "Use as paymentAccountId (cash or bank, type asset) and as accountId on journal and bill lines" }),
+  code: z.string().meta({ example: "1010" }),
+  name: z.string(),
+  nameAr: nullableStr,
+  type: z.enum(["asset", "liability", "equity", "income", "expense"]),
+  subType: nullableStr,
+  isSystem: z.boolean().meta({ description: "System accounts are created by the product and cannot be archived" }),
   isActive: z.boolean(),
   createdAt: isoTs,
 });

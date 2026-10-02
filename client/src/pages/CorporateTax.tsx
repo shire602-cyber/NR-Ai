@@ -48,6 +48,23 @@ import FilingEvidencePanel from "@/components/compliance/FilingEvidencePanel";
 import RecordFilingDialog from "@/components/compliance/RecordFilingDialog";
 import AmendButton from "@/components/compliance/AmendButton";
 import { useComplianceText } from "@/lib/i18n-compliance";
+import {
+  CtAdjustmentsEditor,
+  CtComputationSummary,
+  CtDraftEditor,
+  CtReliefSwitch,
+  ReliefOutcomeLine,
+} from "@/components/compliance/CtAdjustments";
+import {
+  adjustmentsAreValid,
+  localComputation,
+  localReliefOffer,
+  rowsToAdjustments,
+  type AdjustmentRow,
+  type CtBridgeAdjustment,
+  type CtComputationResult,
+} from "@/lib/ct-form";
+import { messages as pageMessages } from "./CorporateTax.i18n";
 
 type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 
@@ -66,6 +83,10 @@ interface CorporateTaxWorkpaper {
   totalExpenses: number;
   profitOrLoss: number;
   preparedAt: string;
+  /** Written by the server's compute step (Phase 9): the add-backs and deductions, the election, and the bridge. */
+  adjustments?: CtBridgeAdjustment[];
+  sbrElected?: boolean;
+  computation?: CtComputationResult;
 }
 
 interface CorporateTaxReturn {
@@ -80,6 +101,7 @@ interface CorporateTaxReturn {
   exemptionThreshold: number;
   taxRate: number;
   taxPayable: number;
+  smallBusinessRelief?: boolean;
   status: string;
   filedAt: string | null;
   workpaper: CorporateTaxWorkpaper | null;
@@ -111,22 +133,22 @@ const statusBadge = (status: string) => {
     case "filed":
       return (
         <Badge variant="default" className="bg-info hover:bg-info">
-          <CheckCircle2 className="w-3 h-3 mr-1" />
-          Filed
+          <CheckCircle2 className="w-3 h-3 me-1" />
+          {pageMessages.t("filed")}
         </Badge>
       );
     case "paid":
       return (
         <Badge variant="default" className="bg-success hover:bg-success">
-          <Banknote className="w-3 h-3 mr-1" />
-          Paid
+          <Banknote className="w-3 h-3 me-1" />
+          {pageMessages.t("paid")}
         </Badge>
       );
     default:
       return (
         <Badge variant="secondary">
-          <Clock className="w-3 h-3 mr-1" />
-          Draft
+          <Clock className="w-3 h-3 me-1" />
+          {pageMessages.t("draft")}
         </Badge>
       );
   }
@@ -136,17 +158,22 @@ const CT_EXEMPTION_THRESHOLD = 375000;
 const CT_TAX_RATE = 0.09;
 
 const defaultWorkpaperRows = (): CorporateTaxWorkpaperRow[] => [
-  { id: "revenue", label: "Revenue", type: "revenue", amount: 0 },
+  { id: "revenue", label: pageMessages.t("revenue"), type: "revenue", amount: 0 },
   { id: "cogs", label: "COGS", type: "expense", amount: 0 },
-  { id: "rent", label: "Rent", type: "expense", amount: 0 },
-  { id: "transport", label: "Transport", type: "expense", amount: 0 },
-  { id: "utility", label: "Utility bill", type: "expense", amount: 0 },
-  { id: "telephone", label: "Telephone", type: "expense", amount: 0 },
-  { id: "license", label: "License", type: "expense", amount: 0 },
-  { id: "bank-charges", label: "Bank service charges", type: "expense", amount: 0 },
-  { id: "professional-fees", label: "Professional fees", type: "expense", amount: 0 },
-  { id: "food", label: "Food", type: "expense", amount: 0 },
-  { id: "office-expenses", label: "Office expenses", type: "expense", amount: 0 },
+  { id: "rent", label: pageMessages.t("rent"), type: "expense", amount: 0 },
+  { id: "transport", label: pageMessages.t("transport"), type: "expense", amount: 0 },
+  { id: "utility", label: pageMessages.t("utilityBill"), type: "expense", amount: 0 },
+  { id: "telephone", label: pageMessages.t("telephone"), type: "expense", amount: 0 },
+  { id: "license", label: pageMessages.t("license"), type: "expense", amount: 0 },
+  { id: "bank-charges", label: pageMessages.t("bankServiceCharges"), type: "expense", amount: 0 },
+  {
+    id: "professional-fees",
+    label: pageMessages.t("professionalFees"),
+    type: "expense",
+    amount: 0,
+  },
+  { id: "food", label: pageMessages.t("food"), type: "expense", amount: 0 },
+  { id: "office-expenses", label: pageMessages.t("officeExpenses"), type: "expense", amount: 0 },
 ];
 
 const moneyInputValue = (amount: number) => (amount === 0 ? "" : String(amount));
@@ -157,6 +184,8 @@ const parseMoneyInput = (value: string) => {
 };
 
 export default function CorporateTax() {
+  const tr = pageMessages.useT();
+
   const { t, locale } = useTranslation();
   const { toast } = useToast();
 
@@ -176,7 +205,7 @@ export default function CorporateTax() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Download failed", description: error?.message });
+      toast({ variant: "destructive", title: tr("downloadFailed"), description: error?.message });
     }
   };
 
@@ -188,14 +217,14 @@ export default function CorporateTax() {
         queryKey: [`/api/companies/${companyId}/corporate-tax/returns`],
       });
       toast({
-        title: `${result?.rows ?? 0} workpaper rows pulled from books`,
-        description: "One row per income/expense account with its posted net for the period.",
+        title: tr("workpaperRowsPulledFromBooks", { value: result?.rows ?? 0 }),
+        description: tr("oneRowPerIncomeExpenseAccount"),
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: tr("couldNotPullFromBooks"),
         description: e?.message,
       }),
   });
@@ -205,7 +234,8 @@ export default function CorporateTax() {
   const currentYear = new Date().getFullYear();
   const [periodStart, setPeriodStart] = useState(`${currentYear}-01-01`);
   const [periodEnd, setPeriodEnd] = useState(`${currentYear}-12-31`);
-  const [deductions, setDeductions] = useState(0);
+  const [adjRows, setAdjRows] = useState<AdjustmentRow[]>([]);
+  const [sbrElected, setSbrElected] = useState(false);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
@@ -251,9 +281,14 @@ export default function CorporateTax() {
       : (calculation?.totalExpenses ?? 0);
     const exemptionThreshold = calculation?.exemptionThreshold ?? CT_EXEMPTION_THRESHOLD;
     const taxRate = calculation?.taxRate ?? CT_TAX_RATE;
-    const taxableIncome = totalRevenue - totalExpenses - deductions;
-    const taxableAmount = Math.max(0, taxableIncome - exemptionThreshold);
-    const taxPayable = Math.round(taxableAmount * taxRate * 100) / 100;
+    const comp = localComputation({
+      totalRevenue,
+      totalExpenses,
+      rows: adjRows,
+      elected: sbrElected,
+      taxPeriodEnd: periodEnd,
+    });
+    const { taxableIncome, taxableAmount, taxPayable } = comp;
 
     return {
       periodStart: calculation?.periodStart ?? new Date(periodStart).toISOString(),
@@ -261,7 +296,8 @@ export default function CorporateTax() {
       totalRevenue,
       totalExpenses,
       grossProfit: totalRevenue - totalExpenses,
-      totalDeductions: deductions,
+      totalDeductions: comp.totalDeductions,
+      computation: comp,
       taxableIncome,
       exemptionThreshold,
       taxableAmount,
@@ -281,27 +317,27 @@ export default function CorporateTax() {
     onSuccess: (data: CalculationResult) => {
       setCalculation(data);
       toast({
-        title: "Calculation Complete",
-        description: `Processed ${data.journalEntriesProcessed} journal entries.`,
+        title: tr("calculationComplete"),
+        description: tr("processedJournalEntries", {
+          journalEntriesProcessed: data.journalEntriesProcessed,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Calculation Failed",
-        description: error?.message || "Failed to calculate corporate tax",
+        title: tr("calculationFailed"),
+        description: error?.message || tr("failedToCalculateCorporateTax"),
       });
     },
   });
 
   // Save as draft mutation
   const saveDraftMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!adjustedCalculation) throw new Error("No corporate tax workpaper to save");
-      const taxableIncome =
-        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses - deductions;
-      const taxableAmount = Math.max(0, taxableIncome - adjustedCalculation.exemptionThreshold);
-      const taxPayable = Math.round(taxableAmount * adjustedCalculation.taxRate * 100) / 100;
+      const comp = adjustedCalculation.computation;
+      const adjustments = rowsToAdjustments(adjRows);
       const workpaper: CorporateTaxWorkpaper = {
         source: hasManualWorkpaper ? "manual_workpaper" : "journal_calculation",
         rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
@@ -311,19 +347,29 @@ export default function CorporateTax() {
         preparedAt: new Date().toISOString(),
       };
 
-      return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
-        taxPeriodStart: new Date(periodStart).toISOString(),
-        taxPeriodEnd: new Date(periodEnd).toISOString(),
-        totalRevenue: adjustedCalculation.totalRevenue,
-        totalExpenses: adjustedCalculation.totalExpenses,
-        totalDeductions: deductions,
-        taxableIncome: Math.round(taxableIncome * 100) / 100,
-        exemptionThreshold: adjustedCalculation.exemptionThreshold,
-        taxRate: adjustedCalculation.taxRate,
-        taxPayable,
-        status: "draft",
-        workpaper,
-        notes: notes || null,
+      const created = await apiRequest(
+        "POST",
+        `/api/companies/${companyId}/corporate-tax/returns`,
+        {
+          taxPeriodStart: new Date(periodStart).toISOString(),
+          taxPeriodEnd: new Date(periodEnd).toISOString(),
+          totalRevenue: adjustedCalculation.totalRevenue,
+          totalExpenses: adjustedCalculation.totalExpenses,
+          totalDeductions: 0,
+          taxableIncome: comp.taxableIncome,
+          exemptionThreshold: adjustedCalculation.exemptionThreshold,
+          taxRate: adjustedCalculation.taxRate,
+          taxPayable: comp.taxPayable,
+          status: "draft",
+          workpaper,
+          notes: notes || null,
+        }
+      );
+      // The server is the source of truth: it validates the lines, checks earlier periods for the relief,
+      // and stores the computation with the return.
+      return apiRequest("POST", `/api/corporate-tax/returns/${created.id}/compute`, {
+        adjustments,
+        smallBusinessReliefElected: sbrElected,
       });
     },
     onSuccess: () => {
@@ -331,19 +377,20 @@ export default function CorporateTax() {
         queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
       });
       toast({
-        title: "Draft Saved",
-        description: "Corporate tax return saved as draft.",
+        title: tr("draftSaved"),
+        description: tr("corporateTaxReturnSavedAsDraft"),
       });
       setCalculation(null);
       setNotes("");
-      setDeductions(0);
+      setAdjRows([]);
+      setSbrElected(false);
       setWorkpaperRows(defaultWorkpaperRows());
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Save Failed",
-        description: error?.message || "Failed to save draft",
+        title: tr("saveFailed"),
+        description: error?.message || tr("failedToSaveDraft"),
       });
     },
   });
@@ -362,7 +409,9 @@ export default function CorporateTax() {
         return;
       }
     }
-    setViewReturn((current) => (current ? (taxReturns.find((r) => r.id === current.id) ?? current) : current));
+    setViewReturn((current) =>
+      current ? (taxReturns.find((r) => r.id === current.id) ?? current) : current
+    );
   }, [taxReturns, openAfterRefresh]);
 
   // Delete mutation
@@ -373,13 +422,13 @@ export default function CorporateTax() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
       });
-      toast({ title: "Return Removed", description: "Corporate tax return has been removed." });
+      toast({ title: tr("returnRemoved"), description: tr("corporateTaxReturnHasBeenRemoved") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Delete Failed",
-        description: error?.message || "Failed to remove return",
+        title: tr("deleteFailed"),
+        description: error?.message || tr("failedToRemoveReturn"),
       });
     },
   });
@@ -393,7 +442,7 @@ export default function CorporateTax() {
       ...rows,
       {
         id: `${type}-${Date.now()}`,
-        label: type === "revenue" ? "Other revenue" : "Other expense",
+        label: type === "revenue" ? tr("otherRevenue") : tr("otherExpense"),
         type,
         amount: 0,
       },
@@ -416,7 +465,7 @@ export default function CorporateTax() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">No company found. Please set up your company first.</p>
+        <p className="text-muted-foreground">{tr("noCompanyFoundPleaseSetUp")}</p>
       </div>
     );
   }
@@ -429,27 +478,22 @@ export default function CorporateTax() {
           <FileCheck className="w-8 h-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              {(t as any).corporateTax || "Corporate Tax (9%)"}
+              {(t as any).corporateTax || tr("corporateTax9")}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              UAE Corporate Tax &mdash; 9% on taxable income above AED 375,000
-            </p>
+            <p className="text-muted-foreground mt-1">{tr("uaeCorporateTax9OnTaxable")}</p>
           </div>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Pre-submission Profit / Loss Workpaper</CardTitle>
-          <CardDescription>
-            Enter revenue and expense lines exactly like the Excel schedule used before filing.
-            These rows support the draft return and do not mark anything as submitted.
-          </CardDescription>
+          <CardTitle>{tr("preSubmissionProfitLossWorkpaper")}</CardTitle>
+          <CardDescription>{tr("enterRevenueAndExpenseLinesExactly")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodStart">Period Start</Label>
+              <Label htmlFor="workpaperPeriodStart">{tr("periodStart")}</Label>
               <Input
                 id="workpaperPeriodStart"
                 type="date"
@@ -458,7 +502,7 @@ export default function CorporateTax() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodEnd">Period End</Label>
+              <Label htmlFor="workpaperPeriodEnd">{tr("periodEnd")}</Label>
               <Input
                 id="workpaperPeriodEnd"
                 type="date"
@@ -468,17 +512,17 @@ export default function CorporateTax() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
-                <Plus className="w-4 h-4 mr-2" /> Revenue row
+                <Plus className="w-4 h-4 me-2" /> {tr("revenueRow")}
               </Button>
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
-                <Plus className="w-4 h-4 mr-2" /> Expense row
+                <Plus className="w-4 h-4 me-2" /> {tr("expenseRow")}
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setWorkpaperRows(defaultWorkpaperRows())}
               >
-                <RotateCcw className="w-4 h-4 mr-2" /> Reset
+                <RotateCcw className="w-4 h-4 me-2" /> {tr("reset")}
               </Button>
             </div>
           </div>
@@ -488,15 +532,15 @@ export default function CorporateTax() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-[260px] text-base font-bold">
-                    Year {new Date(periodEnd || periodStart).getFullYear() || currentYear}
+                    {tr("year")} {new Date(periodEnd || periodStart).getFullYear() || currentYear}
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Expense
+                  <TableHead className="min-w-[180px] text-end text-base font-bold">
+                    {tr("expense")}
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Revenue
+                  <TableHead className="min-w-[180px] text-end text-base font-bold">
+                    {tr("revenue")}
                   </TableHead>
-                  <TableHead className="min-w-[220px]">Notes</TableHead>
+                  <TableHead className="min-w-[220px]">{tr("notes")}</TableHead>
                   <TableHead className="w-[56px]" />
                 </TableRow>
               </TableHeader>
@@ -521,7 +565,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
-                          className="text-right"
+                          className="text-end"
                           placeholder="0.00"
                         />
                       ) : (
@@ -539,7 +583,7 @@ export default function CorporateTax() {
                           onChange={(e) =>
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
-                          className="text-right"
+                          className="text-end"
                           placeholder="0.00"
                         />
                       ) : (
@@ -550,17 +594,17 @@ export default function CorporateTax() {
                       <Input
                         value={row.notes ?? ""}
                         onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
-                        placeholder="Evidence or adjustment note"
+                        placeholder={tr("evidenceOrAdjustmentNote")}
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {workpaperRows.length > 1 && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           onClick={() => removeWorkpaperRow(row.id)}
-                          aria-label={`Remove ${row.label}`}
+                          aria-label={tr("remove", { label: row.label })}
                         >
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
@@ -569,20 +613,20 @@ export default function CorporateTax() {
                   </TableRow>
                 ))}
                 <TableRow className="bg-muted/40">
-                  <TableCell className="font-bold">Totals</TableCell>
-                  <TableCell className="text-right font-bold text-destructive">
+                  <TableCell className="font-bold">{tr("totals")}</TableCell>
+                  <TableCell className="text-end font-bold text-destructive">
                     {formatCurrency(workpaperTotals.totalExpenses, "AED", locale)}
                   </TableCell>
-                  <TableCell className="text-right font-bold">
+                  <TableCell className="text-end font-bold">
                     {formatCurrency(workpaperTotals.totalRevenue, "AED", locale)}
                   </TableCell>
                   <TableCell colSpan={2} />
                 </TableRow>
                 <TableRow>
-                  <TableCell className="font-bold">PROFIT / LOSS (Revenue - Expense)</TableCell>
+                  <TableCell className="font-bold">{tr("profitLossRevenueExpense")}</TableCell>
                   <TableCell />
                   <TableCell
-                    className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
+                    className={`text-end font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
                   >
                     {workpaperTotals.profitOrLoss < 0
                       ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
@@ -594,10 +638,7 @@ export default function CorporateTax() {
             </Table>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            This is a corporate tax support schedule. It creates a draft return only; it does not
-            submit to the FTA and it does not post accounting entries.
-          </p>
+          <p className="text-xs text-muted-foreground">{tr("thisIsACorporateTaxSupport")}</p>
         </CardContent>
       </Card>
 
@@ -606,17 +647,15 @@ export default function CorporateTax() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            Tax Calculator
+            {tr("taxCalculator")}
           </CardTitle>
-          <CardDescription>
-            Calculate corporate tax from your journal entries for a given period
-          </CardDescription>
+          <CardDescription>{tr("calculateCorporateTaxFromYourJournal")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Period Selector */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="periodStart">Period Start</Label>
+              <Label htmlFor="periodStart">{tr("periodStart")}</Label>
               <Input
                 id="periodStart"
                 type="date"
@@ -625,7 +664,7 @@ export default function CorporateTax() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="periodEnd">Period End</Label>
+              <Label htmlFor="periodEnd">{tr("periodEnd")}</Label>
               <Input
                 id="periodEnd"
                 type="date"
@@ -640,11 +679,11 @@ export default function CorporateTax() {
             >
               {calculateMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" /> {tr("calculating")}
                 </>
               ) : (
                 <>
-                  <Calculator className="w-4 h-4 mr-2" /> Calculate
+                  <Calculator className="w-4 h-4 me-2" /> {tr("calculate")}
                 </>
               )}
             </Button>
@@ -656,22 +695,22 @@ export default function CorporateTax() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Income Summary
+                    {tr("incomeSummary")}
                   </h3>
                   <div className="flex justify-between">
-                    <span>Total Revenue</span>
+                    <span>{tr("totalRevenue")}</span>
                     <span className="font-medium">
                       {formatCurrency(adjustedCalculation.totalRevenue, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Total Expenses</span>
+                    <span>{tr("totalExpenses")}</span>
                     <span className="font-medium text-destructive">
                       ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
                     </span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="font-semibold">Gross Profit</span>
+                    <span className="font-semibold">{tr("grossProfit")}</span>
                     <span className="font-semibold">
                       {formatCurrency(
                         adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
@@ -684,43 +723,43 @@ export default function CorporateTax() {
 
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Tax Calculation
+                    {tr("taxCalculation")}
                   </h3>
-                  <div className="flex justify-between items-center">
-                    <span>Deductions</span>
-                    <Input
-                      type="number"
-                      className="w-40 text-right"
-                      value={deductions}
-                      onChange={(e) => setDeductions(parseFloat(e.target.value) || 0)}
-                      min={0}
-                      step={100}
-                    />
+                  <div className="flex justify-between">
+                    <span>{tr("addBacksNet")}</span>
+                    <span className="font-medium">
+                      {formatCurrency(
+                        adjustedCalculation.computation.totalAddBacks -
+                          adjustedCalculation.computation.totalDeductions,
+                        "AED",
+                        locale
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Income</span>
+                    <span>{tr("taxableIncome")}</span>
                     <span className="font-medium">
                       {formatCurrency(adjustedCalculation.taxableIncome, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Exemption Threshold</span>
+                    <span>{tr("exemptionThreshold")}</span>
                     <span>
                       {formatCurrency(adjustedCalculation.exemptionThreshold, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Amount (above threshold)</span>
+                    <span>{tr("taxableAmountAboveThreshold")}</span>
                     <span className="font-medium">
                       {formatCurrency(adjustedCalculation.taxableAmount, "AED", locale)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Tax Rate</span>
+                    <span>{tr("taxRate")}</span>
                     <span>9%</span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="text-lg font-bold">Tax Payable</span>
+                    <span className="text-lg font-bold">{tr("taxPayable")}</span>
                     <span className="text-lg font-bold text-primary">
                       {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
                     </span>
@@ -728,19 +767,34 @@ export default function CorporateTax() {
                 </div>
               </div>
 
+              <CtReliefSwitch
+                offer={localReliefOffer(adjustedCalculation.totalRevenue, periodEnd)}
+                elected={sbrElected}
+                onChange={setSbrElected}
+                revenue={adjustedCalculation.totalRevenue}
+                localOffer
+              />
+              <CtAdjustmentsEditor rows={adjRows} onChange={setAdjRows} />
+              <CtComputationSummary
+                computation={adjustedCalculation.computation}
+                adjustments={rowsToAdjustments(adjRows)}
+              />
+
               <div className="text-xs text-muted-foreground">
                 {calculation
-                  ? `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`
-                  : "Based on the manual corporate tax workpaper rows above."}
+                  ? tr("basedOnPostedJournalEntriesIn", {
+                      journalEntriesProcessed: adjustedCalculation.journalEntriesProcessed,
+                    })
+                  : tr("basedOnTheManualCorporateTax")}
               </div>
 
               {/* Notes and Save */}
               <div className="space-y-3 pt-2 border-t">
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (optional)</Label>
+                  <Label htmlFor="notes">{tr("notesOptional")}</Label>
                   <Textarea
                     id="notes"
-                    placeholder="Add any notes for this tax return..."
+                    placeholder={tr("addAnyNotesForThisTax")}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
@@ -748,14 +802,14 @@ export default function CorporateTax() {
                 </div>
                 <Button
                   onClick={() => saveDraftMutation.mutate()}
-                  disabled={saveDraftMutation.isPending}
+                  disabled={saveDraftMutation.isPending || !adjustmentsAreValid(adjRows)}
                 >
                   {saveDraftMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" /> {tr("saving")}
                     </>
                   ) : (
-                    "Save as Draft"
+                    tr("saveAsDraft")
                   )}
                 </Button>
               </div>
@@ -767,8 +821,8 @@ export default function CorporateTax() {
       {/* Returns Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Tax Returns</CardTitle>
-          <CardDescription>Saved corporate tax returns and their filing status</CardDescription>
+          <CardTitle>{tr("taxReturns")}</CardTitle>
+          <CardDescription>{tr("savedCorporateTaxReturnsAndTheir")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingReturns ? (
@@ -780,20 +834,20 @@ export default function CorporateTax() {
           ) : !taxReturns || taxReturns.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No corporate tax returns yet.</p>
-              <p className="text-sm">Use the calculator above to generate your first return.</p>
+              <p>{tr("noCorporateTaxReturnsYet")}</p>
+              <p className="text-sm">{tr("useTheCalculatorAboveToGenerate")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Taxable Income</TableHead>
-                    <TableHead className="text-right">Tax Payable</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{tr("period")}</TableHead>
+                    <TableHead className="text-end">{tr("revenue")}</TableHead>
+                    <TableHead className="text-end">{tr("taxableIncome")}</TableHead>
+                    <TableHead className="text-end">{tr("taxPayable")}</TableHead>
+                    <TableHead>{tr("status")}</TableHead>
+                    <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -805,22 +859,24 @@ export default function CorporateTax() {
                           {format(new Date(taxReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
                           {format(new Date(taxReturn.taxPeriodEnd), "dd MMM yyyy")}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {formatCurrency(taxReturn.totalRevenue, "AED", locale)}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {formatCurrency(taxReturn.taxableIncome, "AED", locale)}
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
+                        <TableCell className="text-end font-semibold">
                           {formatCurrency(taxReturn.taxPayable, "AED", locale)}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap items-center gap-1">
                             {statusBadge(taxReturn.status)}
-                            {taxReturn.isAmendment && <Badge variant="outline">{cc.amendmentBadge}</Badge>}
+                            {taxReturn.isAmendment && (
+                              <Badge variant="outline">{cc.amendmentBadge}</Badge>
+                            )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
@@ -841,7 +897,7 @@ export default function CorporateTax() {
                                   "ct-workpaper.xlsx"
                                 )
                               }
-                              title="Download Excel workpaper"
+                              title={tr("downloadExcelWorkpaper")}
                               data-testid={`button-ct-export-${taxReturn.id}`}
                             >
                               <Download className="w-4 h-4" />
@@ -852,7 +908,7 @@ export default function CorporateTax() {
                                 size="sm"
                                 onClick={() => pullFromBooksMutation.mutate(taxReturn.id)}
                                 disabled={pullFromBooksMutation.isPending}
-                                title="Pull workpaper from books"
+                                title={tr("pullWorkpaperFromBooks")}
                                 data-testid={`button-ct-pull-${taxReturn.id}`}
                               >
                                 <BookOpen className="w-4 h-4" />
@@ -874,7 +930,7 @@ export default function CorporateTax() {
                                   size="sm"
                                   onClick={() => deleteMutation.mutate(taxReturn.id)}
                                   disabled={deleteMutation.isPending}
-                                  title="Delete"
+                                  title={tr("delete")}
                                 >
                                   <Trash2 className="w-4 h-4 text-destructive" />
                                 </Button>
@@ -901,14 +957,16 @@ export default function CorporateTax() {
 
       {/* View Detail Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto [&>*]:min-w-0">
           <DialogHeader>
-            <DialogTitle>Corporate Tax Return Details</DialogTitle>
+            <DialogTitle>{tr("corporateTaxReturnDetails")}</DialogTitle>
             <DialogDescription>
               {viewReturn && (
                 <>
-                  Period: {format(new Date(viewReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
-                  {format(new Date(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
+                  {tr("period2", {
+                    format: format(new Date(viewReturn.taxPeriodStart), "dd MMM yyyy"),
+                    format2: format(new Date(viewReturn.taxPeriodEnd), "dd MMM yyyy"),
+                  })}
                 </>
               )}
             </DialogDescription>
@@ -916,80 +974,118 @@ export default function CorporateTax() {
           {viewReturn && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <span className="text-muted-foreground">Total Revenue</span>
-                <span className="text-right font-medium">
+                <span className="text-muted-foreground">{tr("totalRevenue")}</span>
+                <span className="text-end font-medium">
                   {formatCurrency(viewReturn.totalRevenue, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Total Expenses</span>
-                <span className="text-right font-medium">
+                <span className="text-muted-foreground">{tr("totalExpenses")}</span>
+                <span className="text-end font-medium">
                   {formatCurrency(viewReturn.totalExpenses, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Deductions</span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalDeductions, "AED", locale)}
+                <span className="text-muted-foreground">{tr("deductions")}</span>
+                <span className="text-end font-medium">
+                  {formatCurrency(
+                    viewReturn.workpaper?.computation?.totalDeductions ??
+                      viewReturn.totalDeductions,
+                    "AED",
+                    locale
+                  )}
                 </span>
 
-                <span className="text-muted-foreground">Taxable Income</span>
-                <span className="text-right font-medium">
+                <span className="text-muted-foreground">{tr("addBacks")}</span>
+                <span className="text-end font-medium">
+                  {formatCurrency(
+                    viewReturn.workpaper?.computation?.totalAddBacks ?? 0,
+                    "AED",
+                    locale
+                  )}
+                </span>
+
+                <span className="text-muted-foreground">{tr("taxableIncome")}</span>
+                <span className="text-end font-medium">
                   {formatCurrency(viewReturn.taxableIncome, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Exemption Threshold</span>
-                <span className="text-right">
+                <span className="text-muted-foreground">{tr("exemptionThreshold")}</span>
+                <span className="text-end">
                   {formatCurrency(viewReturn.exemptionThreshold, "AED", locale)}
                 </span>
 
-                <span className="text-muted-foreground">Tax Rate</span>
-                <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
+                <span className="text-muted-foreground">{tr("taxRate")}</span>
+                <span className="text-end">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
-                <span className="font-semibold border-t pt-2">Tax Payable</span>
-                <span className="text-right font-bold text-primary border-t pt-2">
+                <span className="font-semibold border-t pt-2">{tr("taxPayable")}</span>
+                <span className="text-end font-bold text-primary border-t pt-2">
                   {formatCurrency(viewReturn.taxPayable, "AED", locale)}
                 </span>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
-                <span className="text-muted-foreground">Status:</span>
+                <span className="text-muted-foreground">{tr("status2")}</span>
                 {statusBadge(viewReturn.status)}
               </div>
 
+              <p className="text-sm" data-testid="ct-view-relief">
+                <ReliefOutcomeLine
+                  computation={
+                    viewReturn.workpaper?.computation ?? {
+                      smallBusinessRelief: {
+                        elected: viewReturn.smallBusinessRelief === true,
+                        eligible: viewReturn.smallBusinessRelief === true,
+                        applied: viewReturn.smallBusinessRelief === true,
+                        revenueCap: 3_000_000,
+                      },
+                    }
+                  }
+                />
+              </p>
+
+              {viewReturn.workpaper?.computation ? (
+                <CtComputationSummary
+                  computation={viewReturn.workpaper.computation}
+                  adjustments={viewReturn.workpaper.adjustments}
+                />
+              ) : null}
+
               {viewReturn.filedAt && (
                 <div className="text-muted-foreground text-xs">
-                  Filed on: {format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm")}
+                  {tr("filedOn", {
+                    format: format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm"),
+                  })}
                 </div>
               )}
 
               {viewReturn.notes && (
                 <div className="pt-2 border-t">
-                  <span className="text-muted-foreground text-xs">Notes:</span>
+                  <span className="text-muted-foreground text-xs">{tr("notes2")}</span>
                   <p className="mt-1">{viewReturn.notes}</p>
                 </div>
               )}
 
               {viewReturn.workpaper?.rows?.length ? (
                 <div className="pt-2 border-t">
-                  <span className="text-muted-foreground text-xs">Supporting workpaper:</span>
+                  <span className="text-muted-foreground text-xs">{tr("supportingWorkpaper")}</span>
                   <div className="mt-2 max-h-56 overflow-auto rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Line</TableHead>
-                          <TableHead className="text-right">Expense</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
+                          <TableHead>{tr("line")}</TableHead>
+                          <TableHead className="text-end">{tr("expense")}</TableHead>
+                          <TableHead className="text-end">{tr("revenue")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {viewReturn.workpaper.rows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell>{row.label}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {row.type === "expense"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {row.type === "revenue"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
@@ -1002,6 +1098,18 @@ export default function CorporateTax() {
                 </div>
               ) : null}
             </div>
+          )}
+          {viewReturn && (
+            <CtDraftEditor
+              returnId={viewReturn.id}
+              isDraft={viewReturn.status === "draft"}
+              totalRevenue={viewReturn.totalRevenue}
+              storedAdjustments={viewReturn.workpaper?.adjustments}
+              storedElected={
+                viewReturn.workpaper?.sbrElected ?? viewReturn.smallBusinessRelief === true
+              }
+              invalidateKeys={[returnsListKey]}
+            />
           )}
           {viewReturn && companyId && (
             <FilingEvidencePanel

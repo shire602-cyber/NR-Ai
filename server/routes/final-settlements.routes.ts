@@ -12,7 +12,7 @@ import { validate } from "../middleware/validate";
 import { storage } from "../storage";
 import { recordAudit } from "../services/audit.service";
 import { createSettlement, getSettlement, listSettlements, paySettlement, postSettlement, previewSettlement, voidSettlement } from "../services/final-settlement.service";
-import { hrCompanyAccess } from "./hr-access";
+import { allowEmployee, employeeFilterFor, hrCompanyAccess, hrReadScope } from "./hr-access";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").refine((v) => new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v, "Not a real date");
 const uuid = z.string().uuid();
@@ -32,7 +32,8 @@ export function registerFinalSettlementRoutes(app: Express) {
   const base = [authMiddleware, requireCustomer, requireFeature("payroll")] as const;
 
   app.post("/api/companies/:companyId/final-settlements/preview", ...base, validate({ body: requestSchema }), asyncHandler(async (req: Request, res: Response) => {
-    if (!(await hrCompanyAccess(req, res, req.params.companyId, { write: false }))) return;
+    const scope = await hrReadScope(req, res, req.params.companyId);
+    if (!scope || !allowEmployee(res, scope, req.body.employeeId)) return;
     res.json(await previewSettlement(req.params.companyId, req.body));
   }));
 
@@ -41,9 +42,13 @@ export function registerFinalSettlementRoutes(app: Express) {
     ...base,
     validate({ query: z.object({ status: z.enum(["draft", "posted", "paid", "void", "all"]).optional(), ...paging }) }),
     asyncHandler(async (req: Request, res: Response) => {
-      if (!(await hrCompanyAccess(req, res, req.params.companyId, { write: false }))) return;
+      const scope = await hrReadScope(req, res, req.params.companyId);
+      if (!scope) return;
       const q = req.query as any;
-      res.json(await listSettlements(req.params.companyId, { status: q.status, limit: q.limit ?? 100, offset: q.offset ?? 0 }));
+      const filter = employeeFilterFor(res, scope, undefined);
+      if (!filter) return;
+      if (filter.empty) return res.json([]);
+      res.json(await listSettlements(req.params.companyId, { status: q.status, employeeId: filter.employeeId, limit: q.limit ?? 100, offset: q.offset ?? 0 }));
     })
   );
 
@@ -61,6 +66,10 @@ export function registerFinalSettlementRoutes(app: Express) {
       return null;
     }
     if (!(await hrCompanyAccess(req, res, s.companyId, { write }))) return null;
+    if (!write) {
+      const scope = await hrReadScope(req, res, s.companyId);
+      if (!scope || !allowEmployee(res, scope, s.employeeId)) return null;
+    }
     return s;
   }
 

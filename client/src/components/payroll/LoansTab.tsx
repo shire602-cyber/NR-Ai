@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { HandCoins, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ interface Props {
 
 type StatusFilter = "all" | EmployeeLoan["status"];
 const TONES: Record<EmployeeLoan["status"], StatusTone> = { active: "info", settled: "success", cancelled: "neutral" };
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function LoansTab({ companyId, employees, canWrite }: Props) {
   const tr = messages.useT();

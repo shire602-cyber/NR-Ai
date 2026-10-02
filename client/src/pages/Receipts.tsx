@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { todayYmd } from "@/lib/calendar-date";
 import { CameraCapture } from "@/components/CameraCapture";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -334,7 +335,7 @@ export default function Receipts() {
     resolver: zodResolver(receiptSchema),
     defaultValues: {
       merchant: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayYmd(),
       amount: 0,
       vatAmount: null,
       category: "",
@@ -852,7 +853,7 @@ export default function Receipts() {
           parsed = {
             // i18n-ignore: persisted data value, must not depend on the UI language
             merchant: result.merchant || "Unknown Merchant",
-            date: result.date || new Date().toISOString().split("T")[0],
+            date: result.date || todayYmd(),
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
             vatPercentage: result.vatPercentage ?? 5,
@@ -1107,7 +1108,7 @@ export default function Receipts() {
           companyId: companyId,
           // i18n-ignore: persisted data value, must not depend on the UI language
           merchant: receipt.data!.merchant || "Unknown",
-          date: receipt.data!.date || new Date().toISOString().split("T")[0],
+          date: receipt.data!.date || todayYmd(),
           invoiceNumber: receipt.data!.invoiceNumber || null,
           amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
           vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,

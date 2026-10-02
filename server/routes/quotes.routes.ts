@@ -19,6 +19,8 @@ import { checkPriceListsForCompany } from "../services/price-list.service";
 import { deriveSalesLines } from "../../shared/sales-line-math";
 import { isQuoteDeletable, isQuoteEditable, canQuoteTransition } from "../services/quote-state-machine";
 import { AppError } from "../errors";
+import { parseCalendarDay } from "../utils/date";
+import { serviceRevenueAccountId } from "../services/service-revenue";
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
 import { reviseQuote, sendQuote, getSignature } from "../services/quote-acceptance.service";
 import { convertQuoteToSalesOrder, getSalesOrder } from "../services/sales-order.service";
@@ -47,8 +49,9 @@ const logger = createLogger("quotes-routes");
 // Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
 function normalizeQuoteDates<T extends { date?: unknown; expiryDate?: unknown }>(data: T): T {
   const out: any = { ...data };
-  if (out.date) out.date = new Date(out.date);
-  if (out.expiryDate) out.expiryDate = new Date(out.expiryDate);
+  // Document-date contract (utils/date.ts): a calendar day or an instant, stored as the UAE calendar day.
+  if (out.date) out.date = parseCalendarDay(out.date) ?? new Date(out.date);
+  if (out.expiryDate) out.expiryDate = parseCalendarDay(out.expiryDate) ?? new Date(out.expiryDate);
   return out;
 }
 
@@ -405,10 +408,14 @@ export function registerQuoteRoutes(app: Express) {
         // Lines (with their discounts and shipping) are rebuilt by the same derivation as a hand-made invoice, so
         // the totals are recomputed from the lines, never trusted from the quote row.
         const stored = await tx.select().from(quoteLinesTable).where(eq(quoteLinesTable.quoteId, id)).orderBy(asc(quoteLinesTable.sortOrder), asc(quoteLinesTable.id));
+        const serviceAccountId = await serviceRevenueAccountId(tx, quote.companyId);
         await replaceInvoiceLines(tx, {
           companyId: quote.companyId,
           invoiceId: inserted.id,
-          lines: editableLinesOf(stored as any[]),
+          // A quote line that is not a product (and names no account of its own) is service income: 4020.
+          lines: editableLinesOf(stored as any[]).map((l: any) =>
+            l.kind === "item" && !l.productId && !l.revenueAccountId && serviceAccountId ? { ...l, revenueAccountId: serviceAccountId } : l
+          ),
           discountType: (fresh.discountType as any) ?? null,
           discountValue: fresh.discountValue === null ? null : Number(fresh.discountValue),
           exchangeRate,

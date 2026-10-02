@@ -1,12 +1,12 @@
 ---
-title: Recurring invoices
-summary: Create an invoice once and let it repeat on a schedule.
+title: Recurring invoices and late fees
+summary: Create an invoice once, let it repeat, run it now when you need to, and optionally add late fees.
 category: sales
-keywords: recurring, subscription, schedule, repeat, retainer, monthly
+keywords: recurring, subscription, schedule, repeat, run now, late fee, retainer
 related: invoices, payment-chasing
 ---
 
-Use recurring invoices for retainers, rent, subscriptions and any fixed monthly bill to a customer.
+Use recurring invoices for retainers, rent, subscriptions and any fixed bill to a customer.
 
 ## Create a schedule
 
@@ -15,15 +15,14 @@ Use recurring invoices for retainers, rent, subscriptions and any fixed monthly 
 3. Set how often it repeats, the start date and an optional end date.
 4. Save. Muhasib.ai creates each invoice on its date.
 
-## What happens each time
+## Run now
 
-A new invoice is created from the template with the next number and the date of that run. It follows the same posting and VAT rules as an invoice you create by hand.
+Choose **Run now** on a template to create its next invoice immediately, for example to catch up a missed date. The invoice follows the same posting and VAT rules as any other, and the schedule moves on to the following date.
+
+## Late fees
+
+Late fees are **off by default**. You can switch them on in [Sales settings](/help/sales-settings). When on, a fee is added as a separate charge on overdue invoices; it does not change the original invoice. Run the late-fee step with **Run now** when you want it applied today.
 
 ## Pause or stop
 
-Switch a template off to pause it. Delete it to stop it for good. Invoices already created are not affected.
-
-## Good to know
-
-- Companies scheduled for deletion are skipped.
-- Change the template to change future invoices only. Past invoices stay as issued.
+Switch a template off to pause it. Delete it to stop it for good. Invoices already created are not affected. Companies scheduled for deletion are skipped.

@@ -20,6 +20,7 @@ import { ReportExportMenu } from "@/components/reports/ReportExportMenu";
 import { ReportParamsBar, paramsAreValid } from "@/components/reports/ReportParamsBar";
 import { ReportScheduleDialog } from "@/components/reports/ReportScheduleDialog";
 import { ReportTable } from "@/components/reports/ReportTable";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useReportScheduleAccess } from "@/hooks/useReportScheduleAccess";
 import { useTranslation } from "@/lib/i18n";
@@ -307,6 +308,11 @@ function ReportViewer({ entry }: { entry: ReportCatalogItem }) {
 
   const first = result.data?.pages[0];
   const rows = useMemo(() => result.data?.pages.flatMap((p) => p.rows) ?? [], [result.data]);
+  // A stock report never shows less than nothing in stock without saying so (the server adds its own warning; this is the backstop).
+  const hasNegativeStock =
+    reportId.startsWith("inventory-") &&
+    rows.some((r) => Number((r.cells as Record<string, unknown> | undefined)?.quantity) < 0 || Number((r.cells as Record<string, unknown> | undefined)?.closingQuantity) < 0);
+  const salesTr = salesMessages.useT();
 
   // Drill links that name an account by its code need the account's id.
   const accounts = useQuery<any[]>({
@@ -439,6 +445,14 @@ function ReportViewer({ entry }: { entry: ReportCatalogItem }) {
               <span>{tr("refreshing")}</span>
             ) : null}
           </div>
+
+          {hasNegativeStock && !first.warnings?.length ? (
+            <Alert variant="destructive" data-testid="report-negative-stock">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{salesTr("negativeStockTitle")}</AlertTitle>
+              <AlertDescription>{salesTr("negativeStockReportBody")}</AlertDescription>
+            </Alert>
+          ) : null}
 
           {first.warnings?.length ? (
             <Alert data-testid="report-warnings">

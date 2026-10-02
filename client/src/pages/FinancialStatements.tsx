@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { todayYmd, toYmd } from "@/lib/calendar-date";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
@@ -87,8 +88,8 @@ function getDefaultDateRange() {
   const now = new Date();
   const startOfYear = new Date(now.getFullYear(), 0, 1);
   return {
-    startDate: startOfYear.toISOString().slice(0, 10),
-    endDate: now.toISOString().slice(0, 10),
+    startDate: toYmd(startOfYear),
+    endDate: todayYmd(now),
   };
 }
 
@@ -306,7 +307,7 @@ function ProfitLossTab({ companyId, locale }: { companyId: string; locale: strin
 function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: string }) {
   const tr = pageMessages.useT();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayYmd();
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
 

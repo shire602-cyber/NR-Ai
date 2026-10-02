@@ -1,4 +1,5 @@
 import { format, startOfDay } from "date-fns";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -25,7 +26,7 @@ export function toDateOnly(date: Date): string {
  * server's validation.
  */
 export function PaymentDateField({ value, onChange, minDate, testId }: PaymentDateFieldProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const min = minDate ? startOfDay(minDate) : null;
   const today = startOfDay(new Date());
 
@@ -40,7 +41,7 @@ export function PaymentDateField({ value, onChange, minDate, testId }: PaymentDa
             data-testid={testId ?? "button-payment-date"}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {format(value, "PPP")}
+            {formatCalendarDate(value, locale)}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0">

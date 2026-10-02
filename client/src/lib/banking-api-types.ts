@@ -108,7 +108,7 @@ export interface StatementSettings {
 
 // ─── Matching ──────────────────────────────────────────────────────────────
 
-export type SuggestionKind = "invoice" | "bill" | "journal" | "receipt" | "rule" | "account";
+export type SuggestionKind = "invoice" | "invoices" | "bill" | "journal" | "receipt" | "rule" | "account" | "transfer";
 
 export type ReasonCode =
   | "AMOUNT_EXACT"
@@ -137,6 +137,8 @@ export interface MatchSuggestion {
   transactionId: string;
   kind: SuggestionKind;
   targetId: string;
+  /** For "invoices": every invoice one receipt settles, in order. */
+  targetIds?: string[];
   confidence: number;
   reasons: ReasonCode[];
   label: string;
@@ -153,6 +155,7 @@ export interface BulkMatchItem {
   transactionId: string;
   kind: SuggestionKind;
   targetId: string;
+  targetIds?: string[];
   paymentDate?: string | null;
 }
 

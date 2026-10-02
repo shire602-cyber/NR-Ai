@@ -13,7 +13,7 @@ import { createLogger } from "../../config/logger";
 import { ACCOUNT_CODES } from "../../constants";
 import { runExclusive } from "../document-queue";
 import { ensureSystemAccount } from "../inventory-costing.service";
-import { issueCreditNote } from "../credit-note-issue.service";
+import { issueRefundCreditNote } from "../payment-refund.service";
 import { createRefund } from "../customer-refund.service";
 import { getInvoiceBalance } from "../invoice-outstanding.db";
 import { remainingVatBuckets } from "../credit-note-remainder.service";
@@ -92,40 +92,9 @@ export async function processRefund(args: { companyId: string; refund: ParsedRef
       if (balance.outstanding > 0.005) {
         return park(`Invoice ${original.number} still has ${balance.outstanding.toFixed(2)} outstanding, so the refund cannot be matched to a credit balance.`);
       }
-      const originalLines = await storage.getInvoiceLinesByInvoiceId(original.id);
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const ctx = revenueContextOf(accounts);
-      if (!ctx) return park("The chart of accounts has no revenue account.");
-      const earlier = await db.select().from(invoices).where(and(eq(invoices.companyId, companyId), eq(invoices.originalInvoiceId, original.id), eq(invoices.invoiceType, "credit_note")));
-      const live = earlier.filter((c: any) => c.status !== "void" && c.status !== "cancelled");
-      const creditedLines = live.length
-        ? await db.select().from(invoiceLines).where(sql`${invoiceLines.invoiceId} IN (${sql.join(live.map((c: any) => sql`${c.id}::uuid`), sql`, `)})`)
-        : [];
-      const remaining = remainingVatBuckets({ originalLines: originalLines as any[], creditedLines: creditedLines as any[], ctx });
-      const remainingGross = remaining.reduce((s, b) => s + b.net + b.vat, 0);
-      if (refund.amount > remainingGross + 0.01) return park(`The refund of ${refund.amount.toFixed(2)} is more than what is left to credit on invoice ${original.number}.`);
-
-      let body: Record<string, unknown>;
-      if (live.length === 0 && Math.abs(refund.amount - Math.abs(Number(original.total))) < 0.005) {
-        body = { date: uaeCalendarDate().toISOString().slice(0, 10) }; // the whole invoice: a full reversal
-      } else {
-        const parts = splitGrossRefund(
-          Math.min(refund.amount, Math.round(remainingGross * 100) / 100),
-          remaining.map((b) => ({ vatRate: b.vatRate, vatSupplyType: b.supplyType, net: b.net, vat: b.vat }))
-        ).filter((p) => p.net > 0 || p.vat > 0);
-        body = {
-          date: uaeCalendarDate().toISOString().slice(0, 10),
-          lines: parts.map((p) => ({
-            description: `Refund - Invoice ${original.number}`,
-            quantity: 1,
-            unitPrice: p.net,
-            vatRate: p.vatRate,
-            vatSupplyType: p.vatSupplyType,
-          })),
-        };
-      }
-      const cn = await issueCreditNote({ companyId, invoiceId: original.id, original, userId, body });
-      if (!cn.ok) return park(String(cn.body.message ?? "The credit note could not be issued."));
+      const issued = await issueRefundCreditNote({ companyId, original, userId, amount: refund.amount });
+      if (!issued.ok) return park(issued.message);
+      const cn = { ok: true as const, creditNote: issued.creditNote };
       await db.update(gatewayRefunds).set({ status: "credit_note_posted", creditNoteId: cn.creditNote.id } as any).where(eq(gatewayRefunds.id, gr.id));
       gr = await lockRefund(gr.id);
     }

@@ -61,6 +61,7 @@ import {
 } from "../services/sales-lines.service";
 import { deriveSalesLines } from "../../shared/sales-line-math";
 import { AppError } from "../errors";
+import { parseCalendarDay } from "../utils/date";
 import { checkPriceListsForCompany } from "../services/price-list.service";
 import { projectsBelongToCompany } from "../services/project.service";
 import { loadAdvanceApplicationsForInvoice } from "../services/customer-advance.service";
@@ -135,8 +136,8 @@ function normalizeOptionalInvoiceDateField(
     return { ok: true };
   }
 
-  const parsed = data[field] instanceof Date ? data[field] : new Date(data[field]);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseCalendarDay(data[field]);
+  if (!parsed) {
     return { ok: false, message: `Invalid invoice ${field}` };
   }
   data[field] = parsed;
@@ -313,6 +314,16 @@ export function registerInvoiceRoutes(app: Express) {
       if (!contactCheck.ok) {
         return res.status(422).json({ message: contactCheck.message, code: contactCheck.code });
       }
+      // The recipient's TRN and address are part of a tax invoice (Art. 59): take them from the contact when the caller
+      // sent none, so every invoice carries them whichever screen made it.
+      if (invoiceData.contactId && (!invoiceData.customerTrn || !invoiceData.customerAddress)) {
+        const contactRow = await storage.getCustomerContact(invoiceData.contactId);
+        if (contactRow && contactRow.companyId === companyId) {
+          if (!invoiceData.customerTrn && contactRow.trnNumber) invoiceData.customerTrn = contactRow.trnNumber;
+          const parts = [contactRow.address, contactRow.city, contactRow.country].map((x) => (x ?? "").trim()).filter(Boolean);
+          if (!invoiceData.customerAddress && parts.length) invoiceData.customerAddress = parts.join(", ");
+        }
+      }
 
       // Chosen revenue accounts must be income accounts of THIS company.
       const revenueCheck = await checkRevenueAccountsForCompany(
@@ -361,8 +372,9 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       // Convert date string to Date object if it's a string
-      const invoiceDate = typeof date === "string" ? new Date(date) : date;
-      if (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime())) {
+      // The document-date contract (utils/date.ts parseCalendarDay): "YYYY-MM-DD" or an ISO instant, stored as the UAE day.
+      const invoiceDate = parseCalendarDay(date);
+      if (!invoiceDate) {
         return res.status(400).json({ message: "Invalid invoice date" });
       }
       // A tax invoice records a supply that has happened. Forward-dating pushes
@@ -722,8 +734,8 @@ export function registerInvoiceRoutes(app: Express) {
         }
       }
 
-      const invoiceDate = typeof date === "string" ? new Date(date) : date;
-      if (invoiceDate && (!(invoiceDate instanceof Date) || Number.isNaN(invoiceDate.getTime()))) {
+      const invoiceDate = date === undefined || date === null ? undefined : parseCalendarDay(date);
+      if (invoiceDate === null) {
         return res.status(400).json({ message: "Invalid invoice date" });
       }
       const dueDateResult = normalizeOptionalInvoiceDateField(invoiceData, "dueDate");
@@ -901,6 +913,14 @@ export function registerInvoiceRoutes(app: Express) {
           code: "CREDITED_IS_AUTOMATIC",
         });
       }
+      // 'paid' and 'partial' are derived from the payments: nobody can mark an invoice paid with no payment.
+      // The status endpoint only issues (draft -> sent/posted) and voids or cancels.
+      if (status === "paid" || status === "partial") {
+        return res.status(400).json({
+          message: `An invoice becomes '${status}' by itself when payments are recorded against it. Record the payment instead of setting the status.`,
+          code: "STATUS_DERIVED",
+        });
+      }
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
@@ -927,28 +947,6 @@ export function registerInvoiceRoutes(app: Express) {
         if (!already.ok) return res.status(already.status).json({ message: already.message, code: already.code });
       }
 
-      // Marking paid records the cash still owed. With nothing outstanding
-      // (fully credited or already settled) there is nothing to record: refuse
-      // before anything else so a credited invoice cannot be "settled" a second time.
-      let outstandingNow = 0;
-      if (status === "paid" && oldStatus !== "paid") {
-        const balance = await getInvoiceBalance(invoice.companyId, id);
-        outstandingNow = balance.outstanding;
-        if (
-          invoice.status !== "draft" &&
-          invoice.status !== "void" &&
-          invoice.status !== "cancelled" &&
-          balance.outstanding <= 0.005
-        ) {
-          return res.status(409).json({
-            message: balance.isFullyCredited
-              ? `Invoice ${invoice.number} is fully credited: nothing is outstanding to mark as paid.`
-              : `Invoice ${invoice.number} has nothing outstanding to mark as paid.`,
-            code: "INVOICE_NOTHING_OUTSTANDING",
-          });
-        }
-      }
-
       // No-op transition is fine.
       if (oldStatus !== status && !canTransition(oldStatus, status)) {
         return res.status(422).json({
@@ -958,80 +956,13 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
-      // 'paid' transition through this endpoint records the full payment via
-      // the transactional helper so we share the race-safe code path.
-      if (status === "paid" && oldStatus !== "paid") {
-        if (!paymentAccountId) {
-          return res
-            .status(400)
-            .json({ message: "Payment account is required when marking invoice as paid" });
-        }
-        const paymentAccount = await storage.getAccount(paymentAccountId, invoice.companyId);
-        if (!paymentAccount) {
-          return res.status(400).json({ message: "Invalid payment account" });
-        }
-        if (paymentAccount.type !== "asset") {
-          return res
-            .status(400)
-            .json({ message: "Payment account must be a cash or bank account" });
-        }
-
-        const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-        const accountsReceivable = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-        );
-        if (!accountsReceivable) {
-          return res.status(500).json({ message: "Accounts Receivable account not found" });
-        }
-
-        // The settlement journal is posted on the real payment date (optional
-        // `paymentDate` / `date` in the body, default today). Validated: not in
-        // the future, not before the invoice date, and not in a locked period.
-        const { date: paymentDate } = await resolveSettlementDate(invoice.companyId, {
-          requested: req.body.paymentDate ?? req.body.date,
-        });
-
-        // The unpaid remainder: total - payments - credit notes (shared
-        // definition). Never the bare total, or a credited invoice would be
-        // settled for cash that is not owed.
-        const remaining = outstandingNow;
-
-        try {
-          if (remaining > 0.005) {
-            await storage.recordInvoicePayment({
-              invoiceId: id,
-              companyId: invoice.companyId,
-              amount: remaining,
-              date: paymentDate,
-              method: "manual",
-              reference: null,
-              notes: "Marked paid via status update",
-              paymentAccountId,
-              paymentAccountCurrency: (paymentAccount as any).currency ?? null,
-              receivableAccountId: accountsReceivable.id,
-              createdBy: userId,
-            });
-          } else {
-            await storage.updateInvoiceStatus(id, invoice.companyId, "paid");
-          }
-        } catch (err: any) {
-          if (err?.code === "INVOICE_NOTHING_OUTSTANDING") {
-            return res.status(409).json({ message: err.message, code: err.code });
-          }
-          if (err?.code === "INVOICE_TERMINAL") {
-            return res.status(422).json({ message: err.message, code: err.code });
-          }
-          if (err?.code === "CURRENCY_MISMATCH") {
-            return res.status(422).json({ message: err.message, code: err.code });
-          }
-          throw err;
-        }
-      } else if (oldStatus !== status) {
+      if (oldStatus !== status) {
         // Issuing the invoice (draft → sent/posted) is the revenue-recognition
         // event: post the AR/Revenue/VAT journal entry now. Idempotent — data
         // created before drafts stopped auto-posting is skipped.
         if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
-          const issued = await issueInvoice(invoice, userId);
+          // Posts the journal(s) AND sets the status in one transaction (invoice-issue.service).
+          const issued = await issueInvoice(invoice, userId, status);
           if (!issued.ok) return res.status(issued.status).json(issued.body);
         }
 
@@ -1049,7 +980,7 @@ export function registerInvoiceRoutes(app: Express) {
           if (!outcome.ok) {
             return res.status(outcome.status).json({ message: outcome.message, code: outcome.code });
           }
-        } else {
+        } else if (!(oldStatus === "draft" && (status === "sent" || status === "posted"))) {
           await storage.updateInvoiceStatus(id, invoice.companyId, status);
         }
       }
@@ -1068,7 +999,7 @@ export function registerInvoiceRoutes(app: Express) {
         req,
       });
 
-      if (status !== oldStatus && (status === "paid" || status === "void")) {
+      if (status !== oldStatus && status === "void") {
         createAndEmitNotification({
           userId,
           companyId: invoice.companyId,

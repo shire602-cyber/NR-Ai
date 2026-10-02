@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storeUploadedFile, removeStoredFile } from "../services/document-upload.service";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
+import { loadPayablesSummary } from "../services/payables-summary.service";
 import { buildInvoiceBalances, listOpenReceivables, receivableOutstanding } from "../services/invoice-outstanding";
 import { db } from "../db";
 import { eq, and, or, desc } from "drizzle-orm";
@@ -59,11 +60,12 @@ export function registerClientPortalRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const companyId: string = (req as any).portalCompanyId;
 
-      const [allInvoices, vatReturns, documents, invoicePayments] = await Promise.all([
+      const [allInvoices, vatReturns, documents, invoicePayments, payables] = await Promise.all([
         storage.getInvoicesByCompanyId(companyId),
         storage.getVatReturnsByCompanyId(companyId),
         storage.getDocuments(companyId),
         storage.getInvoicePaymentsByCompanyId(companyId),
+        loadPayablesSummary(companyId),
       ]);
 
       // Outstanding = total - payments - credit notes (shared definition), AED.
@@ -92,6 +94,8 @@ export function registerClientPortalRoutes(app: Express): void {
           paid: paid.length,
           paidTotal,
         },
+        // What the company owes suppliers, net of vendor credits (ties to account 2010).
+        payables,
         vatStatus: latestVat
           ? { status: latestVat.status, dueDate: latestVat.dueDate, periodEnd: latestVat.periodEnd }
           : null,

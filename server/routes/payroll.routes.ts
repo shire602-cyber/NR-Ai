@@ -9,9 +9,10 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { AppError } from "../errors";
 import { storage } from "../storage";
 import { db } from "../db";
-import { generateSIFFile } from "../services/wps-sif.service";
+import { generateSIFFile, sifProblems, type SifEmployee, type SifItem } from "../services/wps-sif.service";
 import { generatePayslipPDF } from "../services/pdf-payslip.service";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
@@ -21,7 +22,12 @@ import { leaveDeductionsForMonth } from "../services/leave.service";
 import { markRunInstalmentsDeducted, releaseRunInstalments, reserveInstalmentsForItem } from "../services/employee-loan.service";
 import { ensureEmployeeLoansAccount } from "../services/hr-journal";
 import { buildPayrollRegister, registerToCsv } from "../services/payroll-register.service";
+import { ROLE_RANK } from "../services/approval-rules";
+import { allowEmployee, hrCompanyAccess, hrFullAccess, hrReadScope } from "./hr-access";
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
+import { localWallDateToUtcMidnight } from "../utils/date";
+import { prorate, prorateMonth, type Proration } from "../services/payroll-proration";
+import { ensureLeaveProvisionAccounts, leaveProvisionDeltas, leaveProvisionEnabled, recordRunProvisions } from "../services/leave-provision.service";
 import { loadApprovalDocument } from "../services/approval-queue.service";
 import {
   auditApprovalStep,
@@ -40,6 +46,18 @@ import {
 } from "../services/payroll-eligibility.service";
 
 const log = createLogger("payroll");
+
+/** What an employee-role user may see of a payroll run: the month and its status, no company totals. */
+function redactRunForEmployee(run: any) {
+  return {
+    id: run.id,
+    company_id: run.company_id,
+    period_month: run.period_month,
+    period_year: run.period_year,
+    status: run.status,
+    run_date: run.run_date,
+  };
+}
 
 // ─── UAE / GCC pension constants (GPSSA & equivalents) ─────
 // UAE Federal Decree-Law No. 57 of 2023 (and predecessor Law No. 7/1999):
@@ -92,7 +110,23 @@ const employeeCreateSchema = z.object({
   transportAllowance: z.coerce.number().nonnegative().default(0),
   otherAllowance: z.coerce.number().nonnegative().default(0),
   status: z.enum(["active", "inactive", "terminated"]).optional(),
+  // The login this record belongs to (an employee-role user then sees only this record). Must be a member of the company.
+  userId: z.string().uuid().nullable().optional(),
+  // The 14-digit MOHRE person code the WPS (SIF) file reports for the employee.
+  molPersonId: z.string().trim().regex(/^\d{14}$/, "The MOHRE person code is 14 digits").nullable().optional().or(z.literal("").transform(() => null)),
+  // End-of-service provision already held for the employee when they came on to the system (part of the opening 2036 balance).
+  openingGratuityProvision: z.coerce.number().nonnegative().max(100_000_000).optional(),
 });
+
+/** 422 body when `userId` is not a member of the company; null when it is fine (or absent / cleared). */
+async function employeeUserLinkProblem(companyId: string, userId: unknown): Promise<{ message: string; code: string } | null> {
+  if (userId === undefined || userId === null) return null;
+  if (typeof userId !== "string" || !/^[0-9a-f-]{36}$/i.test(userId)) return { message: "userId must be a user id.", code: "INVALID_USER" };
+  const member = await queryOne("SELECT 1 AS ok FROM company_users WHERE company_id = $1 AND user_id = $2", [companyId, userId]);
+  return member ? null : { message: "That user is not a member of this company.", code: "INVALID_USER" };
+}
+
+const isUniqueViolation = (err: any) => err?.code === "23505" || err?.cause?.code === "23505";
 
 interface PayrollLineCalc {
   basic: number;
@@ -217,10 +251,14 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const employees = await query(
-        "SELECT * FROM employees WHERE company_id = $1 ORDER BY created_at DESC",
-        [companyId]
-      );
+      // An employee-role user sees only the employee record linked to their own login.
+      const scope = await hrReadScope(req, res, companyId);
+      if (!scope) return;
+      const employees = scope.all
+        ? await query("SELECT * FROM employees WHERE company_id = $1 ORDER BY created_at DESC", [companyId])
+        : scope.employeeIds.length === 0
+          ? []
+          : await query("SELECT * FROM employees WHERE company_id = $1 AND id = ANY($2::uuid[]) ORDER BY created_at DESC", [companyId, scope.employeeIds]);
       res.json(employees);
     })
   );
@@ -243,6 +281,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      const scope = await hrReadScope(req, res, employee.company_id);
+      if (!scope || !allowEmployee(res, scope, employee.id)) return;
 
       res.json(employee);
     })
@@ -261,6 +301,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      if (!(await hrCompanyAccess(req, res, companyId, { write: true }))) return;
 
       // Money fields must be finite numbers / strict numeric strings; the
       // parsed numbers (never the raw text) are what zod and SQL see.
@@ -290,6 +332,8 @@ export function registerPayrollRoutes(app: Express) {
         });
       }
       const data = parsed.data;
+      const linkProblem = await employeeUserLinkProblem(companyId, data.userId);
+      if (linkProblem) return res.status(422).json(linkProblem);
 
       const totalSalary =
         data.basicSalary + data.housingAllowance + data.transportAllowance + data.otherAllowance;
@@ -301,10 +345,10 @@ export function registerPayrollRoutes(app: Express) {
         bank_name, bank_account_number, iban, routing_code,
         department, designation, join_date,
         basic_salary, housing_allowance, transport_allowance, other_allowance,
-        total_salary, status
+        total_salary, status, user_id, mol_person_id, opening_gratuity_provision
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
       ) RETURNING *`,
         [
           companyId,
@@ -328,8 +372,14 @@ export function registerPayrollRoutes(app: Express) {
           data.otherAllowance,
           totalSalary,
           data.status ?? "active",
+          data.userId ?? null,
+          data.molPersonId ?? null,
+          data.openingGratuityProvision ?? 0,
         ]
-      );
+      ).catch((err) => {
+        if (isUniqueViolation(err)) throw new AppError({ message: "That user is already linked to another employee.", statusCode: 409, code: "USER_ALREADY_LINKED" });
+        throw err;
+      });
 
       log.info({ employeeId: employee.id, companyId }, "Employee created");
       res.status(201).json(employee);
@@ -355,6 +405,8 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (!(await hrCompanyAccess(req, res, employee.company_id, { write: true }))) return;
+
       // Only a finite number / strict numeric string is accepted, and the
       // PARSED number (never the raw string) is what reaches SQL below.
       let basicSalary: number | undefined;
@@ -372,6 +424,18 @@ export function registerPayrollRoutes(app: Express) {
           code: "INVALID_ALLOWANCE",
           field: allowances.field,
         });
+      }
+
+      if (req.body.molPersonId !== undefined && req.body.molPersonId !== null && req.body.molPersonId !== "" && !/^\d{14}$/.test(String(req.body.molPersonId).trim())) {
+        return res.status(400).json({ message: "The MOHRE person code is 14 digits", code: "INVALID_MOL_PERSON_ID" });
+      }
+      if (req.body.molPersonId === "") req.body.molPersonId = null;
+      if (req.body.openingGratuityProvision !== undefined) {
+        const opening = Number(req.body.openingGratuityProvision);
+        if (!Number.isFinite(opening) || opening < 0) {
+          return res.status(400).json({ message: "The opening gratuity provision must be zero or more", code: "INVALID_OPENING_PROVISION" });
+        }
+        req.body.openingGratuityProvision = opening;
       }
 
       // Build dynamic SET clause from provided fields
@@ -395,6 +459,8 @@ export function registerPayrollRoutes(app: Express) {
         transportAllowance: "transport_allowance",
         otherAllowance: "other_allowance",
         status: "status",
+        molPersonId: "mol_person_id",
+        openingGratuityProvision: "opening_gratuity_provision",
       };
 
       const setClauses: string[] = [];
@@ -421,6 +487,15 @@ export function registerPayrollRoutes(app: Express) {
         }
       }
 
+      // The login link: validated against the company's members, cleared with null.
+      if (req.body.userId !== undefined) {
+        const linkProblem = await employeeUserLinkProblem(employee.company_id, req.body.userId);
+        if (linkProblem) return res.status(422).json(linkProblem);
+        setClauses.push(`"user_id" = $${paramIndex}`);
+        values.push(req.body.userId);
+        paramIndex++;
+      }
+
       // Recalculate total salary if any salary field changed
       const basic =
         basicSalary !== undefined ? basicSalary : parseFloat(employee.basic_salary);
@@ -444,7 +519,10 @@ export function registerPayrollRoutes(app: Express) {
       const updated = await queryOne(
         `UPDATE employees SET ${setClauses.join(", ")} WHERE id = $${paramIndex} RETURNING *`,
         values
-      );
+      ).catch((err) => {
+        if (isUniqueViolation(err)) throw new AppError({ message: "That user is already linked to another employee.", statusCode: 409, code: "USER_ALREADY_LINKED" });
+        throw err;
+      });
 
       log.info({ employeeId: id }, "Employee updated");
       res.json(updated);
@@ -469,6 +547,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      if (!(await hrCompanyAccess(req, res, employee.company_id, { write: true }))) return;
 
       await query("DELETE FROM employees WHERE id = $1", [id]);
       log.info({ employeeId: id }, "Employee deleted");
@@ -498,7 +578,10 @@ export function registerPayrollRoutes(app: Express) {
         "SELECT * FROM payroll_runs WHERE company_id = $1 ORDER BY period_year DESC, period_month DESC",
         [companyId]
       );
-      res.json(runs);
+      const scope = await hrReadScope(req, res, companyId);
+      if (!scope) return;
+      // An employee sees which months were run, never the company totals.
+      res.json(scope.all ? runs : runs.map(redactRunForEmployee));
     })
   );
 
@@ -520,8 +603,10 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+      const scope = await hrReadScope(req, res, run.company_id);
+      if (!scope) return;
 
-      res.json(run);
+      res.json(scope.all ? run : redactRunForEmployee(run));
     })
   );
 
@@ -539,6 +624,8 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (!(await hrCompanyAccess(req, res, companyId, { write: true }))) return;
+
       const { periodMonth, periodYear } = req.body;
 
       if (!periodMonth || !periodYear) {
@@ -555,9 +642,9 @@ export function registerPayrollRoutes(app: Express) {
       }
 
       const [run] = await query(
-        `INSERT INTO payroll_runs (company_id, period_month, period_year, status)
-       VALUES ($1, $2, $3, 'draft') RETURNING *`,
-        [companyId, periodMonth, periodYear]
+        `INSERT INTO payroll_runs (company_id, period_month, period_year, status, created_by)
+       VALUES ($1, $2, $3, 'draft', $4) RETURNING *`,
+        [companyId, periodMonth, periodYear, userId]
       );
 
       log.info({ payrollRunId: run.id, companyId, periodMonth, periodYear }, "Payroll run created");
@@ -583,6 +670,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      if (!(await hrCompanyAccess(req, res, run.company_id, { write: true }))) return;
 
       if (run.status === "pending_approval") {
         return res.status(409).json({
@@ -651,6 +740,8 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      if (!(await hrCompanyAccess(req, res, run.company_id, { write: true }))) return;
+
       if (run.status === "pending_approval") {
         return res.status(409).json({
           message: "This payroll run is waiting for approval and cannot be recalculated. Reject it first.",
@@ -669,6 +760,9 @@ export function registerPayrollRoutes(app: Express) {
       const tqOne = async (text: string, params: any[] = []) => (await tq(text, params))[0];
       let preservedItems: any[] = [];
       let warnings: any = [];
+      // The same pro-rata facts as structured notes, so the screen can word them in the reader's language.
+      const proRataNotes: Array<{ code: string; name: string; days: number; date: string | null }> = [];
+      let otherWarnings: string[] = [];
       let employeeCount = 0;
       let updated: any;
       try {
@@ -689,17 +783,44 @@ export function registerPayrollRoutes(app: Express) {
           [id]
         );
 
-        // Get all active employees for this company
+        // Active employees, plus a leaver whose last month this is (paid up to the last day worked).
         const activeEmployees = await tq(
-          "SELECT * FROM employees WHERE company_id = $1 AND status = 'active'",
-          [run.company_id]
+          `SELECT * FROM employees WHERE company_id = $1
+              AND (status = 'active' OR (status = 'terminated' AND termination_date >= make_date($2::int, $3::int, 1)))`,
+          [run.company_id, run.period_year, run.period_month]
         );
 
         // Zero-salary employees are excluded (with a warning) rather than
         // failing the whole run.
         const partition = partitionPayrollEligible(activeEmployees);
-        const employees = partition.eligible;
-        warnings = partition.warnings;
+        warnings = [...partition.warnings];
+        otherWarnings = [...partition.warnings];
+
+        // A joiner or leaver is paid for the days of the month worked, on the 30-day basis (join on the 15th = 16/30);
+        // nobody is paid for a month before they joined or after they left. Each case is named in the warnings.
+        const prorations = new Map<string, Proration>();
+        const employees = partition.eligible.filter((e: any) => {
+          const join = e.join_date ? (localWallDateToUtcMidnight(new Date(e.join_date)) as Date).toISOString().slice(0, 10) : null;
+          const left = e.termination_date ? (localWallDateToUtcMidnight(new Date(e.termination_date)) as Date).toISOString().slice(0, 10) : null;
+          const p = prorateMonth({ joinYmd: join, terminationYmd: left, year: run.period_year, month: run.period_month });
+          if (p.daysWorked === 0) {
+            proRataNotes.push({ code: p.reason === "not_yet_joined" ? "not_yet_joined" : "left_before", name: e.full_name, days: 0, date: p.reason === "not_yet_joined" ? join : left });
+            warnings.push(
+              p.reason === "not_yet_joined"
+                ? `${e.full_name} is not paid: the join date (${join}) is after this month.`
+                : `${e.full_name} is not paid: they left (${left}) before this month.`
+            );
+            return false;
+          }
+          if (p.daysWorked < 30) {
+            proRataNotes.push({ code: p.reason === "joined" ? "joined" : "left", name: e.full_name, days: p.daysWorked, date: p.reason === "joined" ? join : left });
+            warnings.push(
+              `${e.full_name} is pro-rated: ${p.daysWorked}/30 days (${p.reason === "joined" ? `joined ${join}` : `last day ${left}`}).`
+            );
+          }
+          prorations.set(e.id, p);
+          return true;
+        });
 
         if (employees.length === 0 && preservedItems.length === 0) {
           throw new CalcAbort({
@@ -725,10 +846,13 @@ export function registerPayrollRoutes(app: Express) {
         // days/year) per Art. 51 based on the employee's tenure at period close.
         const periodEnd = periodEndDate(run.period_month, run.period_year);
 
-        // Approved leave of the month (unpaid, half-pay and sick-leave tiers) takes basic/30 or basic/60 a day.
+        // Approved leave of the month (unpaid, half-pay and sick-leave tiers) takes wage/30 or wage/60 a day, where the
+        // wage is the full monthly wage (basic plus allowances).
+        const wageOf = (e: any) =>
+          (parseFloat(e.basic_salary) || 0) + (parseFloat(e.housing_allowance) || 0) + (parseFloat(e.transport_allowance) || 0) + (parseFloat(e.other_allowance) || 0);
         const leaveByEmployee = await leaveDeductionsForMonth(run.company_id, run.period_year, run.period_month, [
-          ...employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).map((e: any) => ({ id: e.id, basic: parseFloat(e.basic_salary) || 0 })),
-          ...preservedItems.map((it: any) => ({ id: it.employee_id, basic: parseFloat(it.basic_salary) || 0 })),
+          ...employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).map((e: any) => ({ id: e.id, wage: wageOf(e) })),
+          ...preservedItems.map((it: any) => ({ id: it.employee_id, wage: wageOf(it) })),
         ]);
 
         // Re-include preserved (manually edited) items in the run totals. Leave and loan deductions and the net are
@@ -789,18 +913,21 @@ export function registerPayrollRoutes(app: Express) {
             ? completedYearsBetween(new Date(emp.join_date), periodEnd)
             : 0;
 
+          const proration = prorations.get(emp.id)!;
           const calc = calculatePayrollLine({
-            basic: parseFloat(emp.basic_salary) || 0,
-            housing: parseFloat(emp.housing_allowance) || 0,
-            transport: parseFloat(emp.transport_allowance) || 0,
-            other: parseFloat(emp.other_allowance) || 0,
+            basic: prorate(parseFloat(emp.basic_salary) || 0, proration.factor),
+            housing: prorate(parseFloat(emp.housing_allowance) || 0, proration.factor),
+            transport: prorate(parseFloat(emp.transport_allowance) || 0, proration.factor),
+            other: prorate(parseFloat(emp.other_allowance) || 0, proration.factor),
             overtime: 0,
             generalDeductions: 0,
             isGccNational: isUaeOrGccNational(emp.nationality),
             tenureYears,
           });
 
-          const leave = leaveByEmployee.get(emp.id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
+          const rawLeave = leaveByEmployee.get(emp.id) ?? { unpaidDays: 0, halfDays: 0, deduction: 0 };
+          // Whatever the leave, a month never deducts more than the pay of the days worked.
+          const leave = { ...rawLeave, deduction: Math.min(rawLeave.deduction, round2(calc.basic + calc.housing + calc.transport + calc.other)) };
           if (round2(calc.netSalary - leave.deduction) < 0) {
             throw new CalcAbort({
               message: `Net salary is negative for employee ${emp.full_name} (${emp.employee_number ?? emp.id}). Deductions exceed gross pay.`,
@@ -816,8 +943,8 @@ export function registerPayrollRoutes(app: Express) {
             basic_salary, housing_allowance, transport_allowance, other_allowance,
             overtime, deductions, pension_employee, pension_employer, gratuity_accrual,
             net_salary, payment_mode, status, manually_edited,
-            leave_deduction, unpaid_leave_days, half_pay_leave_days
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'bank_transfer', 'pending', false, $13, $14, $15)
+            leave_deduction, unpaid_leave_days, half_pay_leave_days, days_worked
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'bank_transfer', 'pending', false, $13, $14, $15, $16)
           RETURNING id`,
             [
               id,
@@ -835,6 +962,7 @@ export function registerPayrollRoutes(app: Express) {
               leave.deduction,
               leave.unpaidDays,
               leave.halfDays,
+              proration.daysWorked < 30 ? proration.daysWorked : null,
             ]
           );
 
@@ -867,6 +995,9 @@ export function registerPayrollRoutes(app: Express) {
         employeeCount =
           preservedItems.length +
           employees.filter((e: any) => !preservedEmployeeIds.has(e.id)).length;
+
+        // Whoever first calculates a run prepared it (a run made by another keeps its creator).
+        await tq("UPDATE payroll_runs SET created_by = COALESCE(created_by, $2) WHERE id = $1", [id, userId]);
 
         // Update the payroll run totals
         updated = await tqOne(
@@ -909,7 +1040,7 @@ export function registerPayrollRoutes(app: Express) {
         },
         "Payroll calculated"
       );
-      res.json({ ...updated, warnings });
+      res.json({ ...updated, warnings, proRataNotes, otherWarnings });
     })
   );
 
@@ -974,8 +1105,12 @@ export function registerPayrollRoutes(app: Express) {
       const approvalDoc = await loadApprovalDocument("payroll_run", id);
       const approvalActor = await resolveActor((req as any).user, run.company_id);
       const approvalStep = approvalDoc
-        ? await beginApprovalStep(tx, approvalDoc, approvalActor, { previousStatus: run.status })
+        ? await beginApprovalStep(tx, approvalDoc, approvalActor, { previousStatus: run.status, acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true })
         : ({ kind: "none" } as const);
+      if (approvalStep.kind === "none" && approvalActor.rank < ROLE_RANK.accountant) {
+        // No rule applies: the plain approval still belongs to an accountant or above, never to the employee role.
+        return res.status(403).json({ message: "Only an accountant, CFO or owner can approve a payroll run.", code: "ROLE_REQUIRED" });
+      }
       if (approvalStep.kind === "step" && !approvalStep.isFinal) {
         const request = await recordApprovalStep(tx, approvalStep, approvalActor);
         const waiting = await queryOne("UPDATE payroll_runs SET status = 'pending_approval' WHERE id = $1 RETURNING *", [id]);
@@ -1140,6 +1275,22 @@ export function registerPayrollRoutes(app: Express) {
         });
       }
 
+      // Leave-pay provision: the earned, untaken annual leave at the daily wage is topped up with every approved run.
+      const existingJeBeforeProvision = (await storage.getJournalEntriesBySource(run.company_id, "system", id)).find((e) => e.status === "posted");
+      let provisionDeltas: Awaited<ReturnType<typeof leaveProvisionDeltas>> = [];
+      if (!existingJeBeforeProvision && (await leaveProvisionEnabled(run.company_id))) {
+        const itemRows = await query("SELECT employee_id FROM payroll_items WHERE payroll_run_id = $1", [id]);
+        provisionDeltas = await leaveProvisionDeltas(run.company_id, new Date(Date.UTC(run.period_year, run.period_month, 0)).toISOString().slice(0, 10), itemRows.map((r: any) => r.employee_id));
+        const net = round2(provisionDeltas.reduce((s, d) => s + d.delta, 0));
+        if (net !== 0) {
+          const accountsForProvision = await ensureLeaveProvisionAccounts(run.company_id);
+          jeLines.push(
+            { accountId: accountsForProvision.expenseId, debit: net > 0 ? net : 0, credit: net < 0 ? -net : 0, description: `Leave pay provision - payroll ${periodLabel}` },
+            { accountId: accountsForProvision.provisionId, debit: net < 0 ? -net : 0, credit: net > 0 ? net : 0, description: `Leave pay provision - payroll ${periodLabel}` }
+          );
+        }
+      }
+
       // Idempotent: a run whose journal is already on the ledger (an approve that failed after posting) is not posted twice.
       const existingJe = (await storage.getJournalEntriesBySource(run.company_id, "system", id)).find((e) => e.status === "posted");
       const entryNumber = existingJe?.entryNumber ?? (await storage.generateEntryNumber(run.company_id, periodEndDate));
@@ -1166,11 +1317,12 @@ export function registerPayrollRoutes(app: Express) {
         [userId, journalEntry.id, id]
       );
 
-      // Mark all payroll items as paid and back-link the JE for traceability.
+      // Items are APPROVED, not paid: no money has moved until the run's payment is recorded (record-payment).
       await query(
-        "UPDATE payroll_items SET status = 'paid', journal_entry_id = $1 WHERE payroll_run_id = $2",
+        "UPDATE payroll_items SET status = 'approved', journal_entry_id = $1 WHERE payroll_run_id = $2",
         [journalEntry.id, id]
       );
+      if (provisionDeltas.length > 0) await recordRunProvisions(run.company_id, id, provisionDeltas);
       // The loan instalments this run reserved are now deducted; a loan with nothing left owed is settled.
       await markRunInstalmentsDeducted(id);
 
@@ -1219,6 +1371,97 @@ export function registerPayrollRoutes(app: Express) {
     })
   );
 
+  // Record the bank payment of an approved run: Dr 2030 Salaries Payable / Cr the bank. Approving a run posts the
+  // salary liability; only this step moves it, and only now are the run and its items "paid".
+  app.post(
+    "/api/payroll-runs/:id/record-payment",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const run = /^[0-9a-f-]{36}$/i.test(id) ? await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]) : undefined;
+      if (!run || !(await storage.hasCompanyAccess(userId, run.company_id))) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+      if (!(await hrCompanyAccess(req, res, run.company_id, { write: true }))) return;
+
+      const body = z
+        .object({
+          paymentAccountId: z.string().uuid(),
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        })
+        .safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: "paymentAccountId is required", code: "VALIDATION_ERROR" });
+
+      const result = await withDocumentLock(id, LOCK_NS.APPROVAL, async () => {
+        const fresh = await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]);
+        if (!fresh || fresh.status === "paid") return { status: 409, body: { message: "This run's payment is already recorded.", code: "PAYROLL_ALREADY_PAID" } };
+        if (fresh.status !== "approved") return { status: 409, body: { message: "Approve the payroll run before recording its payment.", code: "PAYROLL_NOT_APPROVED" } };
+        const { assertCashOrBankAccount, postHrJournal } = await import("../services/hr-journal");
+        await assertCashOrBankAccount(fresh.company_id, body.data.paymentAccountId);
+        const dateYmd = body.data.date ?? new Date().toISOString().slice(0, 10);
+        if (dateYmd > new Date().toISOString().slice(0, 10)) {
+          return { status: 422, body: { message: "The payment date cannot be in the future.", code: "PAYMENT_IN_FUTURE" } };
+        }
+        const accounts = await storage.getAccountsByCompanyId(fresh.company_id);
+        const payable = accounts.find((a) => a.code === "2030" && !a.isArchived);
+        if (!payable) return { status: 422, body: { message: "Salaries Payable (2030) is missing from the chart of accounts.", code: "CHART_ACCOUNT_MISSING" } };
+        const net = round2(
+          Number((await query("SELECT COALESCE(SUM(net_salary), 0) AS net FROM payroll_items WHERE payroll_run_id = $1", [id]))[0].net)
+        );
+        const label = `${String(fresh.period_month).padStart(2, "0")}/${fresh.period_year}`;
+        const je = await postHrJournal({
+          companyId: fresh.company_id,
+          dateYmd,
+          memo: `Payroll ${label} paid`,
+          source: "payroll_payment",
+          sourceId: id,
+          userId,
+          lines: [
+            { accountId: payable.id, debit: net, credit: 0, description: `Salaries paid - payroll ${label}` },
+            { accountId: body.data.paymentAccountId, debit: 0, credit: net, description: `Salaries paid - payroll ${label}` },
+          ],
+        });
+        await query("UPDATE payroll_items SET status = 'paid' WHERE payroll_run_id = $1", [id]);
+        const updated = await queryOne("UPDATE payroll_runs SET status = 'paid' WHERE id = $1 RETURNING *", [id]);
+        await recordAudit({ userId, companyId: fresh.company_id, action: "payroll.payment", entityType: "payroll_run", entityId: id, after: { net, journalEntryId: je.id, date: dateYmd }, req });
+        return { status: 200, body: { ...updated, paymentJournalEntryId: je.id } };
+      });
+      res.status(result.status).json(result.body);
+    })
+  );
+
+  // Delete a run that has posted nothing (draft or calculated): its loan reservations are given back.
+  app.delete(
+    "/api/payroll-runs/:id",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const run = /^[0-9a-f-]{36}$/i.test(id) ? await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]) : undefined;
+      if (!run || !(await storage.hasCompanyAccess(userId, run.company_id))) {
+        return res.status(404).json({ message: "Payroll run not found" });
+      }
+      if (!(await hrCompanyAccess(req, res, run.company_id, { write: true }))) return;
+      const result = await withDocumentLock(id, LOCK_NS.APPROVAL, async () => {
+        const fresh = await queryOne("SELECT * FROM payroll_runs WHERE id = $1", [id]);
+        if (!fresh) return { status: 404, body: { message: "Payroll run not found" } };
+        if (fresh.status === "pending_approval") return { status: 409, body: { message: "This run is waiting for approval. Reject it first.", code: "APPROVAL_IN_PROGRESS" } };
+        if ((fresh.status !== "draft" && fresh.status !== "calculated") || fresh.journal_entry_id) {
+          return { status: 409, body: { message: "A run that has been approved has posted to the ledger and cannot be deleted.", code: "PAYROLL_RUN_POSTED" } };
+        }
+        await releaseRunInstalments(id);
+        await query("DELETE FROM approval_requests WHERE document_type = 'payroll_run' AND document_id = $1 AND status <> 'approved'", [id]);
+        await query("DELETE FROM payroll_runs WHERE id = $1", [id]);
+        await recordAudit({ userId, companyId: fresh.company_id, action: "payroll.run_delete", entityType: "payroll_run", entityId: id, before: { status: fresh.status, period: `${fresh.period_year}-${fresh.period_month}` }, req });
+        return { status: 200, body: { message: "Payroll run deleted" } };
+      });
+      res.status(result.status).json(result.body);
+    })
+  );
+
   // =============================================
   // SIF FILE GENERATION
   // =============================================
@@ -1241,6 +1484,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      if (!(await hrFullAccess(req, res, run.company_id))) return;
 
       // The bank file pays the employees: it is only produced for a run that was approved (and therefore posted).
       if (run.status !== "approved" && run.status !== "paid") {
@@ -1273,68 +1518,51 @@ export function registerPayrollRoutes(app: Express) {
         employeeIds
       );
 
-      // Build employee lookup map
-      const employeeMap = new Map<string, any>();
+      // The people the file reports: MOHRE person ID, bank routing code, IBAN and the dates that bound a part month.
+      const ymdOf = (v: unknown) => (v ? (localWallDateToUtcMidnight(new Date(v as any)) as Date).toISOString().slice(0, 10) : null);
+      const employeeMap = new Map<string, SifEmployee>();
       for (const emp of employeeRows) {
         employeeMap.set(emp.id, {
-          employeeNumber: emp.employee_number,
           fullName: emp.full_name,
-          laborCardNumber: emp.labor_card_number,
-          bankName: emp.bank_name,
-          bankAccountNumber: emp.bank_account_number,
-          iban: emp.iban,
+          molPersonId: emp.mol_person_id,
           routingCode: emp.routing_code,
+          iban: emp.iban,
+          bankAccountNumber: emp.bank_account_number,
+          joinYmd: ymdOf(emp.join_date),
+          terminationYmd: ymdOf(emp.termination_date),
+        });
+      }
+      const sifItems: SifItem[] = items.map((item: any) => ({
+        employeeId: item.employee_id,
+        netSalary: item.net_salary,
+        overtime: item.overtime,
+        daysWorked: item.days_worked,
+        leaveDays: (parseFloat(item.unpaid_leave_days) || 0) + (parseFloat(item.half_pay_leave_days) || 0),
+      }));
+      const sifCompany = {
+        mohreEstablishmentId: company.mohre_establishment_id,
+        routingCode: company.wps_employer_routing_code,
+        reference: `PAYROLL-${run.period_year}-${String(run.period_month).padStart(2, "0")}`,
+      };
+
+      // A file with a blank employer ID or a missing person ID is rejected by the bank: say what is missing instead.
+      const missing = sifProblems(sifCompany, sifItems, employeeMap);
+      if (missing.length > 0) {
+        return res.status(422).json({
+          message: `The WPS file cannot be produced yet: ${missing.length} identifier(s) are missing. ${missing.map((m) => m.message).join(" ")}`,
+          code: "SIF_MISSING_IDS",
+          missing,
         });
       }
 
-      // Map payroll items to SIF format. SIF requires gross − deductions = net,
-      // so the SIF "deductions" column must include the employee pension share
-      // along with sundry deductions; otherwise WPS validation fails.
-      const sifItems = items.map((item: any) => ({
-        employeeId: item.employee_id,
-        basicSalary: item.basic_salary,
-        housingAllowance: item.housing_allowance,
-        transportAllowance: item.transport_allowance,
-        otherAllowance: item.other_allowance,
-        overtime: item.overtime,
-        deductions: round2(
-          (parseFloat(item.deductions) || 0) +
-            (parseFloat(item.pension_employee) || 0) +
-            (parseFloat(item.leave_deduction) || 0) +
-            (parseFloat(item.loan_deduction) || 0)
-        ),
-        netSalary: item.net_salary,
-        paymentMode: item.payment_mode,
-      }));
-
-      const sifContent = generateSIFFile(
-        {
-          name: company.name,
-          registrationNumber: company.registration_number,
-          bankName: null,
-          bankAccountNumber: null,
-          routingCode: null,
-        },
-        {
-          id: run.id,
-          periodMonth: run.period_month,
-          periodYear: run.period_year,
-          totalBasic: run.total_basic,
-          totalAllowances: run.total_allowances,
-          totalDeductions: run.total_deductions,
-          totalNet: run.total_net,
-          employeeCount: run.employee_count,
-        },
-        sifItems,
-        employeeMap
-      );
+      const sifContent = generateSIFFile({ company: sifCompany, run: { periodMonth: run.period_month, periodYear: run.period_year }, items: sifItems, employees: employeeMap });
 
       // Store the SIF content on the payroll run
       await query("UPDATE payroll_runs SET sif_file_content = $1 WHERE id = $2", [sifContent, id]);
 
       // Return as downloadable text file
       const filename = `SIF_${company.name.replace(/[^a-zA-Z0-9]/g, "_")}_${run.period_year}_${String(run.period_month).padStart(2, "0")}.SIF`;
-      res.setHeader("Content-Type", "text/plain");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(sifContent);
     })
@@ -1363,6 +1591,8 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = await hrReadScope(req, res, run.company_id);
+      if (!scope) return;
       const items = await query(
         `SELECT pi.*, e.full_name as employee_name, e.full_name_ar as employee_name_ar,
               e.employee_number, e.department, e.designation
@@ -1373,7 +1603,8 @@ export function registerPayrollRoutes(app: Express) {
         [id]
       );
 
-      res.json(items);
+      // An employee sees only their own pay line.
+      res.json(scope.all ? items : items.filter((i: any) => scope.employeeIds.includes(i.employee_id)));
     })
   );
 
@@ -1413,6 +1644,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!row) {
         return res.status(404).json({ message: "Payroll item not found" });
       }
+      const scope = await hrReadScope(req, res, run.company_id);
+      if (!scope || !allowEmployee(res, scope, row.employee_id)) return;
 
       const company = await storage.getCompany(run.company_id);
       if (!company) {
@@ -1473,6 +1706,7 @@ export function registerPayrollRoutes(app: Express) {
       if (!run || !(await storage.hasCompanyAccess(userId, run.company_id))) {
         return res.status(404).json({ message: "Payroll run not found" });
       }
+      if (!(await hrFullAccess(req, res, run.company_id))) return;
       const register = await buildPayrollRegister(run);
       if (req.query.format === "csv") {
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -1509,6 +1743,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      if (!(await hrCompanyAccess(req, res, item.company_id, { write: true }))) return;
 
       if (item.run_status === "pending_approval") {
         return res.status(409).json({
@@ -1651,6 +1887,8 @@ export function registerPayrollRoutes(app: Express) {
       if (!employeeId) {
         return res.status(400).json({ message: "employeeId is required" });
       }
+      const gratuityScope = await hrReadScope(req, res, companyId);
+      if (!gratuityScope || !allowEmployee(res, gratuityScope, employeeId)) return;
 
       const employee = await queryOne("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [
         employeeId,
@@ -1664,8 +1902,11 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(400).json({ message: "Employee join date is not set" });
       }
 
-      const joinDate = new Date(employee.join_date);
-      const endDate = terminationDate ? new Date(terminationDate) : new Date();
+      // Calendar days as UTC midnights (the join date is a date-only value read in server-local time).
+      const joinDate = localWallDateToUtcMidnight(new Date(employee.join_date)) as Date;
+      const endDate = terminationDate
+        ? new Date(`${String(terminationDate).slice(0, 10)}T00:00:00Z`)
+        : new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
       const basicSalary = parseFloat(employee.basic_salary) || 0;
       const housing = parseFloat(employee.housing_allowance) || 0;
       const transport = parseFloat(employee.transport_allowance) || 0;

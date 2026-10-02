@@ -217,6 +217,37 @@ registerReport({
 // Audit Trail (range): activity_logs of the company, newest first, sensitive roles only
 // ---------------------------------------------------------------------------------------------------------------
 
+const short = (v: unknown): string => {
+  if (v === null || v === undefined) return "-";
+  const t = typeof v === "object" ? JSON.stringify(v) : String(v);
+  return t.length > 120 ? `${t.slice(0, 117)}...` : t;
+};
+
+/**
+ * What an audit_logs row says happened, for a human: for a change, only the fields that moved
+ * ("billDate: 2026-09-10 -> 2026-09-25"); for a creation or a deletion, the record's figures.
+ * The full before and after stay in audit_logs.details (a regenerated VAT draft keeps every box).
+ */
+export function describeAudit(details: string): string {
+  let d: any;
+  try {
+    d = JSON.parse(details);
+  } catch {
+    return "";
+  }
+  const before = d?.before && typeof d.before === "object" ? d.before : null;
+  const after = d?.after && typeof d.after === "object" ? d.after : null;
+  if (before && after) {
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+    const moved = keys.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+    if (moved.length === 0) return "no field changed";
+    return moved.map((k) => `${k}: ${short(before[k])} -> ${short(after[k])}`).join("; ").slice(0, 900);
+  }
+  if (before) return `was ${short(before)}`.slice(0, 600);
+  if (after) return Object.entries(after).map(([k, v]) => `${k}: ${short(v)}`).join("; ").slice(0, 600);
+  return "";
+}
+
 async function auditTrail(ctx: ReportContext): Promise<ReportOutput> {
   const { from, to } = ctx.window as { from: string; to: string };
   const { start, end } = dayBounds(from, to);
@@ -240,7 +271,7 @@ async function auditTrail(ctx: ReportContext): Promise<ReportOutput> {
            FROM activity_logs al WHERE al.company_id = ${cid} AND al.created_at >= ${s}::timestamp AND al.created_at <= ${e}::timestamp
          UNION ALL
          SELECT 'audit', au.id::text, au.created_at, au.user_id, au.action, COALESCE(au.resource_type, ''), COALESCE(au.resource_id, ''),
-                CASE WHEN au.details LIKE '{%' THEN LEFT(COALESCE((au.details::jsonb) ->> 'after', ''), 300) ELSE '' END, COALESCE(au.ip_address, '')
+                CASE WHEN au.details LIKE '{%' THEN au.details ELSE '' END, COALESCE(au.ip_address, '')
            FROM audit_logs au WHERE au.company_id = ${cid} AND au.created_at >= ${s}::timestamp AND au.created_at <= ${e}::timestamp
          UNION ALL
          -- Security events belong to a person, not a company (sign-ins, 2FA, sessions, password changes): they show in the
@@ -259,7 +290,7 @@ async function auditTrail(ctx: ReportContext): Promise<ReportOutput> {
     rows: rows.map((r) =>
       detail(
         `${r.src}:${r.id}`,
-        { at: r.at, user: r.who, action: r.action, entityType: r.entity_type, entityId: r.entity_id, description: r.description, ip: r.ip },
+        { at: r.at, user: r.who, action: r.action, entityType: r.entity_type, entityId: r.entity_id, description: r.src === "audit" ? describeAudit(r.description) : r.description, ip: r.ip },
         r.entity_type && r.entity_id ? { target: "activity", id: `${r.entity_type}:${r.entity_id}` } : undefined
       )
     ),

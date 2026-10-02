@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { companyAddressLine } from "@/lib/company-address";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   format,
@@ -44,6 +45,8 @@ import { exportToExcel } from "@/lib/export";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
+import type { VatReturnJournalLine } from "@/components/vat/VatJournalLineRows";
+import { storedVat201Totals } from "@/lib/vat201-totals";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
 import { PageHeader } from "@/components/ui/page-header";
@@ -79,6 +82,8 @@ interface VATReturn {
   /** true when computed for a period that has not ended; never persisted or submittable */
   isDraftPreview?: boolean;
   previewAsOf?: string | null;
+  /** Manual VAT journals and taxable journal sales behind the boxes (server-owned). */
+  vatAdjustments?: VatReturnJournalLine[] | null;
   vatStagger: string | null;
   status: string;
   box1aAbuDhabiAmount: number;
@@ -168,12 +173,18 @@ function monthsCovered(periodStart: string, periodEnd: string): string {
 interface Company {
   id: string;
   name: string;
-  nameAr: string | null;
+  nameAr?: string | null;
+  legalName?: string | null;
+  /** Arabic legal name from the company profile (shown in the return header when the profile has one). */
+  legalNameAr?: string | null;
   trnVatNumber: string | null;
   vatFilingFrequency: string | null;
   emirate: string | null;
-  address: string | null;
-  phone: string | null;
+  businessAddress?: string | null;
+  addressStreet?: string | null;
+  addressCity?: string | null;
+  addressCountry?: string | null;
+  contactPhone?: string | null;
 }
 
 const DEFAULT_VAT_DATA = {
@@ -578,18 +589,19 @@ export default function VATFiling() {
     const formatNum = (num: number) =>
       num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    doc.setFillColor(0, 100, 0);
+    // A worksheet from the ledger, deliberately not styled as the FTA return (no FTA name or colours).
+    doc.setFillColor(55, 65, 81);
     doc.rect(0, 0, pageWidth, 25, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.text(
-      vatReturn.isDraftPreview ? "DRAFT PREVIEW - VAT 201 (PERIOD NOT ENDED)" : "VAT RETURN - VAT 201",
+      vatReturn.isDraftPreview ? "DRAFT PREVIEW - VAT 201 WORKSHEET (PERIOD NOT ENDED)" : "VAT 201 WORKSHEET",
       pageWidth / 2,
       12,
       { align: "center" }
     );
     doc.setFontSize(10);
-    doc.text("Federal Tax Authority | الهيئة الاتحادية للضرائب", pageWidth / 2, 20, {
+    doc.text("Prepared from your ledger. Not an FTA document: file the return through EmaraTax.", pageWidth / 2, 20, {
       align: "center",
     });
 
@@ -610,10 +622,10 @@ export default function VATFiling() {
       y
     );
     y += 5;
-    doc.text(`Legal Name: ${company?.name || "N/A"}`, margin, y);
+    doc.text(`Legal Name: ${company?.legalName || company?.name || "N/A"}`, margin, y);
     doc.text(`Due Date: ${format(parseCalendarDay(vatReturn.dueDate), "dd/MM/yyyy")}`, pageWidth / 2, y);
     y += 5;
-    doc.text(`Address: ${company?.address || "N/A"}`, margin, y);
+    doc.text(`Address: ${companyAddressLine(company) || "N/A"}`, margin, y);
     y += 8;
 
     doc.setFillColor(240, 240, 240);
@@ -744,6 +756,12 @@ export default function VATFiling() {
       y,
       { align: "right" }
     );
+    doc.text(
+      formatNum(vatReturn.box8TotalAdj || 0),
+      margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] - 5,
+      y,
+      { align: "right" }
+    );
     y += 10;
 
     doc.setFillColor(240, 240, 240);
@@ -809,6 +827,12 @@ export default function VATFiling() {
       y,
       { align: "right" }
     );
+    doc.text(
+      formatNum(vatReturn.box11TotalAdj || 0),
+      margin + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] - 5,
+      y,
+      { align: "right" }
+    );
     y += 12;
 
     doc.setFillColor(0, 100, 0);
@@ -837,7 +861,7 @@ export default function VATFiling() {
     doc.setTextColor(100, 100, 100);
     doc.setFontSize(7);
     doc.text(
-      `Generated: ${format(new Date(), "dd/MM/yyyy HH:mm")} | www.tax.gov.ae`,
+      `Generated: ${format(new Date(), "dd/MM/yyyy HH:mm")} | VAT 201 worksheet - support only`,
       pageWidth / 2,
       285,
       { align: "center" }
@@ -1103,15 +1127,15 @@ export default function VATFiling() {
       >
         <TabsList>
           <TabsTrigger value="returns" data-testid="tab-vat-returns">
-            <ListChecks className="mr-2 h-4 w-4" />
+            <ListChecks className="me-2 h-4 w-4" />
             {locale === "ar" ? "الإقرارات" : "Returns"}
           </TabsTrigger>
           <TabsTrigger value="faf" data-testid="tab-vat-faf">
-            <Download className="mr-2 h-4 w-4" />
+            <Download className="me-2 h-4 w-4" />
             {cc.fafTab}
           </TabsTrigger>
           <TabsTrigger value="workpaper" data-testid="tab-vat-workpaper">
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            <FileSpreadsheet className="me-2 h-4 w-4" />
             {locale === "ar" ? "ورقة العمل" : "Workpaper"}
           </TabsTrigger>
         </TabsList>
@@ -1571,12 +1595,14 @@ export default function VATFiling() {
             <VAT201Form
               data={vatFormData}
               onChange={() => {}}
+              journalLines={selectedReturn.vatAdjustments}
+                storedTotals={storedVat201Totals(selectedReturn as any)}
               companyInfo={{
-                nameEn: company.name,
-                nameAr: company.nameAr || undefined,
+                nameEn: company.legalName || company.name,
+                nameAr: company.legalNameAr || company.nameAr || undefined,
                 trnNumber: company.trnVatNumber || undefined,
-                address: company.address || undefined,
-                phone: company.phone || undefined,
+                address: companyAddressLine(company) || undefined,
+                phone: company.contactPhone || undefined,
               }}
               periodInfo={{
                 periodStart: format(parseCalendarDay(selectedReturn.periodStart), "dd/MM/yyyy"),
@@ -1644,12 +1670,14 @@ export default function VATFiling() {
               <VAT201Form
                 data={vatFormData}
                 onChange={setVatFormData}
+                journalLines={selectedReturn.vatAdjustments}
+                storedTotals={storedVat201Totals(selectedReturn as any)}
                 companyInfo={{
-                  nameEn: company.name,
-                  nameAr: company.nameAr || undefined,
+                  nameEn: company.legalName || company.name,
+                  nameAr: company.legalNameAr || company.nameAr || undefined,
                   trnNumber: company.trnVatNumber || undefined,
-                  address: company.address || undefined,
-                  phone: company.phone || undefined,
+                  address: companyAddressLine(company) || undefined,
+                  phone: company.contactPhone || undefined,
                 }}
                 periodInfo={{
                   periodStart: format(parseCalendarDay(selectedReturn.periodStart), "dd/MM/yyyy"),

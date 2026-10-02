@@ -20,9 +20,11 @@ import {
   loadPeriodReceipts,
   loadPeriodVendorCredits,
   totalPurchases,
+  journalPurchaseRows,
   type PurchaseDocRow,
 } from "./vat-period-purchases.service";
 import { loadVatJournalAdjustments } from "./vat-adjustments.service";
+import { journalLinesForReturn } from "./vat-adjustments";
 import { buildGeneratedVatReturnValues } from "./vat-return-payload.service";
 
 export async function computeVatReturnForPeriod(args: {
@@ -102,6 +104,13 @@ export async function computeVatReturnForPeriod(args: {
   zeroRatedAmount = salesTotals.zeroRatedAmount;
   exemptAmount = salesTotals.exemptAmount;
 
+  // Taxable sales recorded by manual journal (Cr revenue + Cr 2020, no document): reported as a supply in box 1 of the
+  // company's emirate, amount and VAT, once. Their 2020 line is not also an adjustment (vat-adjustments.ts).
+  const journalAdjustments = await loadVatJournalAdjustments(ex, companyId, periodStart, periodEnd, companyEmirate);
+  standardRatedAmount += journalAdjustments.salesAmount;
+  standardRatedVat += journalAdjustments.salesVat;
+  const journalLines = journalLinesForReturn(journalAdjustments);
+
   // Credit notes are canonical invoice rows (`invoice_type = 'credit_note'`)
   // with negative invoice lines after A-B11, so the invoice loop above
   // captures them exactly once and applies the invoice exchange rate.
@@ -128,7 +137,14 @@ export async function computeVatReturnForPeriod(args: {
   const billRows = await tolerant(() => loadPeriodBills(ex, companyId, fromDay, toDay));
   const creditRows = await tolerant(() => loadPeriodVendorCredits(ex, companyId, fromDay, toDay));
   const claimRows = await tolerant(() => loadPeriodExpenseClaimItems(ex, companyId, fromDay, toDay));
-  const purchaseTotals = totalPurchases([...receiptRows, ...billRows, ...creditRows, ...claimRows]);
+  const purchaseTotals = totalPurchases([
+    ...receiptRows,
+    ...billRows,
+    ...creditRows,
+    ...claimRows,
+    // purchases recorded by manual journal (Dr expense + Dr 1050): net in box 9 amount, VAT in box 9 VAT, once
+    ...journalPurchaseRows(journalAdjustments.purchases),
+  ]);
 
   let totalExpenses = purchaseTotals.totalExpenses;
   let inputTaxGross = purchaseTotals.inputTaxGross;
@@ -226,7 +242,6 @@ export async function computeVatReturnForPeriod(args: {
   // Manual journals to the VAT accounts dated in the period are VAT adjustments (shared with the
   // autopilot and the firm workpaper): output side in the adjustment column of the company's own
   // emirate, input side in box 9, both flowing into boxes 8/11 adjustment and boxes 12-14.
-  const journalAdjustments = await loadVatJournalAdjustments(ex, companyId, periodStart, periodEnd, companyEmirate);
   (emirateBreakdown as Record<string, number>)[journalAdjustments.outputBox] = journalAdjustments.outputAdjustment;
 
   // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
@@ -260,11 +275,12 @@ export async function computeVatReturnForPeriod(args: {
     totalInputVat,
     outputAdjustment: journalAdjustments.outputAdjustment,
     inputAdjustment: journalAdjustments.inputAdjustment,
-    vatAdjustments: journalAdjustments.lines,
+    vatAdjustments: journalLines,
   });
 
   const metadata = {
     invoicesProcessed: periodInvoices.length,
+    journalSalesProcessed: journalAdjustments.sales.length,
     receiptsProcessed: periodReceipts.length,
     companyEmirate,
     trnNumber: company.trnVatNumber,
@@ -278,7 +294,7 @@ export async function computeVatReturnForPeriod(args: {
     netVatPayable: round2(returnValues.box12TotalDueTax - returnValues.box13RecoverableTax),
     // Manual journals to the VAT accounts in the period, reported as adjustments on the return
     // (journal number and description, so the accountant can see what each one is).
-    vatAdjustments: journalAdjustments.lines,
+    vatAdjustments: journalLines,
     outputAdjustment: journalAdjustments.outputAdjustment,
     inputAdjustment: journalAdjustments.inputAdjustment,
     // Input VAT the return does not recover by design (standard input plus the reverse-charge

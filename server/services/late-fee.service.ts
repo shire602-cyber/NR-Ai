@@ -190,6 +190,5 @@ export async function createLateFee(args: {
     log.warn({ invoiceId: feeInvoice.id }, "Late fee created but could not be issued (chart of accounts)");
     return true;
   }
-  await storage.updateInvoiceStatus(feeInvoice.id, companyId, "sent");
   return true;
 }

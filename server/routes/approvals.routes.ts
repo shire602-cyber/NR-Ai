@@ -16,7 +16,7 @@ import { db } from "../db";
 import { AppError } from "../errors";
 import { approvalRules, approvalRequests, APPROVAL_DOCUMENT_TYPES } from "../../shared/schema-purchasing-hr";
 import { approvalHistory, isApprovalDocumentType, listApprovalQueue, loadActiveRules, loadApprovalDocument, ruleForDocument } from "../services/approval-queue.service";
-import { notifyApprovalProgress, rejectDocumentApproval, resolveActor } from "../services/approval-gate.service";
+import { notifyApprovalProgress, rejectDocumentApproval, resolveActor, resubmitDocumentApproval } from "../services/approval-gate.service";
 import { ruleInputProblem, unstaffedRoles } from "../services/approval-rules";
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
 import { recordAudit } from "../services/audit.service";
@@ -241,6 +241,21 @@ export function registerApprovalRoutes(app: Express) {
         comment: req.body?.comment ?? null,
       });
       res.json({ requestId: request.id, status: request.status });
+    })
+  );
+
+  // The preparer's explicit resubmission of a rejected document: a new request with new steps.
+  app.post(
+    "/api/approvals/:documentType/:documentId/resubmit",
+    authMiddleware,
+    requireCustomer,
+    gate,
+    asyncHandler(async (req: Request, res: Response) => {
+      const doc = await visibleDocument(req, res);
+      if (!doc) return;
+      const actor = await resolveActor(req.user!, doc.companyId);
+      const request = await resubmitDocumentApproval({ req, documentType: doc.documentType, documentId: doc.documentId, actor });
+      res.status(201).json({ requestId: request.id, status: request.status, requiredSteps: request.requiredSteps, completedSteps: request.completedSteps });
     })
   );
 

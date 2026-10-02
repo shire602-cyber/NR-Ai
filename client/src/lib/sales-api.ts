@@ -35,6 +35,7 @@ export interface SalesLineRow {
   revenueAccountId?: string | null;
   productId?: string | null;
   priceListId?: string | null;
+  projectId?: string | null;
   salesOrderLineId?: string | null;
   customerAdvanceId?: string | null;
   // sales order lines only
@@ -55,6 +56,7 @@ export interface ItemLineForm {
   revenueAccountId?: string | null;
   productId?: string | null;
   priceListId?: string | null;
+  projectId?: string | null;
   discountType?: DiscountType | null;
   discountValue?: number | string | null;
   salesOrderLineId?: string | null;
@@ -312,6 +314,7 @@ export function itemFormFromRow(row: SalesLineRow): ItemLineForm {
     revenueAccountId: row.revenueAccountId ?? null,
     productId: row.productId ?? null,
     priceListId: row.priceListId ?? null,
+    projectId: row.projectId ?? null,
     discountType: row.discountType ?? null,
     discountValue: row.discountValue === null || row.discountValue === undefined ? null : toNum(row.discountValue),
     salesOrderLineId: row.salesOrderLineId ?? null,
@@ -350,6 +353,8 @@ export function itemPayload(line: ItemLineForm) {
     revenueAccountId: line.revenueAccountId || null,
     productId: line.productId || null,
     priceListId: line.priceListId || null,
+    // The project survives every save: an edit that dropped it used to strip all project revenue.
+    projectId: line.projectId || null,
     ...(line.salesOrderLineId ? { salesOrderLineId: line.salesOrderLineId } : {}),
     discountType: hasDiscount ? line.discountType : null,
     discountValue: hasDiscount ? discountValue : null,
@@ -611,7 +616,9 @@ export function netOfGross(gross: number, vatRate: number | string): number {
 }
 
 /** Cash and bank accounts a payment or refund can go through (same rule as the invoice payment dialog). */
-export function isCashOrBankAccount(acc: { type?: string | null; nameEn?: string | null; nameAr?: string | null }): boolean {
+export function isCashOrBankAccount(acc: { code?: string | null; type?: string | null; nameEn?: string | null; nameAr?: string | null }): boolean {
+  // 1025 Payment Gateway Clearing is bank-type: card receipts settle there before the payout reaches the bank.
+  if (acc.code === "1025") return true;
   const en = (acc.nameEn ?? "").toLowerCase();
   const ar = (acc.nameAr ?? "").toLowerCase();
   return (

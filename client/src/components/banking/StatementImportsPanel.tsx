@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n";
-import { formatDate } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import type { StatementImportRecord } from "@/lib/banking-api-types";
 import { messages } from "./StatementImportsPanel.i18n";
 import { messages as common } from "./BankingCommon.i18n";
@@ -77,13 +77,13 @@ export function StatementImportsPanel({ companyId, feedsAvailable, onImport, onR
                 <TableBody>
                   {data.map((row) => (
                     <TableRow key={row.id} data-testid={`import-${row.id}`}>
-                      <TableCell className="text-sm whitespace-nowrap">{row.createdAt ? formatDate(row.createdAt, locale) : ""}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{row.createdAt ? formatCalendarDate(row.createdAt, locale, "short") : ""}</TableCell>
                       <TableCell className="text-sm max-w-[14rem] truncate" dir="auto" title={row.filename ?? undefined}>
                         {row.filename || tr("noFile")}
                       </TableCell>
                       <TableCell className="text-sm">{sourceText(trc, row.source)}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {row.statementFrom && row.statementTo ? `${formatDate(row.statementFrom, locale)} - ${formatDate(row.statementTo, locale)}` : ""}
+                        {row.statementFrom && row.statementTo ? `${formatCalendarDate(row.statementFrom, locale, "short")} - ${formatCalendarDate(row.statementTo, locale, "short")}` : ""}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{row.status === "committed" ? tr("rowsValue", { imported: row.importedCount ?? 0, duplicates: row.duplicateCount ?? 0 }) : row.rowCount ?? ""}</TableCell>
                       <TableCell>

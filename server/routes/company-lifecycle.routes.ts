@@ -50,26 +50,32 @@ const deleteBodySchema = z.object({
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Owner or accountant of the company, also while the company sits in its 30-day deletion window:
- * that is exactly when people want their data out. (requireRole treats a deleted company as having
- * no members.) After the purge the memberships are gone and so is this access.
+ * The company's OWNER only. A full-company export holds everything, payroll and owners' details
+ * included, so accountants are refused (403) however the route is reached. An owner may still export
+ * during the 30-day deletion window (that is when people want their books out); nobody else may, and
+ * a deleted company is never reachable through platform-wide scopes. After the purge the memberships
+ * are gone and so is this access.
  */
 const exportAccess = asyncHandler(async (req: Request, res: Response, next: any) => {
   if (!req.user) return res.status(401).json({ message: "Authentication required" });
-  if (hasFullNraScope(req.user as any)) return next();
   const { rows } = await pool.query(
     `SELECT cu.role, c.deleted_at,
             EXISTS (SELECT 1 FROM company_deletion_requests r WHERE r.company_id = c.id AND r.status = 'pending') AS deletion_pending
-       FROM company_users cu JOIN companies c ON c.id = cu.company_id
-      WHERE cu.company_id = $1 AND cu.user_id = $2`,
+       FROM companies c LEFT JOIN company_users cu ON cu.company_id = c.id AND cu.user_id = $2
+      WHERE c.id = $1`,
     [req.params.companyId, req.user.id]
   );
   const m = rows[0];
-  if (!m) return res.status(403).json({ message: "Not a member of this company" });
-  if (m.deleted_at && !m.deletion_pending) return res.status(403).json({ message: "Not a member of this company" });
-  if (!["owner", "accountant"].includes(m.role)) {
-    return res.status(403).json({ message: `Role '${m.role}' is not authorized. Required: owner, accountant` });
+  if (!m) return res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+  const owner = m.role === "owner";
+  const platformScope = hasFullNraScope(req.user as any) && !m.deleted_at;
+  if (!owner && !platformScope) {
+    return res.status(403).json({
+      message: m.role ? "Only the company owner can export the company's data" : "Not a member of this company",
+      code: m.role ? "OWNER_REQUIRED" : "FORBIDDEN",
+    });
   }
+  if (m.deleted_at && !m.deletion_pending) return res.status(403).json({ message: "Not a member of this company", code: "FORBIDDEN" });
   next();
 });
 

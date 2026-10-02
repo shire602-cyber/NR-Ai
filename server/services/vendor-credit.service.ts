@@ -27,6 +27,9 @@ import {
 } from "./vendor-credit-posting";
 import { toCalendarYmd, uaeCalendarDate } from "../utils/date";
 import { resolveVendor, type VendorWarning } from "./vendor-contact.service";
+import { db } from "../db";
+import { applyVendorCreditStockInTx, assertProductsOfCompany, restoreVendorCreditStockInTx } from "./purchase-stock.service";
+import { ensureSystemAccount } from "./inventory-costing.service";
 
 const log = createLogger("vendor-credit");
 
@@ -44,6 +47,7 @@ export interface VendorCreditLineInput {
   unit_price: number | string;
   vat_rate?: number | string | null;
   account_id?: string | null;
+  product_id?: string | null;
 }
 
 export interface VendorCreditInput {
@@ -89,6 +93,7 @@ async function inTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise
 }
 
 async function validateLineAccounts(companyId: string, lines: VendorCreditLineInput[]): Promise<void> {
+  await assertProductsOfCompany(companyId, lines.map((l) => l.product_id));
   const ids = Array.from(new Set(lines.map((l) => l.account_id).filter((v): v is string => !!v)));
   if (ids.length === 0) return;
   const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -149,9 +154,9 @@ async function insertLines(client: PoolClient, creditId: string, input: VendorCr
     const c = totals.lines[i];
     await client.query(
       `INSERT INTO vendor_credit_note_lines
-         (credit_note_id, description, quantity, unit_price, vat_rate, vat_supply_type, account_id, line_total)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [creditId, line.description, c.quantity, c.unitPrice, c.vatRatePercent, c.vatRatePercent > 0 ? "standard" : "zero_rated", line.account_id || null, c.amount]
+         (credit_note_id, description, quantity, unit_price, vat_rate, vat_supply_type, account_id, line_total, product_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [creditId, line.description, c.quantity, c.unitPrice, c.vatRatePercent, c.vatRatePercent > 0 ? "standard" : "zero_rated", line.account_id || null, c.amount, line.product_id || null]
     );
   }
 }
@@ -220,6 +225,7 @@ export async function updateVendorCredit(companyId: string, id: string, input: P
         unit_price: l.unit_price,
         vat_rate: l.vat_rate,
         account_id: l.account_id,
+        product_id: l.product_id,
       })),
   };
   await validateLineAccounts(companyId, merged.line_items);
@@ -308,7 +314,8 @@ export async function approveVendorCredit(companyId: string, id: string, userId:
     );
     if (lock.rows[0]?.status !== "draft") throw err(409, "NOT_DRAFT", "Only draft credit notes can be approved.");
 
-    const journalId = await postCreditJournal(companyId, credit, userId, creditDate);
+    // Goods returned to the supplier leave stock in the same transaction that books the credit (purchase-stock.service).
+    const journalId = await db.transaction((stockTx: any) => postCreditJournal(companyId, credit, userId, creditDate, stockTx));
     await client.query(
       `UPDATE vendor_credit_notes
           SET status='approved', remaining_amount=total, journal_entry_id=$1, approved_by=$2,
@@ -321,7 +328,7 @@ export async function approveVendorCredit(companyId: string, id: string, userId:
   return getVendorCredit(companyId, id);
 }
 
-async function postCreditJournal(companyId: string, credit: any, userId: string, creditDate: Date): Promise<string> {
+async function postCreditJournal(companyId: string, credit: any, userId: string, creditDate: Date, stockTx?: any): Promise<string> {
   // Idempotent: a retried approval (journal posted, status update lost) reuses the entry.
   const existing = await storage.getJournalEntriesBySource(companyId, VENDOR_CREDIT_JE_SOURCE, credit.id);
   const original = existing.find((e) => e.status === "posted" && !e.reversedEntryId);
@@ -340,7 +347,33 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
   }
 
   const lines = [];
+  // Returned stock: out of the stock record at the credit's value, and 1070 is credited for exactly what left.
+  const returned = stockTx
+    ? await applyVendorCreditStockInTx(
+        stockTx,
+        { id: credit.id, company_id: companyId, number: credit.number, date: credit.date, exchange_rate: credit.exchange_rate },
+        credit.lines,
+        userId
+      )
+    : new Map<string, { left: number; lineAed: number }>();
+  const stockAdjustments: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
   for (const line of credit.lines) {
+    const moved = returned.get(line.id);
+    if (moved) {
+      const inventory = await ensureSystemAccount(stockTx, companyId, ACCOUNT_CODES.INVENTORY, "asset");
+      lines.push({ accountId: inventory.id, amount: Number(line.line_total), description: line.description });
+      // The credit may be worth more or less than the stock's value: the difference is an inventory adjustment.
+      const diff = Math.round((moved.lineAed - moved.left) * 100) / 100;
+      if (diff !== 0) {
+        const adj = await ensureSystemAccount(stockTx, companyId, ACCOUNT_CODES.INVENTORY_ADJUSTMENTS, "expense");
+        const label = `Vendor credit ${credit.number} - ${line.description} (difference to stock value)`.slice(0, 255);
+        const amount = Math.abs(diff);
+        // Credit worth more than the stock (diff > 0): 1070 gives back what the credit over-credited, 5210 takes the gain.
+        stockAdjustments.push({ accountId: inventory.id, debit: diff > 0 ? amount : 0, credit: diff > 0 ? 0 : amount, description: label });
+        stockAdjustments.push({ accountId: adj.id, debit: diff > 0 ? 0 : amount, credit: diff > 0 ? amount : 0, description: label });
+      }
+      continue;
+    }
     const accountId = await resolveLineAccount(
       accounts,
       companyId,
@@ -361,7 +394,7 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
     vendorName: credit.vendor_name,
   });
 
-  const entryNumber = await storage.generateEntryNumber(companyId, creditDate);
+  const entryNumber = stockTx ? "PENDING" : await storage.generateEntryNumber(companyId, creditDate);
   const entry = await storage.createJournalEntry(
     {
       companyId,
@@ -375,7 +408,8 @@ async function postCreditJournal(companyId: string, credit: any, userId: string,
       postedBy: userId,
       postedAt: creditDate,
     } as any,
-    posting
+    [...posting, ...stockAdjustments] as any,
+    stockTx ? { tx: stockTx } : undefined
   );
   return entry.id;
 }
@@ -548,7 +582,13 @@ export async function voidVendorCredit(companyId: string, id: string, userId: st
     }
 
     let reversalId: string | null = null;
-    if (status === "approved") reversalId = await postReversal(companyId, credit, userId, reason);
+    if (status === "approved") {
+      // The returned goods come back into stock in the transaction that posts the reversing entry.
+      reversalId = await db.transaction(async (stockTx: any) => {
+        await restoreVendorCreditStockInTx(stockTx, { id: credit.id, company_id: companyId, number: credit.number, date: credit.date }, userId);
+        return postReversal(companyId, credit, userId, reason, stockTx);
+      });
+    }
     await client.query(
       `UPDATE vendor_credit_notes
           SET status='void', remaining_amount=0, void_journal_entry_id=$1, voided_at=NOW(), updated_at=NOW()
@@ -560,7 +600,7 @@ export async function voidVendorCredit(companyId: string, id: string, userId: st
   return getVendorCredit(companyId, id);
 }
 
-async function postReversal(companyId: string, credit: any, userId: string, reason?: string | null): Promise<string> {
+async function postReversal(companyId: string, credit: any, userId: string, reason?: string | null, stockTx?: any): Promise<string> {
   const entries = await storage.getJournalEntriesBySource(companyId, VENDOR_CREDIT_JE_SOURCE, credit.id);
   const reversed = entries.find((e) => e.status === "posted" && e.reversedEntryId);
   if (reversed) return reversed.id;
@@ -575,7 +615,7 @@ async function postReversal(companyId: string, credit: any, userId: string, reas
     description: `Reversal: ${l.description || ""}`.slice(0, 255),
   }));
   const date = calendarDayToDate(credit.date);
-  const entryNumber = await storage.generateEntryNumber(companyId, date);
+  const entryNumber = stockTx ? "PENDING" : await storage.generateEntryNumber(companyId, date);
   const entry = await storage.createJournalEntry(
     {
       companyId,
@@ -591,7 +631,8 @@ async function postReversal(companyId: string, credit: any, userId: string, reas
       postedBy: userId,
       postedAt: new Date(),
     } as any,
-    reversalLines as any
+    reversalLines as any,
+    stockTx ? { tx: stockTx } : undefined
   );
   return entry.id;
 }

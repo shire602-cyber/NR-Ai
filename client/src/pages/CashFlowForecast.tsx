@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import type { ForecastInsight, ForecastItemType, ForecastResponse, ForecastScenarioFields, SavedScenario } from "@/lib/banking-api-types";
 import { ForecastChart } from "@/components/cashflow/ForecastChart";
 import { ScenarioPanel } from "@/components/cashflow/ScenarioPanel";
@@ -279,14 +280,14 @@ export default function CashFlowForecast() {
                           <TableBody>
                             {items.slice(0, itemLimit).map((it, idx) => (
                               <TableRow key={`${it.type}-${it.sourceId ?? idx}-${it.date}-${idx}`} data-testid={`forecast-item-${it.type}`}>
-                                <TableCell className="font-mono text-xs">{formatDate(it.date, locale)}</TableCell>
+                                <TableCell className="font-mono text-xs">{formatCalendarDate(it.date, locale, "short")}</TableCell>
                                 <TableCell>
                                   <Badge variant="outline">{tr(TYPE_KEY[it.type])}</Badge>
                                 </TableCell>
                                 <TableCell className="text-sm" dir="auto">
                                   {it.label}
                                 </TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{it.originalDate !== it.date ? formatDate(it.originalDate, locale) : ""}</TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">{it.originalDate !== it.date ? formatCalendarDate(it.originalDate, locale, "short") : ""}</TableCell>
                                 <TableCell dir="ltr" className={`text-end font-mono text-sm ${it.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
                                   {money(it.amount)}
                                 </TableCell>

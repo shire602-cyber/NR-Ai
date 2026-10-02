@@ -38,6 +38,8 @@ const KINDS: Record<SuggestionKind, Parameters<CommonTr>[0]> = {
   receipt: "kindReceipt",
   rule: "kindRule",
   account: "kindAccount",
+  invoices: "kindInvoices",
+  transfer: "kindTransfer",
 };
 
 export const reasonText = (tr: CommonTr, code: ReasonCode): string => (REASONS[code] ? tr(REASONS[code]) : code);
@@ -145,6 +147,35 @@ export function bankingErrorText(tr: CommonTr, err: unknown, locale: string = "e
       return tr("errRuleRegex");
     case "RULE_VAT_INFLOW_UNSUPPORTED":
       return tr("errRuleVatInflow");
+    case "MATCH_AMOUNT_MISMATCH":
+      return tr("errMatchAmountMismatch");
+    case "OVERPAYMENT_CHOICE_REQUIRED": {
+      const excess = (err.details as { excess?: number } | undefined)?.excess;
+      return tr("errOverpaymentChoice", { excess: typeof excess === "number" ? formatNumber(excess, locale) : "" });
+    }
+    case "ALLOCATION_INVALID":
+      return tr("errAllocationInvalid");
+    case "ALLOCATION_EXCEEDS_BANK_LINE":
+      return tr("errAllocationExceeds");
+    case "PAYMENT_EXCEEDS_BALANCE":
+    case "OVERPAYMENT":
+      return tr("errPaymentExceeds");
+    case "SPLIT_INVALID":
+      return tr("errSplitInvalid");
+    case "TRANSFER_INVALID":
+      return tr("errTransferInvalid");
+    case "CURRENCY_MISMATCH":
+      return tr("errCurrencyAccount");
+    case "INVOICE_NOTHING_OUTSTANDING":
+      return tr("errNothingOutstanding");
+    case "DIRECTION_MISMATCH":
+      return tr("errDirection");
+    case "PAYMENT_ACCOUNT_REQUIRED":
+      return tr("errPaymentAccountRequired");
+    case "PAYMENT_ACCOUNT_INVALID":
+      return tr("errPaymentAccountInvalid");
+    case "FX_ACCOUNT_MISSING":
+      return tr("errFxAccount");
     default:
       return err.message || tr("errGeneric");
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CalendarPlus, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,6 @@ interface Props {
 
 type StatusFilter = "all" | LeaveRequest["status"];
 const TONES: Record<LeaveRequest["status"], StatusTone> = { pending: "warning", approved: "success", rejected: "danger", cancelled: "neutral" };
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function LeaveTab({ companyId, employees, canWrite }: Props) {
   const tr = messages.useT();

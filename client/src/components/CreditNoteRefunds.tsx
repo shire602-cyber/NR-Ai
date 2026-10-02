@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { accountName } from "@/lib/account-name";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -233,7 +234,7 @@ export function CreditNoteRefunds({ companyId, creditNote, onOpenChange }: Props
                         <SelectContent>
                           {bankAccounts.map((acc) => (
                             <SelectItem key={acc.id} value={acc.id}>
-                              {acc.code} - {acc.nameEn}
+                              {acc.code} - {accountName(acc, locale)}
                             </SelectItem>
                           ))}
                         </SelectContent>

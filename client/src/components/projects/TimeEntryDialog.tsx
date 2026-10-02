@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ interface Props {
   onClose: () => void;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
 const NONE = "none";
 const durationText = (minutes: number) => {
   const { hours, minutes: m } = splitDuration(minutes);

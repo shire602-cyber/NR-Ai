@@ -102,6 +102,14 @@ export default function CompanySettings() {
   const { companyId } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
+  // A link such as /settings/company#inventory-posting lands on that setting once the form has rendered.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const timer = setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: "center" }), 500);
+    return () => clearTimeout(timer);
+  }, [companyId]);
+
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
@@ -508,7 +516,7 @@ export default function CompanySettings() {
                   control={form.control}
                   name="inventoryCostingEnabled"
                   render={({ field }) => (
-                    <FormItem className="md:col-span-2 flex items-center justify-between rounded-md border p-3">
+                    <FormItem id="inventory-posting" className="md:col-span-2 flex scroll-mt-24 items-center justify-between rounded-md border p-3">
                       <div className="space-y-0.5">
                         <FormLabel>{tr("postInventoryToLedgerCogs")}</FormLabel>
                         <FormDescription>{tr("postInventoryToLedgerCogsHint")}</FormDescription>

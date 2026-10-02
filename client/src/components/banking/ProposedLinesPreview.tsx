@@ -1,12 +1,21 @@
+import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "@/lib/i18n";
+import { accountName } from "@/lib/account-name";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatNumber } from "@/lib/format";
-import type { ProposedLine } from "@/lib/banking-api-types";
+import type { LedgerAccount, ProposedLine } from "@/lib/banking-api-types";
 import { messages } from "./ProposedLinesPreview.i18n";
 
 /** The Dr/Cr lines a suggestion would post, shown before anything is accepted. */
 export function ProposedLinesPreview({ lines, posts }: { lines: ProposedLine[]; posts: boolean }) {
   const tr = messages.useT();
   const locale = useI18n((s) => s.locale);
+  const { companyId } = useDefaultCompany();
+  const { data: accounts = [] } = useQuery<LedgerAccount[]>({ queryKey: ["/api/companies", companyId, "accounts"], enabled: !!companyId });
+  const nameOf = (l: ProposedLine) => {
+    const a = accounts.find((x) => x.id === l.accountId);
+    return a ? accountName(a, locale) : l.accountName;
+  };
   if (!posts || lines.length === 0) {
     return <p className="text-xs text-muted-foreground">{tr("linkOnly")}</p>;
   }
@@ -30,7 +39,7 @@ export function ProposedLinesPreview({ lines, posts }: { lines: ProposedLine[]; 
                 <span className="font-mono" dir="ltr">
                   {l.accountCode}
                 </span>{" "}
-                {l.accountName}
+                {nameOf(l)}
               </td>
               <td dir="ltr" className="px-2 py-1 text-end font-mono">
                 {l.debit ? formatNumber(l.debit, locale) : ""}

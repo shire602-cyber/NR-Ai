@@ -44,6 +44,7 @@ import {
   type RevenueCtx,
 } from "./credit-note-remainder.service";
 import { ACCOUNT_CODES } from "../constants";
+import { parseCalendarDay, uaeCalendarDate } from "../utils/date";
 import { reverseApplicationsForInvoice } from "./advance-ledger.service";
 import {
   MAX_DOCUMENT_TOTAL,
@@ -242,22 +243,30 @@ export async function issueCreditNote(args: {
   // period being filed could never enter that period's VAT 201 or P&L).
   // Future dates are refused like invoices; the period lock is checked
   // against the ACTUAL document date.
-  let cnDate = new Date();
+  let cnDate = uaeCalendarDate();
   const requestedCnDate = body?.date;
   if (requestedCnDate !== undefined && requestedCnDate !== null) {
-    const parsed = new Date(requestedCnDate);
-    if (isNaN(parsed.getTime())) {
+    const parsed = parseCalendarDay(requestedCnDate);
+    if (!parsed) {
       return fail(422, {
         message: "Credit note `date` is not a valid date.",
         code: "INVALID_CREDIT_NOTE_DATE",
       });
     }
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrow = uaeCalendarDate();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     if (parsed > tomorrow) {
       return fail(422, {
         message: "Credit note `date` cannot be in the future.",
         code: "CREDIT_NOTE_DATE_IN_FUTURE",
+      });
+    }
+    // A credit note undoes (part of) an invoice: it cannot be dated before the invoice it credits.
+    const invoiceDay = uaeCalendarDate(original.date instanceof Date ? original.date : new Date(original.date as any));
+    if (parsed < invoiceDay) {
+      return fail(422, {
+        message: `Credit note date cannot be before the date of the invoice it credits (${invoiceDay.toISOString().slice(0, 10)}).`,
+        code: "CREDIT_NOTE_DATE_BEFORE_INVOICE",
       });
     }
     cnDate = parsed;

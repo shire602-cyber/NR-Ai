@@ -368,6 +368,8 @@ export const companies = pgTable("companies", {
   // Phase 6: when true, issuing an invoice also posts cost of goods sold (Dr 5200 / Cr 1070)
   // for lines sold from products that track inventory, at weighted-average cost.
   inventoryCostingEnabled: boolean("inventory_costing_enabled").notNull().default(false),
+  // Phase 9 (0126): monthly leave-pay provision (Dr 5029 / Cr 2037) with every approved payroll run
+  leaveProvisionEnabled: boolean("leave_provision_enabled").notNull().default(true),
   // D3 (0110): read scanned PDF bank statements with the AI provider (paid per call, capped at 10 pages). Off by default.
   bankPdfAiFallback: boolean("bank_pdf_ai_fallback").notNull().default(false),
 
@@ -453,6 +455,7 @@ export const companyPreferencesSchema = z.object({
   dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
   locale: z.enum(["en", "ar"]).optional(),
   inventoryCostingEnabled: z.boolean().optional(),
+  leaveProvisionEnabled: z.boolean().optional(),
 });
 
 export type CompanyPreferences = z.infer<typeof companyPreferencesSchema>;
@@ -1917,6 +1920,8 @@ export const purchaseOrderLines = pgTable(
     unitPrice: unitPriceType("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
+    // The stock item bought on this line (0127): receiving the order brings it into stock.
+    productId: uuid("product_id").references((): any => products.id, { onDelete: "set null" }),
   },
   (table) => ({
     purchaseOrderIdIdx: index("idx_purchase_order_lines_po_id").on(table.purchaseOrderId),
@@ -2530,6 +2535,39 @@ export const customerRefunds = pgTable(
 
 export type CustomerRefund = typeof customerRefunds.$inferSelect;
 
+// Refund of a customer credit balance (overpayment held in 2050), migration 0127.
+export const customerCreditRefunds = pgTable(
+  "customer_credit_refunds",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references((): any => customerContacts.id, { onDelete: "restrict" }),
+    amount: money("amount").notNull(), // AED
+    refundDate: date("refund_date", { mode: "string" }).notNull(),
+    bankAccountId: uuid("bank_account_id")
+      .notNull()
+      .references(() => accounts.id),
+    reference: text("reference"),
+    notes: text("notes"),
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+    createdBy: uuid("created_by").references(() => users.id),
+    voidedAt: timestamp("voided_at"),
+    voidJournalEntryId: uuid("void_journal_entry_id").references(() => journalEntries.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    contactIdx: index("idx_customer_credit_refunds_contact").on(table.companyId, table.contactId),
+  })
+);
+
+export type CustomerCreditRefund = typeof customerCreditRefunds.$inferSelect;
+
 // ===========================
 // Recurring Invoices
 // ===========================
@@ -2703,6 +2741,11 @@ export const inventoryMovements = pgTable(
       onDelete: "set null",
     }),
     notes: text("notes"),
+    // The day the stock moved (UTC midnight of the calendar day); null = the day the row was written (0127).
+    movementDate: timestamp("movement_date"),
+    purchaseOrderId: uuid("purchase_order_id").references((): any => purchaseOrders.id, { onDelete: "set null" }),
+    sourceBillId: uuid("source_bill_id"),
+    sourceVendorCreditId: uuid("source_vendor_credit_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({

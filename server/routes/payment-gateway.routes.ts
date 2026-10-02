@@ -16,6 +16,8 @@ import {
 } from "../services/payment-gateway/connection.service";
 import { createInvoiceCheckout, invoiceForShareToken } from "../services/payment-gateway/checkout.service";
 import { isFakeGatewayOn } from "../services/payment-gateway";
+import { getFakeSession } from "../services/payment-gateway/fake.adapter";
+import { handleConnectEvent } from "../services/payment-gateway/webhook.service";
 import { invoiceBelongsToContact } from "./portal.public.routes";
 
 const checkoutSchema = z.object({
@@ -32,9 +34,62 @@ function originOf(req: Request): string {
 
 const settingsSchema = z.object({ allowPartial: z.boolean().optional(), enabled: z.boolean().optional() });
 
+const escapeHtml = (v: unknown): string =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+
+function fakeCheckoutPage(sessionId: string, s: { amount: number; currency: string; invoiceNumber: string; expired: boolean }): string {
+  const act = (what: string, label: string, primary: boolean) =>
+    `<form method="post" action="/api/public/fake-pay/${escapeHtml(sessionId)}/${what}" style="display:inline"><button type="submit" style="padding:10px 22px;margin:6px;font-size:16px;border-radius:6px;border:1px solid #888;${primary ? "background:#0a7d3c;color:#fff" : "background:#fff"}">${label}</button></form>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Simulated checkout</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:420px;margin:48px auto;padding:0 16px">
+<p style="background:#fff3cd;border:1px solid #e0c36a;padding:8px;border-radius:6px;font-size:13px">Simulated checkout (test mode, no real card is charged).</p>
+<h2>Pay invoice ${escapeHtml(s.invoiceNumber)}</h2>
+<p style="font-size:22px"><strong>${escapeHtml(s.currency)} ${escapeHtml(s.amount.toFixed(2))}</strong></p>
+${s.expired ? "<p>This payment page has expired.</p>" : `${act("pay", "Pay", true)}${act("fail", "Fail the payment", false)}`}
+</body></html>`;
+}
+
 export function registerPaymentGatewayRoutes(app: Express) {
   const guards = [authMiddleware, requireCustomer, requireCompanyAccess("params")];
   const base = "/api/companies/:companyId/payment-gateway";
+
+  // The simulated checkout page of the fake gateway (PAYMENT_GATEWAY_FAKE=1, never in production): "Pay" and "Fail"
+  // fire the same webhook handler a real provider's event would reach, so the whole flow runs without Stripe.
+  app.get("/api/public/fake-pay/:sessionId", (req: Request, res: Response) => {
+    const session = isFakeGatewayOn() ? getFakeSession(req.params.sessionId) : undefined;
+    if (!session) return res.status(404).type("text/plain").send("Not found");
+    // Helmet's no-referrer makes the browser send "Origin: null" on the form post, which CORS refuses.
+    res.setHeader("Referrer-Policy", "same-origin");
+    res.type("html").send(fakeCheckoutPage(req.params.sessionId, session));
+  });
+  const fakeOutcome = (kind: "pay" | "fail") =>
+    asyncHandler(async (req: Request, res: Response) => {
+      const sessionId = req.params.sessionId;
+      const session = isFakeGatewayOn() ? getFakeSession(sessionId) : undefined;
+      if (!session) return res.status(404).type("text/plain").send("Not found");
+      const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const minor = Math.round(session.amount * 100);
+      const object = {
+        id: sessionId,
+        object: "checkout.session",
+        payment_status: kind === "pay" ? "paid" : "unpaid",
+        payment_intent: `pi_fake_${sessionId.slice(-10)}`,
+        amount_total: minor,
+        currency: session.currency.toLowerCase(),
+        metadata: { kind: "invoice", invoiceId: session.invoiceId, ...(session.fakeRate ? { fakeRate: String(session.fakeRate) } : {}) },
+      };
+      await handleConnectEvent({
+        id: `evt_fake_${stamp}`,
+        type: kind === "pay" ? "checkout.session.completed" : "checkout.session.expired",
+        account: session.accountId,
+        data: { object },
+      });
+      if (kind === "fail") session.expired = true;
+      const target = kind === "pay" ? session.successUrl : session.cancelUrl;
+      res.redirect(303, target);
+    });
+  app.post("/api/public/fake-pay/:sessionId/pay", fakeOutcome("pay"));
+  app.post("/api/public/fake-pay/:sessionId/fail", fakeOutcome("fail"));
 
   app.get(
     base,

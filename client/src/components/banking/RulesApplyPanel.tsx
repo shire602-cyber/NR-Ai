@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import type { BankAccount, BankTransaction, RuleApplyResult, RulePreviewItem } from "@/lib/banking-api-types";
 import { messages } from "./RulesApplyPanel.i18n";
 import { messages as common } from "./BankingCommon.i18n";
@@ -119,7 +120,7 @@ export function RulesApplyPanel({ companyId, bankAccounts }: { companyId: string
                               {tx?.description ?? p.transactionId.slice(0, 8)}
                             </p>
                             <p className="text-xs text-muted-foreground flex gap-2 flex-wrap">
-                              {tx && <span>{formatDate(tx.transactionDate, locale)}</span>}
+                              {tx && <span>{formatCalendarDate(tx.transactionDate, locale, "short")}</span>}
                               {tx && (
                                 <span dir="ltr" className={`font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
                                   {formatCurrency(tx.amount, currencyOf(p.transactionId), locale)}

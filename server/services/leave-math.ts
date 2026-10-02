@@ -5,8 +5,8 @@
 //   - the leave year is the calendar year; carry-forward is min(the type's maximum, last year's closing);
 //   - sick leave pays in tiers over the calendar year (Art. 31): the first 15 days full, the next 30 half, the
 //     rest unpaid;
-//   - daily wage = basic / 30 (the Labour Law's own convention): an unpaid day deducts basic/30, a half-pay day
-//     basic/60.
+//   - the daily wage is the FULL monthly wage (basic plus allowances) / 30: an unpaid day deducts wage/30, a half-pay
+//     day wage/60, and sick-leave tiers use the same wage (Art. 31 speaks of wage, not basic).
 // Dates are YYYY-MM-DD strings (UAE calendar days).
 
 import Decimal from "decimal.js";
@@ -47,13 +47,19 @@ function completionDate(joinYmd: string, k: number): string {
   return ymdOf(year, month, Math.min(d, lastDayOfMonth(year, month)));
 }
 
-/** Whole service months completed on `asOfYmd`. */
+/** The last day of service month k: it is earned (credited) at the END of that month, not a month later. */
+function creditDate(joinYmd: string, k: number): string {
+  const completion = completionDate(joinYmd, k);
+  return new Date(Date.parse(`${completion}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Service months earned by `asOfYmd`: month k counts on its last day (a join on 1 Jan: month 1 on 31 Jan). */
 export function completedServiceMonths(joinYmd: string, asOfYmd: string): number {
   if (asOfYmd < joinYmd) return 0;
   const a = parse(joinYmd);
   const b = parse(asOfYmd);
-  let months = (b.y - a.y) * 12 + (b.m - a.m);
-  while (months > 0 && completionDate(joinYmd, months) > asOfYmd) months--;
+  let months = (b.y - a.y) * 12 + (b.m - a.m) + 1;
+  while (months > 0 && creditDate(joinYmd, months) > asOfYmd) months--;
   return Math.max(0, months);
 }
 
@@ -71,7 +77,7 @@ export function accruedInYear(type: LeaveTypeMath, joinYmd: string, year: number
   let total = new Decimal(0);
   const completed = completedServiceMonths(joinYmd, to);
   for (let k = 1; k <= completed; k++) {
-    if (completionDate(joinYmd, k) >= yearStart) total = total.plus(accrualRateForServiceMonth(k, type.annualDays));
+    if (creditDate(joinYmd, k) >= yearStart) total = total.plus(accrualRateForServiceMonth(k, type.annualDays));
   }
   return r2(total);
 }
@@ -98,6 +104,11 @@ export function leaveBalance(args: {
   /** Approved days falling in a calendar year. */
   takenInYear: (year: number) => number;
   overrides: Map<number, YearOverride>;
+  /**
+   * The first calendar year the company has records in this system. Leave earned before it is not known, so nothing is
+   * carried into that year unless an opening balance was entered (no invented carry-forward).
+   */
+  trackingStartYear?: number;
 }): LeaveBalanceResult {
   const year = parse(args.asOfYmd).y;
   const joinYear = parse(args.joinYmd).y;
@@ -110,7 +121,7 @@ export function leaveBalance(args: {
     const override = args.overrides.get(y);
     let opening: number;
     if (override?.opening !== undefined && override.opening !== null) opening = Number(override.opening);
-    else if (y > joinYear) opening = r2(Math.min(args.type.carryForwardMaxDays, Math.max(0, closing(y - 1))));
+    else if (y > joinYear && (args.trackingStartYear === undefined || y > args.trackingStartYear)) opening = r2(Math.min(args.type.carryForwardMaxDays, Math.max(0, closing(y - 1))));
     else opening = 0;
     const accrued = accruedInYear(args.type, args.joinYmd, y, asOf);
     const adjustment = Number(override?.adjustment ?? 0);
@@ -141,8 +152,8 @@ export function sickTierSplit(daysBefore: number, days: number): { full: number;
   return { full: r2(slice(0, 15)), half: r2(slice(15, 45)), unpaid: r2(slice(45, Number.POSITIVE_INFINITY)) };
 }
 
-/** What a stretch of leave in one pay period takes off an employee's pay (at most 30 paid days, never more than basic). */
-export function leaveDeduction(args: { payPolicy: string; basic: number; days: number; sickDaysBefore: number }): {
+/** What a stretch of leave in one pay period takes off an employee's pay (at most 30 paid days, never more than the wage). */
+export function leaveDeduction(args: { payPolicy: string; wage: number; days: number; sickDaysBefore: number }): {
   unpaidDays: number;
   halfDays: number;
   deduction: number;
@@ -156,9 +167,9 @@ export function leaveDeduction(args: { payPolicy: string; basic: number; days: n
     unpaidDays = t.unpaid;
     halfDays = t.half;
   }
-  // Daily wage is basic / 30 and a month never costs more than 30 paid days: a 31-day unpaid month deducts the
-  // whole basic, not 31/30 of it.
+  // Daily wage is wage / 30 and a month never costs more than 30 paid days: a 31-day unpaid month deducts the
+  // whole wage, not 31/30 of it.
   const paidDayEquivalents = Decimal.min(30, new Decimal(unpaidDays).plus(new Decimal(halfDays).div(2)));
-  const deduction = r2(new Decimal(args.basic).div(30).times(paidDayEquivalents));
+  const deduction = r2(new Decimal(args.wage).div(30).times(paidDayEquivalents));
   return { unpaidDays, halfDays, deduction };
 }

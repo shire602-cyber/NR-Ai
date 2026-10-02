@@ -65,6 +65,16 @@ export function registerTeamRoutes(app: Express) {
         role: role || "employee",
       });
 
+      await recordAudit({
+        userId,
+        companyId,
+        action: "team.invite",
+        entityType: "company_user",
+        entityId: companyUser.id,
+        before: null,
+        after: { email: invitedUser.email, role: companyUser.role, newAccount: !invitedUser.passwordHash },
+        req,
+      });
       res.status(201).json(companyUser);
     })
   );

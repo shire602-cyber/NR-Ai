@@ -32,6 +32,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/lib/i18n";
+import {
+  ACCEPTED_UPLOAD_TYPES,
+  checkFileBeforeUpload,
+  downloadAuthenticatedFile,
+  fileProblemMessage,
+  readFileAsBase64,
+} from "@/lib/file-upload";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -47,7 +56,6 @@ import {
   Calendar,
   Loader2,
   Plus,
-  Eye,
   Filter,
   ArrowLeft,
 } from "lucide-react";
@@ -69,6 +77,8 @@ interface Document {
   reminderSent: boolean;
   tags: string | null;
   isArchived: boolean;
+  /** Visible to the client in the client portal (documents.shared_with_portal). */
+  sharedWithPortal?: boolean;
   uploadedBy: string | null;
   createdAt: string;
 }
@@ -100,6 +110,7 @@ export default function ClientDocuments() {
 
   const { id: clientId } = useParams<{ id: string }>();
   const { toast } = useToast();
+  const { locale } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -134,13 +145,12 @@ export default function ClientDocuments() {
       expiryDate: string;
       reminderDays: number;
       fileName: string;
-      fileSize: number;
       mimeType: string;
+      fileData: string;
     }) => {
-      return apiRequest("POST", `/api/companies/${clientId}/documents`, {
-        ...data,
-        fileUrl: `/uploads/${data.fileName}`,
-      });
+      // Same path as the Document Vault: the file travels as base64 and the server validates (type, magic bytes,
+      // 10 MB) and stores it privately under a company-scoped key. A client-supplied fileUrl is never sent.
+      return apiRequest("POST", `/api/companies/${clientId}/documents`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
@@ -171,6 +181,21 @@ export default function ClientDocuments() {
     },
   });
 
+  const shareMutation = useMutation({
+    mutationFn: ({ id, shared }: { id: string; shared: boolean }) =>
+      apiRequest("PATCH", `/api/documents/${id}/portal-sharing`, { sharedWithPortal: shared }),
+    onSuccess: (_doc, vars) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
+      toast({
+        title: vars.shared ? tr("sharedWithPortal") : tr("noLongerShared"),
+        description: vars.shared ? tr("clientCanNowSeeIt") : tr("clientCanNoLongerSeeIt"),
+      });
+    },
+    onError: (error: any) => {
+      toast({ variant: "destructive", title: tr("couldNotChangeSharing"), description: error?.message });
+    },
+  });
+
   const resetForm = () => {
     setNewDocument({
       name: "",
@@ -193,8 +218,27 @@ export default function ClientDocuments() {
       return;
     }
 
+    if (!selectedFile) {
+      toast({
+        variant: "destructive",
+        title: tr("missingInformation"),
+        description: tr("pleaseChooseAFileToUpload"),
+      });
+      return;
+    }
+    const problem = checkFileBeforeUpload(selectedFile);
+    if (problem) {
+      toast({
+        variant: "destructive",
+        title: tr("invalidFile"),
+        description: fileProblemMessage(problem, locale),
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
+      const fileData = await readFileAsBase64(selectedFile);
       await uploadMutation.mutateAsync({
         name: newDocument.name,
         nameAr: newDocument.nameAr,
@@ -202,12 +246,25 @@ export default function ClientDocuments() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || "document.pdf",
-        fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || "application/pdf",
+        fileName: selectedFile.name,
+        mimeType: selectedFile.type || "application/octet-stream",
+        fileData,
       });
+    } catch (error: any) {
+      // Server rejections are toasted by the mutation; this covers read errors.
+      if (!uploadMutation.isError) {
+        toast({ variant: "destructive", title: tr("uploadFailed"), description: error?.message });
+      }
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDownload = async (doc: Document) => {
+    try {
+      await downloadAuthenticatedFile(`/api/documents/${doc.id}/download`, doc.fileName);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: tr("downloadFailed"), description: error?.message });
     }
   };
 
@@ -365,6 +422,7 @@ export default function ClientDocuments() {
                     <TableHead>{tr("expiryDate")}</TableHead>
                     <TableHead>{tr("status")}</TableHead>
                     <TableHead>{tr("uploadDate")}</TableHead>
+                    <TableHead>{tr("shareWithPortal")}</TableHead>
                     <TableHead className="text-end">{tr("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -424,25 +482,27 @@ export default function ClientDocuments() {
                           )}
                         </TableCell>
                         <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={doc.sharedWithPortal === true}
+                              disabled={shareMutation.isPending}
+                              onCheckedChange={(shared) => shareMutation.mutate({ id: doc.id, shared })}
+                              aria-label={tr("shareWithPortal")}
+                              data-testid={`switch-share-portal-${doc.id}`}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {doc.sharedWithPortal === true ? tr("shared") : tr("private")}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-end">
                           <div className="flex justify-end gap-2">
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => window.open(doc.fileUrl, "_blank")}
-                              data-testid={`button-view-${doc.id}`}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                                const link = document.createElement("a");
-                                link.href = doc.fileUrl;
-                                link.download = doc.fileName;
-                                link.click();
-                              }}
+                              onClick={() => handleDownload(doc)}
+                              aria-label={tr("download")}
                               data-testid={`button-download-${doc.id}`}
                             >
                               <Download className="w-4 h-4" />
@@ -559,7 +619,7 @@ export default function ClientDocuments() {
               <Label>{tr("file")}</Label>
               <Input
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept={ACCEPTED_UPLOAD_TYPES}
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-document-file"
               />

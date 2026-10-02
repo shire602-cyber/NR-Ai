@@ -95,23 +95,34 @@ export function calculateGratuityForEmployee(opts: {
     };
   }
 
+  // The last day of service counts as a day worked, so service runs up to the day AFTER the end date.
+  const serviceEnd = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+
   // Step 1: completed years via anniversary walk (calendar-correct).
   let cursor = new Date(joinDate);
   let completedYears = 0;
   while (true) {
     const next = new Date(cursor);
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getTime() > endDate.getTime()) break;
+    next.setUTCFullYear(next.getUTCFullYear() + 1);
+    if (next.getTime() > serviceEnd.getTime()) break;
     cursor = next;
     completedYears++;
   }
 
-  // Step 2: trailing partial-year days.
+  // Step 2: the part of a year after the last anniversary, on the 30-day-month convention the Labour Law uses:
+  // whole calendar months plus remaining days / 30, over 12 (3 years 6 months = 3.5, not 3 + 183/365).
+  let partMonths = (serviceEnd.getUTCFullYear() - cursor.getUTCFullYear()) * 12 + (serviceEnd.getUTCMonth() - cursor.getUTCMonth());
+  if (serviceEnd.getUTCDate() < cursor.getUTCDate()) partMonths -= 1;
+  partMonths = Math.max(0, partMonths);
+  const afterMonths = new Date(cursor);
+  afterMonths.setUTCMonth(afterMonths.getUTCMonth() + partMonths);
   const msPerDay = 1000 * 60 * 60 * 24;
-  const trailingDays = Math.max(0, Math.floor((endDate.getTime() - cursor.getTime()) / msPerDay));
+  const partDays = Math.max(0, Math.round((serviceEnd.getTime() - afterMonths.getTime()) / msPerDay));
+  const trailingDays = partMonths * 30 + partDays;
+  const trailingYears = Math.min(1, trailingDays / 360);
 
   // Total continuous-service expressed for display.
-  const yearsOfService = completedYears + trailingDays / 365;
+  const yearsOfService = completedYears + trailingYears;
 
   if (yearsOfService < 1) {
     return {
@@ -141,7 +152,7 @@ export function calculateGratuityForEmployee(opts: {
   if (trailingDays > 0) {
     const nextYearNumber = completedYears + 1; // 1-indexed
     const ratePerYear = nextYearNumber <= 5 ? 21 : 30;
-    const partial = (trailingDays / 365) * ratePerYear;
+    const partial = trailingYears * ratePerYear;
     if (nextYearNumber <= 5) firstFiveDays += partial;
     else afterFiveDays += partial;
   }

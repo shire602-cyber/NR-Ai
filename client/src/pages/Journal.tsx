@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { accountName } from "@/lib/account-name";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Link } from "wouter";
@@ -79,6 +81,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { approvalFeedback, failureToast } from "@/lib/approval-feedback";
 import { ApiError } from "@/lib/queryClient";
 import { isPendingApprovalBody } from "@/lib/purchasing-hr";
+import { ListPager } from "@/components/ListPager";
+import { pageView } from "@/lib/list-paging";
 import { messages as pageMessages } from "./Journal.i18n";
 
 const journalLineSchema = z.object({
@@ -186,6 +190,9 @@ export default function Journal() {
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
+  const [journalPage, setJournalPage] = useState(0);
+  const [journalPageSize, setJournalPageSize] = useState<number>(25);
+  const journalView = pageView(entries?.length ?? 0, journalPage, journalPageSize);
   const approvalProgress = useApprovalProgress(
     selectedCompanyId ?? undefined,
     "manual_journal",
@@ -196,7 +203,7 @@ export default function Journal() {
     resolver: zodResolver(journalSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       memo: "",
       lines: [
         { accountId: "", debit: 0, credit: 0 },
@@ -230,7 +237,7 @@ export default function Journal() {
       setEditingEntry(null);
       form.reset({
         companyId: selectedCompanyId,
-        date: new Date(),
+        date: parseYmd(todayYmd()),
         memo: "",
         lines: [
           { accountId: "", debit: 0, credit: 0 },
@@ -274,7 +281,7 @@ export default function Journal() {
       setEditingEntry(null);
       form.reset({
         companyId: selectedCompanyId,
-        date: new Date(),
+        date: parseYmd(todayYmd()),
         memo: "",
         lines: [
           { accountId: "", debit: 0, credit: 0 },
@@ -378,7 +385,7 @@ export default function Journal() {
       setEditingEntry(fullEntry);
       form.reset({
         companyId: fullEntry.companyId,
-        date: new Date(fullEntry.date),
+        date: (pickerDate(fullEntry.date) as Date),
         memo: fullEntry.memo || "",
         lines: fullEntry.lines?.map((line: any) => ({
           accountId: line.accountId,
@@ -467,7 +474,7 @@ export default function Journal() {
             setEditingEntry(null);
             form.reset({
               companyId: selectedCompanyId,
-              date: new Date(),
+              date: parseYmd(todayYmd()),
               memo: "",
               lines: [
                 { accountId: "", debit: 0, credit: 0 },
@@ -508,7 +515,7 @@ export default function Journal() {
                             >
                               <CalendarIcon className="me-2 h-4 w-4" />
                               {field.value ? (
-                                format(field.value, "PPP")
+                                formatCalendarDate(field.value, locale)
                               ) : (
                                 <span>{tr("pickADate")}</span>
                               )}
@@ -726,9 +733,12 @@ export default function Journal() {
       {isLoading ? (
         <CardListSkeleton count={4} />
       ) : entries && entries.length > 0 ? (
+        <>
+        <ListPager view={journalView} pageSize={journalPageSize} cap={1000} testId="journal-pager" onPage={setJournalPage} onPageSize={(n) => { setJournalPageSize(n); setJournalPage(0); }} />
         <VirtualList
-          items={entries as any[]}
+          items={(entries as any[]).slice(journalView.start, journalView.end)}
           estimateSize={220}
+          threshold={100000}
           height={Math.min(900, Math.max(600, (entries as any[]).length * 220))}
           getKey={(entry) => entry.id}
           className="space-y-4"
@@ -946,7 +956,7 @@ export default function Journal() {
                           <span dir="ltr" className="font-mono text-xs text-muted-foreground">
                             {line.account?.code}
                           </span>
-                          <span>{line.account?.nameEn}</span>
+                          <span>{accountName(line.account, locale)}</span>
                         </div>
                         <div className="col-span-3 text-end font-mono">
                           {line.debit > 0 ? formatNumber(line.debit, locale) : "-"}
@@ -962,6 +972,8 @@ export default function Journal() {
             );
           }}
         />
+        <ListPager view={journalView} pageSize={journalPageSize} cap={1000} testId="journal-pager-bottom" onPage={setJournalPage} onPageSize={(n) => { setJournalPageSize(n); setJournalPage(0); }} />
+        </>
       ) : (
         <Card>
           <CardContent className="p-0">

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { isOwnCompanyOwner } from "../services/year-end.service";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
@@ -11,7 +12,6 @@ import {
   aiValidation,
   getCloseHistory,
 } from "../services/month-end.service";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { findFiledVatReturnsCoveringMonth } from "../services/vat-filing.service";
 
 /** A reason of at least this many characters is mandatory to unlock a month covered by a filed VAT return. */
@@ -67,7 +67,7 @@ export function registerMonthEndRoutes(app: Express) {
 
   /**
    * POST /api/companies/:companyId/month-end/generate-closing-entries
-   * Generate and post closing journal entries for the period.
+   * A month-end close posts NO closing entries (the year-end does, once, for its own year): answers 200 with posted: false.
    * Body: { periodStart: string, periodEnd: string }
    */
   app.post(
@@ -88,10 +88,7 @@ export function registerMonthEndRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // generateClosingEntries posts a JE on periodEnd. Re-running it inside an
-      // already-locked period would silently mutate locked-period totals.
-      await assertPeriodNotLocked(companyId, periodEnd);
-
+      // A month close posts no closing entries (month-end.service.ts): nothing can touch a locked period here.
       const entry = await generateClosingEntries(companyId, periodStart, periodEnd, userId);
       res.json(entry);
     })
@@ -217,8 +214,13 @@ export function registerMonthEndRoutes(app: Express) {
       // firm_owner only — admins also allowed for support, but firm_admin is not
       // sufficient. This mirrors the elevated-permission pattern used for
       // financial-control actions elsewhere.
-      if (!req.user!.isAdmin && req.user!.firmRole !== "firm_owner") {
-        return res.status(403).json({ message: "Only firm owners can unlock periods" });
+      // The company's own owner may unlock a company that is not firm-managed, with a stated reason.
+      const ownOwner = await isOwnCompanyOwner(userId, companyId);
+      if (!req.user!.isAdmin && req.user!.firmRole !== "firm_owner" && !ownOwner) {
+        return res.status(403).json({ message: "Only the company owner (or a firm owner for a firm-managed company) can unlock periods" });
+      }
+      if (ownOwner && !req.user!.isAdmin && req.user!.firmRole !== "firm_owner" && (typeof reason !== "string" || reason.trim().length < UNLOCK_REASON_MIN_LENGTH)) {
+        return res.status(400).json({ message: `A reason of at least ${UNLOCK_REASON_MIN_LENGTH} characters is required to unlock a period.`, code: "UNLOCK_REASON_REQUIRED" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

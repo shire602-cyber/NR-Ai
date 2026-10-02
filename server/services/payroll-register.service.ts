@@ -18,6 +18,8 @@ export interface RegisterRow {
   other: number;
   overtime: number;
   gross: number;
+  /** Every deduction together (sundry, employee pension, leave, loan): gross - totalDeductions = net. */
+  totalDeductions: number;
   leaveDeduction: number;
   loanDeduction: number;
   deductions: number;
@@ -32,7 +34,7 @@ export interface RegisterRow {
 export type RegisterTotals = Omit<RegisterRow, "employeeId" | "employeeNumber" | "employeeName" | "department">;
 
 const NUMERIC_KEYS = [
-  "basic", "housing", "transport", "other", "overtime", "gross", "leaveDeduction", "loanDeduction", "deductions",
+  "basic", "housing", "transport", "other", "overtime", "gross", "totalDeductions", "leaveDeduction", "loanDeduction", "deductions",
   "pensionEmployee", "net", "pensionEmployer", "gratuityAccrual", "unpaidLeaveDays", "halfPayLeaveDays",
 ] as const;
 
@@ -66,6 +68,7 @@ export async function buildPayrollRegister(run: { id: string; company_id: string
   const rows: RegisterRow[] = items.rows.map((r: any) => ({
     ...r,
     gross: r2(new Decimal(r.basic).plus(r.housing).plus(r.transport).plus(r.other).plus(r.overtime)),
+    totalDeductions: r2(new Decimal(r.deductions).plus(r.pensionEmployee).plus(r.leaveDeduction).plus(r.loanDeduction)),
   }));
   const totals = totalsOf(rows);
 
@@ -91,12 +94,14 @@ export async function buildPayrollRegister(run: { id: string; company_id: string
     ];
     tieOut = { available: true, entryId: run.journal_entry_id, checks, ok: checks.every((c) => c.ok) };
   }
-  return { runId: run.id, periodMonth: run.period_month, periodYear: run.period_year, status: run.status, rows, totals, journalTieOut: tieOut };
+  // Only an approved (or paid) run is posted payroll; anything else is shown as a draft and never ties to the ledger.
+  const isDraft = run.status !== "approved" && run.status !== "paid";
+  return { runId: run.id, periodMonth: run.period_month, periodYear: run.period_year, status: run.status, isDraft, label: isDraft ? "draft" : "approved", rows, totals, journalTieOut: tieOut };
 }
 
 const CSV_COLUMNS: Array<[keyof RegisterRow, string]> = [
   ["employeeNumber", "Employee no"], ["employeeName", "Employee"], ["department", "Department"], ["basic", "Basic"], ["housing", "Housing"],
-  ["transport", "Transport"], ["other", "Other allowance"], ["overtime", "Overtime"], ["gross", "Gross"], ["leaveDeduction", "Leave deduction"],
+  ["transport", "Transport"], ["other", "Other allowance"], ["overtime", "Overtime"], ["gross", "Gross"], ["totalDeductions", "Total deductions"], ["leaveDeduction", "Leave deduction"],
   ["loanDeduction", "Loan deduction"], ["deductions", "Other deductions"], ["pensionEmployee", "Pension (employee)"], ["net", "Net pay"],
   ["pensionEmployer", "Pension (employer)"], ["gratuityAccrual", "Gratuity accrual"], ["unpaidLeaveDays", "Unpaid leave days"], ["halfPayLeaveDays", "Half-pay leave days"],
 ];

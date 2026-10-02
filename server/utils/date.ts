@@ -152,3 +152,38 @@ export function normalizeCalendarColumns<R extends Record<string, any>>(
   }
   return out as R;
 }
+
+/**
+ * THE document-date contract (Phase 9, teardown F1). Every document or posting date a client sends is accepted as
+ *  - a calendar day "YYYY-MM-DD" (what the pickers should send), or
+ *  - an ISO instant ("2026-09-30T20:00:00.000Z"), which is converted to the UAE calendar day it falls on, or
+ *  - a datetime with no offset, which keeps its own date part,
+ * and is stored as UTC midnight of that calendar day. Documents are `timestamp without time zone` columns read as
+ * `date::date` by the ledger, the VAT engines, the P&L and the ageing, so storing the day this way makes all of them
+ * read the same UAE day. Returns null for anything that is not a real date (2026-02-30, "abc", empty).
+ */
+export function parseCalendarDay(value: unknown): Date | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text === "") return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+    const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(text) && text.length > 10;
+    if (m && !hasOffset) {
+      const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === `${m[1]}-${m[2]}-${m[3]}` ? d : null;
+    }
+  }
+  const instant = value instanceof Date ? value : typeof value === "string" || typeof value === "number" ? new Date(value) : null;
+  if (!instant || Number.isNaN(instant.getTime())) return null;
+  return uaeCalendarDate(instant);
+}
+
+/** Same as parseCalendarDay but today (UAE) when nothing was sent. */
+export function parseCalendarDayOrToday(value: unknown): Date | null {
+  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return uaeCalendarDate();
+  return parseCalendarDay(value);
+}
+
+/** 'YYYY-MM-DD' of a stored or parsed calendar date (its UTC date part). */
+export const calendarDayYmd = (d: Date): string => d.toISOString().slice(0, 10);

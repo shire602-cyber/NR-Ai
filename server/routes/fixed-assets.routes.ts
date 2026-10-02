@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { dubaiDayTextSql } from "../services/vat-dubai-day";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -167,7 +168,8 @@ export function registerFixedAssetRoutes(app: Express) {
 
       const nbv = cost - 0; // Initial NBV = cost (no depreciation yet)
       const needsCapJe = !paymentAccountId;
-      const lifeYears = isLand ? null : usefulLifeYears;
+      // land is not depreciated; the column is NOT NULL, so 0 stands for "no useful life" (category land skips every month)
+      const lifeYears = isLand ? 0 : usefulLifeYears;
 
       const result = await pool.query(
         `INSERT INTO fixed_assets (company_id, asset_name, asset_name_ar, asset_number, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, accumulated_depreciation, net_book_value, location, serial_number, notes, needs_capitalization_je)
@@ -472,7 +474,7 @@ export function registerFixedAssetRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const existing = await pool.query(`SELECT *, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day FROM fixed_assets WHERE id = $1`, [id]);
+      const existing = await pool.query(`SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1`, [id]);
       if (existing.rows.length === 0) {
         return res.status(404).json({ message: "Fixed asset not found" });
       }
@@ -573,7 +575,7 @@ export function registerFixedAssetRoutes(app: Express) {
       let outcome: DepreciateThroughResult;
       try {
         await client.query("BEGIN");
-        const locked = await client.query(`SELECT *, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day FROM fixed_assets WHERE id = $1 FOR UPDATE`, [id]);
+        const locked = await client.query(`SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1 FOR UPDATE`, [id]);
         outcome = await depreciateThrough(client, {
           asset: locked.rows[0],
           toYear: reqYear,
@@ -581,7 +583,8 @@ export function registerFixedAssetRoutes(app: Express) {
           userId,
           depExpenseAccountId: depExpenseAccount.id,
           accDepAccountId: accDepAccount.id,
-          lockedPolicy: "skip",
+          mode: "run",
+          confirmBackdated: req.body?.confirmBackdated === true,
         });
         if (!outcome.target) {
           await client.query("ROLLBACK");
@@ -614,7 +617,8 @@ export function registerFixedAssetRoutes(app: Express) {
         journalEntryId: outcome.target.journalEntryId,
         scheduleId: outcome.target.scheduleId,
         catchUp: outcome.posted.filter((m) => m !== outcome.target),
-        skippedLocked: outcome.skippedLocked,
+        // months that fall in a locked or closed period: one labelled journal dated the first open day
+        priorPeriodCatchUp: outcome.catchUp,
       });
     })
   );
@@ -669,7 +673,7 @@ export function registerFixedAssetRoutes(app: Express) {
       try {
         await client.query("BEGIN");
         const assetsResult = await client.query(
-          `SELECT *, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day FROM fixed_assets WHERE company_id = $1 AND status = 'active' ORDER BY purchase_date, id FOR UPDATE`,
+          `SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE company_id = $1 AND status = 'active' ORDER BY purchase_date, id FOR UPDATE`,
           [companyId]
         );
 
@@ -696,14 +700,15 @@ export function registerFixedAssetRoutes(app: Express) {
             userId,
             depExpenseAccountId: depExpenseAccount.id,
             accDepAccountId: accDepAccount.id,
-            lockedPolicy: "skip",
+            mode: "run",
+            confirmBackdated: req.body?.confirmBackdated === true,
           });
 
-          if (targetAlreadyPosted && outcome.posted.length === 0) {
+          if (targetAlreadyPosted && outcome.posted.length === 0 && !outcome.catchUp) {
             results.push({ assetId: asset.id, assetName: asset.asset_name, skipped: true, reason: "Already depreciated for this period", existingAmount: already.rows[0].amount });
             continue;
           }
-          if (!outcome.target && outcome.posted.length === 0) {
+          if (!outcome.target && outcome.posted.length === 0 && !outcome.catchUp) {
             const nonDep = isNonDepreciableCategory(asset.category) || asset.useful_life_years == null;
             results.push({
               assetId: asset.id,
@@ -718,15 +723,15 @@ export function registerFixedAssetRoutes(app: Express) {
           results.push({
             assetId: asset.id,
             assetName: asset.asset_name,
-            monthlyDepreciation: shown.amount,
-            prorationFactor: shown.prorationFactor,
+            monthlyDepreciation: shown?.amount ?? outcome.catchUp?.total ?? 0,
+            prorationFactor: shown?.prorationFactor ?? 1,
             newAccumulatedDepreciation: outcome.accumulated,
             newNetBookValue: outcome.netBookValue,
-            journalEntryId: shown.journalEntryId,
-            scheduleId: shown.scheduleId,
-            monthsPosted: outcome.posted.length,
+            journalEntryId: shown?.journalEntryId ?? outcome.catchUp?.journalEntryId,
+            scheduleId: shown?.scheduleId,
+            monthsPosted: outcome.posted.length + (outcome.catchUp?.months.length ?? 0),
             catchUp: outcome.posted.filter((m) => m !== outcome.target),
-            skippedLocked: outcome.skippedLocked,
+            priorPeriodCatchUp: outcome.catchUp,
           });
         }
 
@@ -771,7 +776,7 @@ export function registerFixedAssetRoutes(app: Express) {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      const existing = await pool.query(`SELECT *, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day FROM fixed_assets WHERE id = $1`, [id]);
+      const existing = await pool.query(`SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1`, [id]);
       if (existing.rows.length === 0) {
         return res.status(404).json({ message: "Fixed asset not found" });
       }
@@ -869,7 +874,7 @@ export function registerFixedAssetRoutes(app: Express) {
         // Lock the asset row so concurrent depreciation/dispose calls serialise
         // here rather than racing on accumulated_depreciation.
         const lockedAsset = await client.query(
-          `SELECT *, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_day FROM fixed_assets WHERE id = $1 FOR UPDATE`,
+          `SELECT *, ${dubaiDayTextSql("purchase_date")} AS purchase_day FROM fixed_assets WHERE id = $1 FOR UPDATE`,
           [id]
         );
         if (lockedAsset.rows.length === 0) {
@@ -913,13 +918,14 @@ export function registerFixedAssetRoutes(app: Express) {
             userId,
             depExpenseAccountId: depExpenseAccount.id,
             accDepAccountId: accDepAccount!.id,
-            lockedPolicy: "throw",
-            memoSuffix: "catch-up",
+            // nothing is backdated: one journal, dated the disposal date, for every month not yet posted
+            mode: "disposal",
+            disposalDate: dispDate,
           });
-          for (const m of caught.posted) {
-            catchUpEntries.push({ year: m.year, month: m.month, amount: m.amount, journalEntryId: m.journalEntryId });
+          for (const m of caught.catchUp?.months ?? []) {
+            catchUpEntries.push({ year: m.year, month: m.month, amount: m.amount, journalEntryId: caught.catchUp!.journalEntryId });
           }
-          if (caught.posted.length > 0) {
+          if (caught.catchUp) {
             workingAsset = { ...workingAsset, accumulated_depreciation: caught.accumulated, net_book_value: caught.netBookValue };
           }
         }

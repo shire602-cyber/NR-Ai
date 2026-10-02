@@ -23,6 +23,7 @@ import {
   EmailNotConfiguredError,
 } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
+import { bilingualSubject, bilingualText, formatEmailDate, localized } from "../services/email-i18n";
 import { recordAudit } from "../services/audit.service";
 
 const logger = createLogger("firm-comms-routes");
@@ -566,22 +567,17 @@ export function registerFirmCommsRoutes(app: Express): void {
           continue;
         }
 
-        const dueDate = new Date(target.dueDate).toLocaleDateString("en-AE", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
+        // Arabic, then English: the firm's own reminder, not a template the firm wrote.
+        const enDate = formatEmailDate(target.dueDate, "en");
+        const arDate = formatEmailDate(target.dueDate, "ar");
+        const subject = bilingualSubject({
+          en: localized("vatReminderSubject", { date: enDate }).en,
+          ar: localized("vatReminderSubject", { date: arDate }).ar,
         });
-        const subject = `VAT Return Reminder — Due ${dueDate}`;
-        const body = [
-          `Dear ${target.companyName},`,
-          "",
-          `This is a reminder that your VAT return is due on ${dueDate}. Please ensure all documents are submitted to our team promptly.`,
-          "",
-          "If you have any questions, please do not hesitate to contact us.",
-          "",
-          "Kind regards,",
-          "NR Accounting Team",
-        ].join("\n");
+        const body = bilingualText({
+          en: localized("vatReminderBody", { name: target.companyName, date: enDate }).en,
+          ar: localized("vatReminderBody", { name: target.companyName, date: arDate }).ar,
+        });
 
         const result = await sendEmail(target.contactEmail, subject, body, {
           fromName: "NR Accounting",

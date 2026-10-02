@@ -19,6 +19,11 @@ import {
   recordApprovalStep,
   resolveActor,
 } from "../services/approval-gate.service";
+import { parseCalendarDay } from "../utils/date";
+import { db } from "../db";
+import { eq, sql } from "drizzle-orm";
+import { purchaseOrders } from "../../shared/schema";
+import { assertProductsOfCompany, receivePurchaseOrderStockInTx } from "../services/purchase-stock.service";
 
 const logger = createLogger("purchase-orders-routes");
 
@@ -27,8 +32,8 @@ function normalizePoDates<T extends { date?: unknown; expectedDeliveryDate?: unk
   data: T
 ): T {
   const out: any = { ...data };
-  if (out.date) out.date = new Date(out.date);
-  if (out.expectedDeliveryDate) out.expectedDeliveryDate = new Date(out.expectedDeliveryDate);
+  if (out.date) out.date = parseCalendarDay(out.date) ?? new Date(out.date);
+  if (out.expectedDeliveryDate) out.expectedDeliveryDate = parseCalendarDay(out.expectedDeliveryDate) ?? new Date(out.expectedDeliveryDate);
   return out;
 }
 
@@ -123,6 +128,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       // totals are computed from exactly what is persisted (and an oversized
       // value is a clean 400, not a Postgres overflow).
       const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
+      if (Array.isArray(lines)) await assertProductsOfCompany(companyId, lines.map((l: any) => l.productId));
 
       const po = await storage.createPurchaseOrder(
         normalizePoDates({ ...poData, ...calculateDocumentTotals(lines), companyId, vendorId: vendor.vendorId, status: "draft", createdBy: userId } as any)
@@ -187,6 +193,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       }
 
       const lines = Array.isArray(rawLines) ? normalizeDocumentLines(rawLines) : rawLines;
+      if (Array.isArray(lines)) await assertProductsOfCompany(po.companyId, lines.map((l: any) => l.productId));
 
       // An approved order whose lines or amounts change is no longer what was approved: it goes back to draft
       // and needs approving (and, under a rule, the approval steps) again before it can be received.
@@ -331,7 +338,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
 
         const doc = await loadApprovalDocument("purchase_order", id);
         const actor = await resolveActor((req as any).user, current.companyId);
-        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: current.status }) : ({ kind: "none" } as const);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: current.status, acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
 
         if (step.kind === "step" && !step.isFinal) {
           const request = await recordApprovalStep(tx, step, actor);
@@ -394,12 +401,26 @@ export function registerPurchaseOrderRoutes(app: Express) {
         });
       }
 
-      const updated = await storage.updatePurchaseOrder(id, {
-        status: "received",
+      // The goods come into stock (Dr 1070 / Cr 2015 GRNI with costing on) in the same transaction that marks the
+      // order received, so a refused receipt leaves the order open and an order is never received twice.
+      const received = await db.transaction(async (tx: any) => {
+        const locked = (await tx.execute(sql`SELECT status FROM purchase_orders WHERE id = ${id} FOR UPDATE`)) as any;
+        const current = (locked.rows ?? locked)[0]?.status;
+        if (current === "received") return { already: true as const };
+        const movements = await receivePurchaseOrderStockInTx(tx, po, userId, req.body?.date);
+        const [row] = await tx
+          .update(purchaseOrders)
+          .set({ status: "received", updatedAt: new Date() })
+          .where(eq(purchaseOrders.id, id))
+          .returning();
+        return { already: false as const, row, movements };
       });
+      if (received.already) {
+        return res.status(400).json({ message: "Purchase order is already received", code: "ALREADY_RECEIVED" });
+      }
 
-      logger.info({ purchaseOrderId: id }, "Purchase order received");
-      res.json({ ...updated, message: "Purchase order received" });
+      logger.info({ purchaseOrderId: id, stockMovements: received.movements }, "Purchase order received");
+      res.json({ ...received.row, stockMovements: received.movements, message: "Purchase order received" });
     })
   );
 

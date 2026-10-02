@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd } from "@/lib/calendar-date";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ interface Props {
   onDone: () => void;
 }
 
-const todayYmd = () => new Date().toISOString().slice(0, 10);
 
 /** How much of each line to invoice (a draft invoice) or deliver (a delivery note). Quantities start at what is left. */
 export function SalesOrderQuantitiesDialog({ companyId, order, mode, onClose, onDone }: Props) {

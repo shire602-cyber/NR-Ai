@@ -22,6 +22,7 @@ export const SCOPE_RESOURCES = ["contacts", "items", "invoices", "bills", "payme
 export const ALL_SCOPES: readonly string[] = [
   ...SCOPE_RESOURCES.flatMap((r) => [`read:${r}`, `write:${r}`]),
   "read:reports",
+  "read:accounts",
 ];
 
 function randomChars(n: number): string {

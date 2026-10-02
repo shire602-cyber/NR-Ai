@@ -59,8 +59,17 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
 import { messages as pageMessages } from "./Inventory.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
+import { Link } from "wouter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { formatDate } from "@/lib/format";
+import { todayYmd } from "@/lib/calendar-date";
+import { VAT_SUPPLY_CHOICES, vatChoiceOf, vatFieldsOf } from "@/lib/vat-choice";
 
 // ─── Schemas ──────────────────────────────────────────────
+
+const movementDay = (m: { movementDate?: string | Date | null; date?: string | Date | null; createdAt?: string | Date | null }) =>
+  (m.movementDate ?? m.date ?? m.createdAt) as string | undefined;
 
 const productFormSchema = z.object({
   name: z.string().min(1, pageMessages.marker("productNameIsRequired")),
@@ -74,6 +83,11 @@ const productFormSchema = z.object({
     .optional()
     .nullable(),
   vatRate: z.coerce.number().min(0).max(1, pageMessages.marker("vatRateMustBeBetween0")),
+  // 0% is two different things: zero-rated (box 4) or exempt (box 5). The rate alone cannot say which.
+  vatSupplyType: z.enum(["standard_rated", "zero_rated", "exempt"]).default("standard_rated"),
+  // Opening stock (new tracked products): what is on the shelf now and what it cost.
+  openingQuantity: z.coerce.number().int().min(0).optional().nullable(),
+  openingUnitCost: z.coerce.number().min(0).optional().nullable(),
   unit: z.string().min(1, pageMessages.marker("unitIsRequired")),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
   trackInventory: z.boolean(),
@@ -81,12 +95,20 @@ const productFormSchema = z.object({
 
 type ProductFormData = z.infer<typeof productFormSchema>;
 
-const movementFormSchema = z.object({
-  type: z.enum(["purchase", "adjustment", "return"]),
-  quantity: z.coerce.number().int().min(1, pageMessages.marker("quantityMustBeAtLeast1")),
-  unitCost: z.coerce.number().min(0).optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+const movementFormSchema = z
+  .object({
+    type: z.enum(["purchase", "adjustment", "return"]),
+    // Only a stock adjustment may be negative (a count that came out lower, damaged or lost goods).
+    quantity: z.coerce.number().int().refine((n) => n !== 0, pageMessages.marker("quantityMustBeAtLeast1")),
+    unitCost: z.coerce.number().min(0).optional().nullable(),
+    // The day the stock moved, as a calendar day (the GL date of the posting).
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    notes: z.string().optional().nullable(),
+  })
+  .refine((v) => v.type === "adjustment" || v.quantity > 0, {
+    path: ["quantity"],
+    message: pageMessages.marker("quantityMustBeAtLeast1"),
+  });
 
 type MovementFormData = z.infer<typeof movementFormSchema>;
 
@@ -97,7 +119,8 @@ export default function Inventory() {
 
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, company, isLoading: isLoadingCompany } = useDefaultCompany();
+  const salesTr = salesMessages.useT();
 
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -105,6 +128,7 @@ export default function Inventory() {
   const [stockProduct, setStockProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [postingPromptOpen, setPostingPromptOpen] = useState(false);
 
   // ─── Queries ──────────────────────────────────────────
 
@@ -132,6 +156,9 @@ export default function Inventory() {
       unitPrice: 0,
       costPrice: 0,
       vatRate: 0.05,
+      vatSupplyType: "standard_rated",
+      openingQuantity: 0,
+      openingUnitCost: 0,
       unit: "pcs",
       lowStockThreshold: 10,
       trackInventory: false,
@@ -143,7 +170,8 @@ export default function Inventory() {
     defaultValues: {
       type: "purchase",
       quantity: 1,
-      unitCost: 0,
+      unitCost: null,
+      date: todayYmd(),
       notes: "",
     },
   });
@@ -151,11 +179,13 @@ export default function Inventory() {
   // ─── Mutations ────────────────────────────────────────
 
   const createProductMutation = useMutation({
-    mutationFn: (data: ProductFormData) =>
+    mutationFn: (data: Partial<ProductFormData> & { currentStock?: number }) =>
       apiRequest("POST", `/api/companies/${companyId}/products`, data),
-    onSuccess: () => {
+    onSuccess: (_created, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       toast({ title: tr("productCreated"), description: tr("theProductHasBeenAddedSuccessfully") });
+      // A tracked product with the ledger switch off would hold stock the books never see: ask once, right now.
+      if (vars.trackInventory && !company?.inventoryCostingEnabled) setPostingPromptOpen(true);
       setProductDialogOpen(false);
       productForm.reset();
     },
@@ -167,8 +197,9 @@ export default function Inventory() {
   const updateProductMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ProductFormData> }) =>
       apiRequest("PATCH", `/api/products/${id}`, data),
-    onSuccess: () => {
+    onSuccess: (_updated, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
+      if (vars.data.trackInventory && !company?.inventoryCostingEnabled) setPostingPromptOpen(true);
       toast({
         title: tr("productUpdated"),
         description: tr("theProductHasBeenUpdatedSuccessfully"),
@@ -176,6 +207,18 @@ export default function Inventory() {
       setProductDialogOpen(false);
       setEditingProduct(null);
       productForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const enablePostingMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/companies/${companyId}`, { inventoryCostingEnabled: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({ title: salesTr("inventoryPostingOn") });
+      setPostingPromptOpen(false);
     },
     onError: (error: Error) => {
       toast({ title: tr("error"), description: error?.message, variant: "destructive" });
@@ -226,6 +269,9 @@ export default function Inventory() {
       unitPrice: 0,
       costPrice: 0,
       vatRate: 0.05,
+      vatSupplyType: "standard_rated",
+      openingQuantity: 0,
+      openingUnitCost: 0,
       unit: "pcs",
       lowStockThreshold: 10,
       trackInventory: false,
@@ -243,6 +289,9 @@ export default function Inventory() {
       unitPrice: product.unitPrice,
       costPrice: product.costPrice || 0,
       vatRate: product.vatRate,
+      vatSupplyType: vatChoiceOf(product.vatRate, (product as { vatSupplyType?: string | null }).vatSupplyType),
+      openingQuantity: 0,
+      openingUnitCost: 0,
       unit: product.unit,
       lowStockThreshold: product.lowStockThreshold || 10,
       trackInventory: product.trackInventory ?? false,
@@ -252,20 +301,33 @@ export default function Inventory() {
 
   const handleOpenAddStockDialog = (product: Product) => {
     setStockProduct(product);
+    // The unit cost starts empty: stock leaves at the running average cost, and a purchase without a cost uses the item's cost price.
     movementForm.reset({
       type: "purchase",
       quantity: 1,
-      unitCost: product.costPrice || 0,
+      unitCost: null,
+      date: todayYmd(),
       notes: "",
     });
     setAddStockDialogOpen(true);
   };
 
   const handleProductSubmit = (data: ProductFormData) => {
+    // Opening stock only applies to a new tracked product.
+    const { openingQuantity, openingUnitCost, ...rest } = data;
     if (editingProduct) {
-      updateProductMutation.mutate({ id: editingProduct.id, data });
+      updateProductMutation.mutate({ id: editingProduct.id, data: rest });
     } else {
-      createProductMutation.mutate(data);
+      createProductMutation.mutate(
+        data.trackInventory && Number(openingQuantity) > 0
+          ? {
+              ...rest,
+              // The server brings stock in at the cost price: quantity is currentStock, the opening cost is the cost price.
+              currentStock: Number(openingQuantity),
+              costPrice: Number(openingUnitCost ?? 0) > 0 ? Number(openingUnitCost) : rest.costPrice,
+            }
+          : rest
+      );
     }
   };
 
@@ -307,8 +369,11 @@ export default function Inventory() {
 
   const getProductName = (productId: string): string => {
     const product = productsList.find((p) => p.id === productId);
-    return product?.name || tr("unknownProduct");
+    return (locale === "ar" && product?.nameAr ? product.nameAr : product?.name) || tr("unknownProduct");
   };
+
+  const hasTrackedProducts = productsList.some((p) => p.trackInventory);
+  const negativeStock = productsList.filter((p) => p.trackInventory && p.currentStock < 0);
 
   const filteredProducts = productsList.filter((product) => {
     if (!searchQuery) return true;
@@ -351,6 +416,28 @@ export default function Inventory() {
           <p className="text-muted-foreground mt-1">{tr("manageYourProductsAndTrackInventory")}</p>
         </div>
       </div>
+
+      {hasTrackedProducts && !company?.inventoryCostingEnabled && (
+        <Alert data-testid="banner-inventory-ledger-off">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{salesTr("inventoryLedgerOffTitle")}</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>{salesTr("inventoryLedgerOffBody")}</p>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/settings/company#inventory-posting" data-testid="link-inventory-setting">
+                {salesTr("inventoryLedgerOffLink")}
+              </Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {negativeStock.length > 0 && (
+        <Alert variant="destructive" data-testid="banner-negative-stock">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{salesTr("negativeStockTitle")}</AlertTitle>
+          <AlertDescription>{salesTr("negativeStockBody", { names: negativeStock.map((p) => (locale === "ar" && p.nameAr ? p.nameAr : p.name)).join(", ") })}</AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="products" className="space-y-4">
         <TabsList>
@@ -445,8 +532,16 @@ export default function Inventory() {
                             </TableCell>
                             <TableCell className="text-end">
                               <div className="flex items-center justify-end gap-2">
-                                {product.currentStock}
-                                {isLowStock && (
+                                <span className={product.currentStock < 0 ? "font-semibold text-destructive" : undefined} dir="ltr">
+                                  {product.currentStock}
+                                </span>
+                                {product.trackInventory && product.currentStock < 0 && (
+                                  <Badge variant="destructive" className="text-xs flex items-center gap-1" data-testid={`badge-negative-stock-${product.id}`}>
+                                    <AlertTriangle className="w-3 h-3" />
+                                    {salesTr("negativeStockBadge")}
+                                  </Badge>
+                                )}
+                                {isLowStock && product.currentStock >= 0 && (
                                   <Badge
                                     variant="destructive"
                                     className="text-xs flex items-center gap-1"
@@ -544,8 +639,9 @@ export default function Inventory() {
                       {movementsList.map((movement) => (
                         <TableRow key={movement.id}>
                           <TableCell className="whitespace-nowrap">
-                            {movement.createdAt
-                              ? format(new Date(movement.createdAt), "MMM dd, yyyy HH:mm")
+                            {/* The day the stock moved (movementDate), not the day it was typed in. */}
+                            {movementDay(movement)
+                              ? formatDate(movementDay(movement) as string, locale)
                               : "-"}
                           </TableCell>
                           <TableCell className="font-medium">
@@ -553,8 +649,10 @@ export default function Inventory() {
                           </TableCell>
                           <TableCell>{getMovementTypeBadge(movement.type)}</TableCell>
                           <TableCell className="text-end font-mono">
-                            {movement.type === "sale" ? "-" : "+"}
-                            {Math.abs(movement.quantity)}
+                            <span dir="ltr">
+                              {movement.type === "sale" || movement.quantity < 0 ? "-" : "+"}
+                              {Math.abs(movement.quantity)}
+                            </span>
                           </TableCell>
                           <TableCell className="text-end">
                             {movement.unitCost != null
@@ -721,22 +819,26 @@ export default function Inventory() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={productForm.control}
-                  name="vatRate"
+                  name="vatSupplyType"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{tr("vatRate")}</FormLabel>
                       <Select
-                        onValueChange={(v) => field.onChange(parseFloat(v))}
-                        value={String(field.value)}
+                        onValueChange={(v) => {
+                          field.onChange(v);
+                          productForm.setValue("vatRate", vatFieldsOf(v as (typeof VAT_SUPPLY_CHOICES)[number]).vatRate);
+                        }}
+                        value={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger data-testid="select-product-vat">
                             <SelectValue placeholder={tr("selectVatRate")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="0">{tr("n0Exempt")}</SelectItem>
-                          <SelectItem value="0.05">{tr("n5Standard")}</SelectItem>
+                          <SelectItem value="standard_rated">{tr("n5Standard")}</SelectItem>
+                          <SelectItem value="zero_rated">{salesTr("vatZeroRated")}</SelectItem>
+                          {/* Products store a rate only: exempt is chosen on the document line, where it is kept. */}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -783,6 +885,47 @@ export default function Inventory() {
                     </FormItem>
                   )}
                 />
+
+                {productForm.watch("trackInventory") && !company?.inventoryCostingEnabled && (
+                  <p className="col-span-2 text-xs text-warning" data-testid="hint-product-ledger-off">
+                    {salesTr("productLedgerOffHint")}{" "}
+                    <Link href="/settings/company#inventory-posting" className="underline">
+                      {salesTr("inventoryLedgerOffLink")}
+                    </Link>
+                  </p>
+                )}
+
+                {productForm.watch("trackInventory") && !editingProduct && (
+                  <>
+                    <FormField
+                      control={productForm.control}
+                      name="openingQuantity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{salesTr("openingQuantity")}</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="0" step="1" dir="ltr" {...field} value={field.value ?? ""} data-testid="input-opening-quantity" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={productForm.control}
+                      name="openingUnitCost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{salesTr("openingUnitCost")}</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="0" step="0.01" dir="ltr" {...field} value={field.value ?? ""} data-testid="input-opening-unit-cost" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <p className="col-span-2 text-xs text-muted-foreground">{salesTr("openingStockHelp")}</p>
+                  </>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
@@ -812,7 +955,7 @@ export default function Inventory() {
             <DialogTitle>{tr("addStock")}</DialogTitle>
             <DialogDescription>
               {stockProduct
-                ? tr("recordInventoryMovementFor", { name: stockProduct.name })
+                ? tr("recordInventoryMovementFor", { name: locale === "ar" && stockProduct.nameAr ? stockProduct.nameAr : stockProduct.name })
                 : tr("recordInventoryMovement")}
             </DialogDescription>
           </DialogHeader>
@@ -855,8 +998,36 @@ export default function Inventory() {
                   <FormItem>
                     <FormLabel>{t.quantity || tr("quantity")} *</FormLabel>
                     <FormControl>
-                      <Input type="number" min="1" step="1" {...field} />
+                      <Input
+                        type="number"
+                        min={movementForm.watch("type") === "adjustment" ? undefined : "1"}
+                        step="1"
+                        dir="ltr"
+                        {...field}
+                        data-testid="input-movement-quantity"
+                      />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {movementForm.watch("type") === "adjustment" && (
+                <p className="text-xs text-muted-foreground" data-testid="hint-negative-adjustment">
+                  {salesTr("negativeAdjustmentHint")}
+                </p>
+              )}
+
+              <FormField
+                control={movementForm.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{salesTr("movementDate")}</FormLabel>
+                    <FormControl>
+                      <Input type="date" dir="ltr" max={todayYmd()} {...field} data-testid="input-movement-date" />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">{salesTr("movementDateHelp")}</p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -873,10 +1044,17 @@ export default function Inventory() {
                         type="number"
                         step="0.01"
                         min="0"
+                        dir="ltr"
+                        placeholder={
+                          stockProduct?.trackInventory && Number(stockProduct.averageCost) > 0
+                            ? salesTr("averageCostPlaceholder", { cost: Number(stockProduct.averageCost).toFixed(2) })
+                            : undefined
+                        }
                         {...field}
                         value={field.value ?? ""}
                       />
                     </FormControl>
+                    <p className="text-xs text-muted-foreground">{salesTr("unitCostLeaveEmpty")}</p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -916,6 +1094,23 @@ export default function Inventory() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={postingPromptOpen} onOpenChange={setPostingPromptOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-inventory-posting">
+          <DialogHeader>
+            <DialogTitle>{salesTr("inventoryPromptTitle")}</DialogTitle>
+            <DialogDescription>{salesTr("inventoryPromptBody")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setPostingPromptOpen(false)}>
+              {salesTr("inventoryPromptLater")}
+            </Button>
+            <Button onClick={() => enablePostingMutation.mutate()} disabled={enablePostingMutation.isPending} data-testid="button-enable-inventory-posting">
+              {salesTr("inventoryPromptEnable")}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

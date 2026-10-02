@@ -48,8 +48,8 @@ describe("scopes", () => {
     expect(parseScopes(null)).toEqual([]);
     expect(parseScopes("read")).toEqual(["read"]);
   });
-  it("knows exactly read/write x six resources plus read:reports", () => {
-    expect(ALL_SCOPES).toHaveLength(13);
+  it("knows exactly read/write x six resources plus the read-only read:reports and read:accounts", () => {
+    expect(ALL_SCOPES).toHaveLength(14);
     expect(isKnownScope("read:reports")).toBe(true);
     expect(isKnownScope("write:reports")).toBe(false);
     expect(isKnownScope("webhooks:manage")).toBe(false);

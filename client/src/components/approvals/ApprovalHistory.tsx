@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslation } from "@/lib/i18n";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { ApprovalDocumentType, ApprovalHistoryResponse } from "@/lib/purchasing-hr";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApprovalStatusBadge, useApproverRoleLabel } from "./ApprovalStatusBadge";
 import { messages } from "./ApprovalHistory.i18n";
 
@@ -47,7 +48,8 @@ export function ApprovalHistory({ documentType, documentId, onClose }: ApprovalH
                   <li key={`${request.id}-${step.stepNumber}-${step.decidedBy}`} className="text-sm border-s-2 ps-3">
                     <div className="font-medium">
                       {tr("stepRole", { step: step.stepNumber, role: roleLabel(step.requiredRole) })} -{" "}
-                      {step.decision === "approved" ? tr("decisionApproved") : tr("decisionRejected")}
+                      {step.decision === "approved" ? tr("decisionApproved") : tr("decisionRejected")}{" "}
+                      {step.selfApproved && <StatusBadge tone="warning" data-testid="badge-self-approved">{tr("selfApproved")}</StatusBadge>}
                     </div>
                     <div className="text-muted-foreground">
                       {step.decidedByName ? tr("by", { name: step.decidedByName }) : ""} {formatDate(step.decidedAt, locale)}

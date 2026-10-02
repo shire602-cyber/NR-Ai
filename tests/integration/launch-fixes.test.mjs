@@ -81,16 +81,18 @@ async function main() {
   r = await mkInvoice();
   const inv2 = r.json;
   await issue(inv2.id);
-  r = await api("PATCH", `/api/invoices/${inv2.id}/status`, { token, body: { status: "paid", paymentAccountId: bank.id, paymentDate: ymd(-7) } });
-  ok("status->paid: accepts paymentDate", r.status === 200, { s: r.status, m: r.json?.message });
+  r = await api("PATCH", `/api/invoices/${inv2.id}/status`, { token, body: { status: "paid", paymentAccountId: bank.id } });
+  ok("status->paid by hand is refused (STATUS_DERIVED)", r.status === 400 && r.json?.code === "STATUS_DERIVED", { s: r.status, c: r.json?.code });
+  r = await api("POST", `/api/companies/${cid}/invoices/${inv2.id}/payments`, { token, body: { amount: Number(inv2.total), date: ymd(-7), method: "bank", paymentAccountId: bank.id } });
+  ok("payment: accepts a payment date", r.status === 201, { s: r.status, m: r.json?.message });
   je = (await journal()).filter((e) => e.source === "payment");
-  ok("status->paid: journal posts on paymentDate", je.some((e) => day(e.date) === ymd(-7)), { dates: je.map((e) => e.date) });
+  ok("payment: journal posts on the payment date", je.some((e) => day(e.date) === ymd(-7)), { dates: je.map((e) => e.date) });
 
   r = await mkInvoice();
   const inv3 = r.json;
   await issue(inv3.id);
-  r = await api("PATCH", `/api/invoices/${inv3.id}/status`, { token, body: { status: "paid", paymentAccountId: bank.id, paymentDate: ymd(2) } });
-  ok("status->paid: future paymentDate rejected", r.status === 422, { s: r.status, code: r.json?.code });
+  r = await api("POST", `/api/companies/${cid}/invoices/${inv3.id}/payments`, { token, body: { amount: Number(inv3.total), date: ymd(2), method: "bank", paymentAccountId: bank.id } });
+  ok("payment: a future payment date is rejected", r.status === 422, { s: r.status, code: r.json?.code });
 
   // period lock applies to the payment date
   await api("POST", `/api/companies/${cid}/month-end/lock-period`, { token, body: { periodEnd: "2020-06-30" } });

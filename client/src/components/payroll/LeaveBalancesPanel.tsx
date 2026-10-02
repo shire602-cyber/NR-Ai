@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,6 @@ interface Props {
 }
 
 const ALL = "all";
-const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
 
 export function LeaveBalancesPanel({ companyId, employees, types, canWrite }: Props) {

@@ -26,6 +26,7 @@ import {
   BookOpen,
   ArrowRight,
 } from "lucide-react";
+import { GlAccountDialog } from "@/components/banking/GlAccountDialog";
 import { messages as pageMessages } from "./ChartOfAccounts.i18n";
 
 interface AccountWithBalance {
@@ -91,6 +92,7 @@ export default function ChartOfAccounts() {
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(ACCOUNT_TYPE_ORDER));
 
   const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
@@ -168,7 +170,7 @@ export default function ChartOfAccounts() {
           <Button
             size="default"
             data-testid="button-add-account"
-            onClick={() => navigate("/journal")}
+            onClick={() => setAddAccountOpen(true)}
           >
             <Plus className="h-4 w-4 me-2" />
             {t.addAccount}
@@ -380,6 +382,15 @@ export default function ChartOfAccounts() {
           </div>
         </CardContent>
       </Card>
+      {selectedCompanyId && (
+        <GlAccountDialog
+          open={addAccountOpen}
+          onOpenChange={setAddAccountOpen}
+          companyId={selectedCompanyId}
+          accounts={(accountsWithBalances ?? []).map((a) => a.account)}
+          defaultType="expense"
+        />
+      )}
     </div>
   );
 }

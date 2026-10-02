@@ -115,6 +115,8 @@ const toMath = (t: any): LeaveTypeMath => ({
 // ---------------------------------------------------------------------------
 
 interface EmployeeRef {
+  /** Year the company started using the system: leave earned before it is not carried forward unless entered. */
+  trackingYear: number;
   id: string;
   fullName: string;
   joinYmd: string | null;
@@ -131,7 +133,9 @@ async function loadEmployees(companyId: string, employeeId?: string): Promise<Em
     where += ` AND status = 'active'`;
   }
   const r = await pool.query(
-    `SELECT id::text AS id, full_name AS "fullName", to_char(join_date, 'YYYY-MM-DD') AS "joinYmd", status FROM employees WHERE ${where} ORDER BY full_name`,
+    `SELECT id::text AS id, full_name AS "fullName", to_char(join_date, 'YYYY-MM-DD') AS "joinYmd", status,
+            (SELECT EXTRACT(year FROM created_at)::int FROM companies WHERE id = employees.company_id) AS "trackingYear"
+       FROM employees WHERE ${where} ORDER BY full_name`,
     params
   );
   return r.rows;
@@ -223,6 +227,7 @@ function balanceRow(employee: EmployeeRef, type: any, asOfYmd: string, approved:
     asOfYmd,
     takenInYear: (y) => takenIn(mine, y),
     overrides: overrides.get(`${employee.id}|${type.id}`) ?? new Map(),
+    trackingStartYear: employee.trackingYear,
   });
   const pendingDays = takenIn(waiting, b.year);
   return {
@@ -401,12 +406,12 @@ export interface LeaveDeductionResult {
   deduction: number;
 }
 
-/** Leave deductions per employee for a payroll month, from approved leave. Basic is the employee's basic salary. */
+/** Leave deductions per employee for a payroll month, from approved leave. `wage` is the full monthly wage (basic + allowances). */
 export async function leaveDeductionsForMonth(
   companyId: string,
   year: number,
   month: number,
-  employees: Array<{ id: string; basic: number }>
+  employees: Array<{ id: string; wage: number }>
 ): Promise<Map<string, LeaveDeductionResult>> {
   const out = new Map<string, LeaveDeductionResult>();
   if (employees.length === 0) return out;
@@ -441,14 +446,14 @@ export async function leaveDeductionsForMonth(
         sickDaysBefore.set(r.leaveTypeId, before);
       }
       if (inMonth <= 0) continue;
-      const d = leaveDeduction({ payPolicy: r.payPolicy, basic: e.basic, days: inMonth, sickDaysBefore: sickDaysBefore.get(r.leaveTypeId) ?? 0 });
+      const d = leaveDeduction({ payPolicy: r.payPolicy, wage: e.wage, days: inMonth, sickDaysBefore: sickDaysBefore.get(r.leaveTypeId) ?? 0 });
       if (r.payPolicy === "sick_tiered") sickDaysBefore.set(r.leaveTypeId, (sickDaysBefore.get(r.leaveTypeId) ?? 0) + inMonth);
       unpaid += d.unpaidDays;
       half += d.halfDays;
       deduction += d.deduction;
     }
-    // Across several requests in the month the cap still holds: 30 paid days, i.e. never more than basic.
-    deduction = Math.min(deduction, e.basic);
+    // Across several requests in the month the cap still holds: 30 paid days, i.e. never more than the wage.
+    deduction = Math.min(deduction, e.wage);
     out.set(e.id, { unpaidDays: Math.round(unpaid * 100) / 100, halfDays: Math.round(half * 100) / 100, deduction: Math.round(deduction * 100) / 100 });
   }
   return out;

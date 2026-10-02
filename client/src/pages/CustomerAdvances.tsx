@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { todayYmd } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Download, Plus, Undo2, WalletCards } from "lucide-react";
@@ -26,7 +27,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { advanceStatusTone, grossOfNet, isCashOrBankAccount, netOfGross, round2, salesErrorMessage, salesKeys, type CustomerAdvance } from "@/lib/sales-api";
 import { messages } from "./CustomerAdvances.i18n";
 
-const todayYmd = () => new Date().toISOString().slice(0, 10);
 const METHODS = ["bank", "cash", "cheque", "card"] as const;
 
 export default function CustomerAdvances() {

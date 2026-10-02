@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, Loader2, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
+import { accountName } from "@/lib/account-name";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { BankTransaction, LedgerAccount, MatchSuggestion } from "@/lib/banking-api-types";
+import type { BankAccount, BankTransaction, LedgerAccount, MatchSuggestion } from "@/lib/banking-api-types";
+import { ApiError } from "@/lib/queryClient";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { InvoiceAllocationPanel, MatchedSummary, SplitEntryPanel, TransferPanel } from "./MatchDialogPanels";
+import { messages as panels } from "./MatchDialogPanels.i18n";
 import { messages } from "./MatchDialog.i18n";
 import { messages as common } from "./BankingCommon.i18n";
 import { bankKey, bankingErrorText, kindText, reasonText } from "./banking-common";
@@ -29,15 +35,27 @@ interface Props {
   companyId: string;
   transaction: BankTransaction | null;
   currency: string;
+  /** All bank lines and bank accounts, for the own-account transfer. */
+  transactions?: BankTransaction[];
+  bankAccounts?: BankAccount[];
 }
 
-export function MatchDialog({ open, onOpenChange, companyId, transaction, currency }: Props) {
+export function MatchDialog({ open, onOpenChange, companyId, transaction, currency, transactions = [], bankAccounts = [] }: Props) {
   const tr = messages.useT();
   const trc = common.useT();
   const locale = useI18n((s) => s.locale);
   const { toast } = useToast();
   const [accountId, setAccountId] = useState("");
   const [memo, setMemo] = useState("");
+  const [overpay, setOverpay] = useState<{ suggestion: MatchSuggestion; excess: number } | null>(null);
+  const trp = panels.useT();
+
+  // every bank line starts clean: the account and memo of the previous line never carry over
+  useEffect(() => {
+    setAccountId("");
+    setMemo("");
+    setOverpay(null);
+  }, [open, transaction?.id]);
 
   const base = `/api/companies/${companyId}/bank-statements`;
   const matched = !!transaction?.isReconciled || transaction?.matchStatus === "matched";
@@ -71,14 +89,26 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
     toast({ variant: "destructive", title, description: bankingErrorText(trc, err, locale) });
 
   const matchMutation = useMutation({
-    mutationFn: (s: MatchSuggestion) => {
+    mutationFn: (args: MatchSuggestion | { suggestion: MatchSuggestion; keepAsCredit: true }) => {
+      const s = "suggestion" in args ? args.suggestion : args;
+      const keepAsCredit = "suggestion" in args;
       const tid = transaction!.id;
       if (s.kind === "rule") return apiRequest("POST", `${base}/${tid}/apply-rule`, { ruleId: s.targetId });
+      if (s.kind === "transfer") return apiRequest("POST", `${base}/${tid}/transfer`, { otherTransactionId: s.targetId });
+      if (s.kind === "invoices") return apiRequest("POST", `${base}/${tid}/match`, { matchedType: "invoices", allocations: (s.targetIds ?? [s.targetId]).map((invoiceId) => ({ invoiceId })), ...(keepAsCredit ? { keepAsCredit: true } : {}) });
       if (s.kind === "account") return apiRequest("POST", `${base}/${tid}/create-entry`, { accountId: s.targetId });
-      return apiRequest("POST", `${base}/${tid}/match`, { matchedType: s.kind, matchedId: s.targetId });
+      return apiRequest("POST", `${base}/${tid}/match`, { matchedType: s.kind, matchedId: s.targetId, ...(keepAsCredit ? { keepAsCredit: true } : {}) });
     },
     onSuccess: () => done(tr("toastMatched"), tr("toastMatchedBody")),
-    onError: fail(tr("toastFailed")),
+    onError: (err: unknown, args) => {
+      const d = err instanceof ApiError ? (err.details as { excess?: number; canKeepAsCredit?: boolean } | undefined) : undefined;
+      // the bank line is more than the invoice owes: the person chooses what happens to the excess
+      if (err instanceof ApiError && err.code === "MATCH_AMOUNT_MISMATCH" && d?.canKeepAsCredit && "kind" in args) {
+        setOverpay({ suggestion: args, excess: d.excess ?? 0 });
+        return;
+      }
+      fail(tr("toastFailed"))(err);
+    },
   });
 
   const createMutation = useMutation({
@@ -110,7 +140,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tr("bankLine")}</p>
               <div>
                 <p className="text-xs text-muted-foreground">{tr("date")}</p>
-                <p className="font-medium">{formatDate(transaction.transactionDate, locale)}</p>
+                <p className="font-medium">{formatCalendarDate(transaction.transactionDate, locale, "short")}</p>
               </div>
               {transaction.reference && (
                 <div>
@@ -135,6 +165,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
             <div className="space-y-4 min-w-0">
               {matched ? (
                 <div className="space-y-3">
+                  <MatchedSummary companyId={companyId} transaction={transaction} currency={currency} />
                   {frozen ? (
                     <p className="text-sm text-[hsl(var(--chart-4))]" data-testid="match-frozen">
                       {tr("frozen")}
@@ -170,7 +201,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                                   <p className="text-sm font-medium truncate" dir="auto">
                                     {s.label}
                                   </p>
-                                  <p className="text-xs text-muted-foreground">{formatDate(s.date, locale)}</p>
+                                  <p className="text-xs text-muted-foreground">{formatCalendarDate(s.date, locale, "short")}</p>
                                 </div>
                                 <div className="text-end shrink-0">
                                   <p dir="ltr" className="font-mono text-sm font-semibold">
@@ -192,8 +223,8 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                               <ProposedLinesPreview lines={s.proposedLines} posts={s.posts} />
                               <div className="flex justify-end">
                                 <Button size="sm" onClick={() => matchMutation.mutate(s)} disabled={busy} data-testid={`button-match-${s.kind}`}>
-                                  {matchMutation.isPending && matchMutation.variables?.targetId === s.targetId ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : null}
-                                  {s.kind === "rule" ? tr("matchRule") : s.kind === "account" ? tr("matchAccount") : tr("match")}
+                                  {matchMutation.isPending && (matchMutation.variables && ("suggestion" in matchMutation.variables ? matchMutation.variables.suggestion.targetId : matchMutation.variables.targetId)) === s.targetId ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : null}
+                                  {s.kind === "rule" ? tr("matchRule") : s.kind === "account" ? tr("matchAccount") : s.kind === "transfer" ? tr("matchTransfer") : tr("match")}
                                 </Button>
                               </div>
                             </li>
@@ -227,7 +258,7 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                                 <span dir="ltr" className="font-mono">
                                   {a.code}
                                 </span>{" "}
-                                {a.nameEn}
+                                {accountName(a, locale)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -246,6 +277,12 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
                       </Button>
                     </div>
                   </div>
+
+                  <div className="space-y-2" data-testid="match-extras">
+                    {amount > 0 && <InvoiceAllocationPanel companyId={companyId} transaction={transaction} currency={currency} onPosted={() => done(tr("toastMatched"), tr("toastMatchedBody"))} />}
+                    <SplitEntryPanel companyId={companyId} transaction={transaction} currency={currency} accounts={pickable} onPosted={() => done(tr("toastCreated"), tr("toastMatchedBody"))} />
+                    <TransferPanel companyId={companyId} transaction={transaction} currency={currency} transactions={transactions} bankAccounts={bankAccounts} onPosted={() => done(tr("toastMatched"), tr("toastMatchedBody"))} />
+                  </div>
                 </>
               )}
             </div>
@@ -258,6 +295,28 @@ export function MatchDialog({ open, onOpenChange, companyId, transaction, curren
           </Button>
         </DialogFooter>
       </DialogContent>
+      <AlertDialog open={!!overpay} onOpenChange={(o) => !o && setOverpay(null)}>
+        <AlertDialogContent data-testid="overpay-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{trp("overTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {overpay && trp("overBody", { line: formatCurrency(Math.abs(amount), currency, locale), owed: formatCurrency(Math.abs(amount) - overpay.excess, currency, locale), excess: formatCurrency(overpay.excess, currency, locale) })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{trp("overCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-keep-credit"
+              onClick={() => {
+                if (overpay) matchMutation.mutate({ suggestion: overpay.suggestion, keepAsCredit: true });
+                setOverpay(null);
+              }}
+            >
+              {overpay && trp("overKeep", { excess: formatCurrency(overpay.excess, currency, locale) })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

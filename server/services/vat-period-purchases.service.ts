@@ -8,11 +8,15 @@
 
 import Decimal from "decimal.js";
 import { sql } from "drizzle-orm";
+import { blockedInputSql } from "./blocked-input-vat";
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
+import { loadVatJournalAdjustments } from "./vat-adjustments.service";
+import type { VatJournalPurchaseLine } from "./vat-adjustments";
 
 type Executor = { execute: (query: any) => Promise<any> };
 const rowsOf = (res: any): any[] => (res?.rows ?? res) as any[];
 
-export type PurchaseDocKind = "receipt" | "bill" | "vendor_credit" | "expense_claim";
+export type PurchaseDocKind = "receipt" | "bill" | "vendor_credit" | "expense_claim" | "journal";
 
 export interface PurchaseDocRow {
   kind: PurchaseDocKind;
@@ -29,6 +33,11 @@ export interface PurchaseDocRow {
   /** Input VAT in AED that counts toward recovery, decimal string (negative for a vendor credit). */
   vat: string;
   reverseCharge: boolean;
+  /**
+   * Blocked input VAT (Art. 53, e.g. entertainment): the row is listed but is not a box 9 expense. `net` and `vat` are the
+   * document's real amounts, so the audit shows them; totalPurchases leaves the row out.
+   */
+  blocked?: boolean;
 }
 
 export interface PurchaseTotals {
@@ -42,20 +51,22 @@ export interface PurchaseTotals {
 }
 
 const dayOf = (d: Date) => d.toISOString().slice(0, 10);
-const tsOf = (d: Date) => d.toISOString().slice(0, 23);
 
-/** Posted receipts dated in [startDate, endDate] (UTC instants, as the return reads them). */
+/** Posted receipts dated (UAE day) in [startDate, endDate]; the Dates only carry the calendar days of the period. */
 export async function loadPeriodReceipts(ex: Executor, companyId: string, startDate: Date, endDate: Date): Promise<PurchaseDocRow[]> {
+  const fromDay = dayOf(startDate);
+  const toDay = dayOf(endDate);
   const rows = rowsOf(
     await ex.execute(sql`
-      SELECT r.id, r.merchant, to_char(COALESCE(r.date, r.created_at), 'YYYY-MM-DD') AS d,
+      SELECT r.id, r.merchant, ${sql.raw(dubaiDayTextSql("COALESCE(r.date, r.created_at)"))} AS d,
              (COALESCE(r.amount, 0) * COALESCE(NULLIF(r.exchange_rate, 0), 1))::text AS net,
              (COALESCE(r.vat_amount, 0) * COALESCE(NULLIF(r.exchange_rate, 0), 1))::text AS vat,
-             COALESCE(r.reverse_charge, false) AS reverse_charge
+             COALESCE(r.reverse_charge, false) AS reverse_charge,
+             ${sql.raw(blockedInputSql("r.category"))} AS blocked
         FROM receipts r
        WHERE r.company_id = ${companyId} AND r.posted = true
-         AND COALESCE(r.date, r.created_at) >= ${tsOf(startDate)}::timestamp
-         AND COALESCE(r.date, r.created_at) <= ${tsOf(endDate)}::timestamp
+         AND ${sql.raw(dubaiDaySql("COALESCE(r.date, r.created_at)"))} >= ${fromDay}::date
+         AND ${sql.raw(dubaiDaySql("COALESCE(r.date, r.created_at)"))} <= ${toDay}::date
        ORDER BY COALESCE(r.date, r.created_at), r.id`)
   );
   return rows.map((r) => ({
@@ -68,6 +79,7 @@ export async function loadPeriodReceipts(ex: Executor, companyId: string, startD
     net: String(r.net),
     vat: String(r.vat),
     reverseCharge: r.reverse_charge === true,
+    blocked: r.blocked === true && r.reverse_charge !== true,
   }));
 }
 
@@ -75,13 +87,14 @@ export async function loadPeriodReceipts(ex: Executor, companyId: string, startD
 export async function loadPeriodBills(ex: Executor, companyId: string, fromDay: string, toDay: string): Promise<PurchaseDocRow[]> {
   const rows = rowsOf(
     await ex.execute(sql`
-      SELECT id, bill_number, vendor_name, vendor_trn, to_char(bill_date, 'YYYY-MM-DD') AS d,
+      SELECT id, bill_number, vendor_name, vendor_trn, ${sql.raw(dubaiDayTextSql("bill_date"))} AS d,
              (subtotal * COALESCE(exchange_rate, 1))::text AS net, (vat_amount * COALESCE(exchange_rate, 1))::text AS vat,
-             COALESCE(reverse_charge, false) AS reverse_charge
+             COALESCE(reverse_charge, false) AS reverse_charge,
+             ${sql.raw(blockedInputSql("category"))} AS blocked
         FROM vendor_bills
        WHERE company_id = ${companyId}
-         AND bill_date >= ${fromDay}::date
-         AND bill_date <= ${toDay}::date
+         AND ${sql.raw(dubaiDaySql("bill_date"))} >= ${fromDay}::date
+         AND ${sql.raw(dubaiDaySql("bill_date"))} <= ${toDay}::date
          AND status NOT IN ('void','cancelled','draft','pending','pending_approval')
          AND COALESCE(is_opening_balance, false) = false
        ORDER BY bill_date, id`)
@@ -96,6 +109,7 @@ export async function loadPeriodBills(ex: Executor, companyId: string, fromDay: 
     net: String(r.net),
     vat: String(r.vat),
     reverseCharge: r.reverse_charge === true,
+    blocked: r.blocked === true && r.reverse_charge !== true,
   }));
 }
 
@@ -127,21 +141,22 @@ export async function loadPeriodVendorCredits(ex: Executor, companyId: string, f
 }
 
 /**
- * Approved / paid expense-claim items dated in the period. Entertainment items are excluded from VAT recovery
- * (Art. 53 blocked input tax), mirroring the posting service: their VAT counts as 0 here, their net still counts.
+ * Approved / paid expense-claim items dated (UAE day) in the period. An entertainment item carries blocked input VAT
+ * (Art. 53): it is listed (blocked) but is not a box 9 expense, exactly as the posting leaves its VAT out of 1050.
  */
 export async function loadPeriodExpenseClaimItems(ex: Executor, companyId: string, fromDay: string, toDay: string): Promise<PurchaseDocRow[]> {
   const rows = rowsOf(
     await ex.execute(sql`
-      SELECT i.id, c.id AS claim_id, c.claim_number, COALESCE(NULLIF(i.merchant_name, ''), i.description) AS vendor, to_char(i.expense_date, 'YYYY-MM-DD') AS d,
-             COALESCE(i.amount, 0)::text AS net,
-             (CASE WHEN LOWER(COALESCE(i.category,'')) NOT LIKE '%entertain%' THEN COALESCE(i.vat_amount, 0) ELSE 0 END)::text AS vat
+      SELECT i.id, c.id AS claim_id, c.claim_number, COALESCE(NULLIF(i.merchant_name, ''), i.description) AS vendor,
+             ${sql.raw(dubaiDayTextSql("i.expense_date"))} AS d,
+             COALESCE(i.amount, 0)::text AS net, COALESCE(i.vat_amount, 0)::text AS vat,
+             ${sql.raw(blockedInputSql("i.category"))} AS blocked
         FROM expense_claim_items i
         JOIN expense_claims c ON c.id = i.claim_id
        WHERE c.company_id = ${companyId}
          AND c.status IN ('approved','paid')
-         AND i.expense_date >= ${fromDay}::date
-         AND i.expense_date <= ${toDay}::date
+         AND ${sql.raw(dubaiDaySql("i.expense_date"))} >= ${fromDay}::date
+         AND ${sql.raw(dubaiDaySql("i.expense_date"))} <= ${toDay}::date
        ORDER BY i.expense_date, i.id`)
   );
   return rows.map((r) => ({
@@ -155,16 +170,41 @@ export async function loadPeriodExpenseClaimItems(ex: Executor, companyId: strin
     net: String(r.net),
     vat: String(r.vat),
     reverseCharge: false,
+    blocked: r.blocked === true,
   }));
 }
 
 /** Add rows up exactly (decimal), split into ordinary and reverse-charge purchases. */
+/**
+ * Purchases recorded by manual journal (Dr expense or fixed asset + Dr 1050, no document) as purchase rows: their net amount
+ * and VAT count in box 9 like a bill's, a blocked-category one is listed and counts nowhere (vat-adjustments.ts).
+ */
+export function journalPurchaseRows(purchases: readonly VatJournalPurchaseLine[]): PurchaseDocRow[] {
+  return purchases.map((p) => ({
+    kind: "journal" as const,
+    id: p.entryId,
+    date: p.date,
+    number: p.entryNumber,
+    vendor: p.description || null,
+    vendorTrn: null,
+    net: String(p.amount),
+    vat: String(p.vat),
+    reverseCharge: false,
+    blocked: p.blocked,
+  }));
+}
+
+export async function loadPeriodJournalPurchases(ex: Executor, companyId: string, fromDay: string, toDay: string): Promise<PurchaseDocRow[]> {
+  return journalPurchaseRows((await loadVatJournalAdjustments(ex, companyId, fromDay, toDay, null)).purchases);
+}
+
 export function totalPurchases(rows: PurchaseDocRow[]): PurchaseTotals {
   let totalExpenses = new Decimal(0);
   let inputTaxGross = new Decimal(0);
   let reverseChargeAmount = new Decimal(0);
   let reverseChargeVatGross = new Decimal(0);
   for (const r of rows) {
+    if (r.blocked) continue; // blocked input VAT: the whole document is outside box 9 (see blocked-input-vat.ts)
     if (r.reverseCharge) {
       reverseChargeAmount = reverseChargeAmount.plus(r.net);
       reverseChargeVatGross = reverseChargeVatGross.plus(r.vat);
@@ -194,5 +234,6 @@ export async function loadPeriodPurchases(
   const bills = await loadPeriodBills(ex, companyId, fromDay, toDay);
   const credits = await loadPeriodVendorCredits(ex, companyId, fromDay, toDay);
   const claims = await loadPeriodExpenseClaimItems(ex, companyId, fromDay, toDay);
-  return [...receipts, ...bills, ...credits, ...claims];
+  const journals = await loadPeriodJournalPurchases(ex, companyId, fromDay, toDay);
+  return [...receipts, ...bills, ...credits, ...claims, ...journals];
 }

@@ -126,7 +126,13 @@ async function main() {
       ok("B3: full credit note issued, invoice is credited", r.status === 201 && (await c.get(inv.id))?.status === "credited", { s: r.status });
       for (const target of ["sent", "posted", "partial", "paid", "draft", "cancelled"]) {
         r = await c.setStatus(inv.id, target, { paymentAccountId: c.bank.id });
-        ok(`B3: manual credited -> ${target} is 422 INVOICE_CREDITED_LOCKED`, r.status === 422 && r.json?.code === "INVOICE_CREDITED_LOCKED", { s: r.status, j: r.json });
+        // "paid" and "partial" are derived from payments and refused earlier (400 STATUS_DERIVED,
+        // Phase 9); every other manual status on a credited invoice is 422 INVOICE_CREDITED_LOCKED.
+        const derived = target === "paid" || target === "partial";
+        const refused = derived
+          ? r.status === 400 && r.json?.code === "STATUS_DERIVED"
+          : r.status === 422 && r.json?.code === "INVOICE_CREDITED_LOCKED";
+        ok(`B3: manual credited -> ${target} is refused (${derived ? "400 STATUS_DERIVED" : "422 INVOICE_CREDITED_LOCKED"})`, refused, { s: r.status, j: r.json });
       }
       ok("B3: the invoice is still credited", (await c.get(inv.id))?.status === "credited", (await c.get(inv.id))?.status);
       r = await c.setStatus(cn.id, "void");

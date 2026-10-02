@@ -4,17 +4,22 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
+import { calendarDaySchema } from "../utils/calendar-day-schema";
 import { recordAudit } from "../services/audit.service";
 import { createRefund, getRefundSummary, listRefunds, voidRefund } from "../services/customer-refund.service";
+import {
+  createCustomerCreditRefund,
+  getCustomerCreditBalance,
+  listCustomerCreditRefunds,
+  voidCustomerCreditRefund,
+} from "../services/customer-credit-refund.service";
+import { refundInvoicePayment } from "../services/payment-refund.service";
 
 const MAX_REFUND_AMOUNT = 999_999_999.99;
 
 const refundInputSchema = z.object({
   amount: z.coerce.number().finite().positive().max(MAX_REFUND_AMOUNT),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
-    .optional(),
+  date: calendarDaySchema.optional(),
   bankAccountId: z.string().uuid(),
   exchangeRate: z.coerce.number().finite().positive().max(1_000_000).optional(),
   reference: z.string().trim().max(120).optional(),
@@ -23,6 +28,100 @@ const refundInputSchema = z.object({
 
 export function registerCustomerRefundRoutes(app: Express) {
   const guards = [authMiddleware, requireCustomer, requireFeature("creditNotes")];
+
+  // Refund (part of) a payment of a settled invoice that was paid back outside the app (bank transfer, card or gateway
+  // refund): a credit note on the invoice plus the refund of it, so the statement and the ageing show it.
+  app.post(
+    "/api/companies/:companyId/invoices/:invoiceId/payment-refunds",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, invoiceId } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const input = refundInputSchema.parse(req.body ?? {});
+      const result = await refundInvoicePayment({ companyId, invoiceId, userId, ...input });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "invoice.payment_refund",
+        entityType: "invoice",
+        entityId: invoiceId,
+        before: null,
+        after: { creditNoteId: result.creditNote.id, refundId: result.refund.id, amount: result.refund.amount },
+        req,
+        extra: { journalEntryId: result.journalEntryId },
+      });
+      res.status(201).json({ creditNote: result.creditNote, refund: result.refund });
+    })
+  );
+
+  // The customer's credit balance (overpayments held in 2050) and the refunds paid out of it.
+  app.get(
+    "/api/companies/:companyId/customers/:contactId/credit",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, contactId } = req.params;
+      if (!(await storage.hasCompanyAccess((req as any).user.id, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const [balance, refunds] = await Promise.all([getCustomerCreditBalance(companyId, contactId), listCustomerCreditRefunds(companyId, contactId)]);
+      res.json({ balance, refunds });
+    })
+  );
+
+  // Pay (part of) the customer's credit balance back.
+  app.post(
+    "/api/companies/:companyId/customers/:contactId/credit-refunds",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, contactId } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const input = refundInputSchema.omit({ exchangeRate: true }).parse(req.body ?? {});
+      const result = await createCustomerCreditRefund({ companyId, contactId, userId, ...input });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "customer_credit.refund",
+        entityType: "customer",
+        entityId: contactId,
+        before: null,
+        after: { refundId: result.refund.id, amount: result.refund.amount, remaining: result.remaining },
+        req,
+        extra: { journalEntryId: result.journalEntryId },
+      });
+      res.status(201).json({ refund: result.refund, remaining: result.remaining });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/customers/:contactId/credit-refunds/:refundId/void",
+    ...guards,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, contactId, refundId } = req.params;
+      const userId = (req as any).user.id;
+      if (!(await storage.hasCompanyAccess(userId, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await voidCustomerCreditRefund({ companyId, contactId, refundId, userId });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "customer_credit.refund_void",
+        entityType: "customer",
+        entityId: contactId,
+        before: { refundId },
+        after: { voidedAt: result.refund.voidedAt },
+        req,
+        extra: { reversalEntryId: result.reversalEntryId },
+      });
+      res.json({ refund: result.refund, balance: await getCustomerCreditBalance(companyId, contactId) });
+    })
+  );
 
   // The credit note's refunds and what is still refundable.
   app.get(

@@ -25,6 +25,14 @@ async function contactInCompany(companyId: string, id: string) {
 const referenceMissing = (req: Request, res: Response, field: string) =>
   fail(req, res, 422, "REFERENCE_NOT_FOUND", `${field} does not exist in this company`, { field });
 
+const TERMS_DAYS: Record<string, number> = { due_on_receipt: 0, net7: 7, net15: 15, net30: 30, net45: 45, net60: 60, net90: 90 };
+export function dueDateFromTerms(date: string, terms: string | undefined): string | undefined {
+  if (!terms || !(terms in TERMS_DAYS)) return undefined;
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + TERMS_DAYS[terms]);
+  return d.toISOString().slice(0, 10);
+}
+
 // ───────────────────────── Contacts ─────────────────────────
 function contactBody(b: any) {
   return dropUndefined({
@@ -101,7 +109,8 @@ export const createInvoice: Handler = async (req, res, next) => {
     customerAddress,
     contactId: b.contactId ?? undefined,
     date: b.date,
-    dueDate: b.dueDate,
+    // An explicit dueDate wins; otherwise the payment terms set it (the internal route stores terms but never derived a date).
+    dueDate: b.dueDate ?? dueDateFromTerms(b.date, b.paymentTerms),
     paymentTerms: b.paymentTerms,
     currency: b.currency,
     exchangeRate: b.exchangeRate,
@@ -149,6 +158,7 @@ export const createInvoicePayment: Handler = async (req, res, next) => {
         notes: b.notes,
         paymentAccountId: b.paymentAccountId,
         exchangeRate: b.exchangeRate,
+        allowCredit: b.allowCredit,
       }),
     },
     {
@@ -233,6 +243,7 @@ export const createBillPayment: Handler = async (req, res, next) => {
         payment_method: b.method,
         reference: b.reference,
         notes: b.notes,
+        payment_account_id: b.paymentAccountId,
       }),
     },
     {

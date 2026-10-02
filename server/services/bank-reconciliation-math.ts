@@ -47,6 +47,8 @@ export interface ReconciliationStatement {
   adjustedStatementBalance: number | null;
   adjustedLedgerBalance: number;
   difference: number | null;
+  /** FX_RATE_MISSING: a line keyed in AED only could not be converted to the account currency. */
+  warnings?: string[];
   items: {
     unreconciledCredits: StatementItem[];
     unreconciledDebits: StatementItem[];

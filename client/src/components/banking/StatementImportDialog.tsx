@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BankAccount, StagedPdfImport, StatementImportResult } from "@/lib/banking-api-types";
 import type { CommitRow } from "@/lib/statement-review";
@@ -49,11 +50,13 @@ interface Props {
   initialBankAccountId?: string;
   /** A staged PDF import to review again (opened from the import history). */
   resumeImportId?: string | null;
+  /** Opens the bank account form (the empty-state button). */
+  onAddAccount?: () => void;
 }
 
 type Phase = { name: "select" } | { name: "working"; label: string; percent: number } | { name: "review"; staged: StagedPdfImport; fileName: string } | { name: "done"; result: StatementImportResult };
 
-export function StatementImportDialog({ open, onOpenChange, companyId, bankAccounts, initialBankAccountId, resumeImportId }: Props) {
+export function StatementImportDialog({ open, onOpenChange, companyId, bankAccounts, initialBankAccountId, resumeImportId, onAddAccount }: Props) {
   const tr = messages.useT();
   const trc = common.useT();
   const locale = useI18n((s) => s.locale);
@@ -218,7 +221,16 @@ export function StatementImportDialog({ open, onOpenChange, companyId, bankAccou
                   ))}
                 </SelectContent>
               </Select>
-              {bankAccounts.length === 0 && <p className="text-xs text-[hsl(var(--chart-4))]">{tr("noBankAccounts")}</p>}
+              {bankAccounts.length === 0 && (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-[hsl(var(--chart-4))]">{tr("noBankAccounts")}</p>
+                  {onAddAccount && (
+                    <Button type="button" size="sm" variant="outline" onClick={onAddAccount} data-testid="button-add-account-from-import">
+                      {tr("addAccount")}
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -296,7 +308,7 @@ export function StatementImportDialog({ open, onOpenChange, companyId, bankAccou
               {phase.result.duplicates > 0 && <li data-testid="import-result-duplicates">{tr("resultDuplicates", { count: phase.result.duplicates })}</li>}
               <li className="text-muted-foreground">{tr("resultFormat", { format: sourceText(trc, phase.result.format) })}</li>
               {phase.result.statement.from && phase.result.statement.to && (
-                <li className="text-muted-foreground">{tr("resultPeriod", { from: formatDate(phase.result.statement.from, locale), to: formatDate(phase.result.statement.to, locale) })}</li>
+                <li className="text-muted-foreground">{tr("resultPeriod", { from: formatCalendarDate(phase.result.statement.from, locale, "short"), to: formatCalendarDate(phase.result.statement.to, locale, "short") })}</li>
               )}
               {phase.result.statement.openingBalance !== null && <li className="text-muted-foreground">{tr("resultOpening", { amount: money(phase.result.statement.openingBalance) })}</li>}
               {phase.result.statement.closingBalance !== null && <li className="text-muted-foreground">{tr("resultClosing", { amount: money(phase.result.statement.closingBalance) })}</li>}

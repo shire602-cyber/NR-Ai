@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { todayYmd as todayIso } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,13 +12,13 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { downloadPdf } from "@/lib/download-pdf";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { messages as common } from "@/components/banking/BankingCommon.i18n";
 import { bankingErrorText } from "@/components/banking/banking-common";
 import type { AssetRegister } from "@/lib/banking-api-types";
 import { messages } from "./AssetRegisterTab.i18n";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** The asset register as of a date: cost, accumulated depreciation, NBV, and the tie to ledger accounts 1290 and 1240. */
 export function AssetRegisterTab({ companyId }: { companyId: string }) {
@@ -89,7 +90,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
                         {r.name}
                       </TableCell>
                       <TableCell className="text-sm">{r.category}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{formatDate(r.purchaseDate, locale)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{formatCalendarDate(r.purchaseDate, locale, "short")}</TableCell>
                       <TableCell dir="ltr" className="text-end font-mono">
                         {money(r.cost)}
                       </TableCell>

@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ApprovalStatusBadge } from "@/components/approvals/ApprovalStatusBadge";
 import { ApprovalHistory } from "@/components/approvals/ApprovalHistory";
 import { ApprovalRulesPanel, documentTypeLabel, roleLabel } from "@/components/approvals/ApprovalRulesPanel";
@@ -67,7 +68,8 @@ export default function Approvals() {
   };
 
   const approve = useMutation({
-    mutationFn: (row: ApprovalQueueRow) => apiRequest("POST", approvalActionPath(row.documentType, row.documentId), {}),
+    mutationFn: (row: ApprovalQueueRow) =>
+      apiRequest("POST", approvalActionPath(row.documentType, row.documentId), row.soleApprover ? { acknowledgeSoleApprover: true } : {}),
     onSuccess: (body: unknown) => {
       if (isPendingApprovalBody(body)) {
         toast({
@@ -80,6 +82,15 @@ export default function Approvals() {
       refresh();
     },
     onError: (error: unknown) => toast(failureToast(error, tr("approveFailed"))),
+  });
+
+  const resubmit = useMutation({
+    mutationFn: (row: ApprovalQueueRow) => apiRequest("POST", `/api/approvals/${row.documentType}/${row.documentId}/resubmit`, {}),
+    onSuccess: () => {
+      toast({ title: tr("resubmittedToast"), description: tr("resubmittedBody") });
+      refresh();
+    },
+    onError: (error: unknown) => toast(failureToast(error, tr("resubmitFailed"))),
   });
 
   const reject = useMutation({
@@ -116,9 +127,25 @@ export default function Approvals() {
               {tr("reject")}
             </Button>
           </>
+        ) : row.soleApprover ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.confirm(tr("soleConfirm")) && approve.mutate(row)}
+            disabled={approve.isPending}
+            data-testid={`button-approve-sole-${row.documentId}`}
+          >
+            <CheckCircle2 className="h-4 w-4 me-1" />
+            {tr("approveAsSole")}
+          </Button>
         ) : (
           <span className="text-xs text-muted-foreground self-center">{tr("cannotAct")}</span>
         ))}
+      {row.status === "rejected" && row.canResubmit && (
+        <Button size="sm" onClick={() => resubmit.mutate(row)} disabled={resubmit.isPending} data-testid={`button-resubmit-${row.documentId}`}>
+          {tr("resubmit")}
+        </Button>
+      )}
       <Button size="sm" variant="ghost" onClick={() => setHistoryFor({ type: row.documentType, id: row.documentId })} data-testid={`button-history-${row.documentId}`}>
         <HistoryIcon className="h-4 w-4 me-1" />
         {tr("history")}
@@ -193,9 +220,17 @@ export default function Approvals() {
                     <div className="text-end tabular-nums font-medium shrink-0">{formatCurrency(row.amountAed, "AED", locale)}</div>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <ApprovalStatusBadge status={row.status} completedSteps={row.completedSteps} requiredSteps={row.requiredSteps} />
+                    <span className="flex flex-wrap items-center gap-1">
+                      <ApprovalStatusBadge status={row.status} completedSteps={row.completedSteps} requiredSteps={row.requiredSteps} />
+                      {row.selfApproved && <StatusBadge tone="warning" data-testid={`badge-self-approved-${row.documentId}`}>{tr("selfApproved")}</StatusBadge>}
+                    </span>
                     {row.status === "pending" && row.nextRole && <span className="text-xs text-muted-foreground">{roleLabel(tr, row.nextRole)}</span>}
                   </div>
+                  {row.status === "rejected" && (
+                    <p className="text-sm text-destructive break-words" data-testid={`text-rejection-reason-${row.documentId}`}>
+                      {tr("rejectionReason", { reason: row.rejectionReason || tr("noReason"), by: row.rejectedByName || "-" })}
+                    </p>
+                  )}
                   {renderActions(row, "")}
                 </div>
               ))}
@@ -225,7 +260,15 @@ export default function Approvals() {
                       <TableCell>{row.counterparty}</TableCell>
                       <TableCell className="text-end tabular-nums">{formatCurrency(row.amountAed, "AED", locale)}</TableCell>
                       <TableCell>
-                        <ApprovalStatusBadge status={row.status} completedSteps={row.completedSteps} requiredSteps={row.requiredSteps} />
+                        <div className="flex flex-wrap items-center gap-1">
+                          <ApprovalStatusBadge status={row.status} completedSteps={row.completedSteps} requiredSteps={row.requiredSteps} />
+                          {row.selfApproved && <StatusBadge tone="warning" data-testid={`badge-self-approved-${row.documentId}`}>{tr("selfApproved")}</StatusBadge>}
+                        </div>
+                        {row.status === "rejected" && (
+                          <p className="mt-1 max-w-xs text-xs text-destructive break-words" data-testid={`text-rejection-reason-${row.documentId}`}>
+                            {tr("rejectionReason", { reason: row.rejectionReason || tr("noReason"), by: row.rejectedByName || "-" })}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>{row.status === "pending" && row.nextRole ? roleLabel(tr, row.nextRole) : ""}</TableCell>
                       <TableCell className="text-end">{renderActions(row, "justify-end")}</TableCell>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { todayYmd as today } from "@/lib/calendar-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,6 @@ interface Props {
 }
 
 const TONES: Record<SettlementStatus, StatusTone> = { draft: "neutral", posted: "info", paid: "success", void: "danger" };
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
   const tr = messages.useT();
@@ -76,6 +76,10 @@ export function FinalSettlementTab({ companyId, employees, canWrite }: Props) {
   };
   const codeMessage = (error: unknown): string | undefined => {
     const code = error instanceof ApiError ? error.code : undefined;
+    if (code === "SETTLEMENT_BLOCKED_BY_RUN") {
+      const details = (error as ApiError).details as { runId?: string | null } | undefined;
+      return tr("codeBlockedByRun", { run: details?.runId ? details.runId.slice(0, 8) : "-" });
+    }
     return code === "PROVISION_EXCEEDS_BALANCE" ? tr("codeProvision") : code === "SETTLEMENT_NEGATIVE" ? tr("codeNegative") : code === "SETTLEMENT_EXISTS" ? tr("codeExists") : (error as Error)?.message;
   };
 

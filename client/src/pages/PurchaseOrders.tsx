@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate } from "@/lib/calendar-date";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -79,12 +80,16 @@ import { useApprovalProgress } from "@/hooks/useApprovalProgress";
 import { failureToast } from "@/lib/approval-feedback";
 import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { messages as pageMessages } from "./PurchaseOrders.i18n";
+import { LineProductPicker, type PickerProduct } from "@/components/sales/LineProductPicker";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 
 const poLineSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
   quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
   unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
+  // A stock item on the line (a receipt of the goods adds it to stock).
+  productId: z.string().nullable().optional(),
 });
 
 const purchaseOrderSchema = z.object({
@@ -126,6 +131,11 @@ export default function PurchaseOrders() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { data: allProducts = [] } = useQuery<PickerProduct[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
+    enabled: !!selectedCompanyId,
+  });
+  const stockItems = allProducts.filter((p) => p.trackInventory && p.isActive !== false);
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
@@ -143,7 +153,7 @@ export default function PurchaseOrders() {
       vendorId: null,
       vendorName: "",
       vendorTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -268,7 +278,7 @@ export default function PurchaseOrders() {
       vendorId: null,
       vendorName: "",
       vendorTrn: "",
-      date: new Date(),
+      date: parseYmd(todayYmd()),
       expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
@@ -287,8 +297,8 @@ export default function PurchaseOrders() {
         vendorId: full.vendorId ?? null,
         vendorName: full.vendorName,
         vendorTrn: full.vendorTrn || "",
-        date: new Date(full.date),
-        expectedDeliveryDate: new Date(full.expectedDeliveryDate),
+        date: (pickerDate(full.date) as Date),
+        expectedDeliveryDate: (pickerDate(full.expectedDeliveryDate) as Date),
         currency: full.currency,
         notes: full.notes || "",
         lines: full.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
@@ -312,6 +322,7 @@ export default function PurchaseOrders() {
         quantity: Number(data.lines[index].quantity),
         unitPrice: Number(data.lines[index].unitPrice),
         vatRate: Number(data.lines[index].vatRate),
+        productId: data.lines[index].productId || null,
       })),
     };
 
@@ -434,7 +445,7 @@ export default function PurchaseOrders() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -513,7 +524,7 @@ export default function PurchaseOrders() {
                               >
                                 <CalendarIcon className="me-2 h-4 w-4" />
                                 {field.value ? (
-                                  format(field.value, "PPP")
+                                  formatCalendarDate(field.value, locale)
                                 ) : (
                                   <span>{tr("pickADate")}</span>
                                 )}
@@ -702,6 +713,22 @@ export default function PurchaseOrders() {
                           </Button>
                         )}
                       </div>
+                      {stockItems.length > 0 && (
+                        <div className="col-span-12" data-testid={`po-line-stock-${index}`}>
+                          <LineProductPicker
+                            products={stockItems}
+                            value={watchLines[index]?.productId}
+                            testId={`select-po-line-product-${index}`}
+                            onPick={(picked) => {
+                              form.setValue(`lines.${index}.productId`, picked?.id ?? null);
+                              if (!picked) return;
+                              form.setValue(`lines.${index}.description`, locale === "ar" && picked.nameAr ? picked.nameAr : picked.name);
+                              if (Number(picked.costPrice) > 0) form.setValue(`lines.${index}.unitPrice`, Number(picked.costPrice));
+                              form.setValue(`lines.${index}.vatRate`, Number(picked.vatRate) === 0 ? 0 : 0.05);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

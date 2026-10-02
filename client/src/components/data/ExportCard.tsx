@@ -27,7 +27,7 @@ function formatWhen(iso: string | null, locale: string): string {
   }
 }
 
-export function ExportCard({ companyId, canExport }: { companyId: string; canExport: boolean }) {
+export function ExportCard({ companyId, canExport, companyName }: { companyId: string; canExport: boolean; companyName?: string }) {
   const tr = pageMessages.useT();
   const locale = useI18n((s) => s.locale);
   const { toast } = useToast();
@@ -58,7 +58,7 @@ export function ExportCard({ companyId, canExport }: { companyId: string; canExp
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <FileArchive className="h-5 w-5" aria-hidden="true" />
-          <h2>{tr("exportTitle")}</h2>
+          <h2>{companyName ? tr("exportTitleFor", { name: companyName }) : tr("exportTitle")}</h2>
         </CardTitle>
         <CardDescription className="max-w-2xl">{tr("exportBody")}</CardDescription>
       </CardHeader>

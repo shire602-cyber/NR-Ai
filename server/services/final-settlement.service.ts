@@ -15,6 +15,7 @@ import { LOCK_NS, withDocumentLock } from "./document-lock";
 import { calculateGratuityForEmployee, isUaeOrGccNational } from "./gratuity";
 import { assertCashOrBankAccount, ensureEmployeeLoansAccount, postHrJournal, reverseHrJournal, type HrJournalLine } from "./hr-journal";
 import { annualLeaveAvailable } from "./leave.service";
+import { ensureLeaveProvisionAccounts, leaveProvisionBalances } from "./leave-provision.service";
 import { remainingBalance } from "./loan-math";
 import { computeSettlement } from "./settlement-math";
 
@@ -41,7 +42,8 @@ const utc = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 async function facts(companyId: string, req: SettlementRequest) {
   const r = await pool.query(
     `SELECT id::text AS id, full_name AS "fullName", nationality, status, to_char(join_date, 'YYYY-MM-DD') AS "joinYmd",
-            basic_salary::float8 AS basic, (basic_salary + housing_allowance + transport_allowance + other_allowance)::float8 AS wage
+            basic_salary::float8 AS basic, (basic_salary + housing_allowance + transport_allowance + other_allowance)::float8 AS wage,
+            opening_gratuity_provision::float8 AS "openingProvision"
        FROM employees WHERE id = $1 AND company_id = $2`,
     [req.employeeId, companyId]
   );
@@ -76,7 +78,7 @@ async function facts(companyId: string, req: SettlementRequest) {
     [companyId]
   );
   const loans = await pool.query(
-    `SELECT i.amount::float8 AS amount, i.status FROM employee_loan_installments i JOIN employee_loans l ON l.id = i.loan_id
+    `SELECT i.amount::float8 AS amount, i.status, i.payroll_run_id::text AS "runId" FROM employee_loan_installments i JOIN employee_loans l ON l.id = i.loan_id
       WHERE i.company_id = $1 AND l.employee_id = $2 AND l.status = 'active'`,
     [companyId, req.employeeId]
   );
@@ -88,10 +90,12 @@ async function facts(companyId: string, req: SettlementRequest) {
     warnings,
     gratuity,
     leaveDays,
-    provisionDefault: accrued.rows[0].total as number,
+    // The employee's whole provision: what they came with (opening 2036 balance) plus what payroll has accrued since.
+    provisionDefault: Math.round(((accrued.rows[0].total as number) + (employee.openingProvision ?? 0)) * 100) / 100,
     provisionBalance: provisionBalance.rows[0].balance as number,
     loanOutstanding: remainingBalance(loans.rows),
     reservedInstalments: loans.rows.some((i: any) => i.status === "reserved"),
+    reservedRunIds: [...new Set(loans.rows.filter((i: any) => i.status === "reserved" && i.runId).map((i: any) => i.runId as string))],
   };
 }
 
@@ -142,10 +146,11 @@ const COLUMNS = `s.id::text AS id, s.employee_id::text AS "employeeId", e.full_n
   s.created_at AS "createdAt"`;
 const FROM = `FROM employee_final_settlements s JOIN employees e ON e.id = s.employee_id`;
 
-export async function listSettlements(companyId: string, f: { status?: string; limit: number; offset: number }) {
+export async function listSettlements(companyId: string, f: { status?: string; employeeId?: string; limit: number; offset: number }) {
   const params: unknown[] = [companyId];
   let where = "s.company_id = $1";
   if (f.status && f.status !== "all") { params.push(f.status); where += ` AND s.status = $${params.length}`; }
+  if (f.employeeId) { params.push(f.employeeId); where += ` AND s.employee_id = $${params.length}`; }
   params.push(f.limit, f.offset);
   return (await pool.query(`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY s.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
 }
@@ -209,7 +214,14 @@ export async function postSettlement(settlementId: string, userId: string) {
     };
     const f = await facts(s.companyId, request);
     if (f.employee.status !== "active") throw err(409, "EMPLOYEE_NOT_ACTIVE", "The employee is no longer active.");
-    if (f.reservedInstalments) throw err(409, "LOAN_HAS_RESERVED", "A payroll run is waiting to deduct a loan instalment of this employee. Approve or recalculate it first.");
+    if (f.reservedInstalments) {
+      throw err(
+        409,
+        "SETTLEMENT_BLOCKED_BY_RUN",
+        "A payroll run that has not been approved is holding a loan instalment of this employee. Approve it, recalculate it, or delete that draft run, then post the settlement.",
+        { runId: f.reservedRunIds[0] ?? null, runIds: f.reservedRunIds }
+      );
+    }
     // The gratuity is the draft's snapshot; the loan still owed is read again now (payroll may have deducted since).
     const r = computeSettlement({
       gratuityAmount: s.gratuityAmount,
@@ -233,7 +245,17 @@ export async function postSettlement(settlementId: string, userId: string) {
     if (r.provisionUsed > 0) lines.push({ accountId: ids.get("2036")!, debit: r.provisionUsed, credit: 0, description: `Gratuity provision used - ${s.employeeName}` });
     if (r.gratuityTrueUp > 0) lines.push({ accountId: ids.get("5028")!, debit: r.gratuityTrueUp, credit: 0, description: `Gratuity true-up - ${s.employeeName}` });
     if (r.gratuityTrueUp < 0) lines.push({ accountId: ids.get("5028")!, debit: 0, credit: -r.gratuityTrueUp, description: `Gratuity over-accrual released - ${s.employeeName}` });
-    if (r.leaveEncashment > 0) lines.push({ accountId: ids.get("5020")!, debit: r.leaveEncashment, credit: 0, description: `Unused leave paid out - ${s.employeeName}` });
+    // Leave paid out comes first from the leave-pay provision held for the employee (Dr 2037); only what the provision
+    // does not cover is expense (Dr 5020). A provision larger than the payout is released (Cr 5029): 2037 ends at zero.
+    const leaveProvisionHeld = Math.max(0, (await leaveProvisionBalances(s.companyId, [s.employeeId])).get(s.employeeId) ?? 0);
+    if (leaveProvisionHeld > 0) {
+      const provisionAccounts = await ensureLeaveProvisionAccounts(s.companyId);
+      lines.push({ accountId: provisionAccounts.provisionId, debit: leaveProvisionHeld, credit: 0, description: `Leave pay provision used - ${s.employeeName}` });
+      if (r.leaveEncashment > leaveProvisionHeld) lines.push({ accountId: ids.get("5020")!, debit: Math.round((r.leaveEncashment - leaveProvisionHeld) * 100) / 100, credit: 0, description: `Unused leave paid out - ${s.employeeName}` });
+      if (leaveProvisionHeld > r.leaveEncashment) lines.push({ accountId: provisionAccounts.expenseId, debit: 0, credit: Math.round((leaveProvisionHeld - r.leaveEncashment) * 100) / 100, description: `Leave pay provision released - ${s.employeeName}` });
+    } else if (r.leaveEncashment > 0) {
+      lines.push({ accountId: ids.get("5020")!, debit: r.leaveEncashment, credit: 0, description: `Unused leave paid out - ${s.employeeName}` });
+    }
     if (r.loanRecovered > 0) lines.push({ accountId: await ensureEmployeeLoansAccount(s.companyId), debit: 0, credit: r.loanRecovered, description: `Loan recovered from settlement - ${s.employeeName}` });
     if (r.otherDeductions > 0) lines.push({ accountId: ids.get("2034")!, debit: 0, credit: r.otherDeductions, description: `Settlement deductions - ${s.employeeName}` });
     if (r.netPayable > 0) lines.push({ accountId: ids.get("2030")!, debit: 0, credit: r.netPayable, description: `Final settlement payable - ${s.employeeName}` });
@@ -249,6 +271,9 @@ export async function postSettlement(settlementId: string, userId: string) {
     });
 
     await pool.query(`UPDATE employees SET status = 'terminated', termination_date = $2 WHERE id = $1`, [s.employeeId, s.terminationDate]);
+    if (leaveProvisionHeld > 0) {
+      await pool.query(`INSERT INTO employee_leave_provisions (company_id, employee_id, settlement_id, amount) VALUES ($1, $2, $3, $4)`, [s.companyId, s.employeeId, settlementId, -leaveProvisionHeld]);
+    }
     if (r.loanRecovered > 0) {
       await pool.query(
         `UPDATE employee_loan_installments i SET status = 'settled', settled_by_settlement_id = $2
@@ -322,6 +347,11 @@ export async function voidSettlement(settlementId: string, userId: string) {
       memo: `Void final settlement - ${s.employeeName}`,
     });
     await pool.query(`UPDATE employees SET status = 'active', termination_date = NULL WHERE id = $1 AND status = 'terminated'`, [s.employeeId]);
+    // The leave provision the settlement used comes back with the employee.
+    const used = await pool.query(`SELECT COALESCE(SUM(amount), 0)::float8 AS used FROM employee_leave_provisions WHERE settlement_id = $1`, [settlementId]);
+    if (used.rows[0].used < 0) {
+      await pool.query(`INSERT INTO employee_leave_provisions (company_id, employee_id, amount) VALUES ($1, $2, $3)`, [s.companyId, s.employeeId, -used.rows[0].used]);
+    }
     await pool.query(`UPDATE employee_loan_installments SET status = 'scheduled', settled_by_settlement_id = NULL WHERE settled_by_settlement_id = $1`, [settlementId]);
     await pool.query(
       `UPDATE employee_loans l SET status = 'active' WHERE l.employee_id = $1 AND l.status = 'settled'

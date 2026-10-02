@@ -8,6 +8,7 @@
 //   scenario  one-off amounts
 // The month-by-month history report keeps its own aggregate query.
 
+import { dubaiDaySql, dubaiDayTextSql } from "./vat-dubai-day";
 import { and, desc, eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { cashflowForecastScenarios, type CashflowForecastScenario } from "../../shared/schema";
@@ -65,7 +66,7 @@ export async function openingBankBalance(companyId: string, today: string): Prom
   const res = await pool.query(
     `SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::float8 AS bal
        FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-      WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = ANY($2::uuid[]) AND je.date::date <= $3::date`,
+      WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = ANY($2::uuid[]) AND ${dubaiDaySql("je.date")} <= $3::date`,
     [companyId, Array.from(ids), today]
   );
   return round2(num(res.rows[0]?.bal));
@@ -73,7 +74,7 @@ export async function openingBankBalance(companyId: string, today: string): Prom
 
 async function invoiceItems(companyId: string, s: ForecastScenario, today: string): Promise<{ items: ForecastItem[]; overdue: { amount: number; count: number } }> {
   const res = await pool.query(
-    `SELECT i.id, i.number, i.customer_name, to_char(i.date, 'YYYY-MM-DD') AS date_s, to_char(i.due_date, 'YYYY-MM-DD') AS due_s,
+    `SELECT i.id, i.number, i.customer_name, ${dubaiDayTextSql("i.date")} AS date_s, ${dubaiDayTextSql("i.due_date")} AS due_s,
             (${outstandingSql("i")} * COALESCE(NULLIF(i.exchange_rate, 0), 1))::float8 AS open_aed
        FROM invoices i WHERE i.company_id = $1 AND ${openReceivableSql("i")}`,
     [companyId]
@@ -99,7 +100,7 @@ async function invoiceItems(companyId: string, s: ForecastScenario, today: strin
 async function billItems(companyId: string, s: ForecastScenario, today: string): Promise<ForecastItem[]> {
   // billOutstandingAsOfSql takes the as-of day as $2 (date) and $3 (timestamp)
   const res = await pool.query(
-    `SELECT b.id, b.bill_number, b.vendor_name, to_char(b.bill_date, 'YYYY-MM-DD') AS date_s, to_char(b.due_date, 'YYYY-MM-DD') AS due_s,
+    `SELECT b.id, b.bill_number, b.vendor_name, ${dubaiDayTextSql("b.bill_date")} AS date_s, ${dubaiDayTextSql("b.due_date")} AS due_s,
             (${billOutstandingAsOfSql("b")} * COALESCE(NULLIF(b.exchange_rate, 0), 1))::float8 AS open_aed
        FROM vendor_bills b
       WHERE b.company_id = $1 AND b.status IN ('approved', 'partial', 'pending')`,
@@ -117,7 +118,7 @@ async function billItems(companyId: string, s: ForecastScenario, today: string):
 
 async function recurringItems(companyId: string, s: ForecastScenario, today: string, horizonEnd: string): Promise<ForecastItem[]> {
   const res = await pool.query(
-    `SELECT id, customer_name, currency, frequency, to_char(next_run_date, 'YYYY-MM-DD') AS next_s, to_char(end_date, 'YYYY-MM-DD') AS end_s, lines_json
+    `SELECT id, customer_name, currency, frequency, ${dubaiDayTextSql("next_run_date")} AS next_s, ${dubaiDayTextSql("end_date")} AS end_s, lines_json
        FROM recurring_invoices WHERE company_id = $1 AND is_active = true`,
     [companyId]
   );

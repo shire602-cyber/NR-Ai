@@ -5,6 +5,7 @@
  * the filing transaction's own connection.
  */
 
+import { dubaiDaySql } from "./vat-dubai-day";
 import { sql } from "drizzle-orm";
 import { AppError } from "../errors";
 import { accounts } from "../../shared/schema";
@@ -46,7 +47,7 @@ export async function ledgerVatBalances(tx: Tx, companyId: string, startYmd: str
       JOIN journal_entries je ON je.id = jl.entry_id
       JOIN accounts a ON a.id = jl.account_id
      WHERE je.company_id = ${companyId} AND je.status = 'posted'
-       AND je.date::date >= ${startYmd}::date AND je.date::date <= ${endYmd}::date
+       AND ${sql.raw(dubaiDaySql("je.date"))} >= ${startYmd}::date AND ${sql.raw(dubaiDaySql("je.date"))} <= ${endYmd}::date
        AND je.source NOT IN (${sql.join(EXCLUDED_SOURCES.map((s) => sql`${s}`), sql`, `)})
        ${skipHistorical}
        AND ((a.code = ${ACCOUNT_CODES.VAT_OUTPUT} AND a.type = 'liability') OR (a.code = ${ACCOUNT_CODES.VAT_INPUT} AND a.type = 'asset'))

@@ -256,6 +256,11 @@ export const employees = pgTable("employees", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   // Phase 8 D2 (0109)
   terminationDate: date("termination_date", { mode: "string" }),
+  // Phase 9 (0125): the login this employee record belongs to (an employee-role user sees only their own records).
+  userId: uuid("user_id"),
+  // Phase 9 (0126)
+  molPersonId: text("mol_person_id"),
+  openingGratuityProvision: money("opening_gratuity_provision").notNull().default(0),
 });
 export type EmployeeRow = typeof employees.$inferSelect;
 
@@ -286,6 +291,8 @@ export const payrollRuns = pgTable("payroll_runs", {
   // Phase 8 D2 (0109)
   totalLeaveDeductions: money("total_leave_deductions").notNull().default(0),
   totalLoanDeductions: money("total_loan_deductions").notNull().default(0),
+  // Phase 9 (0126): who prepared the run
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
 });
 export type PayrollRunRow = typeof payrollRuns.$inferSelect;
 
@@ -318,6 +325,8 @@ export const payrollItems = pgTable("payroll_items", {
   loanDeduction: money("loan_deduction").notNull().default(0),
   unpaidLeaveDays: num("unpaid_leave_days").notNull().default(0),
   halfPayLeaveDays: num("half_pay_leave_days").notNull().default(0),
+  // Phase 9 (0126): days paid on a 30-day basis in a joining or leaving month; null = the full month
+  daysWorked: num("days_worked"),
 });
 export type PayrollItemRow = typeof payrollItems.$inferSelect;
 
@@ -372,6 +381,8 @@ export const approvalRequests = pgTable(
     status: text("status").notNull().default("pending"),
     previousStatus: text("previous_status"),
     requestedBy: uuid("requested_by").references(() => users.id),
+    // true when a step was signed by the document's own creator as the sole possible approver (0126)
+    selfApproved: boolean("self_approved").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     decidedAt: timestamp("decided_at"),
   },
@@ -400,6 +411,7 @@ export const approvalSteps = pgTable(
     // approved | rejected
     decision: text("decision").notNull(),
     comment: text("comment"),
+    selfApproved: boolean("self_approved").notNull().default(false),
     decidedAt: timestamp("decided_at").defaultNow().notNull(),
   },
   (t) => ({
@@ -698,3 +710,26 @@ export const employeeFinalSettlements = pgTable("employee_final_settlements", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 export type EmployeeFinalSettlementRow = typeof employeeFinalSettlements.$inferSelect;
+
+// ===========================
+// Leave-pay provision per employee (migration 0126): accruals positive, uses and releases negative
+// ===========================
+export const employeeLeaveProvisions = pgTable(
+  "employee_leave_provisions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    payrollRunId: uuid("payroll_run_id").references(() => payrollRuns.id, { onDelete: "set null" }),
+    settlementId: uuid("settlement_id").references(() => employeeFinalSettlements.id, { onDelete: "set null" }),
+    amount: money("amount").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    employeeIdx: index("idx_employee_leave_provisions_employee").on(t.companyId, t.employeeId),
+  })
+);

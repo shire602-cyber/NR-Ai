@@ -21,6 +21,7 @@ import { db, pool } from "../db";
 import { classifyVatLineForReturn, type VatReturnClass } from "./vat-supply-type";
 import { VOID_DATE_LATERAL_SQL, invoiceEffectForPeriod } from "./vat-document-effect";
 import { neverDeclaredAmong } from "./vat-void-history.service";
+import { loadVatJournalAdjustments } from "./vat-adjustments.service";
 import { UAE_VAT_RATE } from "../constants";
 import {
   FAF_BLOCKS,
@@ -370,7 +371,29 @@ export function allocate(total: number, weights: number[]): number[] {
   return out;
 }
 
+/** Invoice supplies, then the taxable sales recorded by manual journal (box 1 of the return reports them too). */
 async function* supplyBatches(companyId: string, from: string, to: string): AsyncGenerator<FafSupplyRow[]> {
+  yield* invoiceSupplyBatches(companyId, from, to);
+  const { sales } = await loadVatJournalAdjustments(db, companyId, from, to, null);
+  if (sales.length === 0) return;
+  yield sales.map((sale) => ({
+    customerName: "",
+    customerTrn: null,
+    invoiceDate: sale.date,
+    invoiceNumber: `Journal ${sale.entryNumber}`,
+    lineNumber: 1,
+    description: sale.description,
+    valueAed: round2(sale.amount),
+    vatAed: round2(sale.vat),
+    taxCode: fafSupplyTaxCode({ klass: "standard", reverseCharge: false }),
+    country: FAF_DEFAULT_SUPPLY_COUNTRY,
+    fcyCode: null,
+    valueFcy: null,
+    vatFcy: null,
+  }));
+}
+
+async function* invoiceSupplyBatches(companyId: string, from: string, to: string): AsyncGenerator<FafSupplyRow[]> {
   let cursorDate = "-infinity";
   let cursorId = NIL_UUID;
   for (;;) {
@@ -691,6 +714,30 @@ async function* claimBatches(companyId: string, from: string, to: string): Async
   }
 }
 
+/** Purchases recorded by manual journal (Dr expense + Dr 1050): listed like a bill; a blocked-category one carries no VAT. */
+async function* journalPurchaseBatches(companyId: string, from: string, to: string): AsyncGenerator<FafPurchaseRow[]> {
+  const { purchases } = await loadVatJournalAdjustments(db, companyId, from, to, null);
+  if (purchases.length === 0) return;
+  yield purchases.map((p) => {
+    const vat = p.blocked ? 0 : p.vat;
+    return {
+      supplierName: "",
+      supplierTrn: null,
+      invoiceDate: p.date,
+      invoiceNumber: `Journal ${p.entryNumber}`,
+      permitNumber: null,
+      lineNumber: 1,
+      description: p.description,
+      valueAed: round2(p.amount),
+      vatAed: round2(vat),
+      taxCode: fafPurchaseTaxCode({ reverseCharge: false, isImport: false, vat }),
+      fcyCode: null,
+      valueFcy: null,
+      vatFcy: null,
+    };
+  });
+}
+
 async function* ledgerBatches(companyId: string, from: string, to: string): AsyncGenerator<FafGlRow[]> {
   let cCode = "";
   let cDate = "-infinity";
@@ -744,6 +791,7 @@ export function createDbFafSource(companyId: string, from: string, to: string): 
       yield* vendorCreditBatches(companyId, from, to);
       yield* receiptBatches(companyId, from, to);
       yield* claimBatches(companyId, from, to);
+      yield* journalPurchaseBatches(companyId, from, to);
     },
     supplies: () => supplyBatches(companyId, from, to),
     ledger: () => ledgerBatches(companyId, from, to),

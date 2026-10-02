@@ -570,7 +570,7 @@ async function tenantPinning() {
   if (billB.json?.id) {
     const ap = await v1("POST", `/bills/${billB.json.id}/approve`, { key });
     ok("A's key cannot approve B's bill -> 404", ap.status === 404, ap.status);
-    const bp = await v1("POST", `/bills/${billB.json.id}/payments`, { key, body: { amount: 1 } });
+    const bp = await v1("POST", `/bills/${billB.json.id}/payments`, { key, body: { amount: 1, paymentAccountId: crypto.randomUUID() } });
     ok("A's key cannot pay B's bill -> 404", bp.status === 404, bp.status);
   }
   const refContact = await v1("POST", "/invoices", { key, body: invoiceBody({ contactId: contactB.json.id }) });
@@ -759,13 +759,13 @@ async function v1BillsJournalsReports() {
   const bill = await v1("POST", "/bills", { key, body: { vendorName: "Supplier A", date: today, dueDate: today, number: "S-1", lines: [{ description: "Office", quantity: 2, unitPrice: "525.00", vatRate: 0.05 }] } });
   ok("create bill -> 201, pending", bill.status === 201 && bill.json?.data?.status === "pending" && bill.json.data.lines?.length === 1 && bill.json.data.number === "S-1", bill.text?.slice(0, 300));
   ok("bill totals are strings", bill.json?.data?.subtotal === "1050.00" && bill.json.data.vatAmount === "52.50" && bill.json.data.total === "1102.50", bill.json?.data);
-  const payEarly = await v1("POST", `/bills/${bill.json.data.id}/payments`, { key, body: { amount: "100.00" } });
+  const payEarly = await v1("POST", `/bills/${bill.json.data.id}/payments`, { key, body: { amount: "100.00", paymentAccountId: cash.id } });
   ok("pay a bill (any state the internal rules allow)", [201, 400, 409, 422].includes(payEarly.status), payEarly.status);
   const approved = await v1("POST", `/bills/${bill.json.data.id}/approve`, { key });
   ok("approve bill -> approved", approved.status === 200 && approved.json?.data?.status === "approved", approved.text?.slice(0, 200));
   const again = await v1("POST", `/bills/${bill.json.data.id}/approve`, { key });
   ok("approving twice -> 4xx with a code", again.status >= 400 && again.status < 500 && !!again.json?.error?.code, again.status);
-  const bp = await v1("POST", `/bills/${bill.json.data.id}/payments`, { key, body: { amount: "500.00", method: "bank_transfer" } });
+  const bp = await v1("POST", `/bills/${bill.json.data.id}/payments`, { key, body: { amount: "500.00", method: "bank_transfer", paymentAccountId: cash.id } });
   ok("bill payment -> 201 payment made", bp.status === 201 && bp.json?.data?.direction === "made" && bp.json.data.amount === "500.00" && bp.json.data.billStatus === "partial", bp.text?.slice(0, 300));
   const made = await v1("GET", "/payments?direction=made", { key });
   ok("GET /payments?direction=made", made.json?.data?.some((p) => p.documentId === bill.json.data.id), made.text?.slice(0, 200));
@@ -847,9 +847,11 @@ async function companyExport() {
   const noAuth = await api("POST", `/api/companies/${u.cid}/exports`);
   ok("anonymous cannot export (401)", noAuth.status === 401, noAuth.status);
 
-  const racers = await Promise.all(Array.from({ length: 4 }, () => api("POST", `/api/companies/${u.cid}/exports`, { token: accountant.token })));
+  const acctTry = await api("POST", `/api/companies/${u.cid}/exports`, { token: accountant.token });
+  ok("an accountant cannot request a full-company export (403 OWNER_REQUIRED)", acctTry.status === 403 && acctTry.json?.code === "OWNER_REQUIRED", acctTry.text);
+  const racers = await Promise.all(Array.from({ length: 4 }, () => api("POST", `/api/companies/${u.cid}/exports`, { token: u.token })));
   const accepted = racers.filter((r) => r.status === 202);
-  ok("accountant export -> 202 job; concurrent requests -> 409 EXPORT_IN_PROGRESS (AC25)", accepted.length >= 1 && racers.every((r) => r.status === 202 || (r.status === 409 && r.json?.code === "EXPORT_IN_PROGRESS")), racers.map((r) => r.status));
+  ok("owner export -> 202 job; concurrent requests -> 409 EXPORT_IN_PROGRESS (AC25)", accepted.length >= 1 && racers.every((r) => r.status === 202 || (r.status === 409 && r.json?.code === "EXPORT_IN_PROGRESS")), racers.map((r) => r.status));
   const jobId = accepted[0].json.id;
   const ready = await waitFor(async () => { const r = await api("GET", `/api/companies/${u.cid}/exports/${jobId}`, { token: u.token }); return r.json?.status === "ready" || r.json?.status === "failed" ? r : null; });
   ok("the job reaches ready", ready?.json?.status === "ready", ready?.json);
@@ -859,7 +861,9 @@ async function companyExport() {
   const empDl = await api("GET", `/api/companies/${u.cid}/exports/${jobId}/download`, { token: employee.token });
   ok("employee cannot download (403)", empDl.status === 403, empDl.status);
 
-  const dl = await api("GET", `/api/companies/${u.cid}/exports/${jobId}/download`, { token: accountant.token, raw: true });
+  const acctDl = await api("GET", `/api/companies/${u.cid}/exports/${jobId}/download`, { token: accountant.token, raw: true });
+  ok("and cannot download the owner's export (403)", acctDl.status === 403, acctDl.status);
+  const dl = await api("GET", `/api/companies/${u.cid}/exports/${jobId}/download`, { token: u.token, raw: true });
   ok("download streams a ZIP with the checksum header", dl.status === 200 && /zip/.test(dl.headers.get("content-type")) && dl.headers.get("x-export-sha256") === ready.json.sha256 && crypto.createHash("sha256").update(dl.buf).digest("hex") === ready.json.sha256, dl.status);
   const zip = await JSZip.loadAsync(dl.buf);
   const names = Object.keys(zip.files);
@@ -1530,7 +1534,7 @@ async function exportCoversEveryCompanyTable() {
   await db.query(`INSERT INTO time_entries (company_id, project_id, user_id, entry_date) VALUES ($1, $2, $3, current_date)`, [u.cid, proj.id, u.userId]);
   const def = (await db.query(`INSERT INTO custom_field_definitions (company_id, entity, key, label_en, label_ar) VALUES ($1, 'invoice', 'po_number', 'PO number', 'رقم أمر الشراء') RETURNING id`, [u.cid])).rows[0];
   await db.query(`INSERT INTO custom_field_values (company_id, entity, record_id, definition_id, value) VALUES ($1, 'invoice', $2, $3, 'PO-77')`, [u.cid, inv.id, def.id]);
-  await db.query(`INSERT INTO payment_links (company_id, invoice_id, provider_session_id, amount, currency) VALUES ($1, $2, 'sess_x', 10, 'AED')`, [u.cid, inv.id]);
+  await db.query(`INSERT INTO payment_links (company_id, invoice_id, provider_session_id, amount, currency) VALUES ($1, $2, $3, 10, 'AED')`, [u.cid, inv.id, 'sess_' + rnd]);
   await db.query(`INSERT INTO payment_gateway_connections (company_id, provider) VALUES ($1, 'stripe') ON CONFLICT DO NOTHING`, [u.cid]).catch(() => {});
 
   const job = await api("POST", `/api/companies/${u.cid}/exports`, { token: u.token });

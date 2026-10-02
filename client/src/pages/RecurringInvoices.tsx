@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { pickerDate, parseYmd, todayYmd, formatCalendarDate, toYmd } from "@/lib/calendar-date";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -79,15 +80,22 @@ import { messages as pageMessages } from "./RecurringInvoices.i18n";
 import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 import { ContactPicker } from "@/components/sales/ContactPicker";
 import { salesErrorMessage } from "@/lib/sales-api";
+import { jobCreatedCount, salesEndpoints } from "@/lib/sales-endpoints";
+import { useCanManageFinance } from "@/hooks/useCanManageFinance";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Mail } from "lucide-react";
+import { LineDiscountFields } from "@/components/sales/LineDiscountFields";
+import { buildTemplateLines, splitTemplateLines } from "@/lib/recurring-template-lines";
 
 const lineItemSchema = z.object({
   description: z.string().min(1, pageMessages.marker("descriptionIsRequired")),
   quantity: z.coerce.number().min(0.01, pageMessages.marker("quantityMustBePositive")),
   unitPrice: z.coerce.number().min(0, pageMessages.marker("priceMustBePositive")),
   vatRate: z.coerce.number().default(0.05),
+  // A line discount (percent, or an amount before VAT) carried onto every generated invoice.
+  discountType: z.enum(["percent", "amount"]).nullable().optional(),
+  discountValue: z.union([z.number(), z.string()]).nullable().optional(),
 });
 
 const recurringInvoiceSchema = z.object({
@@ -100,6 +108,8 @@ const recurringInvoiceSchema = z.object({
   frequency: z.enum(["weekly", "monthly", "quarterly", "yearly"]),
   startDate: z.date(),
   endDate: z.date().optional().nullable(),
+  shippingAmount: z.union([z.number(), z.string()]).default(""),
+  shippingVatRate: z.coerce.number().default(0.05),
   lines: z.array(lineItemSchema).min(1, pageMessages.marker("atLeastOneLineItemIs")),
 });
 
@@ -126,6 +136,7 @@ export default function RecurringInvoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const canManageFinance = useCanManageFinance(selectedCompanyId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RecurringInvoice | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -145,8 +156,10 @@ export default function RecurringInvoices() {
       paymentTermsDays: 30,
       currency: "AED",
       frequency: "monthly",
-      startDate: new Date(),
+      startDate: parseYmd(todayYmd()),
       endDate: null,
+      shippingAmount: "",
+      shippingVatRate: 0.05,
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
   });
@@ -166,9 +179,9 @@ export default function RecurringInvoices() {
         paymentTermsDays: data.paymentTermsDays === "" || data.paymentTermsDays === null || data.paymentTermsDays === undefined ? null : Number(data.paymentTermsDays),
         currency: data.currency,
         frequency: data.frequency,
-        startDate: data.startDate.toISOString(),
-        endDate: data.endDate ? data.endDate.toISOString() : null,
-        linesJson: JSON.stringify(data.lines),
+        startDate: toYmd(data.startDate),
+        endDate: data.endDate ? toYmd(data.endDate) : null,
+        linesJson: JSON.stringify(buildTemplateLines(data.lines, { amount: data.shippingAmount, vatRate: data.shippingVatRate }, salesTr("shippingLineDescription"))),
       });
     },
     onSuccess: () => {
@@ -197,10 +210,10 @@ export default function RecurringInvoices() {
         paymentTermsDays: data.paymentTermsDays === "" || data.paymentTermsDays === null || data.paymentTermsDays === undefined ? null : Number(data.paymentTermsDays),
         currency: data.currency,
         frequency: data.frequency,
-        startDate: data.startDate.toISOString(),
-        nextRunDate: data.startDate.toISOString(),
-        endDate: data.endDate ? data.endDate.toISOString() : null,
-        linesJson: JSON.stringify(data.lines),
+        startDate: toYmd(data.startDate),
+        nextRunDate: toYmd(data.startDate),
+        endDate: data.endDate ? toYmd(data.endDate) : null,
+        linesJson: JSON.stringify(buildTemplateLines(data.lines, { amount: data.shippingAmount, vatRate: data.shippingVatRate }, salesTr("shippingLineDescription"))),
       });
     },
     onSuccess: () => {
@@ -217,6 +230,19 @@ export default function RecurringInvoices() {
     },
     onError: (error: Error) => {
       toast({ title: tr("error"), description: salesErrorMessage(error, (k) => salesTr(k), tr("error")), variant: "destructive" });
+    },
+  });
+
+  const runNowMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", salesEndpoints.runRecurringNow(selectedCompanyId as string), {}),
+    onSuccess: (result: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "invoices"] });
+      const n = jobCreatedCount(result);
+      toast({ title: salesTr("runNowDone"), description: n > 0 ? salesTr("runNowCreated", { count: n }) : salesTr("runNowNothingDue") });
+    },
+    onError: (error: Error) => {
+      toast({ title: tr("error"), description: salesErrorMessage(error, (k) => salesTr(k), salesTr("runNowFailed")), variant: "destructive" });
     },
   });
 
@@ -259,8 +285,10 @@ export default function RecurringInvoices() {
       paymentTermsDays: 30,
       currency: "AED",
       frequency: "monthly",
-      startDate: new Date(),
+      startDate: parseYmd(todayYmd()),
       endDate: null,
+      shippingAmount: "",
+      shippingVatRate: 0.05,
       lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     });
     setDialogOpen(true);
@@ -268,12 +296,14 @@ export default function RecurringInvoices() {
 
   const handleEdit = (item: RecurringInvoice) => {
     setEditingItem(item);
-    let parsedLines = [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }];
+    let parsedLines: any[] = [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }];
     try {
       parsedLines = JSON.parse(item.linesJson);
     } catch {
       // keep default
     }
+    // The shipping line has its own fields; every other line keeps its discount.
+    const { items: itemLines, shipping: shippingLine } = splitTemplateLines(parsedLines);
     form.reset({
       customerName: item.customerName,
       customerTrn: item.customerTrn || "",
@@ -282,9 +312,11 @@ export default function RecurringInvoices() {
       paymentTermsDays: (item as any).paymentTermsDays ?? null,
       currency: item.currency,
       frequency: item.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
-      startDate: new Date(item.startDate),
-      endDate: item.endDate ? new Date(item.endDate) : null,
-      lines: parsedLines,
+      startDate: (pickerDate(item.startDate) as Date),
+      endDate: item.endDate ? (pickerDate(item.endDate) as Date) : null,
+      shippingAmount: shippingLine ? Number(shippingLine.unitPrice) : "",
+      shippingVatRate: shippingLine ? Number(shippingLine.vatRate ?? 0.05) : 0.05,
+      lines: itemLines.length > 0 ? itemLines : [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     });
     setDialogOpen(true);
   };
@@ -320,6 +352,13 @@ export default function RecurringInvoices() {
           </h1>
           <p className="text-muted-foreground mt-1">{tr("manageRecurringInvoiceTemplates")}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {canManageFinance && (
+          <Button variant="outline" onClick={() => runNowMutation.mutate()} disabled={runNowMutation.isPending} data-testid="button-run-recurring-now" title={salesTr("runRecurringHelp")}>
+            <Play className="w-4 h-4 me-2" />
+            {salesTr("runNow")}
+          </Button>
+        )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={handleCreate}>
@@ -489,7 +528,7 @@ export default function RecurringInvoices() {
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value ? format(field.value, "PPP") : tr("pickADate")}
+                                {field.value ? formatCalendarDate(field.value, locale) : tr("pickADate")}
                                 <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
@@ -523,7 +562,7 @@ export default function RecurringInvoices() {
                                   !field.value && "text-muted-foreground"
                                 )}
                               >
-                                {field.value ? format(field.value, "PPP") : tr("indefinite")}
+                                {field.value ? formatCalendarDate(field.value, locale) : tr("indefinite")}
                                 <CalendarIcon className="ms-auto h-4 w-4 opacity-50" />
                               </Button>
                             </FormControl>
@@ -650,8 +689,51 @@ export default function RecurringInvoices() {
                           </Button>
                         )}
                       </div>
+                      <div className="col-span-12 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <span className="text-xs text-muted-foreground">{salesTr("lineDiscount")}</span>
+                        <LineDiscountFields
+                          label={String(index + 1)}
+                          type={form.watch(`lines.${index}.discountType`)}
+                          value={form.watch(`lines.${index}.discountValue`)}
+                          testId={`recurring-line-discount-${index}`}
+                          onChange={(next) => {
+                            form.setValue(`lines.${index}.discountType`, next.type, { shouldDirty: true });
+                            form.setValue(`lines.${index}.discountValue`, next.value, { shouldDirty: true });
+                          }}
+                        />
+                      </div>
                     </div>
                   ))}
+                  <div className="space-y-1.5 border-t pt-3" data-testid="recurring-shipping">
+                    <Label>{salesTr("shipping")}</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        dir="ltr"
+                        className="w-40 font-mono"
+                        placeholder={salesTr("shippingAmountPlaceholder")}
+                        aria-label={salesTr("shippingAmount")}
+                        value={form.watch("shippingAmount") ?? ""}
+                        onChange={(e) => form.setValue("shippingAmount", e.target.value === "" ? "" : parseFloat(e.target.value), { shouldDirty: true })}
+                        data-testid="input-recurring-shipping-amount"
+                      />
+                      <Select
+                        value={String(Math.round((form.watch("shippingVatRate") ?? 0.05) * 100))}
+                        onValueChange={(v) => form.setValue("shippingVatRate", parseFloat(v) / 100, { shouldDirty: true })}
+                      >
+                        <SelectTrigger className="w-24 font-mono" aria-label={salesTr("shippingVat")} data-testid="select-recurring-shipping-vat">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">0%</SelectItem>
+                          <SelectItem value="5">5%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{tr("discountsAndShippingHint")}</p>
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-4">
@@ -671,6 +753,7 @@ export default function RecurringInvoices() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>

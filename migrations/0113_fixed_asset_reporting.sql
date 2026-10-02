@@ -18,3 +18,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_fixed_assets_company_status" ON "fixed_assets"("company_id", "status");
 CREATE INDEX IF NOT EXISTS "idx_depreciation_schedules_company_period" ON "depreciation_schedules"("company_id", "period_year", "period_month");
+
+-- A depreciation month booked inside a period that was already closed or locked is not posted into that period: it is
+-- gathered into one catch-up journal dated the first open day. The schedule row keeps the month and points at that journal.
+ALTER TABLE "depreciation_schedules" ADD COLUMN IF NOT EXISTS "catch_up" boolean NOT NULL DEFAULT false;

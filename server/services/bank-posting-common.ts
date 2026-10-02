@@ -1,7 +1,7 @@
 // Pieces every bank-posting path shares: reading a bank line under its lock, refusing frozen or matched lines,
 // resolving the bank GL account and the FX rate, and writing the match onto the row.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { db } from "../db";
 import { bankTransactions, type Account, type BankAccount, type BankTransaction } from "../../shared/schema";
 import { AppError } from "../errors";
@@ -121,3 +121,72 @@ export const clearedPatch = {
   reconciledBy: null,
   suggestedRuleId: null,
 } as const;
+
+export const rowsOf = (res: any): any[] => (res?.rows ?? res) as any[];
+
+/** SQL: the bank line `bt` is matched to the journal entry `je` (as its first entry or as one of several). */
+export const linkedTo = (bt: string, je: string) =>
+  sql.raw(`(${bt}.matched_journal_entry_id = ${je}.id OR EXISTS (SELECT 1 FROM bank_transaction_entries e_l WHERE e_l.bank_transaction_id = ${bt}.id AND e_l.journal_entry_id = ${je}.id))`);
+
+export async function save(tx: Tx, ctx: PostCtx, txnId: string, patch: Record<string, unknown>): Promise<BankTransaction> {
+  const [row] = await tx
+    .update(bankTransactions)
+    .set(patch)
+    .where(and(eq(bankTransactions.id, txnId), eq(bankTransactions.companyId, ctx.companyId)))
+    .returning();
+  return row;
+}
+
+
+// ─── re-link a payment an earlier unmatch left in the ledger ───────────────
+
+/**
+ * A posted payment of this document, from this bank GL account, for exactly this amount, whose journal no bank line of
+ * the same bank account links to. Returns its journal entry id.
+ */
+export async function findUnlinkedPaymentDetail(
+  tx: Tx,
+  a: {
+    table: "invoice_payments" | "bill_payments";
+    fk: "invoice_id" | "bill_id";
+    documentId: string;
+    companyId: string;
+    glAccountId: string;
+    /** exactly this amount; null = any amount up to maxAmount */
+    amount: number | null;
+    maxAmount?: number;
+    source: string;
+    txnId: string;
+  }
+): Promise<{ id: string; amount: number } | null> {
+  const max = a.maxAmount ?? 1e12;
+  const rows = rowsOf(
+    await tx.execute(
+      a.table === "invoice_payments"
+        ? sql`
+      SELECT je.id, p.amount::float8 AS amount FROM invoice_payments p
+        JOIN journal_entries je ON je.id = p.journal_entry_id AND je.company_id = ${a.companyId}
+       WHERE p.invoice_id = ${a.documentId} AND p.payment_account_id = ${a.glAccountId} AND (${a.amount}::numeric IS NULL OR ABS(p.amount - ${a.amount}::numeric) < 0.005) AND p.amount <= ${max}::numeric + 0.005
+         AND je.status = 'posted' AND je.source = ${a.source}
+         AND NOT EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted')
+         AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedTo("bt", "je")}
+                          AND bt.bank_account_id = ${a.glAccountId} AND bt.id <> ${a.txnId})
+       ORDER BY je.date LIMIT 1`
+        : sql`
+      SELECT je.id, p.amount::float8 AS amount FROM bill_payments p
+        JOIN journal_entries je ON je.company_id = ${a.companyId} AND je.source = ${a.source} AND je.source_id = p.id
+       WHERE p.bill_id = ${a.documentId} AND p.payment_account_id = ${a.glAccountId} AND (${a.amount}::numeric IS NULL OR ABS(p.amount - ${a.amount}::numeric) < 0.005) AND p.amount <= ${max}::numeric + 0.005
+         AND je.status = 'posted'
+         AND NOT EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted')
+         AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedTo("bt", "je")}
+                          AND bt.bank_account_id = ${a.glAccountId} AND bt.id <> ${a.txnId})
+       ORDER BY je.date LIMIT 1`
+    )
+  );
+  return rows[0] ? { id: rows[0].id, amount: Number(rows[0].amount) } : null;
+}
+
+export async function findUnlinkedPayment(tx: Tx, a: Omit<Parameters<typeof findUnlinkedPaymentDetail>[1], "amount"> & { amount: number }): Promise<string | null> {
+  return (await findUnlinkedPaymentDetail(tx, a))?.id ?? null;
+}
+

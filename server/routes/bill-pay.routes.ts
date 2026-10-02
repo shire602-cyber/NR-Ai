@@ -4,7 +4,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { storage } from "../storage";
-import { pool } from "../db";
+import { db, pool } from "../db";
 import Decimal from "decimal.js";
 import { billQuantitySchema, billUnitPriceSchema, computeBillLines } from "../services/bill-line-math";
 import { createLogger } from "../config/logger";
@@ -16,12 +16,14 @@ import { normalizeCalendarColumns, toCalendarYmd } from "../utils/date";
 import { recordAudit } from "../services/audit.service";
 import { asOfParams, billAgingBucketsAsOfSql, parseAgingAsOf } from "../services/aging-as-of.service";
 import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
+import { applyBillStockInTx, assertProductsOfCompany } from "../services/purchase-stock.service";
 import { resolveVendor } from "../services/vendor-contact.service";
 import { assertProjectsOfCompany, recordProjectExpensesForBill } from "../services/project.service";
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
 import { loadApprovalDocument } from "../services/approval-queue.service";
 import {
   auditApprovalStep,
+  assertNotRejected,
   beginApprovalStep,
   notifyApprovalProgress,
   pendingApprovalBody,
@@ -61,6 +63,8 @@ const billLineItemSchema = z.object({
   // Phase 8 D2: a cost tagged with a project, optionally billable to the project's customer.
   project_id: z.string().uuid().optional().nullable(),
   is_billable: z.boolean().optional(),
+  // A stock item bought on this line (0127): approving the bill brings it into stock at the line's cost.
+  product_id: z.string().uuid().optional().nullable(),
 });
 
 const billCreateSchema = z
@@ -76,6 +80,8 @@ const billCreateSchema = z
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
   reverse_charge: z.boolean().optional(),
+  // The purchase order this bill bills: goods already received on it clear GRNI instead of being counted twice.
+  purchase_order_id: z.string().uuid().optional().nullable(),
   exchange_rate: z
     .union([z.number(), z.string()])
     .optional()
@@ -130,6 +136,22 @@ const normalizeBill = <R extends Record<string, any>>(row: R): R =>
 const normalizePayment = <R extends Record<string, any>>(row: R): R =>
   normalizeCalendarColumns(row, PAYMENT_DATE_COLUMNS);
 
+/** What an auditor needs to see about a bill, before and after: who, when, how much. */
+function billAuditView(bill: any) {
+  const day = (v: unknown) => (v ? toCalendarYmd(v as string | Date) : null);
+  return {
+    number: bill.bill_number ?? null,
+    vendor: bill.vendor_name ?? null,
+    billDate: day(bill.bill_date),
+    dueDate: day(bill.due_date),
+    currency: bill.currency ?? null,
+    subtotal: bill.subtotal == null ? null : Number(bill.subtotal),
+    vat: bill.vat_amount == null ? null : Number(bill.vat_amount),
+    total: bill.total_amount == null ? null : Number(bill.total_amount),
+    status: bill.status ?? null,
+  };
+}
+
 /** Every line account must be an account of THIS company; a foreign id would post to another tenant's chart. */
 async function foreignLineAccounts(companyId: string, lines: Array<{ account_id?: string | null }> | undefined): Promise<string[]> {
   const ids = Array.from(new Set((lines ?? []).map((l) => l.account_id).filter((x): x is string => !!x)));
@@ -160,9 +182,18 @@ export function registerBillPayRoutes(app: Express) {
 
       const { status, vendor, dateFrom, dateTo } = req.query;
 
+      // A bill sent back by an approver is a draft: carry the rejection (reason and who) so the list can show it.
       let query = `
-      SELECT * FROM vendor_bills
-      WHERE company_id = $1
+      SELECT vendor_bills.*, rj.comment AS rejection_reason, rj.name AS rejected_by_name
+      FROM vendor_bills
+      LEFT JOIN LATERAL (
+        SELECT s.comment, u.name FROM approval_requests r
+          JOIN approval_steps s ON s.request_id = r.id AND s.decision = 'rejected'
+          LEFT JOIN users u ON u.id = s.decided_by
+         WHERE r.document_type = 'bill' AND r.document_id = vendor_bills.id AND r.status = 'rejected'
+         ORDER BY r.created_at DESC LIMIT 1
+      ) rj ON vendor_bills.status = 'draft'
+      WHERE vendor_bills.company_id = $1
     `;
       const params: any[] = [companyId];
       let paramIndex = 2;
@@ -334,6 +365,12 @@ export function registerBillPayRoutes(app: Express) {
       const missingVendorTrn = !vendor_trn;
 
       await assertProjectsOfCompany(companyId, line_items.map((l: any) => l.project_id));
+      await assertProductsOfCompany(companyId, line_items.map((l: any) => l.product_id));
+      const purchaseOrderId: string | null = req.body.purchase_order_id || null;
+      if (purchaseOrderId) {
+        const po = await pool.query(`SELECT 1 FROM purchase_orders WHERE id = $1 AND company_id = $2`, [purchaseOrderId, companyId]);
+        if (po.rows.length === 0) return res.status(422).json({ message: "The purchase order does not belong to this company.", code: "INVALID_PURCHASE_ORDER" });
+      }
 
       // Totals from exact-decimal line maths (unit price rounded to 6dp and
       // quantity to 4dp before each line amount is computed).
@@ -350,8 +387,8 @@ export function registerBillPayRoutes(app: Express) {
         `INSERT INTO vendor_bills (
         company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
         currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url, reverse_charge, exchange_rate, vendor_id, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        category, notes, attachment_url, reverse_charge, exchange_rate, vendor_id, created_by, purchase_order_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *`,
         [
           companyId,
@@ -373,6 +410,7 @@ export function registerBillPayRoutes(app: Express) {
           fxRate,
           vendor.vendorId,
           userId,
+          purchaseOrderId,
         ]
       );
 
@@ -382,8 +420,8 @@ export function registerBillPayRoutes(app: Express) {
       for (const [i, line] of line_items.entries()) {
         const computedLine = computed.lines[i];
         await pool.query(
-          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge, project_id, is_billable)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge, project_id, is_billable, product_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             bill.id,
             line.description,
@@ -395,11 +433,22 @@ export function registerBillPayRoutes(app: Express) {
             billReverseCharge,
             line.project_id || null,
             line.project_id ? line.is_billable === true : false,
+            line.product_id || null,
           ]
         );
       }
 
       log.info({ billId: bill.id, companyId, reverseCharge: billReverseCharge }, "Vendor bill created");
+      await recordAudit({
+        userId,
+        companyId,
+        action: "bill.create",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        before: null,
+        after: { ...billAuditView(bill), lines: line_items.length },
+        req,
+      });
       const billWarnings: Array<{ code: string; message: string }> = [...vendor.warnings];
       // Advisory only — never a silent change of tax treatment.
       if (missingVendorTrn && !billReverseCharge) {
@@ -533,6 +582,7 @@ export function registerBillPayRoutes(app: Express) {
       addUpdate("attachment_url", attachment_url);
 
       if (Array.isArray(line_items)) await assertProjectsOfCompany(bill.company_id, line_items.map((l: any) => l.project_id));
+      if (Array.isArray(line_items)) await assertProductsOfCompany(bill.company_id, line_items.map((l: any) => l.product_id));
 
       // If line_items provided, recalculate totals
       const hasNewLines = Array.isArray(line_items) && line_items.length > 0;
@@ -566,8 +616,8 @@ export function registerBillPayRoutes(app: Express) {
         for (const [i, line] of line_items.entries()) {
           const computedLine = computed.lines[i];
           await pool.query(
-            `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, project_id, is_billable)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, project_id, is_billable, product_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
               id,
               line.description,
@@ -578,11 +628,23 @@ export function registerBillPayRoutes(app: Express) {
               line.account_id || null,
               line.project_id || null,
               line.project_id ? line.is_billable === true : false,
+              line.product_id || null,
             ]
           );
         }
       }
 
+      const after = (await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id])).rows[0];
+      await recordAudit({
+        userId,
+        companyId: bill.company_id,
+        action: "bill.update",
+        entityType: "vendor_bill",
+        entityId: id,
+        before: billAuditView(bill),
+        after: after ? { ...billAuditView(normalizeBill(after)), ...(computed ? { linesReplaced: true } : {}) } : null,
+        req,
+      });
       log.info({ billId: id }, "Vendor bill updated");
       res.json(patchWarnings.length > 0 ? { ...updatedBill, warnings: patchWarnings } : updatedBill);
     })
@@ -638,6 +700,16 @@ export function registerBillPayRoutes(app: Express) {
 
       // Cascade delete will handle line_items and payments
       await pool.query("DELETE FROM vendor_bills WHERE id = $1", [id]);
+      await recordAudit({
+        userId,
+        companyId: bill.company_id,
+        action: "bill.delete",
+        entityType: "vendor_bill",
+        entityId: id,
+        before: billAuditView(normalizeBill(bill)),
+        after: null,
+        req,
+      });
 
       log.info({ billId: id }, "Vendor bill deleted");
       res.json({ message: "Bill deleted successfully" });
@@ -673,6 +745,7 @@ export function registerBillPayRoutes(app: Express) {
         const bill = normalizeBill(fresh.rows[0]);
         if (!bill) return { status: 404, body: { message: "Bill not found" } };
 
+        await assertNotRejected("bill", id);
         if (bill.status !== "pending" && bill.status !== "pending_approval") {
           return { status: 400, body: { message: "Only pending bills can be approved" } };
         }
@@ -683,7 +756,7 @@ export function registerBillPayRoutes(app: Express) {
         // Approval rules (amount and role): none = the single-step approval this route always had.
         const doc = await loadApprovalDocument("bill", id);
         const actor = await resolveActor(req.user!, bill.company_id);
-        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: bill.status }) : ({ kind: "none" } as const);
+        const step = doc ? await beginApprovalStep(tx, doc, actor, { previousStatus: bill.status, acknowledgeSoleApprover: req.body?.acknowledgeSoleApprover === true }) : ({ kind: "none" } as const);
 
         if (step.kind === "step" && !step.isFinal) {
           const request = await recordApprovalStep(tx, step, actor);
@@ -696,10 +769,18 @@ export function registerBillPayRoutes(app: Express) {
         // Post the AP journal entry BEFORE flipping status — if posting fails the
         // bill stays pending and the books never diverge from the subledger.
         const linesResult = await pool.query(
-          `SELECT description, amount, account_id, project_id FROM bill_line_items WHERE bill_id = $1`,
+          `SELECT id, description, amount, account_id, project_id, product_id, quantity FROM bill_line_items WHERE bill_id = $1`,
           [id]
         );
-        await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
+        if (linesResult.rows.some((r: any) => r.product_id)) {
+          // Stock bought on the bill: the movements and the entry commit together (purchase-stock.service).
+          await db.transaction(async (stockTx: any) => {
+            const legs = await applyBillStockInTx(stockTx, bill, linesResult.rows, userId);
+            await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId, { tx: stockTx, legs });
+          });
+        } else {
+          await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
+        }
 
         const updateResult = await pool.query(
           `UPDATE vendor_bills

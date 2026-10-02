@@ -1,3 +1,4 @@
+import { normaliseVatFrequency, vatChecklistVerdict } from "./month-end-checklist-rules";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { acquirePeriodLockExclusive } from "./posting-lock";
@@ -69,29 +70,59 @@ export async function getCloseChecklist(
 ): Promise<ChecklistItem[]> {
   const checklist: ChecklistItem[] = [];
 
-  // 1. Bank reconciliation complete
+  // 1. Bank reconciliation complete: every bank account with activity in the period needs a COMPLETED reconciliation
+  // session as at the period end or later (the transaction flags alone do not prove the statement was agreed to the ledger).
+  // Lines with no managed bank account cannot have a session: they must all be reconciled.
   const bankResult = await pool.query(
-    `SELECT
-       COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE is_reconciled = true) AS reconciled
-     FROM bank_transactions
-     WHERE company_id = $1
-       AND transaction_date >= $2::date
-       AND transaction_date <= $3::date`,
+    `SELECT t.bank_statement_account_id AS bank_account_id,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE t.is_reconciled = true) AS reconciled
+     FROM bank_transactions t
+     WHERE t.company_id = $1
+       AND t.transaction_date >= $2::date
+       AND t.transaction_date < ($3::date + 1)
+     GROUP BY t.bank_statement_account_id`,
     [companyId, periodStart, periodEnd]
   );
-  const bankTotal = parseInt(bankResult.rows[0]?.total || "0");
-  const bankReconciled = parseInt(bankResult.rows[0]?.reconciled || "0");
+  const sessionResult = await pool.query(
+    `SELECT DISTINCT bank_account_id
+     FROM bank_reconciliations
+     WHERE company_id = $1 AND status = 'completed' AND statement_date >= $2::date`,
+    [companyId, periodEnd]
+  );
+  const sessionAccounts = new Set<string>(sessionResult.rows.map((r: any) => String(r.bank_account_id)));
+  let bankTotal = 0;
+  let bankReconciled = 0;
+  let accountsNeedingSession = 0;
+  let accountsWithSession = 0;
+  let looseUnreconciled = 0;
+  for (const row of bankResult.rows) {
+    const total = parseInt(row.total || "0");
+    const reconciled = parseInt(row.reconciled || "0");
+    bankTotal += total;
+    bankReconciled += reconciled;
+    if (row.bank_account_id) {
+      accountsNeedingSession++;
+      if (sessionAccounts.has(String(row.bank_account_id))) accountsWithSession++;
+    } else {
+      looseUnreconciled += total - reconciled;
+    }
+  }
   const bankUnreconciled = bankTotal - bankReconciled;
+  const bankSessionsMissing = accountsNeedingSession - accountsWithSession;
   checklist.push({
     id: 1,
     title: "Bank Reconciliation Complete",
-    description: "All bank transactions for the period are reconciled",
-    status: bankTotal === 0 || bankUnreconciled === 0 ? "complete" : "incomplete",
+    description: "Every bank account with activity has a completed reconciliation as at the period end",
+    status: bankTotal === 0 || (bankSessionsMissing === 0 && looseUnreconciled === 0) ? "complete" : "incomplete",
     details:
       bankTotal === 0
         ? "No bank transactions in this period"
-        : `${bankReconciled}/${bankTotal} reconciled (${bankUnreconciled} remaining)`,
+        : bankSessionsMissing > 0
+          ? `${accountsWithSession}/${accountsNeedingSession} bank accounts have a completed reconciliation as at ${periodEnd} (${bankUnreconciled} lines unreconciled)`
+          : looseUnreconciled > 0
+            ? `${looseUnreconciled} lines without a bank account are unreconciled`
+            : `${accountsWithSession}/${accountsNeedingSession} bank accounts reconciled as at ${periodEnd}`,
   });
 
   // 2. All invoices posted (non-draft)
@@ -221,317 +252,117 @@ export async function getCloseChecklist(
     });
   }
 
-  // 6. Depreciation entries posted (if fixed_assets table exists)
-  const fixedAssetsCheck = await pool.query(
-    `SELECT EXISTS (
-       SELECT FROM information_schema.tables WHERE table_name = 'fixed_assets'
-     ) AS exists`
+  // 6. Depreciation entries posted: every depreciable asset in use has its schedule row (a posted month) for this
+  // period's month. Land and assets with no life are not depreciated; one fully depreciated earlier needs no row.
+  const periodYear = parseInt(periodEnd.slice(0, 4));
+  const periodMonth = parseInt(periodEnd.slice(5, 7));
+  const depResult = await pool.query(
+    `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE posted) AS posted
+     FROM (
+       SELECT fa.id,
+              (fa.status = 'fully_depreciated'
+               OR EXISTS (SELECT 1 FROM depreciation_schedules ds
+                           WHERE ds.asset_id = fa.id AND ds.period_year = $4 AND ds.period_month = $5)) AS posted
+       FROM fixed_assets fa
+       WHERE fa.company_id = $1
+         AND fa.purchase_date <= $2::date
+         AND (fa.disposal_date IS NULL OR fa.disposal_date > $3::date)
+         AND lower(trim(coalesce(fa.category, ''))) <> 'land'
+         AND fa.useful_life_years IS NOT NULL
+     ) x`,
+    [companyId, periodEnd, periodStart, periodYear, periodMonth]
   );
+  const depTotal = parseInt(depResult.rows[0]?.total || "0");
+  const depPosted = parseInt(depResult.rows[0]?.posted || "0");
+  checklist.push({
+    id: 6,
+    title: "Depreciation Entries Posted",
+    description: "Depreciation has been posted for this month for every depreciable fixed asset",
+    status: depTotal === 0 || depPosted >= depTotal ? "complete" : "incomplete",
+    details:
+      depTotal === 0
+        ? "No depreciable fixed assets"
+        : `${depPosted}/${depTotal} assets depreciated through ${periodEnd.slice(0, 7)}`,
+  });
 
-  if (fixedAssetsCheck.rows[0].exists) {
-    // Legacy databases may predate the depreciation_posted column; fall back
-    // to status-only detection rather than failing the whole checklist.
-    const depColCheck = await pool.query(
-      `SELECT EXISTS (
-         SELECT FROM information_schema.columns
-         WHERE table_name = 'fixed_assets' AND column_name = 'depreciation_posted'
-       ) AS exists`
-    );
-    const postedFilter = depColCheck.rows[0].exists
-      ? `(depreciation_posted = true OR status = 'fully_depreciated')`
-      : `status = 'fully_depreciated'`;
-    const depResult = await pool.query(
-      `SELECT
-         COUNT(*) AS total,
-         COUNT(*) FILTER (WHERE ${postedFilter}) AS posted
-       FROM fixed_assets
-       WHERE company_id = $1
-         AND purchase_date <= $2::date
-         AND (disposal_date IS NULL OR disposal_date > $3::date)`,
-      [companyId, periodEnd, periodStart]
-    );
-    const depTotal = parseInt(depResult.rows[0]?.total || "0");
-    const depPosted = parseInt(depResult.rows[0]?.posted || "0");
-    checklist.push({
-      id: 6,
-      title: "Depreciation Entries Posted",
-      description: "Monthly depreciation has been recorded for all active fixed assets",
-      status: depTotal === 0 || depPosted >= depTotal ? "complete" : "incomplete",
-      details:
-        depTotal === 0
-          ? "No active fixed assets"
-          : `${depPosted}/${depTotal} assets depreciated for this period`,
-    });
-  } else {
-    checklist.push({
-      id: 6,
-      title: "Depreciation Entries Posted",
-      description: "Monthly depreciation has been recorded for all active fixed assets",
-      status: "complete",
-      details: "Fixed assets module not configured",
-    });
-  }
-
-  // 7. VAT return prepared
+  // 7. VAT return prepared: a non-draft return that COVERS the month (a monthly return inside it, or the quarterly /
+  // annual return it belongs to). A quarterly filer is not held up mid-quarter: the return exists once the quarter ends.
   const vatResult = await pool.query(
-    `SELECT COUNT(*) AS total
+    `SELECT COUNT(*) AS total,
+            MIN(period_start)::text AS first_start,
+            MAX(period_end)::text AS last_end
      FROM vat_returns
      WHERE company_id = $1
-       AND period_start >= $2::date
-       AND period_end <= $3::date
+       AND period_start <= $3::date
+       AND period_end >= $2::date
        AND status != 'draft'`,
     [companyId, periodStart, periodEnd]
   );
   const vatCount = parseInt(vatResult.rows[0]?.total || "0");
+  const vatCompany = await pool.query(`SELECT vat_filing_frequency, vat_period_start_month FROM companies WHERE id = $1`, [companyId]);
+  const vatVerdict = vatChecklistVerdict({
+    coveringReturns: vatCount,
+    frequency: normaliseVatFrequency(vatCompany.rows[0]?.vat_filing_frequency),
+    periodStartMonth: Number(vatCompany.rows[0]?.vat_period_start_month ?? 1),
+    month: parseInt(periodEnd.slice(5, 7)),
+  });
   checklist.push({
     id: 7,
     title: "VAT Return Prepared",
     description: "VAT 201 return has been prepared or filed for the period",
-    status: vatCount > 0 ? "complete" : "incomplete",
+    status: vatVerdict.complete ? "complete" : "incomplete",
     details:
-      vatCount > 0
-        ? `${vatCount} VAT return(s) prepared`
-        : "No VAT return prepared for this period",
+      vatVerdict.reason === "covered"
+        ? `${vatCount} VAT return(s) cover this period`
+        : vatVerdict.reason === "period_not_ended"
+          ? "This month falls inside a VAT period that has not ended: its return is prepared after the period closes"
+          : "No VAT return prepared for this period",
   });
 
   return checklist;
 }
 
+export interface MonthEndClosingResult {
+  /** Always false: a month-end close posts no closing entries (see below). */
+  posted: false;
+  code: "MONTH_END_POSTS_NO_CLOSING_ENTRIES";
+  message: string;
+  messageAr: string;
+  periodStart: string;
+  periodEnd: string;
+  /** What the period earned (income - expenses over the period only): informational, nothing was moved. */
+  netProfit: number;
+  lines: [];
+  entryNumber: null;
+}
+
 /**
- * Generate closing journal entries for a period.
- * Debits all revenue accounts, credits all expense accounts,
- * and posts the net difference to retained earnings.
+ * "Generate closing entries" for a MONTH. A month-end close locks the period; it never closes revenue and expense to
+ * equity. That is the year-end's job (year-end.service.ts): one entry dated the year's last day, only for the year being
+ * closed. A month close that did it zeroed the Q3 P&L and the corporate-tax base (teardown 6, t1/F3): the old query also
+ * summed every posting of every date. So this posts NOTHING, whatever the dates asked for, and reports the period's
+ * profit read from the ledger layer (posted entries within the period only) so the screen can still show it.
  */
 export async function generateClosingEntries(
   companyId: string,
   periodStart: string,
   periodEnd: string,
-  userId: string
-): Promise<ClosingJournalEntry> {
-  // Idempotency check #1: refuse to generate closing entries if the period is
-  // already formally locked in month_end_close.
-  await ensureMonthEndTable();
-  const existingClose = await pool.query(
-    `SELECT id, status, closing_entry_id
-     FROM month_end_close
-     WHERE company_id = $1 AND period_end = $2::date`,
-    [companyId, periodEnd]
-  );
-  const closeRow = existingClose.rows[0];
-  if (closeRow && closeRow.status === "locked") {
-    throw new Error(
-      `Period ending ${periodEnd} is already closed (closing entry ${closeRow.closing_entry_id || "unknown"}). ` +
-        `Unlock the period before generating new closing entries.`
-    );
-  }
-
-  // Idempotency check #2: refuse to generate closing entries twice for the
-  // same period. Without this, calling twice double-closes revenue/expense
-  // and corrupts equity even when month_end_close has not been locked yet.
-  const existingClosingResult = await pool.query(
-    `SELECT id, entry_number, date, memo, status
-     FROM journal_entries
-     WHERE company_id = $1
-       AND source = 'system'
-       AND date = $2::date
-       AND memo LIKE 'Closing entries for %'
-       AND status != 'void'
-     LIMIT 1`,
-    [companyId, periodEnd]
-  );
-  if (existingClosingResult.rows.length > 0) {
-    throw new Error(
-      `Closing entries already exist for period ending ${periodEnd} (entry ${existingClosingResult.rows[0].entry_number}). ` +
-        `Reverse the existing closing entry before re-running.`
-    );
-  }
-
-  // Get all income accounts with their balances for the period
-  const incomeResult = await pool.query(
-    `SELECT
-       a.id, a.code, a.name_en,
-       COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0) AS balance
-     FROM accounts a
-     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-     LEFT JOIN journal_entries je ON je.id = jl.entry_id
-       AND je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2::date
-       AND je.date <= $3::date
-     WHERE a.company_id = $1
-       AND a.type = 'income'
-       AND a.is_active = true
-     GROUP BY a.id, a.code, a.name_en
-     HAVING COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0) != 0
-     ORDER BY a.code`,
-    [companyId, periodStart, periodEnd]
-  );
-
-  // Get all expense accounts with their balances for the period
-  const expenseResult = await pool.query(
-    `SELECT
-       a.id, a.code, a.name_en,
-       COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
-     FROM accounts a
-     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-     LEFT JOIN journal_entries je ON je.id = jl.entry_id
-       AND je.company_id = $1
-       AND je.status = 'posted'
-       AND je.date >= $2::date
-       AND je.date <= $3::date
-     WHERE a.company_id = $1
-       AND a.type = 'expense'
-       AND a.is_active = true
-     GROUP BY a.id, a.code, a.name_en
-     HAVING COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) != 0
-     ORDER BY a.code`,
-    [companyId, periodStart, periodEnd]
-  );
-
-  // Find or use retained earnings account
-  const retainedResult = await pool.query(
-    `SELECT id, code, name_en FROM accounts
-     WHERE company_id = $1
-       AND type = 'equity'
-       AND (LOWER(name_en) LIKE '%retained%' OR code LIKE '3%')
-       AND is_active = true
-     ORDER BY
-       CASE WHEN LOWER(name_en) LIKE '%retained%' THEN 0 ELSE 1 END,
-       code
-     LIMIT 1`,
-    [companyId]
-  );
-
-  if (retainedResult.rows.length === 0) {
-    throw new Error(
-      "No retained earnings equity account found. Please create one before closing the period."
-    );
-  }
-
-  const retainedAccount = retainedResult.rows[0];
-
-  // Build the closing entry lines
-  const lines: ClosingJournalEntry["lines"] = [];
-  let totalDebits = 0;
-  let totalCredits = 0;
-
-  // Debit revenue accounts to close them (revenue normally has credit balance)
-  for (const row of incomeResult.rows) {
-    const balance = parseFloat(row.balance);
-    if (balance > 0) {
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: Math.round(balance * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += balance;
-    } else if (balance < 0) {
-      // Contra-revenue (negative balance)
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: 0,
-        credit: Math.round(Math.abs(balance) * 100) / 100,
-      });
-      totalCredits += Math.abs(balance);
-    }
-  }
-
-  // Credit expense accounts to close them (expenses normally have debit balance)
-  for (const row of expenseResult.rows) {
-    const balance = parseFloat(row.balance);
-    if (balance > 0) {
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: 0,
-        credit: Math.round(balance * 100) / 100,
-      });
-      totalCredits += balance;
-    } else if (balance < 0) {
-      // Contra-expense (negative balance)
-      lines.push({
-        accountId: row.id,
-        accountCode: row.code,
-        accountName: row.name_en,
-        debit: Math.round(Math.abs(balance) * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += Math.abs(balance);
-    }
-  }
-
-  // Net difference goes to retained earnings
-  const netIncome = totalDebits - totalCredits;
-  if (Math.abs(netIncome) > 0.005) {
-    if (netIncome > 0) {
-      // Net income: credit retained earnings
-      lines.push({
-        accountId: retainedAccount.id,
-        accountCode: retainedAccount.code,
-        accountName: retainedAccount.name_en,
-        debit: 0,
-        credit: Math.round(netIncome * 100) / 100,
-      });
-      totalCredits += netIncome;
-    } else {
-      // Net loss: debit retained earnings
-      lines.push({
-        accountId: retainedAccount.id,
-        accountCode: retainedAccount.code,
-        accountName: retainedAccount.name_en,
-        debit: Math.round(Math.abs(netIncome) * 100) / 100,
-        credit: 0,
-      });
-      totalDebits += Math.abs(netIncome);
-    }
-  }
-
-  if (lines.length === 0) {
-    throw new Error("No revenue or expense balances found for this period. Nothing to close.");
-  }
-
-  // Format period for memo
-  const periodLabel = `${periodStart} to ${periodEnd}`;
-  const memo = `Closing entries for ${periodLabel}`;
-  const periodEndDate = new Date(periodEnd);
-  const entryNumber = await storage.generateEntryNumber(companyId, periodEndDate);
-
-  // Create entry + lines atomically via storage (validates balance & wraps in transaction)
-  const journalLines = lines.map((line) => ({
-    accountId: line.accountId,
-    debit: Math.round(line.debit * 100) / 100,
-    credit: Math.round(line.credit * 100) / 100,
-    description: `Closing entry - ${line.accountName}`,
-  }));
-
-  const entry = await storage.createJournalEntry(
-    {
-      companyId,
-      entryNumber,
-      date: periodEndDate,
-      memo,
-      status: "posted",
-      source: "system",
-      createdBy: userId,
-      postedBy: userId,
-      postedAt: new Date(),
-    } as any,
-    journalLines
-  );
-
+  _userId: string
+): Promise<MonthEndClosingResult> {
+  const { periodProfit } = await import("../reports/ledger");
+  const profit = await periodProfit(pool as any, companyId, periodStart, periodEnd);
   return {
-    id: entry.id,
-    entryNumber: entry.entryNumber,
-    date: entry.date instanceof Date ? entry.date.toISOString() : String(entry.date),
-    memo: entry.memo ?? memo,
-    lines,
-    totalDebits: Math.round(totalDebits * 100) / 100,
-    totalCredits: Math.round(totalCredits * 100) / 100,
+    posted: false,
+    code: "MONTH_END_POSTS_NO_CLOSING_ENTRIES",
+    message:
+      "A month-end close does not post closing entries: revenue and expenses stay in the P&L. Lock the period to close the month; the financial-year close moves the year's profit to retained earnings.",
+    messageAr:
+      "إقفال نهاية الشهر لا ينشئ قيود إقفال: تبقى الإيرادات والمصروفات في قائمة الدخل. اقفل الفترة لإغلاق الشهر، أما إقفال السنة المالية فينقل ربح السنة إلى الأرباح المحتجزة.",
+    periodStart,
+    periodEnd,
+    netProfit: profit.net,
+    lines: [],
+    entryNumber: null,
   };
 }
 

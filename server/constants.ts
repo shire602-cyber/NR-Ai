@@ -40,6 +40,9 @@ export const ACCOUNT_CODES = {
   COGS: "5200",
   /** Employee Loans (asset): loans and salary advances to staff; created on demand for older charts. */
   EMPLOYEE_LOANS: "1080",
+  /** Leave Pay Expense (expense) and Leave Pay Provision (liability): monthly accrual of unused annual leave; created on demand. */
+  LEAVE_PAY_EXPENSE: "5029",
+  LEAVE_PROVISION: "2037",
   /** Office equipment (fixed asset). */
   EQUIPMENT: "1210",
   /** Zero-rated sales (income). */

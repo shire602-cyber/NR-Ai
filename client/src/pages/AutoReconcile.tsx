@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { accountName } from "@/lib/account-name";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import type { BankAccount, BankTransaction, BulkMatchItem, BulkMatchResult, MatchSuggestion } from "@/lib/banking-api-types";
 import { messages as common } from "@/components/banking/BankingCommon.i18n";
 import { bankKey, kindText, reasonText } from "@/components/banking/banking-common";
@@ -27,7 +29,9 @@ import { messages as pageMessages } from "./AutoReconcile.i18n";
 const THRESHOLDS = [60, 70, 80, 90] as const;
 const SAFE_SCORE = 80;
 /** Kinds that settle a document or link an entry: selecting them in bulk is safe. Rules and accounts create new postings. */
-const SAFE_KINDS = new Set(["invoice", "bill", "journal", "receipt"]);
+const SAFE_KINDS = new Set(["invoice", "invoices", "bill", "journal", "receipt"]);
+/** A transfer posts two bank lines at once and is confirmed on the bank screen, not in a batch. */
+const NOT_BATCHABLE = new Set(["transfer"]);
 
 /** One suggestion per bank line, the best first. */
 function bestPerTransaction(list: MatchSuggestion[]): MatchSuggestion[] {
@@ -83,7 +87,8 @@ export default function AutoReconcile() {
 
   const apply = useMutation({
     mutationFn: async () => {
-      const items: BulkMatchItem[] = rows.filter((s) => selected.has(s.transactionId)).map((s) => ({ transactionId: s.transactionId, kind: s.kind, targetId: s.targetId }));
+      const items: BulkMatchItem[] = rows.filter((s) => selected.has(s.transactionId)).filter((s) => !NOT_BATCHABLE.has(s.kind))
+        .map((s) => ({ transactionId: s.transactionId, kind: s.kind, targetId: s.targetId, ...(s.targetIds ? { targetIds: s.targetIds } : {}) }));
       return (await apiRequest("POST", `/api/companies/${companyId}/bank-statements/bulk-match`, { items })) as BulkMatchResult;
     },
     onSuccess: (result) => {
@@ -171,7 +176,7 @@ export default function AutoReconcile() {
                     <SelectItem value="all">{tr("allAccounts")}</SelectItem>
                     {bankAccounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.nameEn}
+                        {accountName(a, locale)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -244,7 +249,7 @@ export default function AutoReconcile() {
                           {tx?.description ?? s.transactionId.slice(0, 8)}
                         </p>
                         <p className="text-xs text-muted-foreground flex gap-2 flex-wrap">
-                          {tx && <span>{formatDate(tx.transactionDate, locale)}</span>}
+                          {tx && <span>{formatCalendarDate(tx.transactionDate, locale, "short")}</span>}
                           {tx && (
                             <span dir="ltr" className={`font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}>
                               {formatCurrency(tx.amount, cur, locale)}
@@ -258,7 +263,7 @@ export default function AutoReconcile() {
                           {kindText(trc, s.kind)}: {s.label}
                         </p>
                         <p className="text-xs text-muted-foreground flex gap-2 flex-wrap">
-                          <span>{formatDate(s.date, locale)}</span>
+                          <span>{formatCalendarDate(s.date, locale, "short")}</span>
                           <span dir="ltr" className="font-mono">
                             {formatCurrency(s.amount, cur, locale)}
                           </span>
@@ -280,7 +285,7 @@ export default function AutoReconcile() {
                           </Badge>
                         ))}
                         <Badge variant={SAFE_KINDS.has(s.kind) ? "secondary" : "outline"} className="text-[11px] font-normal">
-                          {s.kind === "invoice" ? tr("effectInvoice") : s.kind === "bill" ? tr("effectBill") : SAFE_KINDS.has(s.kind) ? tr("linksOnly") : tr("postsNew")}
+                          {s.kind === "invoice" || s.kind === "invoices" ? tr("effectInvoice") : s.kind === "bill" ? tr("effectBill") : SAFE_KINDS.has(s.kind) ? tr("linksOnly") : tr("postsNew")}
                         </Badge>
                       </div>
                       <Button variant="ghost" size="sm" onClick={() => toggleOpen(s.transactionId)} data-testid={`button-preview-${s.transactionId}`}>

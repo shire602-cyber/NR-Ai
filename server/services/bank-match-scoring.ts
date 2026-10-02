@@ -20,7 +20,9 @@ export type ReasonCode =
   | "NAME_STRONG"
   | "NAME_PARTIAL"
   | "RULE_MATCH"
-  | "CLEARING_BALANCE_EQUALS_AMOUNT";
+  | "CLEARING_BALANCE_EQUALS_AMOUNT"
+  | "COMBINATION_OF_INVOICES"
+  | "TRANSFER_BETWEEN_OWN_ACCOUNTS";
 
 export interface ScoreCandidate {
   /** Open balance, positive, in the bank account's currency. */

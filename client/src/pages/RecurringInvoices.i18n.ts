@@ -60,6 +60,7 @@ export const messages = defineMessages(
     paused: "Paused",
     pause: "Pause",
     resume: "Resume",
+    discountsAndShippingHint: "Line discounts and the shipping charge are carried onto every invoice this template generates.",
   },
   {
     descriptionIsRequired: "الوصف مطلوب",
@@ -118,5 +119,6 @@ export const messages = defineMessages(
     paused: "متوقف",
     pause: "ايقاف مؤقت",
     resume: "استئناف",
+    discountsAndShippingHint: "تُنقل خصومات البنود ورسوم الشحن إلى كل فاتورة يولّدها هذا القالب.",
   }
 );

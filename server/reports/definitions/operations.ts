@@ -3,9 +3,9 @@
 
 import { round2 } from "../../services/financial-statements";
 import { dayBounds, dayEndTs, ymdSql } from "../dates";
-import { SqlParams, money } from "../ledger";
+import { SqlParams, accountBalances, money } from "../ledger";
 import { registerReport, type ReportContext, type ReportOutput } from "../registry";
-import { C, col, detail, moneyCol, pick } from "./helpers";
+import { C, col, detail, moneyCol, pick, subtotal } from "./helpers";
 
 const monthIndex = (ymd: string): number => Number(ymd.slice(0, 4)) * 12 + Number(ymd.slice(5, 7));
 
@@ -64,8 +64,23 @@ interface StockRow {
   value: number;
 }
 
+let movementDateColumnKnown = false;
+/**
+ * The day a stock movement happened: the movement's OWN date (inventory_movements.movement_date, set from the bill, the
+ * purchase order or the day the user entered) first; for older rows the date of the invoice it came from; created_at (when
+ * the row was written) only as the last resort. The same date the COGS / inventory journal is posted on.
+ */
+async function movementDateExpr(ctx: ReportContext, movement = "im", invoice = "si"): Promise<string> {
+  if (!movementDateColumnKnown) {
+    const { rows } = await ctx.q.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'inventory_movements' AND column_name = 'movement_date'`);
+    movementDateColumnKnown = rows.length > 0;
+  }
+  return movementDateColumnKnown ? `COALESCE(${movement}.movement_date, ${invoice}.date, ${movement}.created_at)` : `COALESCE(${invoice}.date, ${movement}.created_at)`;
+}
+
 async function stockAsOf(ctx: ReportContext): Promise<StockRow[]> {
   const asOf = ctx.window.asOf as string;
+  const happened = await movementDateExpr(ctx);
   const b = new SqlParams();
   const { rows } = await ctx.q.query(
     `SELECT p.id, COALESCE(p.sku, '') AS sku, p.name, COALESCE(p.unit, '') AS unit, COALESCE(p.low_stock_threshold, 0) AS threshold,
@@ -73,8 +88,8 @@ async function stockAsOf(ctx: ReportContext): Promise<StockRow[]> {
             (COALESCE(p.inventory_value, 0) - COALESCE(SUM(m.dv) FILTER (WHERE m.happened > ${b.p(dayEndTs(asOf))}::timestamp), 0))::text AS value
        FROM products p
        LEFT JOIN (
-         -- A movement happened on the date of the invoice it came from; created_at is only when the row was written.
-         SELECT im.product_id, COALESCE(si.date, im.created_at) AS happened,
+         -- A movement happened on its own date (see movementDateExpr); created_at is only when the row was written.
+         SELECT im.product_id, ${happened} AS happened,
                 CASE WHEN im.type IN ('purchase', 'return') THEN ABS(im.quantity) WHEN im.type = 'sale' THEN -ABS(im.quantity) ELSE im.quantity END AS dq,
                 CASE WHEN im.type IN ('purchase', 'return') OR (im.type = 'adjustment' AND im.quantity > 0) THEN 1 ELSE -1 END
                   * ABS(COALESCE(im.total_cost, im.quantity * COALESCE(im.unit_cost, 0), 0)) AS dv
@@ -98,12 +113,47 @@ async function stockAsOf(ctx: ReportContext): Promise<StockRow[]> {
     .filter((r) => r.qty !== 0 || r.value !== 0);
 }
 
+/** Negative stock is a data problem (a sale before its purchase, a missing receipt): never shown silently. */
+function negativeStockWarning(ctx: ReportContext, stock: StockRow[]): string | null {
+  const negative = stock.filter((s) => s.qty < 0);
+  if (negative.length === 0) return null;
+  const names = negative.slice(0, 5).map((s) => `${s.name} (${s.qty})`).join(", ") + (negative.length > 5 ? "…" : "");
+  return pick(
+    ctx,
+    `${negative.length} product(s) have NEGATIVE stock on this date: ${names}. Something was sold or issued before it was received: check the dates of purchases and stock movements.`,
+    `${negative.length} منتج(ات) برصيد مخزون سالب في هذا التاريخ: ${names}. تم بيع أو صرف شيء قبل استلامه: راجع تواريخ المشتريات وحركات المخزون.`
+  );
+}
+
 async function inventoryValuation(ctx: ReportContext): Promise<ReportOutput> {
+  const asOf = ctx.window.asOf as string;
   const stock = await stockAsOf(ctx);
+  // The stock ledger must equal the inventory account: the total of the products against 1070 in the books on the same day.
+  const ledger = (await accountBalances(ctx.q, ctx.companyId, { to: asOf })).find((a) => a.code === "1070");
+  const ledgerValue = round2((ledger?.debit ?? 0) - (ledger?.credit ?? 0));
+  const stockValue = round2(stock.reduce((sum, s) => sum + s.value, 0));
+  const difference = round2(stockValue - ledgerValue);
+  const warnings: string[] = [];
+  const negative = negativeStockWarning(ctx, stock);
+  if (negative) warnings.push(negative);
+  if (Math.abs(difference) >= 0.005) {
+    warnings.push(
+      pick(
+        ctx,
+        `The stock ledger (${stockValue.toFixed(2)}) does not agree with the inventory account 1070 in the books (${ledgerValue.toFixed(2)}): difference ${difference.toFixed(2)}.`,
+        `سجل المخزون (${stockValue.toFixed(2)}) لا يطابق حساب المخزون 1070 في الدفاتر (${ledgerValue.toFixed(2)}): الفرق ${difference.toFixed(2)}.`
+      )
+    );
+  }
   return {
-    rows: stock.map((s) =>
-      detail(`product:${s.id}`, { sku: s.sku, name: s.name, unit: s.unit, quantity: s.qty, avgCost: s.qty > 0 ? round2(s.value / s.qty) : 0, value: s.value }, { target: "product", id: s.id })
-    ),
+    rows: [
+      ...stock.map((s) =>
+        detail(`product:${s.id}`, { sku: s.sku, name: s.name, unit: s.unit, quantity: s.qty, avgCost: s.qty > 0 ? round2(s.value / s.qty) : 0, value: s.value }, { target: "product", id: s.id })
+      ),
+      subtotal("ledger-1070", { name: pick(ctx, "Inventory account 1070 in the books", "حساب المخزون 1070 في الدفاتر"), value: ledgerValue }),
+      subtotal("difference", { name: pick(ctx, "Difference (stock ledger less books)", "الفرق (سجل المخزون ناقص الدفاتر)"), value: difference }),
+    ],
+    warnings: warnings.length ? warnings : undefined,
   };
 }
 
@@ -123,7 +173,9 @@ registerReport({
 
 async function inventorySummary(ctx: ReportContext): Promise<ReportOutput> {
   const stock = await stockAsOf(ctx);
+  const negative = negativeStockWarning(ctx, stock);
   return {
+    warnings: negative ? [negative] : undefined,
     rows: stock.map((s) =>
       detail(
         `product:${s.id}`,
@@ -158,16 +210,17 @@ registerReport({
 async function inventoryMovement(ctx: ReportContext): Promise<ReportOutput> {
   const { from, to } = ctx.window as { from: string; to: string };
   const { start, end } = dayBounds(from, to);
+  const happened = await movementDateExpr(ctx);
   const b = new SqlParams();
   const { rows } = await ctx.q.query(
-    `SELECT im.id, p.id AS product_id, ${ymdSql("COALESCE(si.date, im.created_at)")} AS d, COALESCE(p.sku, '') AS sku, p.name, im.type,
+    `SELECT im.id, p.id AS product_id, ${ymdSql(happened)} AS d, COALESCE(p.sku, '') AS sku, p.name, im.type,
             CASE WHEN im.type IN ('purchase', 'return') THEN ABS(im.quantity) WHEN im.type = 'sale' THEN -ABS(im.quantity) ELSE im.quantity END AS qty,
             COALESCE(im.unit_cost, 0)::text AS unit_cost, COALESCE(im.total_cost, 0)::text AS total_cost, im.reference
        FROM inventory_movements im JOIN products p ON p.id = im.product_id
        LEFT JOIN invoices si ON si.id = im.source_invoice_id AND si.company_id = im.company_id
       WHERE im.company_id = ${b.p(ctx.companyId)} AND p.company_id = im.company_id
-        AND COALESCE(si.date, im.created_at) >= ${b.p(start)}::timestamp AND COALESCE(si.date, im.created_at) <= ${b.p(end)}::timestamp
-      ORDER BY COALESCE(si.date, im.created_at), im.id LIMIT ${ctx.maxRows + 1}`,
+        AND ${happened} >= ${b.p(start)}::timestamp AND ${happened} <= ${b.p(end)}::timestamp
+      ORDER BY ${happened}, im.id LIMIT ${ctx.maxRows + 1}`,
     b.values
   );
   return {
@@ -428,11 +481,15 @@ async function payrollRegister(ctx: ReportContext): Promise<ReportOutput> {
     `SELECT pi.id, r.period_year, r.period_month, COALESCE(e.employee_number, '') AS num, e.full_name,
             COALESCE(pi.basic_salary, 0)::text AS basic,
             (COALESCE(pi.housing_allowance, 0) + COALESCE(pi.transport_allowance, 0) + COALESCE(pi.other_allowance, 0))::text AS allowances,
-            COALESCE(pi.overtime, 0)::text AS overtime, COALESCE(pi.deductions, 0)::text AS deductions, COALESCE(pi.net_salary, 0)::text AS net
+            COALESCE(pi.overtime, 0)::text AS overtime,
+            -- every deduction (sundry, employee pension, leave, loan) so that basic + allowances + overtime - deductions = net
+            (COALESCE(pi.deductions, 0) + COALESCE(pi.pension_employee, 0) + COALESCE(pi.leave_deduction, 0) + COALESCE(pi.loan_deduction, 0))::text AS deductions,
+            COALESCE(pi.net_salary, 0)::text AS net
        FROM payroll_items pi
        JOIN payroll_runs r ON r.id = pi.payroll_run_id
        JOIN employees e ON e.id = pi.employee_id AND e.company_id = r.company_id
-      WHERE ${runFilter(ctx, b).join(" AND ")} ORDER BY r.period_year, r.period_month, e.employee_number, e.full_name LIMIT ${ctx.maxRows + 1}`,
+      -- the register is the approved payroll: a draft or calculated run appears only when it is picked by name
+      WHERE ${runFilter(ctx, b).join(" AND ")}${ctx.params.filters.payrollRunId ? "" : " AND r.status IN ('approved', 'paid')"} ORDER BY r.period_year, r.period_month, e.employee_number, e.full_name LIMIT ${ctx.maxRows + 1}`,
     b.values
   );
   return {

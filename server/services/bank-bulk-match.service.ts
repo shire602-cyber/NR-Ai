@@ -28,6 +28,8 @@ export interface BulkItem {
   transactionId: string;
   kind: MatchKind;
   targetId: string;
+  /** kind "invoices": one bank receipt settling these invoices, in order (the last may be partial). */
+  targetIds?: string[];
   paymentDate?: string | null;
 }
 
@@ -72,6 +74,7 @@ async function validateBatch(ctx: PostCtx, items: BulkItem[]): Promise<BulkError
 
   const seenTxn = new Set<string>();
   const targetUse = new Map<string, number>();
+  const multiInvoiceUse = new Map<string, number>();
   const invoiceDemand = new Map<string, { total: number; indexes: number[] }>();
   const billDemand = new Map<string, { total: number; indexes: number[] }>();
 
@@ -86,7 +89,14 @@ async function validateBatch(ctx: PostCtx, items: BulkItem[]): Promise<BulkError
     const inflow = Number(txn.amount) > 0;
     if (item.kind === "invoice" && !inflow) return fail(i, "DIRECTION_MISMATCH", "Only money received can be matched to an invoice.");
     if (item.kind === "bill" && inflow) return fail(i, "DIRECTION_MISMATCH", "Only money paid out can be matched to a bill.");
-    if (item.kind === "invoice") {
+    if (item.kind === "invoices") {
+      if (!inflow) return fail(i, "DIRECTION_MISMATCH", "Only money received can be matched to invoices.");
+      for (const invoiceId of item.targetIds?.length ? item.targetIds : [item.targetId]) {
+        multiInvoiceUse.set(invoiceId, (multiInvoiceUse.get(invoiceId) ?? 0) + 1);
+        if (multiInvoiceUse.get(invoiceId)! > 1 || invoiceDemand.has(invoiceId)) fail(i, "TARGET_USED_TWICE", "An invoice is used for two bank lines.");
+      }
+    } else if (item.kind === "invoice") {
+      if (multiInvoiceUse.has(item.targetId)) fail(i, "TARGET_USED_TWICE", "An invoice is used for two bank lines.");
       const d = invoiceDemand.get(item.targetId) ?? { total: 0, indexes: [] };
       d.total += Math.abs(Number(txn.amount));
       d.indexes.push(i);
@@ -177,7 +187,13 @@ export async function bulkMatch(ctx: PostCtx, items: BulkItem[], opts: { dryRun?
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
       try {
-        const input: MatchInput = { transactionId: item.transactionId, kind: item.kind, targetId: item.targetId, paymentDate: item.paymentDate ?? null };
+        const input: MatchInput = {
+          transactionId: item.transactionId,
+          kind: item.kind,
+          targetId: item.targetId,
+          paymentDate: item.paymentDate ?? null,
+          ...(item.kind === "invoices" ? { allocations: (item.targetIds?.length ? item.targetIds : [item.targetId]).map((invoiceId) => ({ invoiceId })) } : {}),
+        };
         const done: MatchResult = await applyMatch(ctx, input);
         results.push({ index, transactionId: item.transactionId, kind: item.kind, targetId: item.targetId, journalEntryId: done.journalEntryId, receiptId: done.receiptId });
       } catch (err) {

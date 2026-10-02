@@ -1,8 +1,8 @@
 ---
 title: VAT returns (VAT 201)
-summary: Prepare your VAT 201 return from posted documents and review it before you file with the FTA.
+summary: Prepare your VAT 201 return from posted documents, review the adjustments and file it with the FTA.
 category: compliance
-keywords: VAT, VAT 201, return, FTA, filing, boxes, input VAT, output VAT, period, TRN
+keywords: VAT, VAT 201, return, FTA, adjustments, boxes, blocked input VAT, entertainment, reverse charge, period
 related: credit-notes, bill-pay, month-end-close, documents-evidence
 ---
 
@@ -10,21 +10,24 @@ related: credit-notes, bill-pay, month-end-close, documents-evidence
 
 ## Prepare a return
 
-1. Choose the tax period.
-2. Muhasib.ai generates the return from posted invoices, credit notes, bills and expenses: standard-rated sales, zero-rated and exempt supplies, output VAT and recoverable input VAT.
-3. A period that has not ended gives a draft preview only. It cannot be submitted until the period is over.
+1. Choose the tax period. Documents are assigned to a period by their own date, so a sale dated the 1st belongs to the month that starts that day.
+2. Muhasib.ai generates the return from posted invoices, credit notes, bills and expenses: standard-rated sales, zero-rated and exempt supplies, output VAT and recoverable input VAT, and reverse-charge purchases in boxes 3 and 10.
+3. A period that has not ended gives a draft preview only.
 
-## Review
+## Adjustment rows
 
-Open any box to see the documents behind it. Check unusual amounts before you go on.
+Under the boxes you will see **adjustment rows**: credit notes, bad-debt relief and other corrections, each with its source. **Boxes 12 to 14 (the expense totals and the recoverable VAT) include these adjustments**, so the figure in the box is the figure you file. Open a row to see its document.
 
-## Finalise
+## Input VAT that cannot be reclaimed
 
-When the figures are right, finalise the return for review. This protects the period against new postings and keeps a record of the figures. Muhasib.ai does not file with the FTA: submit the return through EmaraTax, then record the FTA reference number against it.
+Some input VAT is blocked by law, for example **entertainment** (hospitality for clients and staff). Choose the blocked category when you record the expense or bill: the VAT is added to the cost and kept out of box 10 and the recoverable total.
+
+## Review and finalise
+
+Open any box to see the documents behind it. When the figures are right, finalise the return. This protects the period against new postings. Muhasib.ai does not file with the FTA: submit through EmaraTax, then record the FTA reference number against the return.
 
 ## Good to know
 
 - Only posted documents count. Drafts and pending bills are left out.
-- A credit note appears in the period it is dated in.
 - Keep the tax invoice for every input VAT claim. See [Documents and evidence](/help/documents-evidence).
 - Corporate tax is separate. See [Corporate tax](/help/corporate-tax).

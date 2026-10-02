@@ -1,15 +1,27 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker } from "react-day-picker";
+import { ar as arLocale, enUS } from "date-fns/locale";
+import { useI18n } from "@/lib/i18n";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
+// Month and weekday names in Arabic with Western digits (the product pins Latin digits in both languages).
+const AR_CAPTION = new Intl.DateTimeFormat("ar-AE-u-nu-latn", { month: "long", year: "numeric" });
+const AR_WEEKDAY = new Intl.DateTimeFormat("ar-AE-u-nu-latn", { weekday: "narrow" });
+
 function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+  const locale = useI18n((s) => s.locale);
+  const rtl = locale === "ar";
   return (
     <DayPicker
+      locale={rtl ? arLocale : enUS}
+      dir={rtl ? "rtl" : "ltr"}
+      weekStartsOn={rtl ? 6 : undefined}
+      formatters={rtl ? { formatCaption: (d) => AR_CAPTION.format(d), formatWeekdayName: (d) => AR_WEEKDAY.format(d) } : undefined}
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
       classNames={{
@@ -23,8 +35,8 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
           buttonVariants({ variant: "outline" }),
           "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
+        nav_button_previous: "absolute start-1",
+        nav_button_next: "absolute end-1",
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
         head_cell: "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]",

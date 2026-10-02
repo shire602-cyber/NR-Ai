@@ -408,13 +408,16 @@ async function approvalsBill() {
   const rejected = await A.post(`/api/approvals/bill/${rej}/reject`, { comment: "wrong amount" }, acct2.token);
   ok("reject: a person below the next role cannot reject (403)", rejected.status === 403, rejected.status);
   const rejectedOwner = await A.post(`/api/approvals/bill/${rej}/reject`, { comment: "wrong amount" });
-  ok("reject: the owner rejects; the bill is pending again", rejectedOwner.status === 200 && rejectedOwner.json?.status === "rejected" && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [rej])).rows[0].status === "pending", rejectedOwner.json);
+  ok("reject: the owner rejects; the bill goes back to draft (F4)", rejectedOwner.status === 200 && rejectedOwner.json?.status === "rejected" && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [rej])).rows[0].status === "draft", rejectedOwner.json);
   const editAfter = await A.patch(`/api/bills/${rej}`, { notes: "fixed" });
   ok("reject: the bill can be edited again", editAfter.status === 200, editAfter.status);
 
   // queue
   const q = await A.get(`/api/companies/${A.cid}/approvals`);
-  ok("queue: pending lists the unsigned bill a rule covers", q.status === 200 && q.json.some((row) => row.documentId === rej && row.requestId === null && row.canAct === true), q.json?.slice?.(0, 3));
+  ok("queue: a rejected bill is no longer waiting for approval (F4)", q.status === 200 && !q.json.some((row) => row.documentId === rej), q.json?.slice?.(0, 3));
+  const unsigned = await A.bill(prevMid, 6000, { vendor_name: "Unsigned Vendor" }, false, emp.token);
+  const q2 = await A.get(`/api/companies/${A.cid}/approvals`);
+  ok("queue: pending lists the unsigned bill a rule covers", q2.status === 200 && q2.json.some((row) => row.documentId === unsigned && row.requestId === null && row.canAct === true), q2.json?.slice?.(0, 3));
   const history = await A.get(`/api/companies/${A.cid}/approvals?status=approved`);
   ok("queue: approved lists finished requests", history.status === 200 && history.json.some((row) => row.documentId === big), history.status);
   const qCross = await B.get(`/api/companies/${B.cid}/approvals`);
@@ -486,8 +489,11 @@ async function approvalsOtherDocuments() {
   const emp1 = await A.post(`/api/companies/${A.cid}/employees`, { fullName: "Pay Roll One", nationality: "India", basicSalary: 6000, joinDate: "2024-01-01" });
   ok("setup: employee created", emp1.status === 200 || emp1.status === 201, emp1.status);
   const { month, year } = prevMonthYear();
-  const run = await A.post(`/api/companies/${A.cid}/payroll-runs`, { periodMonth: month, periodYear: year });
-  await A.post(`/api/payroll-runs/${run.json.id}/calculate`, {});
+  // the preparer is a second accountant: a run's creator never approves it (payroll_runs.created_by)
+  await A.patch(`/api/companies/${A.cid}`, { mohreEstablishmentId: "0000123456789", wpsEmployerRoutingCode: "123456789" });
+  await A.patch(`/api/employees/${emp1.json.id}`, { molPersonId: "12345678901234", routingCode: "987654321", iban: "AE070331234567890123456" });
+  const run = await A.post(`/api/companies/${A.cid}/payroll-runs`, { periodMonth: month, periodYear: year }, acct2.token);
+  await A.post(`/api/payroll-runs/${run.json.id}/calculate`, {}, acct2.token);
   const sifEarly = await api("GET", `/api/payroll-runs/${run.json.id}/generate-sif`, { token: A.token });
   ok("fix 3: the WPS file of an unapproved run is 409 PAYROLL_NOT_APPROVED", sifEarly.status === 409 && sifEarly.json?.code === "PAYROLL_NOT_APPROVED", { s: sifEarly.status, j: sifEarly.json });
   const patchStatus = await A.patch(`/api/payroll-runs/${run.json.id}`, { status: "approved" });
@@ -504,7 +510,7 @@ async function approvalsOtherDocuments() {
   const pr3 = await A.post(`/api/payroll-runs/${run.json.id}/approve`, {});
   ok("D2-5 payroll: the owner's approval completes it", pr3.status === 200 && pr3.json?.status === "approved" && (await A.jes("system", run.json.id)).length === 1, { s: pr3.status, j: pr3.json?.status });
   const sifOk = await api("GET", `/api/payroll-runs/${run.json.id}/generate-sif`, { token: A.token });
-  ok("fix 3: the WPS file is produced for the approved run", sifOk.status === 200 && sifOk.text.startsWith("SCR"), { s: sifOk.status });
+  ok("fix 3: the WPS file is produced for the approved run", sifOk.status === 200 && sifOk.text.startsWith("EDR") && sifOk.text.trim().split("\n").pop().startsWith("SCR"), { s: sifOk.status });
 
   // queue shows all five types while pending
   const claim2 = await A.post(`/api/companies/${A.cid}/expense-claims`, { title: "Pending claim", items: [{ expense_date: prevMid, category: "office", description: "Ink", amount: 400, vat_amount: 0 }] }, acct.token);
@@ -860,8 +866,12 @@ async function loansFlow() {
   ok("D2-8: approving credits 1080 with the instalment (balance 10,800), net payable 4,800", approve.status === 200 && close(ledger["1080"], 10800) && close(ledger["2030"], -4800), { s: approve.status, ledger });
   const deducted = (await db.query(`SELECT status FROM employee_loan_installments WHERE loan_id = $1 AND sequence = 1`, [loan.json.id])).rows[0];
   ok("D2-8: the instalment is deducted", deducted.status === "deducted", deducted);
+  const sifMissing = await api("GET", `/api/payroll-runs/${runId}/generate-sif`, { token: A.token });
+  ok("D2-8: a WPS file without the establishment and person IDs is 422 SIF_MISSING_IDS and lists them", sifMissing.status === 422 && sifMissing.json?.code === "SIF_MISSING_IDS" && sifMissing.json.missing.length >= 4, { s: sifMissing.status, j: sifMissing.json });
+  await A.patch(`/api/companies/${A.cid}`, { mohreEstablishmentId: "0000123456789", wpsEmployerRoutingCode: "123456789" });
+  await A.patch(`/api/employees/${e1.id}`, { molPersonId: "12345678901234", routingCode: "987654321", iban: "AE070331234567890123456" });
   const sif = await api("GET", `/api/payroll-runs/${runId}/generate-sif`, { token: A.token });
-  ok("D2-8: the WPS file pays the net 4,800", sif.status === 200 && sif.text.includes("000000000480000"), sif.text.slice(0, 300));
+  ok("D2-8: the WPS file pays the net 4,800 (EDR row, then one SCR row with the total)", sif.status === 200 && /^EDR,12345678901234,987654321,AE070331234567890123456,/.test(sif.text) && sif.text.trim().split("\n").pop().startsWith("SCR,0000123456789,123456789,") && sif.text.includes(",4800.00,"), sif.text.slice(0, 400));
   const reg = (await A.get(`/api/payroll-runs/${runId}/register`)).json;
   ok("D2-10: register: loans = Cr 1080, tie-out ok", close(reg.totals.loanDeduction, 1200) && reg.journalTieOut.ok, reg.journalTieOut);
   const cancelDeducted = await A.post(`/api/employee-loans/${loan.json.id}/cancel`, {});
@@ -1072,7 +1082,7 @@ async function uiContracts() {
   const ownerOnly = await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType: "bill", name: "x", thresholdAed: 1, approverRoles: ["owner"] }, acct.token);
   ok("ui: only the owner creates rules (403 ROLE_REQUIRED), which is why the Rules tab hides its buttons for others", ownerOnly.status === 403 && ownerOnly.json?.code === "ROLE_REQUIRED", { s: ownerOnly.status, j: ownerOnly.json });
   const rejected = await A.post(`/api/approvals/bill/${big}/reject`, { comment: "Wrong vendor" });
-  ok("ui: reject answers {requestId, status: rejected} and returns the bill to pending", rejected.status === 200 && rejected.json?.status === "rejected" && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [big])).rows[0].status === "pending", { s: rejected.status, j: rejected.json });
+  ok("ui: reject answers {requestId, status: rejected} and returns the bill to draft", rejected.status === 200 && rejected.json?.status === "rejected" && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [big])).rows[0].status === "draft", { s: rejected.status, j: rejected.json });
 
   // people: the shapes the Leave, Loans, Settlement and Register tabs read
   const e1 = await newEmployee(A, "UI Person");
@@ -1114,6 +1124,24 @@ async function uiContracts() {
   ok("ui: the register has rows, totals and journalTieOut.checks[] with label, account, register, ledger, ok", hasKeys(register, ["periodMonth", "periodYear", "rows", "totals", "journalTieOut"]) && hasKeys(register.rows[0], ["employeeName", "basic", "gross", "leaveDeduction", "loanDeduction", "deductions", "net"]) && register.journalTieOut.available === true && register.journalTieOut.ok === true && hasKeys(register.journalTieOut.checks[0], ["label", "account", "register", "ledger", "ok"]), register.journalTieOut);
   const csv = await api("GET", `/api/payroll-runs/${run}/register?format=csv`, { token: A.token });
   ok("ui: the register CSV is text/csv with a header row", csv.status === 200 && /text\/csv/.test(csv.headers.get("content-type") || "") && /Employee/.test(csv.text.split("\n")[0]), { s: csv.status, h: csv.headers.get("content-type") });
+
+  // reverse charge on a bill: the vendor's country feeds the default, the bill keeps the flag, the posting is the self-assessed pair
+  const us = (await A.post(`/api/companies/${A.cid}/customer-contacts`, { name: "US Software Inc", contactType: "vendor", country: "United States" })).json;
+  const usList = (await A.get(`/api/companies/${A.cid}/customer-contacts?type=vendor`)).json.find((c) => c.id === us.id);
+  ok("ui: the vendor list carries each contact's country (a non-UAE vendor turns the reverse-charge switch on)", usList?.country === "United States" && vend.country === "UAE", { us: usList?.country, uae: vend.country });
+  for (const r of (await A.get(`/api/companies/${A.cid}/approval-rules`)).json) await A.del(`/api/approval-rules/${r.id}`); // single-step approvals again
+  const before = await A.balances();
+  const rcMade = await A.post(`/api/companies/${A.cid}/bills`, {
+    vendor_id: us.id, vendor_name: "US Software Inc", bill_date: prevMid, due_date: prevMid, currency: "AED", reverse_charge: true,
+    line_items: [{ description: "Software subscription", quantity: 1, unit_price: 3600, vat_rate: 5, account_id: exp }],
+  });
+  const rcDetail = (await A.get(`/api/bills/${rcMade.json?.id}`)).json;
+  ok("ui: a reverse-charge bill is payable without VAT (total 3,600) and its detail returns reverse_charge true for the edit form", rcDetail.reverse_charge === true && close(rcDetail.total_amount, 3600) && close(rcDetail.vat_amount, 180), { rc: rcDetail.reverse_charge, t: rcDetail.total_amount, v: rcDetail.vat_amount });
+  await A.post(`/api/bills/${rcMade.json?.id}/approve`, {});
+  const after = await A.balances();
+  ok("ui: approving it declares the VAT both ways: Dr 1050 input 180 and Cr 2020 output 180, payable 3,600 (what the on-screen box 3 / box 10 preview shows)", close((after["1050"] ?? 0) - (before["1050"] ?? 0), 180) && close((after["2020"] ?? 0) - (before["2020"] ?? 0), -180) && close((after["2010"] ?? 0) - (before["2010"] ?? 0), -3600), { d1050: (after["1050"] ?? 0) - (before["1050"] ?? 0), d2020: (after["2020"] ?? 0) - (before["2020"] ?? 0), d2010: (after["2010"] ?? 0) - (before["2010"] ?? 0) });
+  const billPage = readFileSync(join(ROOT, "client/src/pages/BillPay.tsx"), "utf8");
+  ok("ui: the bill dialog has the reverse-charge switch with the box 3 and box 10 preview", /switch-reverse-charge/.test(billPage) && /reverse-charge-preview/.test(billPage));
 
   // client sources: the new screens are routed and in the menu, and every screen string has Arabic
   const app = readFileSync(join(ROOT, "client/src/App.tsx"), "utf8");
@@ -1309,6 +1337,116 @@ async function noEligibleApprover() {
   ok("...and the accountant approves it", done.status === 200 && done.json?.status === "approved", { s: done.status, j: done.json });
 }
 
+
+// F4: a rejection ends the request; F10: the sole possible approver is the creator.
+async function rejectionEndsTheRequest() {
+  const A = await newCompany("rjA");
+  const prep = await A.member("employee");
+  const prep2 = await A.member("employee");
+  const acct = await A.member("accountant");
+  for (const [documentType, roles] of [["bill", ["owner"]], ["expense_claim", ["accountant"]], ["purchase_order", ["owner"]], ["payroll_run", ["accountant"]], ["manual_journal", ["owner"]]]) {
+    await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType, name: documentType + " rule", thresholdAed: 0, approverRoles: roles });
+  }
+  const queue = async (status) => (await A.get(`/api/companies/${A.cid}/approvals?status=${status}`)).json;
+
+  // bill
+  const bill = await A.bill(prevMid, 8000, { vendor_name: "Rejected Vendor" }, false, prep.token);
+  const rej = await A.post(`/api/approvals/bill/${bill}/reject`, { comment: "Wrong period" });
+  ok("F4 bill: the rejection ends the request and the bill is a draft", rej.status === 200 && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [bill])).rows[0].status === "draft", rej.json);
+  ok("F4 bill: it is out of the waiting queue", !(await queue("pending")).some((r) => r.documentId === bill), null);
+  const rejRow = (await queue("rejected")).find((r) => r.documentId === bill);
+  ok("F4 bill: the rejected queue shows the reason, who rejected, and that it can be resubmitted", rejRow?.rejectionReason === "Wrong period" && !!rejRow.rejectedByName && rejRow.canResubmit === true, rejRow);
+  const approveRejected = await A.post(`/api/bills/${bill}/approve`, {});
+  ok("F4 bill: approving a rejected request is 409 REQUEST_REJECTED and posts nothing", approveRejected.status === 409 && approveRejected.json?.code === "REQUEST_REJECTED" && (await A.jes("bill", bill)).length === 0, { s: approveRejected.status, j: approveRejected.json });
+  const rejectAgain = await A.post(`/api/approvals/bill/${bill}/reject`, { comment: "again" });
+  ok("F4 bill: rejecting it twice is refused too", rejectAgain.status === 409, rejectAgain.status);
+  const stranger = await A.post(`/api/approvals/bill/${bill}/resubmit`, {}, prep2.token);
+  ok("F4 bill: another employee cannot resubmit it (403 ROLE_REQUIRED)", stranger.status === 403 && stranger.json?.code === "ROLE_REQUIRED", { s: stranger.status, j: stranger.json });
+  const early = await A.post(`/api/approvals/bill/${(await A.bill(prevMid, 300, { vendor_name: "Fresh" }, false, prep.token))}/resubmit`, {}, prep.token);
+  ok("F4 bill: a document that was never rejected cannot be resubmitted (409 NOT_REJECTED)", early.status === 409 && early.json?.code === "NOT_REJECTED", { s: early.status, j: early.json });
+  const resub = await A.post(`/api/approvals/bill/${bill}/resubmit`, {}, prep.token);
+  ok("F4 bill: the preparer resubmits: a new request with no steps, the bill is pending again", resub.status === 201 && resub.json?.completedSteps === 0 && (await db.query(`SELECT status FROM vendor_bills WHERE id = $1`, [bill])).rows[0].status === "pending", { s: resub.status, j: resub.json });
+  const hist = (await A.get(`/api/approvals/bill/${bill}`)).json;
+  ok("F4 bill: the history keeps both requests, the first rejected with its reason", hist.requests.length === 2 && hist.requests.some((r) => r.status === "rejected" && r.steps.some((st) => st.decision === "rejected" && st.comment === "Wrong period")), hist.requests?.map((r) => r.status));
+  ok("F4 bill: the audit trail records the rejection (with the reason) and the resubmission", (await auditCount("bill", bill, "approval.rejected")) === 1 && (await auditCount("bill", bill, "approval.resubmitted")) === 1, null);
+  const reasonAudit = (await db.query(`SELECT 1 FROM audit_logs WHERE resource_id = $1 AND action = 'approval.rejected' AND details LIKE '%Wrong period%'`, [bill])).rowCount;
+  ok("F4 bill: ...and the audit row carries the reason", reasonAudit === 1, reasonAudit);
+  const note = (await db.query(`SELECT message FROM notifications WHERE user_id = $1 AND related_entity_id = $2 ORDER BY created_at DESC LIMIT 5`, [prep.userId, bill])).rows;
+  ok("F4 bill: the preparer's notification carries the reason", note.some((r) => String(r.message).includes("Wrong period")), note);
+  const ok1 = await A.post(`/api/bills/${bill}/approve`, {});
+  ok("F4 bill: after the resubmission the owner approves it and it posts", ok1.status === 200 && ok1.json?.status === "approved" && (await A.jes("bill", bill)).length === 1, { s: ok1.status, j: ok1.json });
+
+  // expense claim
+  const claim = await A.post(`/api/companies/${A.cid}/expense-claims`, { title: "Rejected claim", items: [{ expense_date: prevMid, category: "office", description: "Ink", amount: 400, vat_amount: 0 }] }, prep.token);
+  await A.post(`/api/expense-claims/${claim.json.id}/submit`, {}, prep.token);
+  await A.post(`/api/approvals/expense_claim/${claim.json.id}/reject`, { comment: "No receipt" }, acct.token);
+  const claimApprove = await A.post(`/api/expense-claims/${claim.json.id}/approve`, {}, acct.token);
+  ok("F4 claim: approving a rejected claim is 409 REQUEST_REJECTED", claimApprove.status === 409 && claimApprove.json?.code === "REQUEST_REJECTED", { s: claimApprove.status, j: claimApprove.json });
+  const claimResub = await A.post(`/api/approvals/expense_claim/${claim.json.id}/resubmit`, {}, prep.token);
+  const claimOk = await A.post(`/api/expense-claims/${claim.json.id}/approve`, {}, acct.token);
+  ok("F4 claim: resubmitted by the submitter, then approved", claimResub.status === 201 && claimOk.status === 200 && claimOk.json?.status === "approved", { r: claimResub.status, a: claimOk.status, j: claimOk.json });
+
+  // purchase order
+  const po = await A.post(`/api/companies/${A.cid}/purchase-orders`, { number: "PO-RJ-" + rnd, vendorName: "PO Vendor", date: prevMid, lines: [{ description: "Desks", quantity: 1, unitPrice: 800, vatRate: 0.05 }] }, prep.token);
+  await A.post(`/api/purchase-orders/${po.json.id}/send`, {}, prep.token);
+  await A.post(`/api/approvals/purchase_order/${po.json.id}/reject`, { comment: "Too dear" });
+  const poApprove = await A.post(`/api/purchase-orders/${po.json.id}/approve`, {});
+  ok("F4 purchase order: approving a rejected order is 409 REQUEST_REJECTED", poApprove.status === 409 && poApprove.json?.code === "REQUEST_REJECTED", { s: poApprove.status, j: poApprove.json });
+  const poResub = await A.post(`/api/approvals/purchase_order/${po.json.id}/resubmit`, {}, prep.token);
+  const poOk = await A.post(`/api/purchase-orders/${po.json.id}/approve`, {});
+  ok("F4 purchase order: resubmitted, then approved", poResub.status === 201 && poOk.status === 200, { r: poResub.status, a: poOk.status, j: poOk.json });
+
+  // payroll run
+  await newEmployee(A, "Reject Payroll Person");
+  const run = await A.post(`/api/companies/${A.cid}/payroll-runs`, { periodMonth: prevMonthNo, periodYear: prevYear }, acct.token);
+  await A.post(`/api/payroll-runs/${run.json.id}/calculate`, {}, acct.token);
+  await A.post(`/api/approvals/payroll_run/${run.json.id}/reject`, { comment: "Check overtime" });
+  const runApprove = await A.post(`/api/payroll-runs/${run.json.id}/approve`, {});
+  ok("F4 payroll run: approving a rejected run is 409 REQUEST_REJECTED and posts nothing", runApprove.status === 409 && runApprove.json?.code === "REQUEST_REJECTED" && (await A.jes("system", run.json.id)).length === 0, { s: runApprove.status, j: runApprove.json });
+  const runResub = await A.post(`/api/approvals/payroll_run/${run.json.id}/resubmit`, {}, acct.token);
+  const runOk = await A.post(`/api/payroll-runs/${run.json.id}/approve`, {});
+  ok("F4 payroll run: the preparer resubmits, an approver other than the preparer approves", runResub.status === 201 && runOk.status === 200 && runOk.json?.status === "approved", { r: runResub.status, a: runOk.status, j: runOk.json });
+
+  // manual journal
+  const bank = await A.accountId("1020"), exp = await A.accountId("5000");
+  const j = await A.post(`/api/companies/${A.cid}/journal`, { date: prevMid, memo: "Adjustment", status: "draft", lines: [{ accountId: exp, debit: 500, credit: 0 }, { accountId: bank, debit: 0, credit: 500 }] }, acct.token);
+  await A.post(`/api/journal/${j.json.id}/submit-for-approval`, {}, acct.token);
+  await A.post(`/api/approvals/manual_journal/${j.json.id}/reject`, { comment: "Wrong accounts" });
+  const jApprove = await A.post(`/api/journal/${j.json.id}/post`, {});
+  ok("F4 journal: posting a rejected journal is 409 REQUEST_REJECTED", jApprove.status === 409 && jApprove.json?.code === "REQUEST_REJECTED", { s: jApprove.status, j: jApprove.json });
+  const jResub = await A.post(`/api/approvals/manual_journal/${j.json.id}/resubmit`, {}, acct.token);
+  const jOk = await A.post(`/api/journal/${j.json.id}/post`, {});
+  ok("F4 journal: resubmitted, then the owner posts it", jResub.status === 201 && jOk.status === 200 && jOk.json?.status === "posted", { r: jResub.status, a: jOk.status, j: jOk.json });
+}
+
+async function soleApprover() {
+  const A = await newCompany("soA");
+  await A.post(`/api/companies/${A.cid}/approval-rules`, { documentType: "bill", name: "Owner signs", thresholdAed: 0, approverRoles: ["owner"] });
+  const bill = await A.bill(prevMid, 900, { vendor_name: "One Person Vendor" }, false);
+  const plain = await A.post(`/api/bills/${bill}/approve`, {});
+  ok("F10: the creator who is the only possible approver is told so (409 NO_ELIGIBLE_APPROVER, soleApprover)", plain.status === 409 && plain.json?.code === "NO_ELIGIBLE_APPROVER" && plain.json?.soleApprover === true, { s: plain.status, j: plain.json });
+  const row = (await A.get(`/api/companies/${A.cid}/approvals`)).json.find((r) => r.documentId === bill);
+  ok("F10: the queue row says soleApprover so the screen offers the acknowledged approval", row?.soleApprover === true && row.canAct === false, row);
+  const done = await A.post(`/api/bills/${bill}/approve`, { acknowledgeSoleApprover: true });
+  ok("F10: with the acknowledgement the sole approver approves and it posts", done.status === 200 && done.json?.status === "approved" && (await A.jes("bill", bill)).length === 1, { s: done.status, j: done.json });
+  const step = (await db.query(`SELECT s.self_approved FROM approval_steps s JOIN approval_requests r ON r.id = s.request_id WHERE r.document_id = $1`, [bill])).rows;
+  const reqRow = (await db.query(`SELECT self_approved FROM approval_requests WHERE document_id = $1`, [bill])).rows[0];
+  ok("F10: the step and the request are recorded as self-approved", step.length === 1 && step[0].self_approved === true && reqRow.self_approved === true, { step, reqRow });
+  ok("F10: the audit trail has a self-approved entry", (await auditCount("bill", bill, "approval.self_approved")) === 1, null);
+  const approvedRow = (await A.get(`/api/companies/${A.cid}/approvals?status=approved`)).json.find((r) => r.documentId === bill);
+  ok("F10: the approved queue row carries selfApproved for the warning badge", approvedRow?.selfApproved === true, approvedRow);
+
+  // another eligible approver exists: SELF_APPROVAL stays, whatever the acknowledgement says
+  const B = await newCompany("soB");
+  const partner = await B.member("owner");
+  await B.post(`/api/companies/${B.cid}/approval-rules`, { documentType: "bill", name: "Owner signs", thresholdAed: 0, approverRoles: ["owner"] });
+  const billB = await B.bill(prevMid, 900, { vendor_name: "Two Owners Vendor" }, false);
+  const self = await B.post(`/api/bills/${billB}/approve`, { acknowledgeSoleApprover: true });
+  ok("F10: with another eligible approver the creator still gets 403 SELF_APPROVAL, acknowledged or not", self.status === 403 && self.json?.code === "SELF_APPROVAL", { s: self.status, j: self.json });
+  const other = await B.post(`/api/bills/${billB}/approve`, {}, partner.token);
+  ok("F10: ...and the other owner approves, not marked self-approved", other.status === 200 && (await db.query(`SELECT self_approved FROM approval_requests WHERE document_id = $1`, [billB])).rows[0].self_approved === false, { s: other.status, j: other.json });
+}
+
 async function main() {
   db = new pg.Client({ connectionString: DB_URL });
   await db.connect();
@@ -1334,6 +1472,8 @@ async function main() {
     await creditNotesAndInvoiceProjects();
     await vendorFxAndAgeing();
     await noEligibleApprover();
+    await rejectionEndsTheRequest();
+    await soleApprover();
     await uiContracts();
     // @@GROUPS
   } finally {

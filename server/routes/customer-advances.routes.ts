@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
+import { calendarDaySchema } from "../utils/calendar-day-schema";
 import { recordAudit } from "../services/audit.service";
 import {
   applyAdvance,
@@ -15,7 +16,7 @@ import {
 
 const MAX_AMOUNT = 9_000_000_000_000;
 const money = z.coerce.number().finite().positive().max(MAX_AMOUNT);
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+const ymd = calendarDaySchema;
 
 const createSchema = z.object({
   contactId: z.string().uuid(),

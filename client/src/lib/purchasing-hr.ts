@@ -34,6 +34,28 @@ export interface VendorContact {
   email?: string | null;
 }
 
+/** UAE spellings a contact's country may carry (the contacts form defaults to "UAE"). */
+const UAE_COUNTRIES = new Set(["uae", "ae", "u.a.e", "united arab emirates", "الإمارات", "الامارات", "الإمارات العربية المتحدة"]);
+
+/** True for a vendor in a known non-UAE country: imported services from it normally fall under reverse charge. Blank means unknown, not foreign. */
+export function isForeignVendorCountry(country: string | null | undefined): boolean {
+  const c = (country ?? "").trim().toLowerCase();
+  return c !== "" && !UAE_COUNTRIES.has(c);
+}
+
+/** What a reverse-charge bill declares on the VAT return: the same VAT as output (box 3) and as input (box 10), so the net effect is nil. */
+export function reverseChargePreview(lines: ReadonlyArray<{ quantity?: unknown; unit_price?: unknown; vat_rate?: unknown }>) {
+  const cents = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
+  let net = 0;
+  let vat = 0;
+  for (const l of lines) {
+    const amount = (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+    net += amount;
+    vat += amount * ((Number(l.vat_rate) || 0) / 100);
+  }
+  return { net: cents(net), outputVatBox3: cents(vat), inputVatBox10: cents(vat), payable: cents(net) };
+}
+
 const normalizeName = (value: string): string => value.trim().replace(/\s+/g, " ").toLowerCase();
 
 /** Contacts that may appear in a vendor picker: vendor and both, never customer-only. */
@@ -84,6 +106,15 @@ export interface ApprovalQueueRow {
   status: string;
   canAct: boolean;
   createdAt: string | null;
+  /** Rejected requests: the reason and who rejected. */
+  rejectionReason?: string | null;
+  rejectedByName?: string | null;
+  /** A step was signed by the document's creator as the sole possible approver. */
+  selfApproved?: boolean;
+  /** The caller created this document and nobody else can give the next step: they may approve it, acknowledged. */
+  soleApprover?: boolean;
+  /** A rejected request nobody has resubmitted, which the caller may resubmit. */
+  canResubmit?: boolean;
 }
 
 export interface ApprovalStep {
@@ -93,6 +124,8 @@ export interface ApprovalStep {
   decidedByName: string | null;
   decision: "approved" | "rejected";
   comment: string | null;
+  /** Signed by the document's creator as the sole possible approver. */
+  selfApproved?: boolean;
   decidedAt: string;
 }
 

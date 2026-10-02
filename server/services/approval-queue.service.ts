@@ -15,7 +15,7 @@ import {
   type ApprovalDocumentType,
   type ApprovalRequestRow,
 } from "../../shared/schema-purchasing-hr";
-import { matchRule, roleForStep, canSignStep, type ApprovalRuleLike } from "./approval-rules";
+import { matchRule, roleForStep, canSignStep, STAFF_RANK, type ApprovalRuleLike } from "./approval-rules";
 import { resolveDocumentExchangeRate } from "./document-fx-rate";
 
 export interface ApprovalDocument {
@@ -132,7 +132,7 @@ export async function loadApprovalDocument(documentType: ApprovalDocumentType, d
     }
     case "payroll_run": {
       const r = await pool.query(
-        `SELECT id::text, company_id::text, status, total_basic, total_allowances, period_month, period_year FROM payroll_runs WHERE id = $1`,
+        `SELECT id::text, company_id::text, status, total_basic, total_allowances, period_month, period_year, created_by::text FROM payroll_runs WHERE id = $1`,
         [documentId]
       );
       const row = r.rows[0];
@@ -145,7 +145,8 @@ export async function loadApprovalDocument(documentType: ApprovalDocumentType, d
         // Gross pay of the run (basic + allowances + overtime): the cost the approval authorises.
         amountAed: round2(num(row.total_basic) + num(row.total_allowances)),
         rateMissing: false,
-        creatorId: null,
+        // the person who prepared the run never approves it
+        creatorId: row.created_by ?? null,
         reference: `Payroll ${String(row.period_month).padStart(2, "0")}/${row.period_year}`,
         counterparty: "",
       };
@@ -212,6 +213,15 @@ export interface QueueRow {
   status: string;
   canAct: boolean;
   createdAt: string | null;
+  /** Rejected requests: why, and by whom. */
+  rejectionReason: string | null;
+  rejectedByName: string | null;
+  /** A step was signed by the document's creator as the sole possible approver. */
+  selfApproved: boolean;
+  /** The actor created this document and is the only person who could give the next step: they may approve it acknowledged. */
+  soleApprover: boolean;
+  /** A rejected request nobody has resubmitted yet, which the actor may resubmit. */
+  canResubmit: boolean;
 }
 
 interface Actor {
@@ -219,7 +229,13 @@ interface Actor {
   rank: number;
 }
 
-function toQueueRow(doc: ApprovalDocument, request: ApprovalRequestRow | null, rule: ApprovalRuleLike | null, actor: Actor, signedBy: Set<string>): QueueRow {
+interface RowExtras {
+  rejection?: { comment: string | null; byName: string | null };
+  isLatest?: boolean;
+  soleApprover?: boolean;
+}
+
+function toQueueRow(doc: ApprovalDocument, request: ApprovalRequestRow | null, rule: ApprovalRuleLike | null, actor: Actor, signedBy: Set<string>, extras: RowExtras = {}): QueueRow {
   const roles = request ? request.requiredRoles : rule?.approverRoles ?? [];
   const completed = request ? request.completedSteps : 0;
   const nextRole = roleForStep(roles, completed + 1);
@@ -238,6 +254,11 @@ function toQueueRow(doc: ApprovalDocument, request: ApprovalRequestRow | null, r
     status,
     canAct: status === "pending" && !!nextRole && canSignStep(actor.rank, nextRole) && !signedBy.has(actor.userId) && !isSelf,
     createdAt: request ? request.createdAt.toISOString() : null,
+    rejectionReason: extras.rejection?.comment ?? null,
+    rejectedByName: extras.rejection?.byName ?? null,
+    selfApproved: request?.selfApproved === true,
+    soleApprover: extras.soleApprover === true,
+    canResubmit: status === "rejected" && extras.isLatest === true && (isSelf || actor.rank >= STAFF_RANK),
   };
 }
 
@@ -288,10 +309,36 @@ export async function listApprovalQueue(args: {
     for (const s of steps) signed.set(s.requestId, (signed.get(s.requestId) ?? new Set()).add(s.decidedBy));
   }
 
+  // The newest request of each document: a rejected one is "waiting for resubmission" until a newer request exists.
+  const latest = await pool.query(
+    `SELECT DISTINCT ON (document_type, document_id) id::text AS id, document_type, document_id::text AS document_id, status
+       FROM approval_requests WHERE company_id = $1 ORDER BY document_type, document_id, created_at DESC`,
+    [args.companyId]
+  );
+  const latestIds = new Set<string>(latest.rows.map((r: any) => r.id));
+  const awaitingResubmission = new Set<string>(latest.rows.filter((r: any) => r.status === "rejected").map((r: any) => `${r.document_type}:${r.document_id}`));
+
+  const rejections = new Map<string, { comment: string | null; byName: string | null }>();
+  const rejectedIds = requests.filter((r) => r.status === "rejected").map((r) => r.id);
+  if (rejectedIds.length > 0) {
+    const r = await pool.query(
+      `SELECT s.request_id::text AS request_id, s.comment, u.name FROM approval_steps s LEFT JOIN users u ON u.id = s.decided_by
+        WHERE s.request_id = ANY($1::uuid[]) AND s.decision = 'rejected'`,
+      [rejectedIds]
+    );
+    for (const row of r.rows) rejections.set(row.request_id, { comment: row.comment ?? null, byName: row.name ?? null });
+  }
+
+  const { hasEligibleApprover } = await import("./approval-gate.service");
   for (const request of requests) {
     const doc = await loadApprovalDocument(request.documentType as ApprovalDocumentType, request.documentId);
     if (!doc || doc.companyId !== args.companyId) continue;
-    rows.push(toQueueRow(doc, request, null, args.actor, signed.get(request.id) ?? new Set()));
+    let soleApprover = false;
+    if (request.status === "pending" && doc.creatorId === args.actor.userId) {
+      const nextRole = roleForStep(request.requiredRoles, request.completedSteps + 1);
+      if (nextRole && canSignStep(args.actor.rank, nextRole)) soleApprover = !(await hasEligibleApprover(db as any, doc, request, nextRole, args.actor.userId));
+    }
+    rows.push(toQueueRow(doc, request, null, args.actor, signed.get(request.id) ?? new Set(), { rejection: rejections.get(request.id), isLatest: latestIds.has(request.id), soleApprover }));
   }
 
   // Documents a rule covers that nobody has signed yet (no request exists for them).
@@ -301,11 +348,17 @@ export async function listApprovalQueue(args: {
     for (const type of types) {
       if (!rules.some((r: any) => r.documentType === type)) continue;
       for (const id of await waitingDocuments(args.companyId, type)) {
-        if (inFlight.has(`${type}:${id}`)) continue;
+        if (inFlight.has(`${type}:${id}`) || awaitingResubmission.has(`${type}:${id}`)) continue;
         const doc = await loadApprovalDocument(type, id);
         if (!doc) continue;
         const rule = ruleForDocument(rules, doc);
-        if (rule) rows.push(toQueueRow(doc, null, rule, args.actor, new Set()));
+        if (!rule) continue;
+        let soleApprover = false;
+        const firstRole = roleForStep(rule.approverRoles, 1);
+        if (doc.creatorId === args.actor.userId && firstRole && canSignStep(args.actor.rank, firstRole)) {
+          soleApprover = !(await hasEligibleApprover(db as any, doc, undefined, firstRole, args.actor.userId));
+        }
+        rows.push(toQueueRow(doc, null, rule, args.actor, new Set(), { soleApprover }));
       }
     }
   }
@@ -329,6 +382,7 @@ export async function approvalHistory(companyId: string, documentType: ApprovalD
         decidedByName: sql<string | null>`(SELECT name FROM users WHERE id = ${approvalSteps.decidedBy})`,
         decision: approvalSteps.decision,
         comment: approvalSteps.comment,
+        selfApproved: approvalSteps.selfApproved,
         decidedAt: approvalSteps.decidedAt,
       })
       .from(approvalSteps)

@@ -173,7 +173,7 @@ export async function createAdvance(input: CreateAdvanceInput) {
   if (!issued.ok) {
     throw refuse(issued.status, issued.body.code, issued.body.message);
   }
-  const sent = await storage.updateInvoiceStatus(created.invoice.id, companyId, "sent");
+  const sent = (await storage.getInvoice(created.invoice.id, companyId)) as Invoice;
 
   let payment: unknown;
   let paymentError: string | undefined;

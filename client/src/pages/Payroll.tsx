@@ -74,6 +74,7 @@ import { apiUrl } from "@/lib/api";
 import { LeaveTab } from "@/components/payroll/LeaveTab";
 import { LoansTab } from "@/components/payroll/LoansTab";
 import { FinalSettlementTab } from "@/components/payroll/FinalSettlementTab";
+import { RecordPaymentDialog } from "@/components/payroll/RecordPaymentDialog";
 import { PayrollRegisterDialog } from "@/components/payroll/PayrollRegisterDialog";
 import { ApprovalStatusBadge, approverRoleLabel } from "@/components/approvals/ApprovalStatusBadge";
 import { messages as approvalMessages } from "@/components/approvals/ApprovalStatusBadge.i18n";
@@ -99,6 +100,8 @@ interface Employee {
   bank_account_number: string | null;
   iban: string | null;
   routing_code: string | null;
+  mol_person_id?: string | null;
+  opening_gratuity_provision?: string | null;
   department: string | null;
   designation: string | null;
   join_date: string | null;
@@ -109,6 +112,7 @@ interface Employee {
   total_salary: string;
   status: string;
   created_at: string;
+  user_id?: string | null;
 }
 
 interface PayrollRun {
@@ -138,6 +142,7 @@ interface PayrollItem {
   employee_name: string;
   employee_name_ar: string | null;
   employee_number: string | null;
+  days_worked?: string | number | null;
   department: string | null;
   designation: string | null;
   basic_salary: string;
@@ -190,6 +195,8 @@ const employeeFormSchema = z.object({
   bankAccountNumber: z.string().optional(),
   iban: z.string().optional(),
   routingCode: z.string().optional(),
+  molPersonId: z.string().regex(/^(\d{14})?$/, pageMessages.marker("molPersonIdInvalid")).optional(),
+  openingGratuityProvision: z.coerce.number().min(0).default(0),
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
@@ -198,6 +205,8 @@ const employeeFormSchema = z.object({
   transportAllowance: z.coerce.number().min(0).default(0),
   otherAllowance: z.coerce.number().min(0).default(0),
   status: z.string().default("active"),
+  // The team member this record belongs to ("none" = not linked); only an accountant or above can set it.
+  userId: z.string().default("none"),
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
@@ -249,6 +258,10 @@ export default function Payroll() {
   const [payrollRunDialogOpen, setPayrollRunDialogOpen] = useState(false);
   const [viewingRunId, setViewingRunId] = useState<string | null>(null);
   const [registerRunId, setRegisterRunId] = useState<string | null>(null);
+  const [payRunId, setPayRunId] = useState<string | null>(null);
+  const [deleteRunId, setDeleteRunId] = useState<string | null>(null);
+  // The warnings of the last calculation per run (pro-rata and excluded employees), kept on screen with the run.
+  const [warningsByRun, setWarningsByRun] = useState<Record<string, string[]>>({});
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDialogOpen, setEditItemDialogOpen] = useState(false);
 
@@ -279,7 +292,12 @@ export default function Payroll() {
   });
 
   const viewingRun = payrollRuns.find((r) => r.id === viewingRunId);
-  const { canWriteHr } = useMyCompanyRole(companyId ?? undefined);
+  const { canWriteHr, isLoading: isLoadingRole } = useMyCompanyRole(companyId ?? undefined);
+  // The team members an employee record can be linked to (an accountant or above links; same cache entry as the role).
+  const { data: teamMembers = [] } = useQuery<Array<{ userId: string; role: string; user?: { name: string; email: string } }>>({
+    queryKey: ["/api/companies", companyId ?? undefined, "team"],
+    enabled: !!companyId && canWriteHr,
+  });
   const approvalProgress = useApprovalProgress(companyId ?? undefined, "payroll_run", payrollRuns.some((r) => r.status === "pending_approval"));
 
   // ─── Forms ───────────────────────────────────────────
@@ -298,6 +316,8 @@ export default function Payroll() {
       bankAccountNumber: "",
       iban: "",
       routingCode: "",
+      molPersonId: "",
+      openingGratuityProvision: 0,
       department: "",
       designation: "",
       joinDate: "",
@@ -306,6 +326,7 @@ export default function Payroll() {
       transportAllowance: 0,
       otherAllowance: 0,
       status: "active",
+      userId: "none",
     },
   });
 
@@ -329,7 +350,7 @@ export default function Payroll() {
   // ─── Mutations ─────────────────────────────────────
 
   const createEmployeeMutation = useMutation({
-    mutationFn: (data: EmployeeFormData) =>
+    mutationFn: (data: Omit<EmployeeFormData, "userId"> & { userId: string | null }) =>
       apiRequest("POST", `/api/companies/${companyId}/employees`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
@@ -346,7 +367,7 @@ export default function Payroll() {
   });
 
   const updateEmployeeMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<EmployeeFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<Omit<EmployeeFormData, "userId">> & { userId?: string | null } }) =>
       apiRequest("PATCH", `/api/employees/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
@@ -393,8 +414,17 @@ export default function Payroll() {
 
   const calculatePayrollMutation = useMutation({
     mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/calculate`),
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, calculatedRunId: string) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      const notes: Array<{ code: string; name: string; days: number; date: string | null }> = Array.isArray(result?.proRataNotes) ? result.proRataNotes : [];
+      const others: string[] = Array.isArray(result?.otherWarnings) ? result.otherWarnings : Array.isArray(result?.warnings) ? result.warnings : [];
+      setWarningsByRun((prev) => ({
+        ...prev,
+        [calculatedRunId]: [
+          ...notes.map((n) => tr(`proRata_${n.code}` as "proRata_joined", { name: n.name, days: n.days, date: n.date ?? "-" })),
+          ...others,
+        ],
+      }));
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
@@ -434,6 +464,21 @@ export default function Payroll() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+    },
+  });
+
+  const deleteRunMutation = useMutation({
+    mutationFn: (runId: string) => apiRequest("DELETE", `/api/payroll-runs/${runId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "approvals"] });
+      if (deleteRunId && deleteRunId === viewingRunId) setViewingRunId(null);
+      setDeleteRunId(null);
+      toast({ title: tr("runDeleted"), description: tr("runDeletedBody") });
+    },
+    onError: (error: Error) => {
+      setDeleteRunId(null);
+      toast(failureToast(error, tr("error")));
     },
   });
 
@@ -481,6 +526,8 @@ export default function Payroll() {
       bankAccountNumber: "",
       iban: "",
       routingCode: "",
+      molPersonId: "",
+      openingGratuityProvision: 0,
       department: "",
       designation: "",
       joinDate: "",
@@ -489,6 +536,7 @@ export default function Payroll() {
       transportAllowance: 0,
       otherAllowance: 0,
       status: "active",
+      userId: "none",
     });
     setEmployeeDialogOpen(true);
   };
@@ -507,6 +555,8 @@ export default function Payroll() {
       bankAccountNumber: emp.bank_account_number || "",
       iban: emp.iban || "",
       routingCode: emp.routing_code || "",
+      molPersonId: emp.mol_person_id || "",
+      openingGratuityProvision: parseFloat(emp.opening_gratuity_provision ?? "0") || 0,
       department: emp.department || "",
       designation: emp.designation || "",
       joinDate: emp.join_date ? emp.join_date.split("T")[0] : "",
@@ -515,11 +565,15 @@ export default function Payroll() {
       transportAllowance: parseFloat(emp.transport_allowance) || 0,
       otherAllowance: parseFloat(emp.other_allowance) || 0,
       status: emp.status,
+      userId: emp.user_id ?? "none",
     });
     setEmployeeDialogOpen(true);
   };
 
-  const handleEmployeeSubmit = (data: EmployeeFormData) => {
+  const handleEmployeeSubmit = (form: EmployeeFormData) => {
+    // "none" in the picker means unlinked (null clears an existing link).
+    const { molPersonId, ...rest } = form;
+    const data = { ...rest, ...(molPersonId ? { molPersonId } : {}), userId: form.userId === "none" ? null : form.userId };
     if (editingEmployee) {
       updateEmployeeMutation.mutate({ id: editingEmployee.id, data });
     } else {
@@ -618,6 +672,8 @@ export default function Payroll() {
         );
       case "inactive":
         return <Badge variant="secondary">{tr("inactive")}</Badge>;
+      case "terminated":
+        return <Badge variant="secondary">{tr("statusTerminated")}</Badge>;
       case "draft":
         return <Badge variant="outline">{tr("draft")}</Badge>;
       case "calculated":
@@ -688,7 +744,7 @@ export default function Payroll() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>
                   {tr("payrollRun", {
@@ -710,7 +766,7 @@ export default function Payroll() {
                   <span>{getStatusBadge(viewingRun.status, viewingRun.id)}</span>
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {viewingRun.status === "draft" && (
                   <Button
                     onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
@@ -755,14 +811,27 @@ export default function Payroll() {
                     {tr("register")}
                   </Button>
                 )}
-                {viewingRun.status === "approved" && (
+                {(viewingRun.status === "approved" || viewingRun.status === "paid") && (
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadSIF(viewingRunId)}
                     className="flex items-center gap-2"
+                    data-testid="button-download-sif"
                   >
                     <Download className="w-4 h-4" />
                     {tr("downloadSif")}
+                  </Button>
+                )}
+                {viewingRun.status === "approved" && (
+                  <Button onClick={() => setPayRunId(viewingRunId)} className="flex items-center gap-2" data-testid="button-record-payment">
+                    <Banknote className="w-4 h-4" />
+                    {tr("recordPayment")}
+                  </Button>
+                )}
+                {(viewingRun.status === "draft" || viewingRun.status === "calculated") && (
+                  <Button variant="outline" onClick={() => setDeleteRunId(viewingRunId)} className="flex items-center gap-2 text-destructive" data-testid="button-delete-run">
+                    <Trash2 className="w-4 h-4" />
+                    {tr("deleteRun")}
                   </Button>
                 )}
               </div>
@@ -771,6 +840,16 @@ export default function Payroll() {
 
           {/* Summary cards */}
           <CardContent>
+            {(warningsByRun[viewingRunId ?? ""] ?? []).length > 0 && (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-sm" role="status" data-testid="payroll-run-warnings">
+                <div className="font-medium">{tr("runWarningsTitle")}</div>
+                <ul className="mt-1 list-disc ps-5">
+                  {warningsByRun[viewingRunId ?? ""].map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">{tr("totalBasic")}</div>
@@ -850,6 +929,11 @@ export default function Payroll() {
                           <TableCell className="font-medium">
                             <div>
                               {item.employee_name}
+                              {item.days_worked != null && Number(item.days_worked) < 30 && (
+                                <div className="text-xs text-warning" data-testid={`days-worked-${item.id}`}>
+                                  {tr("daysWorkedOf", { days: Number(item.days_worked) })}
+                                </div>
+                              )}
                               {item.employee_number && (
                                 <div className="text-xs text-muted-foreground">
                                   #{item.employee_number}
@@ -1010,27 +1094,33 @@ export default function Payroll() {
         </div>
       </div>
 
+      {!canWriteHr && !isLoadingRole && (
+        <p className="text-sm text-muted-foreground" data-testid="payroll-own-records-notice">{tr("ownRecordsNotice")}</p>
+      )}
+
       <Tabs defaultValue="employees" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="employees" className="flex items-center gap-2">
+          <TabsTrigger value="employees" className="flex shrink-0 items-center gap-2">
             <Users className="w-4 h-4" />
             {tr("employees2")}
           </TabsTrigger>
-          <TabsTrigger value="payroll-runs" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            {tr("payrollRuns")}
-          </TabsTrigger>
-          <TabsTrigger value="gratuity" className="flex items-center gap-2">
+          {canWriteHr && (
+            <TabsTrigger value="payroll-runs" className="flex shrink-0 items-center gap-2">
+              <FileText className="w-4 h-4" />
+              {tr("payrollRuns")}
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="gratuity" className="flex shrink-0 items-center gap-2">
             <Calculator className="w-4 h-4" />
             {tr("gratuityCalculator")}
           </TabsTrigger>
-          <TabsTrigger value="leave" className="flex items-center gap-2" data-testid="tab-payroll-leave">
+          <TabsTrigger value="leave" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-leave">
             {tr("tabLeave")}
           </TabsTrigger>
-          <TabsTrigger value="loans" className="flex items-center gap-2" data-testid="tab-payroll-loans">
+          <TabsTrigger value="loans" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-loans">
             {tr("tabLoans")}
           </TabsTrigger>
-          <TabsTrigger value="settlement" className="flex items-center gap-2" data-testid="tab-payroll-settlement">
+          <TabsTrigger value="settlement" className="flex shrink-0 items-center gap-2" data-testid="tab-payroll-settlement">
             {tr("tabSettlement")}
           </TabsTrigger>
         </TabsList>
@@ -1046,10 +1136,12 @@ export default function Payroll() {
                     {tr.plural("employeesRegistered", employees.length)}
                   </CardDescription>
                 </div>
-                <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  {tr("addEmployee")}
-                </Button>
+                {canWriteHr && (
+                  <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
+                    <Plus className="w-4 h-4" />
+                    {tr("addEmployee")}
+                  </Button>
+                )}
               </div>
               <div className="mt-4">
                 <Input
@@ -1082,7 +1174,7 @@ export default function Payroll() {
                         <TableHead>{tr("designation")}</TableHead>
                         <TableHead className="text-end">{tr("totalSalary")}</TableHead>
                         <TableHead>{tr("status")}</TableHead>
-                        <TableHead className="text-end">{tr("actions")}</TableHead>
+                        {canWriteHr && <TableHead className="text-end">{tr("actions")}</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1107,7 +1199,7 @@ export default function Payroll() {
                             {formatCurrency(parseFloat(emp.total_salary) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(emp.status)}</TableCell>
-                          <TableCell className="text-end">
+                          {canWriteHr && <TableCell className="text-end">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
@@ -1127,7 +1219,7 @@ export default function Payroll() {
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
-                          </TableCell>
+                          </TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1139,7 +1231,7 @@ export default function Payroll() {
         </TabsContent>
 
         {/* ─── Payroll Runs Tab ─────────────────────────── */}
-        <TabsContent value="payroll-runs">
+        {canWriteHr && <TabsContent value="payroll-runs">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -1182,7 +1274,7 @@ export default function Payroll() {
                     </TableHeader>
                     <TableBody>
                       {payrollRuns.map((run) => (
-                        <TableRow key={run.id}>
+                        <TableRow key={run.id} className="cursor-pointer md:cursor-default" onClick={(e) => { if (window.matchMedia("(max-width: 767px)").matches && !(e.target as HTMLElement).closest("button")) setViewingRunId(run.id); }} data-testid={`row-run-${run.id}`}>
                           <TableCell className="font-medium">
                             {getMonths()[(run.period_month || 1) - 1]} {run.period_year}
                           </TableCell>
@@ -1240,7 +1332,7 @@ export default function Payroll() {
                                   <FileText className="w-4 h-4" />
                                 </Button>
                               )}
-                              {run.status === "approved" && (
+                              {(run.status === "approved" || run.status === "paid") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1260,7 +1352,7 @@ export default function Payroll() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>}
 
         {/* ─── Gratuity Calculator Tab ──────────────────── */}
         <TabsContent value="gratuity">
@@ -1434,6 +1526,21 @@ export default function Payroll() {
       </Tabs>
 
       <PayrollRegisterDialog runId={registerRunId} onClose={() => setRegisterRunId(null)} />
+      {companyId && <RecordPaymentDialog companyId={companyId} runId={payRunId} onClose={() => setPayRunId(null)} />}
+      <AlertDialog open={!!deleteRunId} onOpenChange={(open) => !open && setDeleteRunId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tr("deleteRunTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("deleteRunBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteRunId && deleteRunMutation.mutate(deleteRunId)} data-testid="button-confirm-delete-run">
+              {tr("deleteRun")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ─── Employee Create/Edit Dialog ──────────────── */}
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
@@ -1678,6 +1785,36 @@ export default function Payroll() {
                   )}
                 />
               </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={employeeForm.control}
+                  name="molPersonId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("molPersonId")}</FormLabel>
+                      <FormControl>
+                        <Input inputMode="numeric" maxLength={14} placeholder="00000000000000" {...field} value={field.value || ""} data-testid="input-mol-person-id" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("molPersonIdHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={employeeForm.control}
+                  name="openingGratuityProvision"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tr("openingGratuityProvision")}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.01" {...field} data-testid="input-opening-gratuity-provision" />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{tr("openingGratuityProvisionHint")}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               {/* Salary */}
               <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
@@ -1758,6 +1895,34 @@ export default function Payroll() {
                         <SelectItem value="inactive">{tr("inactive")}</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Linked login: what an employee-role user is allowed to see is their own record */}
+              <FormField
+                control={employeeForm.control}
+                name="userId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tr("linkedLogin")}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-employee-linked-login">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">{tr("linkedLoginNone")}</SelectItem>
+                        {teamMembers.map((m) => (
+                          <SelectItem key={m.userId} value={m.userId}>
+                            {m.user?.name || m.user?.email || m.userId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{tr("linkedLoginHint")}</p>
                     <FormMessage />
                   </FormItem>
                 )}

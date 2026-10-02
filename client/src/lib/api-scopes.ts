@@ -10,6 +10,7 @@ export type ScopeResource = (typeof SCOPE_RESOURCES)[number];
 export const ALL_SCOPES: readonly string[] = [
   ...SCOPE_RESOURCES.flatMap((r) => [`read:${r}`, `write:${r}`]),
   "read:reports",
+  "read:accounts",
 ];
 
 export const READ_SCOPES: readonly string[] = ALL_SCOPES.filter((s) => s.startsWith("read:"));

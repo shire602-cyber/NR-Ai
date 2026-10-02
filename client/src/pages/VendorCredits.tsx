@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { useI18n } from "@/lib/i18n";
+import { accountName } from "@/lib/account-name";
+import { todayYmd } from "@/lib/calendar-date";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,7 +94,6 @@ interface BillRow {
 const EMPTY_LINE: CreditLine = { description: "", quantity: "1", unit_price: "", vat_rate: "5", account_id: "" };
 const NO_BILL = "none";
 const OPEN_BILL_STATUSES = ["approved", "partial", "overdue"];
-const todayYmd = () => new Date().toISOString().slice(0, 10);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function statusBadge(status: string, label: (s: "draft" | "approved" | "void") => string) {
@@ -109,6 +111,7 @@ function statusBadge(status: string, label: (s: "draft" | "approved" | "void") =
 }
 
 export default function VendorCredits() {
+  const locale = useI18n((s) => s.locale);
   const tr = pageMessages.useT();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -361,6 +364,7 @@ function CreditFormDialog(props: {
 }) {
   const { companyId, editingId, bills, accounts, onClose, onSaved } = props;
   const tr = pageMessages.useT();
+  const locale = useI18n((s) => s.locale);
   const { toast } = useToast();
   const base = `/api/companies/${companyId}/vendor-credits`;
 
@@ -602,7 +606,7 @@ function CreditFormDialog(props: {
                     <SelectItem value="default">{tr("defaultAccount")}</SelectItem>
                     {accounts.map((a: any) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {`${a.code} ${a.nameEn || a.name}`}
+                        {`${a.code} ${accountName(a, locale)}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
