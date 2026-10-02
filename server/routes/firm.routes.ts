@@ -810,6 +810,13 @@ export function registerFirmRoutes(app: Express): void {
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
       }
+      // Firm staff may only edit NRA clients. A firm_owner's accessible set is
+      // "all", so without this check they could rewrite a self-signup SaaS
+      // customer's company record (name, TRN, emirate, filing frequency) —
+      // the same tenant boundary hasCompanyAccess enforces for firm roles.
+      if (company.companyType !== "client" || company.deletedAt) {
+        return res.status(400).json({ message: "Company is not an active NRA client" });
+      }
 
       const updated =
         Object.keys(companyPatch).length > 0
