@@ -259,3 +259,12 @@ Migration 0131.
   shift on a non-UTC host; `/api/version` reports it.
 - **Arabic:** purchase, payment, vendor-credit and receipt journal text, standard account names, receipt categories
   and the financial-year range now render in Arabic.
+
+## Launch gate verdict (2026-10-02)
+
+Teardown 9 (`docs/superpowers/plans/2026-10-02-teardown9-v1.md`) confirmed the trader's two remaining items fixed:
+the Q3 return shows Dubai 12,835.00 / 641.75, Abu Dhabi 5,400.00 / 270.00, box 9 17,580.00 / 879.00 and box 14
+32.75 payable; receivables equal the ageing; stock is 410 bags at 8,264.00 equal to account 1070. All three blind
+accountants (trader, payroll, banking and year-end) would now sign their VAT returns and year-ends. Minor non-blocking
+items noted for later: credit dialog and Autopilot row refresh after a void, the opening-balances wording about
+Opening Balance Equity, and one "Credit Note" fragment in an Arabic cost-of-sales line. Customer advances stay AED-only.
