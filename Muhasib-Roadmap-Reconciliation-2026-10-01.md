@@ -152,6 +152,21 @@ repository's own launch checklist (`MOVE-REPO-AND-LAUNCH-CHECKLIST.md`).
   Serialisation still holds (the lock is held until the outer transaction
   commits) and `createJournalEntry` is itself atomic, so behaviour is correct;
   the doc-comment's "everything inside runs in one transaction" overstates it.
+  It does have a load cost: each locked transaction holds one pool connection
+  while its callback checks out more, so with the default pool of 10 and ten
+  parallel "issue" calls the CI log shows one call timing out after 10 s with
+  a 500 (`connectionTimeoutMillis`). The concurrency test still passes because
+  exactly one call succeeds; under real parallel load this would surface as
+  sporadic 500s. Fix: pass `tx` through to the storage calls, or raise
+  `DB_POOL_MAX`.
+- In CI the integration server runs without `RL_*` overrides, so after the
+  first three suites the API write limiter (100 writes/min, which registration counts against) kicks in and the
+  modules, uncovered-modules and ai-degradation suites print
+  `SKIP: registration rate-limited` and exit 0. CI is green while exercising
+  far fewer assertions than a local run with the overrides (CI log, 2 Oct:
+  `6 passed, 3 skipped` for concurrency, three suites skipped outright).
+  Setting `RL_API_MAX`, `RL_READ_MAX` and `RL_AUTH_MAX` on the CI server step
+  would make the gate real.
 - `AI_MODEL` defaults to `gpt-3.5-turbo` in `config/env.ts`. Pin the model
   explicitly in production when the key is provisioned.
 

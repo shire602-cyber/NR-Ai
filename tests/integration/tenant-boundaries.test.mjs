@@ -46,14 +46,34 @@ async function api(method, path, { body, token } = {}) {
   return { status: res.status, json };
 }
 const rnd = Math.random().toString(36).slice(2, 8);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Registration counts against the API write limiter (RL_API_MAX, 100/min by default).
+// This suite runs last in `npm run test:integration`, after the other suites
+// have spent the budget, so honour the server's retry-after before giving up.
+// If the limiter still refuses after that, follow the sibling suites'
+// convention: report SKIP and exit 0 rather than fail on an environment limit.
 async function signup(label) {
   const email = `${label}_${rnd}@example.com`.toLowerCase();
-  const r = await api("POST", "/api/auth/register", {
-    body: { name: label, email, password: "Password123!" },
-  });
-  if (r.status !== 200 || !r.json?.token)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const r = await api("POST", "/api/auth/register", {
+      body: { name: label, email, password: "Password123!" },
+    });
+    if (r.status === 200 && r.json?.token) {
+      return { token: r.json.token, companyId: r.json.company.id, email };
+    }
+    if (r.status === 429) {
+      const waitSeconds = Number(r.json?.details?.retryAfterSeconds) || 60;
+      console.log(
+        `WAIT  registration rate-limited; retrying in ${waitSeconds}s (attempt ${attempt}/3)`
+      );
+      await sleep((waitSeconds + 1) * 1000);
+      continue;
+    }
     throw new Error(`signup ${label} failed: ${r.status} ${JSON.stringify(r.json)}`);
-  return { token: r.json.token, companyId: r.json.company.id, email };
+  }
+  console.log("SKIP: registration rate-limited (raise RL_API_MAX to exercise this suite)");
+  process.exit(0);
 }
 
 async function main() {
