@@ -15,11 +15,13 @@ no fix is re-done and nothing still open is assumed closed.
 | `npm run check` (tsc + 7 guard scripts) | green |
 | `npm test` (vitest) | **956 passed**, 1 skipped, 0 failed (83 files) |
 | `npm run build` (vite + esbuild) | green |
+| `npm run test:integration` (built server + Postgres 16, 2 Oct) | **189 passed, 0 failed** across 7 suites (fixes 18, flow 47, concurrency 9, modules 43, uncovered-modules 48, ai-degradation 13, tenant-boundaries 11) |
 | Static sweep: 230 `:companyId` routes | 229 guarded; **1 real gap** (team members, fixed below) |
 | Static sweep: 194 record-id routes | all guarded (load-then-check helpers such as `findInvoiceForUser`) |
+| Static sweep: 17 handlers taking `companyId` from body/query | all guarded |
+| Live adversarial probe (firm → SaaS tenant, portal, API keys, backups, admin) | **1 real gap** (firm client edit, fixed below); everything else held |
 
-Integration tests (`npm run test:integration`) need a live Postgres and were not
-run in this environment. The repository's own 16 August run reports 130/130.
+After the two fixes: unit suite 964 passed, 1 skipped.
 
 ---
 
@@ -103,6 +105,26 @@ tenants, real routes behind a membership-backed storage mock).
 
 No client change needed: `TeamManagement.tsx` already sends the role within
 the company it is viewing.
+
+**Firm owner could edit a self-signup SaaS customer's company**
+(`server/routes/firm.routes.ts`, `PUT /api/firm/clients/:companyId`).
+
+The handler checked that the target was *accessible* to the caller. A
+`firm_owner`'s accessible set is "all companies", and unlike its sibling
+handlers (summary, switch, archive, assign-staff) it never checked that the
+company was actually an NRA client. Confirmed live on 2 October: a freshly
+promoted firm owner renamed a SaaS tenant's company to "PWNED BY FIRM" and
+overwrote its TRN with HTTP 200. This is the same tenant boundary that
+`hasCompanyAccess` enforces for firm roles everywhere else.
+
+Fix: the route now returns `400 Company is not an active NRA client` for any
+non-client or archived company, matching its siblings. Firm owners can still
+create and edit real NRA clients (verified live after the fix).
+
+**Regression coverage for both findings:**
+`tests/integration/tenant-boundaries.test.mjs`, wired into
+`npm run test:integration` (11 assertions against a live server and
+Postgres; the firm cases need `DATABASE_URL` to promote a firm owner).
 
 ---
 
