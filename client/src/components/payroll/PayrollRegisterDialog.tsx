@@ -43,6 +43,7 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
     { key: "net", label: tr("colNet"), strong: true, value: (r) => num(r.net) },
     { key: "pensionEmployer", label: tr("colPensionEmployer"), value: (r) => num(r.pensionEmployer) },
     { key: "gratuityAccrual", label: tr("colGratuityAccrual"), value: (r) => num(r.gratuityAccrual) },
+    ...(has("leaveAccrual") ? [{ key: "leaveAccrual", label: tr("colLeaveAccrual"), value: (r: RegisterRow) => extra(r, "leaveAccrual") }] : []),
     ...(has("leaveProvision") ? [{ key: "leaveProvision", label: tr("colLeaveProvision"), value: (r: RegisterRow) => extra(r, "leaveProvision") }] : []),
     ...(has("employerCost") ? [{ key: "employerCost", label: tr("colEmployerCost"), strong: true, value: (r: RegisterRow) => extra(r, "employerCost") }] : []),
   ];
@@ -163,6 +164,7 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
               </section>
             )}
 
+            {!data.reconciliation?.available && (
             <section className="space-y-2">
               <h3 className="font-medium">{tr("tieOutTitle")}</h3>
               {!data.journalTieOut.available ? (
@@ -200,6 +202,7 @@ export function PayrollRegisterDialog({ runId, onClose }: Props) {
                 </div>
               )}
             </section>
+            )}
           </>
         )}
 

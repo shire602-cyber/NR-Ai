@@ -44,6 +44,7 @@ export const STATUS_LABELS: Record<string, Label> = {
   submitted: L("Submitted", "مقدَّم"),
   accepted: L("Accepted", "مقبول"),
   filed: L("Filed", "مقدَّم للهيئة"),
+  filed_elsewhere: L("Filed outside Muhasib", "مقدَّم خارج مُحاسِب"),
   paid: L("Paid", "مدفوع"),
   amended: L("Amended", "معدَّل"),
   approved: L("Approved", "معتمد"),

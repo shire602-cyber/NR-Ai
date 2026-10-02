@@ -520,9 +520,25 @@ export function registerReportRoutes(app: Express) {
         ),
       ]);
 
+      // A customer's unrefunded credit (an overpayment held in 2050) is a negative balance: the screen total equals 1040 less 2050.
+      const { customerCreditsAsOf: creditsAsOf } = await import("../services/customer-credit-refund.service");
+      const customerCredits = (await creditsAsOf(companyId, new Date().toISOString().slice(0, 10))).map((c) => ({
+        name: `${c.name} (credit)`,
+        currency: "AED",
+        invoiceCount: 0,
+        totalInvoiced: 0,
+        paidAmount: 0,
+        creditedAmount: 0,
+        openBalance: -c.amount,
+        openBalanceAed: -c.amount,
+        overdueBalance: 0,
+        overdueBalanceAed: 0,
+        maxDaysOverdue: 0,
+      }));
+
       res.json({
         generatedAt: new Date().toISOString(),
-        customers: customerResult.rows.map((row: any) => ({
+        customers: [...customerResult.rows.map((row: any) => ({
           name: row.customer_name || "Unknown Customer",
           currency: row.currency || "AED",
           invoiceCount: Number(row.invoice_count) || 0,
@@ -534,7 +550,7 @@ export function registerReportRoutes(app: Express) {
           overdueBalance: round2(Number(row.overdue_balance) || 0),
           overdueBalanceAed: round2(Number(row.overdue_balance_aed) || 0),
           maxDaysOverdue: Number(row.max_days_overdue) || 0,
-        })),
+        })), ...customerCredits],
         vendors: vendorResult.rows.map((row: any) => ({
           name: row.vendor_name || "Unknown Vendor",
           currency: row.currency || "AED",

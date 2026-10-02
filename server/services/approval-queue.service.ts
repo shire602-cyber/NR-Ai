@@ -31,6 +31,8 @@ export interface ApprovalDocument {
   creatorId: string | null;
   reference: string;
   counterparty: string;
+  /** Final settlements: what is actually paid out (the rule compares the larger of net and gratuity). */
+  netAmountAed?: number;
 }
 
 const num = (v: unknown): number => {
@@ -155,7 +157,8 @@ export async function loadApprovalDocument(documentType: ApprovalDocumentType, d
     }
     case "final_settlement": {
       const r = await pool.query(
-        `SELECT s.id::text, s.company_id::text, s.status, s.net_payable, s.gratuity_amount, s.created_by::text, e.full_name
+        `SELECT s.id::text, s.company_id::text, s.status, s.net_payable, s.gratuity_amount, s.created_by::text, e.full_name,
+                (SELECT name FROM users WHERE id = s.created_by) AS preparer
            FROM employee_final_settlements s JOIN employees e ON e.id = s.employee_id WHERE s.id = $1`,
         [documentId]
       );
@@ -171,7 +174,9 @@ export async function loadApprovalDocument(documentType: ApprovalDocumentType, d
         rateMissing: false,
         creatorId: row.created_by ?? null,
         reference: `Final settlement ${row.full_name}`,
-        counterparty: row.full_name,
+        // "From" is the preparer, like the other documents; the employee is in the reference.
+        counterparty: row.preparer ?? "",
+        netAmountAed: round2(num(row.net_payable)),
       };
     }
     case "manual_journal": {
@@ -236,6 +241,8 @@ export interface QueueRow {
   status: string;
   canAct: boolean;
   createdAt: string | null;
+  /** A final settlement's net payable (null for other documents): the queue shows it with the employee. */
+  netAmountAed: number | null;
   /** Rejected requests: why, and by whom. */
   rejectionReason: string | null;
   rejectedByName: string | null;
@@ -277,6 +284,7 @@ function toQueueRow(doc: ApprovalDocument, request: ApprovalRequestRow | null, r
     status,
     canAct: status === "pending" && !!nextRole && canSignStep(actor.rank, nextRole) && !signedBy.has(actor.userId) && !isSelf,
     createdAt: request ? request.createdAt.toISOString() : null,
+    netAmountAed: doc.netAmountAed ?? null,
     rejectionReason: extras.rejection?.comment ?? null,
     rejectedByName: extras.rejection?.byName ?? null,
     selfApproved: request?.selfApproved === true,

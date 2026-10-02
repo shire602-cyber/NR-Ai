@@ -8,7 +8,7 @@ import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { disposeAsset, previewDisposal } from "../services/fixed-asset-disposal.service";
-import { linkAssetToSource, resolveSourceLink, unlinkAsset } from "../services/fixed-asset-link.service";
+import { linkableLines, linkAssetToSource, resolveSourceLink, unlinkAsset } from "../services/fixed-asset-link.service";
 import { isPeriodLocked } from "../services/month-end.service";
 import { isNonDepreciableCategory } from "../services/fixed-asset-depreciation-math";
 import {
@@ -831,7 +831,7 @@ export function registerFixedAssetRoutes(app: Express) {
       const { billId, billLineId, journalEntryId } = req.body ?? {};
       const out = await linkAssetToSource(a.companyId, a.id, { billId, billLineId, journalEntryId });
       await recordAudit({ userId: (req as any).user.id, companyId: a.companyId, action: "fixed_asset.link", entityType: "fixed_asset", entityId: a.id, after: { billId: out.link.billId, journalEntryId: out.link.journalEntryId }, req });
-      res.json({ ...out.asset, linkedDocument: out.link.document });
+      res.json({ ...out.asset, asset: out.asset, linkedDocument: out.link.document });
     })
   );
   app.delete(
@@ -843,7 +843,16 @@ export function registerFixedAssetRoutes(app: Express) {
       if (!a) return;
       const row = await unlinkAsset(a.companyId, a.id);
       await recordAudit({ userId: (req as any).user.id, companyId: a.companyId, action: "fixed_asset.unlink", entityType: "fixed_asset", entityId: a.id, after: {}, req });
-      res.json(row);
+      res.json({ ...row, asset: row });
+    })
+  );
+  app.get(
+    "/api/companies/:companyId/fixed-assets/linkable-lines",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      if (!(await storage.hasCompanyAccess((req as any).user.id, req.params.companyId))) return res.status(403).json({ message: "Access denied" });
+      res.json(await linkableLines(req.params.companyId));
     })
   );
 

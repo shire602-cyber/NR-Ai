@@ -128,7 +128,7 @@ export function RevalueDialog({ open, onOpenChange, companyId, account, initialA
                 <span>{nothing ? tr("difference") : diff > 0 ? tr("gain") : tr("loss")}</span>
                 <span dir="ltr" className="font-mono">{money(Math.abs(diff))}</span>
               </p>
-              {nothing && <p className="text-xs text-muted-foreground">{tr("nothing")}</p>}
+              {nothing ? <p className="text-xs text-muted-foreground">{tr("nothing")}</p> : <p className="text-xs text-muted-foreground" data-testid="revalue-posts-to">{tr("postsTo")}</p>}
               {data.alreadyPosted && <p className="text-xs text-[hsl(var(--chart-4))]" data-testid="revalue-already-posted">{tr("alreadyPosted", { number: data.existingEntry?.entryNumber ?? "" })}</p>}
             </div>
           )}

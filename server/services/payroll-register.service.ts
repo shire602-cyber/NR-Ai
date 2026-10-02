@@ -120,6 +120,7 @@ export async function buildPayrollRegister(run: { id: string; company_id: string
       check("Sundry deductions payable", "2034", "credit", totals.deductions),
       check("Employer pension expense", "5025", "debit", totals.pensionEmployer),
       check("Gratuity expense", "5028", "debit", totals.gratuityAccrual),
+      check("Leave pay expense (provision)", "5029", "debit", totals.leaveAccrual),
     ];
     tieOut = { available: true, entryId: run.journal_entry_id, checks, ok: checks.every((c) => c.ok) };
     // The reconciliation block: the run's postings next to the register totals, with the difference (it must be 0.00).

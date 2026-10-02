@@ -39,6 +39,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/lib/i18n";
 import { CALENDAR_DATE_FORMAT, formatDate as formatLocaleDate } from "@/lib/format";
 import { statusLabel } from "@/lib/enum-labels";
+import { FiledElsewhereTag } from "@/components/vat/FiledElsewhereTag";
+import { FiledElsewhereDialog } from "@/components/vat/FiledElsewhereDialog";
 import { VatEmirateBreakdown } from "@/components/vat/VatEmirateBreakdown";
 import { messages as pageMessages } from "./VATFiling.i18n";
 import { useToast } from "@/hooks/use-toast";
@@ -167,6 +169,7 @@ interface VATReturn {
     id: string;
     referenceNumber: string;
     filedAt: string;
+    filedElsewhere?: boolean;
     evidenceCount: number;
     settlement: { status: string; remaining: number };
   } | null;
@@ -482,10 +485,11 @@ export default function VATFiling() {
           </Badge>
         );
       case "filed":
+      case "filed_elsewhere":
         return (
           <Badge variant="default" className="bg-success-subtle text-success-subtle-foreground">
             <CheckCircle2 className="w-3 h-3 me-1" />
-            {statusLabel("filed", locale)}
+            {statusLabel(status, locale)}
           </Badge>
         );
       default:
@@ -1150,7 +1154,9 @@ export default function VATFiling() {
             {(() => {
               const d = currentFiling.daysUntilDue;
               const filed =
-                currentFiling.status === "filed" || currentFiling.status === "submitted";
+                currentFiling.status === "filed" ||
+                currentFiling.status === "filed_elsewhere" ||
+                currentFiling.status === "submitted";
               const tone = filed ? "success" : d < 0 ? "danger" : d <= 7 ? "warning" : "neutral";
               const label = filed
                 ? locale === "ar"
@@ -1190,11 +1196,20 @@ export default function VATFiling() {
               {tr("earlierUnfiledTitle")}
             </p>
             <p className="text-muted-foreground">{tr("earlierUnfiledBody")}</p>
-            <ul className="list-disc ps-5">
+            <ul className="list-none space-y-1">
               {serverPeriod.earlierUnfiled.map((p) => (
-                <li key={p.periodEnd} dir="auto">
-                  {dayFull(parseCalendarDay(p.periodStart))} –{" "}
-                  {dayFull(parseCalendarDay(p.periodEnd))}
+                <li key={p.periodEnd} dir="auto" className="flex flex-wrap items-center gap-2 py-1">
+                  <span>
+                    {dayFull(parseCalendarDay(p.periodStart))} –{" "}
+                    {dayFull(parseCalendarDay(p.periodEnd))}
+                  </span>
+                  {companyId ? (
+                    <FiledElsewhereDialog
+                      companyId={companyId}
+                      periodStart={p.periodStart}
+                      periodEnd={p.periodEnd}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -1333,6 +1348,12 @@ export default function VATFiling() {
                               {vatReturn.isAmendment && (
                                 <Badge variant="outline">{cc.amendmentBadge}</Badge>
                               )}
+                              {vatReturn.filing?.filedElsewhere && (
+                                <FiledElsewhereTag
+                                  filing={vatReturn.filing}
+                                  testId={`mobile-filed-elsewhere-${vatReturn.id}`}
+                                />
+                              )}
                               {vatReturn.status === "filed" && (
                                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                   <Lock className="h-3 w-3" />
@@ -1366,7 +1387,8 @@ export default function VATFiling() {
                               <p className="text-xs text-muted-foreground">
                                 {locale === "ar" ? "الصافي" : "Net"}
                               </p>
-                              <p dir="ltr"
+                              <p
+                                dir="ltr"
                                 className={`font-mono font-semibold ${(vatReturn.box14PayableTax || 0) >= 0 ? "text-destructive" : "text-success"}`}
                               >
                                 {formatCurrency(Math.abs(vatReturn.box14PayableTax || 0))}
@@ -1407,7 +1429,7 @@ export default function VATFiling() {
                                   {cc.recordFiling}
                                 </Button>
                               )}
-                            {vatReturn.status === "filed" && (
+                            {vatReturn.status === "filed" && !vatReturn.filing?.filedElsewhere && (
                               <AmendButton
                                 kind="vat"
                                 returnId={vatReturn.id}
@@ -1490,6 +1512,12 @@ export default function VATFiling() {
                                 {vatReturn.isAmendment && (
                                   <Badge variant="outline">{cc.amendmentBadge}</Badge>
                                 )}
+                                {vatReturn.filing?.filedElsewhere && (
+                                  <FiledElsewhereTag
+                                    filing={vatReturn.filing}
+                                    testId={`filed-elsewhere-${vatReturn.id}`}
+                                  />
+                                )}
                                 {vatReturn.status === "filed" && (
                                   <span
                                     title={cc.periodLocked}
@@ -1535,14 +1563,15 @@ export default function VATFiling() {
                                       {cc.recordFiling}
                                     </Button>
                                   )}
-                                {vatReturn.status === "filed" && (
-                                  <AmendButton
-                                    kind="vat"
-                                    returnId={vatReturn.id}
-                                    invalidateKeys={[returnsListKey]}
-                                    onCreated={setOpenAfterRefresh}
-                                  />
-                                )}
+                                {vatReturn.status === "filed" &&
+                                  !vatReturn.filing?.filedElsewhere && (
+                                    <AmendButton
+                                      kind="vat"
+                                      returnId={vatReturn.id}
+                                      invalidateKeys={[returnsListKey]}
+                                      onCreated={setOpenAfterRefresh}
+                                    />
+                                  )}
                                 <Button
                                   size="sm"
                                   variant="ghost"

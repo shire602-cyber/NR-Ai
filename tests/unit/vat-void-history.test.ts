@@ -46,9 +46,9 @@ describe("voidedDocumentNeverDeclared", () => {
     expect(neverDeclared({ filedReturns: [julReturn(CUTOVER)] })).toBe(false);
   });
 
-  it("(d) no filed return covers the document date: live computation -> declared (not 'never declared')", () => {
-    expect(neverDeclared({ filedReturns: [] })).toBe(false);
-    expect(neverDeclared({ filedReturns: [{ periodStart: "2026-06-01", periodEnd: "2026-06-30", recordedAtMs: at("2026-07-05T00:00:00Z") }] })).toBe(false);
+  it("(d) no filed return covers the document date: the period is unfiled, so a later void takes the document out of it (never declared)", () => {
+    expect(neverDeclared({ filedReturns: [] })).toBe(true);
+    expect(neverDeclared({ filedReturns: [{ periodStart: "2026-06-01", periodEnd: "2026-06-30", recordedAtMs: at("2026-07-05T00:00:00Z") }] })).toBe(true);
   });
 
   it("a return recorded one millisecond before the cutover is still old rule", () => {

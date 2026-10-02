@@ -264,7 +264,7 @@ async function fxGainsLosses(ctx: ReportContext): Promise<ReportOutput> {
   const { from, to } = ctx.window as { from: string; to: string };
   const b = new SqlParams();
   const { rows: accts } = await ctx.q.query(
-    `SELECT id FROM accounts WHERE company_id = ${b.p(ctx.companyId)} AND code = ANY(${b.p([ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS])}::text[])`,
+    `SELECT id FROM accounts WHERE company_id = ${b.p(ctx.companyId)} AND code = ANY(${b.p([ACCOUNT_CODES.FX_GAIN, ACCOUNT_CODES.FX_LOSS, ACCOUNT_CODES.FX_UNREALISED])}::text[])`,
     b.values
   );
   const ids = accts.map((a) => String(a.id));

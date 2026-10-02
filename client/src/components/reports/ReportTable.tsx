@@ -22,6 +22,7 @@ import {
   sectionHeading,
 } from "@/lib/report-format";
 import { messages as pageMessages } from "./ReportTable.i18n";
+import { localizeCreditSuffix } from "@/lib/journal-text";
 
 interface Props {
   columns: ReportColumn[];
@@ -55,7 +56,7 @@ function CellValue({
   }
   // Status-like and emirate columns come as slugs ("sharjah", "draft"): show them in the reader's language.
   const shown = column.type === "text" ? localizeEnumCell(column.key, value, locale) : value;
-  const text = formatCell(shown, column.type, locale);
+  const text = column.type === "text" ? localizeCreditSuffix(formatCell(shown, column.type, locale), locale) : formatCell(shown, column.type, locale);
   if (!isNumericColumn(column.type)) return <>{text}</>;
   // Numbers read left to right in both languages; the cell itself aligns to the end edge.
   return (

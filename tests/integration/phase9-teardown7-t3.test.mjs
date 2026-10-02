@@ -407,6 +407,94 @@ async function vendorCreditStock() {
   ok("vendor credit: 1070 still equals the stock value", close((await A.balances())["1070"], after.inventoryValue, 0.01), (await A.balances())["1070"]);
 }
 
+// ---------------------------------------------------------------------------
+// Teardown 8 (v3): N1 opening leave days are annual only, N2 date round trip, N3 payslip pay date, N4 catch-up service,
+// N5 required-field codes, register tie-out, queue net amount
+// ---------------------------------------------------------------------------
+async function teardown8() {
+  const A = await newCompany("t8A");
+  const acct = await A.member("accountant");
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  // N1
+  const maria = await newEmployee(A, "Maria Opening", { openingLeaveDays: 15, openingProvisionsAsOf: `${prevYear}-${String(prevMonthNo - 1).padStart(2, "0")}-${lastDay(prevYear, prevMonthNo - 1)}` });
+  const sick = await leaveTypeId(A, "sick");
+  const sr = await A.post(`/api/companies/${A.cid}/leave-requests`, { employeeId: maria.id, leaveTypeId: sick, startDate: `${prevYear}-06-01`, endDate: `${prevYear}-06-05` });
+  await A.post(`/api/leave-requests/${sr.json.id}/approve`, {});
+  const rows = (await A.get(`/api/companies/${A.cid}/leave-balances?asOf=${prevEnd}&employeeId=${maria.id}`)).json;
+  const by = (code) => rows.find((r) => r.code === code);
+  ok("N1: opening days apply to annual leave: opening 15", close(by("annual").opening, 15), by("annual"));
+  ok("N1: sick keeps its 90 days entitlement and its taken history (90 - 5 = 85)", close(by("sick").balance, 85) && close(by("sick").taken, 5) && close(by("sick").opening, 0), by("sick"));
+  ok("N1: maternity 60, hajj 30, bereavement 5, study 10 are untouched", close(by("maternity").balance, 60) && close(by("hajj").balance, 30) && close(by("bereavement").balance, 5) && close(by("study").balance, 10), rows.map((r) => [r.code, r.balance]));
+
+  // N2
+  const e = await A.post(`/api/companies/${A.cid}/employees`, { fullName: "Date Person", basicSalary: 5000, joinDate: "2023-04-01", openingProvisionsAsOf: "2026-06-30", openingGratuityProvision: 100 });
+  ok("N2: create answers the dates as given (date-only strings)", e.status === 201 && e.json.join_date === "2023-04-01" && e.json.opening_provisions_as_of === "2026-06-30", { j: e.json?.join_date, a: e.json?.opening_provisions_as_of });
+  let cur = (await A.get(`/api/employees/${e.json.id}`)).json;
+  for (let i = 0; i < 3; i++) {
+    const back = await A.patch(`/api/employees/${e.json.id}`, { joinDate: cur.join_date, openingProvisionsAsOf: cur.opening_provisions_as_of, fullName: cur.full_name });
+    cur = back.json;
+  }
+  const stored = (await db.query(`SELECT to_char(join_date, 'YYYY-MM-DD') AS j, to_char(opening_provisions_as_of, 'YYYY-MM-DD') AS a FROM employees WHERE id = $1`, [e.json.id])).rows[0];
+  ok("N2: saving the form three times unchanged moves nothing (read back and stored)", cur.join_date === "2023-04-01" && cur.opening_provisions_as_of === "2026-06-30" && stored.j === "2023-04-01" && stored.a === "2026-06-30", { cur: [cur.join_date, cur.opening_provisions_as_of], stored });
+  const list = (await A.get(`/api/companies/${A.cid}/employees`)).json.find((x) => x.id === e.json.id);
+  ok("N2: the list gives date-only strings too", list.join_date === "2023-04-01" && list.opening_provisions_as_of === "2026-06-30", list.join_date);
+  const iso = await A.patch(`/api/employees/${e.json.id}`, { joinDate: "2023-03-31T20:00:00.000Z" });
+  ok("N2: an ISO instant is converted to its Dubai day (20:00Z on the 31st is 1 April)", iso.json.join_date === "2023-04-01", iso.json);
+  const bad = await A.patch(`/api/employees/${e.json.id}`, { joinDate: "2023-02-30" });
+  ok("N2: a date that does not exist is refused with a code", bad.status === 400 && bad.json?.code === "INVALID_DATE", { s: bad.status, j: bad.json });
+
+  // N5
+  const noNum = await A.post(`/api/companies/${A.cid}/employees`, { fullName: "No Number", basicSalary: 1000, employeeNumber: "" });
+  ok("N5: an empty employee number is 400 EMPLOYEE_NUMBER_REQUIRED naming the field", noNum.status === 400 && noNum.json?.code === "EMPLOYEE_NUMBER_REQUIRED" && noNum.json?.field === "employeeNumber", noNum.json);
+  const noName = await A.post(`/api/companies/${A.cid}/employees`, { fullName: "", basicSalary: 1000 });
+  ok("N5: a missing name is FULL_NAME_REQUIRED", noName.status === 400 && noName.json?.code === "FULL_NAME_REQUIRED", noName.json);
+  const noSalary = await A.post(`/api/companies/${A.cid}/employees`, { fullName: "No Salary" });
+  ok("N5: a missing salary is BASIC_SALARY_REQUIRED", noSalary.status === 400 && noSalary.json?.code === "BASIC_SALARY_REQUIRED", noSalary.json);
+
+  // N3 + register + queue: a run paid on its own date
+  const B = await newCompany("t8B");
+  const acctB = await B.member("accountant");
+  const bank = await B.accountId("1020");
+  const emp = await newEmployee(B, "Pay Date Person");
+  const runId = await newRun(B, acctB.token);
+  await B.post(`/api/payroll-runs/${runId}/calculate`, {}, acctB.token);
+  await B.post(`/api/payroll-runs/${runId}/approve`, {});
+  const reg = (await B.get(`/api/payroll-runs/${runId}/register`)).json;
+  ok("register: the one tie-out block includes 5029", reg.journalTieOut.checks.some((c) => c.account === "5029" && c.ok) && reg.journalTieOut.ok, reg.journalTieOut.checks.map((c) => c.account));
+  const payDate = `${prevYear}-${String(prevMonthNo).padStart(2, "0")}-${lastDay(prevYear, prevMonthNo)}`;
+  const pay = await B.post(`/api/payroll-runs/${runId}/record-payment`, { paymentAccountId: bank, date: payDate });
+  const slip = await pdfText(B.token, `/api/payroll-runs/${runId}/payslips/${itemOf(await items(B, runId), emp).id}/pdf`);
+  const want = `${lastDay(prevYear, prevMonthNo)} ${MON[prevMonthNo - 1]} ${prevYear}`;
+  ok("N3: the payslip prints the payment's own date, not the day it was recorded", pay.status === 200 && slip.text.includes(want), { want, text: slip.text.slice(0, 600) });
+
+  // N4: an employee added after the first run
+  const C = await newCompany("t8C");
+  const e1 = await newEmployee(C, "First Run Person", { basicSalary: 6000 });
+  const prevM = prevMonthNo - 1;
+  const first = await runFor(C, prevM, prevYear);
+  await C.post(`/api/payroll-runs/${first}/calculate`);
+  const late = await newEmployee(C, "Added Later", { basicSalary: 6000, joinDate: "2020-01-01" });
+  const second = await newRun(C);
+  await C.post(`/api/payroll-runs/${second}/calculate`);
+  const dayBefore = (m) => `${prevYear}-${String(m).padStart(2, "0")}-${lastDay(prevYear, m)}`;
+  const gr = async (empId, term) => (await C.post(`/api/companies/${C.cid}/payroll/gratuity-calculator`, { employeeId: empId, terminationDate: term })).json.totalGratuity;
+  const cu = await C.post(`/api/payroll-runs/${second}/book-prior-service-catchup`, {});
+  const rowOf = (id) => (cu.json?.employees ?? []).find((x) => x.employeeId === id);
+  ok("N4: the late employee's catch-up counts service to the day before the run that books it (31 Aug)", cu.status === 200 && close(rowOf(late.id)?.gratuity, await gr(late.id, dayBefore(prevMonthNo - 1))), { s: cu.status, row: rowOf(late.id) });
+  ok("N4: an employee already in the first run keeps the day before that run", close(rowOf(e1.id)?.gratuity, await gr(e1.id, dayBefore(prevM - 1 || 12))), rowOf(e1.id));
+
+  // queue: final settlement shows the net with the preparer
+  const D = await newCompany("t8D");
+  const acctD = await D.member("accountant");
+  const join = new Date(Date.UTC(prevYear, prevMonthNo - 1 - 42, 1)).toISOString().slice(0, 10);
+  const leaver = await newEmployee(D, "Queue Leaver", { joinDate: join });
+  await D.post(`/api/companies/${D.cid}/approval-rules`, { documentType: "final_settlement", name: "settlement", thresholdAed: 0, approverRoles: ["owner"] });
+  const d = await D.post(`/api/companies/${D.cid}/final-settlements`, { employeeId: leaver.id, terminationDate: prevEnd, leaveDays: 0, otherDeductions: 1000 }, acctD.token);
+  const row = (await D.get(`/api/companies/${D.cid}/approvals`)).json.find((r) => r.documentId === d.json.id);
+  ok("queue: a final settlement shows its net payable, the employee in the reference and the preparer in From", !!row && close(row.netAmountAed, d.json.netPayable) && row.reference.includes("Queue Leaver") && /^accountant/.test(row.counterparty) && row.netAmountAed < d.json.gratuityAmount, row);
+}
+
 async function main() {
   db = new pg.Client({ connectionString: DB_URL });
   await db.connect();
@@ -420,6 +508,7 @@ async function main() {
     await unpaidLeave();
     await openingStock();
     await vendorCreditStock();
+    await teardown8();
   } finally {
     await db.end();
   }

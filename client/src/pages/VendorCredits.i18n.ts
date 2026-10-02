@@ -51,6 +51,8 @@ export const messages = defineMessages(
     edit: "Edit",
     approve: "Approve",
     applyToBill: "Apply to bill",
+    viewStockMovement: "Stock movement",
+    stockReturnHint: "Approving this credit takes the quantity out of stock, at the stock's own cost.",
     voidCreditNote: "Void credit note",
     noCreditNotesYet: "No vendor credit notes yet",
     noCreditNotesHint:
@@ -130,6 +132,8 @@ export const messages = defineMessages(
     edit: "تعديل",
     approve: "اعتماد",
     applyToBill: "تطبيق على فاتورة",
+    viewStockMovement: "حركة المخزون",
+    stockReturnHint: "اعتماد هذا الإشعار يُخرج الكمية من المخزون بتكلفة المخزون نفسها.",
     voidCreditNote: "إلغاء الإشعار الدائن",
     noCreditNotesYet: "لا توجد إشعارات دائنة من الموردين بعد",
     noCreditNotesHint:

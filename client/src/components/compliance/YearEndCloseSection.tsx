@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Link } from "wouter";
 import { CalendarRange, Loader2, Lock, LockOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { parseCalendarDay } from "@/lib/date-safe";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { formatCalendarDate } from "@/lib/calendar-date";
 import { useComplianceText } from "@/lib/i18n-compliance";
 
 interface YearRow {
@@ -40,7 +39,6 @@ interface YearRow {
   blockers: Array<{ code: string; message: string }>;
 }
 
-const day = (ymd: string) => format(parseCalendarDay(new Date(`${ymd}T00:00:00Z`)), "dd MMM yyyy");
 
 /** "Year-end close" section of the Month-End Close page: close a financial year, or reopen it with a reason. */
 export default function YearEndCloseSection({ companyId }: { companyId: string }) {
@@ -134,7 +132,7 @@ export default function YearEndCloseSection({ companyId }: { companyId: string }
                 {years.map((row) => (
                   <TableRow key={row.yearStart} data-testid={`row-year-${row.yearStart}`}>
                     <TableCell className="font-medium">
-                      {day(row.yearStart)} – {day(row.yearEnd)}
+                      {formatCalendarDate(row.yearStart, locale, "short")} – {formatCalendarDate(row.yearEnd, locale, "short")}
                     </TableCell>
                     <TableCell className="text-end font-mono">
                       {formatCurrency(row.netIncome, "AED", locale)}
@@ -144,7 +142,7 @@ export default function YearEndCloseSection({ companyId }: { companyId: string }
                         <Badge variant="secondary" className="gap-1">
                           <Lock className="h-3 w-3" />
                           {c.yeClosed}
-                          {row.closedAt ? ` · ${day(row.closedAt.slice(0, 10))}` : ""}
+                          {row.closedAt ? ` · ${formatCalendarDate(row.closedAt.slice(0, 10), locale, "short")}` : ""}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="gap-1">
@@ -213,7 +211,7 @@ export default function YearEndCloseSection({ companyId }: { companyId: string }
             <DialogDescription>
               {closing
                 ? f("yeConfirmBody", {
-                    date: day(closing.yearEnd),
+                    date: formatCalendarDate(closing.yearEnd, locale, "short"),
                     amount: formatCurrency(closing.netIncome, "AED", locale),
                   })
                 : ""}

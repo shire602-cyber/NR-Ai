@@ -1746,7 +1746,7 @@ export default function BillPay() {
                   currency={payingBill.currency || "AED"}
                   date={toDateOnly(paymentForm.watch("payment_date"))}
                   amount={Number(paymentForm.watch("amount")) || 0}
-                  bookRate={Number((payingBill as any).exchange_rate) || 1}
+                  bookRate={Number((payingBill as any).exchange_rate) || undefined}
                   kind="payment"
                   value={payRateText}
                   onChange={setPayRateText}

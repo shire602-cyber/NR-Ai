@@ -57,6 +57,7 @@ async function main() {
     await otherRolesAreUnchanged();
     await signUpSavesTheTrn();
     await onboardingBankAccountIsLinked();
+    await serverRunsInUtc();
   } finally {
     await db.end();
   }
@@ -218,6 +219,24 @@ async function onboardingBankAccountIsLinked() {
   ok("onboarding bank account: a bill payment from it posts Cr 1021, not 1030 Petty Cash", pay.status === 200 && close(net["1021"], -1000) && !net["1030"], { s: pay.status, net });
   const explicit = await send("POST", u, `/api/companies/${u.cid}/bank-accounts`, { nameEn: "Unlinked on purpose", bankName: "Other", currency: "AED", glAccountId: null });
   ok("a bank account created with an explicit null link stays unlinked", explicit.status === 201 && explicit.json?.glAccountId === null, explicit.json);
+}
+
+// node-pg parses DATE columns as local midnight; on a host whose process timezone is not UTC, JSON then shows the
+// previous UTC day. The server pins its process timezone to UTC before anything else loads.
+async function serverRunsInUtc() {
+  const version = await api("GET", "/api/version");
+  ok("the server process runs in UTC whatever the host timezone (/api/version reports it)", version.json?.timezone === "UTC", version.json);
+  const u = await register("t7tz");
+  const emp = await send("POST", u, `/api/companies/${u.cid}/employees`, { fullName: "Date Person", nationality: "India", basicSalary: 4000, joinDate: "2026-08-31", molPersonId: "10000000000077", routingCode: "987654321", iban: "AE070331234567890123477" });
+  const back = await get(u, `/api/employees/${emp.json?.id}`);
+  const joined = String(back.json?.join_date ?? back.json?.joinDate ?? "").slice(0, 10);
+  ok("a DATE column (employee join date 2026-08-31) round-trips unchanged", joined === "2026-08-31", { s: back.status, joined });
+  const again = await send("PATCH", u, `/api/employees/${emp.json?.id}`, { jobTitle: "Clerk" });
+  const afterSave = await get(u, `/api/employees/${emp.json?.id}`);
+  ok("...and a save that does not touch the date leaves it unchanged", again.status === 200 && String(afterSave.json?.join_date ?? afterSave.json?.joinDate ?? "").slice(0, 10) === "2026-08-31", { s: again.status, d: afterSave.json?.join_date });
+  const fs = await import("node:fs");
+  const first = (file) => fs.readFileSync(new URL(`../../server/${file}`, import.meta.url), "utf8").split("\n").find((l) => l.startsWith("import "));
+  ok("server/index.ts and server/migrate.ts import the UTC pin before anything else", first("index.ts") === 'import "./utc-timezone";' && first("migrate.ts") === 'import "./utc-timezone";', { index: first("index.ts"), migrate: first("migrate.ts") });
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

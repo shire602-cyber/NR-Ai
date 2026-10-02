@@ -217,7 +217,7 @@ export default function Approvals() {
                       </Link>
                       {row.counterparty && <div className="text-sm text-muted-foreground break-words">{row.counterparty}</div>}
                     </div>
-                    <div className="text-end tabular-nums font-medium shrink-0">{formatCurrency(row.amountAed, "AED", locale)}</div>
+                    <div className="text-end tabular-nums font-medium shrink-0">{formatCurrency(row.netAmountAed ?? row.amountAed, "AED", locale)}</div>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="flex flex-wrap items-center gap-1">
@@ -258,7 +258,7 @@ export default function Approvals() {
                         </Link>
                       </TableCell>
                       <TableCell>{row.counterparty}</TableCell>
-                      <TableCell className="text-end tabular-nums">{formatCurrency(row.amountAed, "AED", locale)}</TableCell>
+                      <TableCell className="text-end tabular-nums">{formatCurrency(row.netAmountAed ?? row.amountAed, "AED", locale)}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1">
                           <ApprovalStatusBadge status={row.status} completedSteps={row.completedSteps} requiredSteps={row.requiredSteps} />

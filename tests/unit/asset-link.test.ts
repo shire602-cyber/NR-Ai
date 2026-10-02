@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billLineCost, journalCostCandidates, matchesCost, sortByCostMatch } from "../../client/src/components/assets/asset-link";
+import { billLineCost, hasRoomFor, journalCostCandidates, linkedCostByDocument, matchesCost, sortByCostMatch } from "../../client/src/components/assets/asset-link";
 
 describe("billLineCost", () => {
   it("uses the line amount, else quantity times unit price", () => {
@@ -27,5 +27,22 @@ describe("cost matching", () => {
     expect(matchesCost(84000.5, 84000)).toBe(false);
     const sorted = sortByCostMatch([{ date: "2026-09-01", a: 10 }, { date: "2026-08-01", a: 84000 }, { date: "2026-09-15", a: 20 }], (i) => i.a, 84000);
     expect(sorted.map((i) => i.a)).toEqual([84000, 20, 10]);
+  });
+});
+
+describe("linked documents are not offered again", () => {
+  it("adds up the cost of the other assets linked to each document", () => {
+    const rows = [
+      { assetId: "a", cost: 60000, linkedDocument: { id: "bill-1" } },
+      { assetId: "b", cost: 5000, linkedDocument: { id: "bill-1" } },
+      { assetId: "c", cost: 900, linkedDocument: null },
+    ];
+    expect(linkedCostByDocument(rows).get("bill-1")).toBe(65000);
+    expect(linkedCostByDocument(rows, "a").get("bill-1")).toBe(5000);
+  });
+  it("keeps a document only when what is left covers the asset", () => {
+    expect(hasRoomFor(60000, 60000, 60000)).toBe(false);
+    expect(hasRoomFor(65000, 60000, 5000)).toBe(true);
+    expect(hasRoomFor(60000, 0, 60000)).toBe(true);
   });
 });

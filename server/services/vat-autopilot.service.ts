@@ -160,6 +160,10 @@ export interface VatPeriodSummary {
   /** True while the period is still open: figures are a live draft preview,
    * never a saved/filed snapshot. */
   isDraftPreview: boolean;
+  /** A return of this period is recorded as filed (in Muhasib or "Filed outside Muhasib"): never overdue. */
+  filed?: boolean;
+  /** Filed outside Muhasib: recorded with its filing date and reference, nothing posted. */
+  filedElsewhere?: boolean;
 }
 
 export interface DueDateView {
@@ -1066,8 +1070,38 @@ function storedRowToSummary(
   };
 }
 
+/** Company setting "Muhasib books start from <period>" (companies.vat_books_start, YYYY-MM-DD), null when unset. */
+export async function loadVatBooksStarts(companyIds: string[]): Promise<Map<string, string>> {
+  if (companyIds.length === 0) return new Map();
+  const res = await pool.query(`SELECT id, to_char(vat_books_start, 'YYYY-MM-DD') AS d FROM companies WHERE id = ANY($1::uuid[]) AND vat_books_start IS NOT NULL`, [companyIds]);
+  return new Map((res.rows as Array<{ id: string; d: string }>).map((r) => [String(r.id), r.d]));
+}
+
+/** Periods (key = periodKey) that have a return recorded as filed, per company; `elsewhere` marks "Filed outside Muhasib". */
+export async function loadFiledPeriodKeys(companyIds: string[]): Promise<Map<string, Map<string, { elsewhere: boolean }>>> {
+  const out = new Map<string, Map<string, { elsewhere: boolean }>>();
+  if (companyIds.length === 0) return out;
+  const res = await pool.query(
+    `SELECT r.company_id, r.period_start, r.period_end, COALESCE((f.snapshot->>'filedElsewhere')::boolean, false) AS elsewhere
+       FROM vat_returns r LEFT JOIN tax_filings f ON f.kind = 'vat' AND f.return_id = r.id
+      WHERE r.company_id = ANY($1::uuid[]) AND COALESCE(r.is_amendment, false) = false AND r.status IN ('filed', 'submitted', 'accepted')`,
+    [companyIds]
+  );
+  for (const row of res.rows as Array<{ company_id: string; period_start: Date; period_end: Date; elsewhere: boolean }>) {
+    const key = String(row.company_id);
+    const map = out.get(key) ?? new Map();
+    map.set(periodKey(dayStartUtc(row.period_start), dayEndUtc(row.period_end)), { elsewhere: row.elsewhere === true });
+    out.set(key, map);
+  }
+  return out;
+}
+const dayStartUtc = (d: Date | string): Date => new Date(`${new Date(d).toISOString().slice(0, 10)}T00:00:00.000Z`);
+const dayEndUtc = (d: Date | string): Date => new Date(`${new Date(d).toISOString().slice(0, 10)}T23:59:59.999Z`);
+
 /** Periods ending on or after the VAT start day, newest first; the newest ended period always stays (a company with no history has one to prepare). */
-export function afterVatStart(periods: VatPeriod[], vatStart: Date | null): VatPeriod[] {
+export function afterVatStart(periods: VatPeriod[], vatStart: Date | null, booksStart: string | null = null): VatPeriod[] {
+  // "Muhasib books start from <period>": only periods starting on or after that day, nothing else is kept.
+  if (booksStart) return periods.filter((p) => p.start.toISOString().slice(0, 10) >= booksStart);
   if (!vatStart) return periods;
   const kept = periods.filter((p) => p.end.getTime() >= vatStart.getTime());
   return kept.length > 0 ? kept : periods.slice(0, 1);
@@ -1118,7 +1152,8 @@ export async function currentVatFilingPeriod(companyId: string, now: Date = new 
   if (!company) return null;
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
   const vatStart = (await loadCompanyVatStartDates([companyId])).get(companyId) ?? null;
-  const ended = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, 12, now), vatStart);
+  const booksStart = (await loadVatBooksStarts([companyId])).get(companyId) ?? null;
+  const ended = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, 12, now), vatStart, booksStart);
   const returns = await pool.query(
     `SELECT id, to_char(period_start, 'YYYY-MM-DD') AS ps, to_char(period_end, 'YYYY-MM-DD') AS pe, status
        FROM vat_returns WHERE company_id = $1 AND COALESCE(is_amendment, false) = false AND status NOT IN ('void', 'cancelled')
@@ -1157,7 +1192,9 @@ export async function listPeriodsForCompany(
   // Only periods that end on or after the day the company's VAT obligation began: a company whose books start on 1 Jul 2026 owes
   // nothing for the quarters before it, so none of them is listed (let alone as overdue).
   const vatStart = (await loadCompanyVatStartDates([companyId])).get(companyId) ?? null;
-  const synthetic = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, recentCount, now), vatStart);
+  const booksStart = (await loadVatBooksStarts([companyId])).get(companyId) ?? null;
+  const filedKeys = (await loadFiledPeriodKeys([companyId])).get(companyId) ?? new Map();
+  const synthetic = afterVatStart(listRecentPeriods(frequency, company.vatPeriodStartMonth, recentCount, now), vatStart, booksStart);
 
   const stored = await pool.query(
     `SELECT id, period_start, period_end, due_date, frequency, status,
@@ -1189,6 +1226,7 @@ export async function listPeriodsForCompany(
     const isDraftPreview = classifyVatPeriod(p.start, p.end, now) !== "closed";
     // A row saved for a still-open period by an earlier version is ignored.
     const row = isDraftPreview ? undefined : stored;
+    const filedInfo = filedKeys.get(periodKey(p.start, p.end));
     return {
       id: row ? String(row.id) : null,
       companyId,
@@ -1196,13 +1234,16 @@ export async function listPeriodsForCompany(
       periodEnd: p.end.toISOString(),
       dueDate: p.dueDate.toISOString(),
       frequency,
-      status: (row?.status as VatPeriodStatus) || "draft",
+      status: filedInfo ? "accepted" : ((row?.status as VatPeriodStatus) || "draft"),
       outputVat: Number(row?.output_vat) || 0,
       inputVat: Number(row?.input_vat) || 0,
       netVatPayable: Number(row?.net_vat_payable) || 0,
       calculatedAt: row?.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(p.dueDate, now),
+      // a period with a filed return is never overdue
+      deadline: filedInfo ? { ...deadlineStatus(p.dueDate, now), level: "ok" as const, isOverdue: false } : deadlineStatus(p.dueDate, now),
       isDraftPreview,
+      filed: !!filedInfo,
+      filedElsewhere: filedInfo?.elsewhere === true,
     };
   });
 
@@ -1212,7 +1253,15 @@ export async function listPeriodsForCompany(
     if (periodEnd.getTime() > now.getTime()) continue;
     if (periodEnd.getTime() > oldestSyntheticEnd) continue;
 
-    summaries.push(storedRowToSummary(row, companyId, frequency, now));
+    // "Muhasib books start from <period>" trims stored history too
+    if (booksStart && new Date(row.period_start).toISOString().slice(0, 10) < booksStart) continue;
+    const summary = storedRowToSummary(row, companyId, frequency, now);
+    const filedInfo = filedKeys.get(periodKey(dayStartUtc(row.period_start), dayEndUtc(row.period_end)));
+    summaries.push(
+      filedInfo
+        ? { ...summary, status: "accepted", filed: true, filedElsewhere: filedInfo.elsewhere, deadline: { ...summary.deadline, level: "ok" as const, isOverdue: false } }
+        : summary
+    );
   }
 
   summaries.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
@@ -1377,6 +1426,8 @@ export async function listDueDates(
   }
 
   const vatStarts = await loadCompanyVatStartDates(companyIds);
+  const booksStarts = await loadVatBooksStarts(companyIds);
+  const filedByCompany = await loadFiledPeriodKeys(companyIds);
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
@@ -1387,9 +1438,11 @@ export async function listDueDates(
       (c.company_type as string | null) ?? null
     );
     const vatStart = vatStarts.get(cid) ?? null;
-    const synthetic = afterVatStart(listRecentPeriods(freq, periodStartMonth, 8, now), vatStart);
+    const synthetic = afterVatStart(listRecentPeriods(freq, periodStartMonth, 8, now), vatStart, booksStarts.get(cid) ?? null);
     const syntheticKeys = new Set(synthetic.map((period) => periodKey(period.start, period.end)));
-    const scheduled = synthetic[0] ?? detectFilingPeriod(freq, periodStartMonth, now);
+    // the period to be filed next: the newest one with no filed return (a period filed in or outside Muhasib is done)
+    const filedKeys = filedByCompany.get(cid) ?? new Map();
+    const scheduled = synthetic.find((p) => !filedKeys.has(periodKey(p.start, p.end))) ?? (synthetic.length > 0 ? detectPeriod(freq, periodStartMonth, now) : detectFilingPeriod(freq, periodStartMonth, now));
     let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {
       periodEnd: scheduled.end,
       dueDate: scheduled.dueDate,

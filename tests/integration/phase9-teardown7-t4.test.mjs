@@ -135,7 +135,9 @@ async function fxSection() {
   ok("f2: revaluing the USD account at month end posts an unrealised gain and its automatic reversal", r.status === 201 && r.json?.posted === true && !!r.json?.journalEntryId && !!r.json?.reversalEntryId, { s: r.status, j: r.json });
   const adj = round2(8000 * 3.68 - carrying);
   jl = await jeLines(r.json?.journalEntryId);
-  ok("f2: Dr USD bank / Cr 4090 for the AED difference; the bank line carries USD 0 (a rate difference, never a deposit)", jl.some((l) => l.code !== "4090" && close(l.d, adj) && l.fc === "USD" && close(l.fd, 0)) && jl.some((l) => l.code === "4090" && close(l.c, adj)), { adj, jl });
+  ok("f2: Dr USD bank / Cr 4095 (unrealised exchange gain/loss, apart from the realised 4090) for the AED difference; the bank line carries USD 0 (a rate difference, never a deposit)", jl.some((l) => l.code !== "4095" && close(l.d, adj) && l.fc === "USD" && close(l.fd, 0)) && jl.some((l) => l.code === "4095" && close(l.c, adj)) && !jl.some((l) => l.code === "4090"), { adj, jl });
+  const acc4095 = (await db.query(`SELECT code, type, name_en FROM accounts WHERE company_id = $1 AND code = '4095'`, [A.cid])).rows[0];
+  ok("f2: the account is created on demand: 4095, an income account named for unrealised exchange gain / loss", acc4095?.type === "income" && /unrealised/i.test(acc4095?.name_en ?? ""), acc4095);
   const entry = (await db.query(`SELECT source, source_id, date::text AS d FROM journal_entries WHERE id = $1`, [r.json?.journalEntryId])).rows[0];
   const rev = (await db.query(`SELECT source, date::text AS d, reversed_entry_id FROM journal_entries WHERE id = $1`, [r.json?.reversalEntryId])).rows[0];
   ok("f2: sources fx_revaluation_bank / fx_revaluation_bank_reversal, the reversal the next day", entry?.source === "fx_revaluation_bank" && rev?.source === "fx_revaluation_bank_reversal" && rev.d.slice(0, 10) === pmNext && rev.reversed_entry_id === r.json?.journalEntryId, { entry, rev });
@@ -173,6 +175,18 @@ async function fxSection() {
   const cl2 = await A.get(`/api/companies/${A.cid}/month-end/checklist?period=${pm.slice(0, 7)}`);
   const item2 = (cl2.json?.checklist ?? cl2.json ?? []).find?.((i) => /revalu/i.test(i.title));
   ok("f2: with every foreign account revalued the item is complete", item2?.status === "complete", item2);
+
+  // the open-document revaluation (invoices and bills) uses the same unrealised account; 4090 stays realised only
+  const open1 = await A.invoice({ date: pmd(40), dueDate: pmd(-10), unitPrice: 1000, currency: "USD", exchangeRate: 3.6725 });
+  const gain4090Before = (await db.query(`SELECT COALESCE(SUM(jl.credit - jl.debit),0)::float8 AS g FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '4090'`, [A.cid])).rows[0].g;
+  r = await A.post(`/api/companies/${A.cid}/exchange-rates/revalue`, { asOf: pm });
+  const docEntry = r.json?.journalEntryId ? await jeLines(r.json.journalEntryId) : [];
+  ok("f2: the open USD invoice revalued at the closing rate posts its gain to 4095 (7.50), not 4090", r.status === 201 && docEntry.some((l) => l.code === "4095" && close(l.c, 7.5)) && !docEntry.some((l) => l.code === "4090" || l.code === "5140"), { s: r.status, j: r.json, docEntry });
+  const gain4090After = (await db.query(`SELECT COALESCE(SUM(jl.credit - jl.debit),0)::float8 AS g FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '4090'`, [A.cid])).rows[0].g;
+  ok("f2: the revaluations leave 4090 alone: it holds the realised 7.00 and the 17.50 keyed by hand, unchanged", close(gain4090Before, 24.5) && close(gain4090After, gain4090Before), { gain4090Before, gain4090After });
+  void open1;
+  const rpt = await A.get(`/api/companies/${A.cid}/reports/fx-gains-losses?from=${pmd(60)}&to=${today}`);
+  ok("f2: the FX gains and losses report lists realised and unrealised lines", rpt.status === 200, { s: rpt.status });
 }
 function round2(v) { return Math.round(v * 100) / 100; }
 
@@ -202,7 +216,7 @@ async function linkSection() {
   ok("f3: the register shows it apart with a warning, outside the totals, and does not tie", reg.json?.unlinked?.count === 1 && close(reg.json?.unlinked?.cost, 80000) && close(reg.json?.totals?.cost, 0) && reg.json?.warnings?.includes("ASSETS_NOT_RECORDED_IN_BOOKS") && !close(reg.json?.glTie?.difference, 0), { u: reg.json?.unlinked, t: reg.json?.totals, w: reg.json?.warnings, d: reg.json?.glTie?.difference });
   const before = await jeCount(C.cid);
   r = await C.post(`/api/fixed-assets/${van.id}/link`, { billId: bill.id });
-  ok("f3: linking the asset to the bill succeeds and names the document", r.status === 200 && r.json?.linkedDocument?.type === "bill" && r.json?.linkedDocument?.number === "AFM-778" && r.json?.needs_capitalization_je === false, { s: r.status, j: r.json });
+  ok("f3: linking the asset to the bill succeeds, names the document and returns the updated asset (so the register can refresh)", r.status === 200 && r.json?.linkedDocument?.type === "bill" && r.json?.linkedDocument?.number === "AFM-778" && r.json?.needs_capitalization_je === false && r.json?.asset?.id === van.id && r.json?.asset?.needs_capitalization_je === false, { s: r.status, j: r.json });
   ok("f3: linking posts nothing (no double posting)", (await jeCount(C.cid)) === before, { before, after: await jeCount(C.cid) });
   reg = await register(C);
   const row = reg.json?.rows?.find((x) => x.assetId === van.id);
@@ -212,7 +226,9 @@ async function linkSection() {
 
   const dup = (await mk({ assetName: "Second van", purchaseCost: 80000 })).json;
   r = await C.post(`/api/fixed-assets/${dup.id}/link`, { billId: bill.id });
-  ok("f3: a second asset cannot use the same 80,000 again (422 LINK_INVALID, cost exceeds what is left)", r.status === 422 && r.json?.code === "LINK_INVALID" && r.json?.details?.reason === "COST_EXCEEDS_DOCUMENT", { s: r.status, j: r.json });
+  ok("f3: a line already linked to one asset cannot be linked to a second (409 LINE_ALREADY_LINKED)", r.status === 409 && r.json?.code === "LINE_ALREADY_LINKED", { s: r.status, j: r.json });
+  const cand = await C.get(`/api/companies/${C.cid}/fixed-assets/linkable-lines`);
+  ok("f3: the candidate list leaves linked lines out (the van's 80,000 line is not offered)", cand.status === 200 && Array.isArray(cand.json) && !cand.json.some((l) => l.billId === bill.id), { s: cand.status, j: cand.json });
   const bill2 = await mkBill(C, "AFM-779", [{ description: "Forklift", quantity: 1, unit_price: 20000, vat_rate: 5, account_id: cost1290 }, { description: "Pallet jack", quantity: 1, unit_price: 5000, vat_rate: 5, account_id: cost1290 }]);
   r = await C.post(`/api/fixed-assets/${dup.id}/link`, { billId: bill2.id });
   ok("f3: but it can link to a bill whose line still holds its cost (the 20,000 line is too small for 80,000)", r.status === 422, { s: r.status });
@@ -226,8 +242,11 @@ async function linkSection() {
   ok("f3: the register totals 85,000; the ledger holds the forklift's 20,000 too (a line of the same bill nobody registered), so it differs by exactly that", close(reg.json?.totals?.cost, 85000) && close(reg.json?.glTie?.difference, -20000) && reg.json?.rows?.length === 2, { t: reg.json?.totals, d: reg.json?.glTie });
   r = await mk({ assetName: "Paid and linked", purchaseCost: 100, billId: bill2.id, paymentAccountId: bank.id });
   ok("f3: a bill link together with a payment account is refused (422 LINK_AND_PAYMENT_ACCOUNT): the cost would post twice", r.status === 422 && r.json?.code === "LINK_AND_PAYMENT_ACCOUNT", { s: r.status, j: r.json });
-  r = await mk({ assetName: "Too dear", purchaseCost: 99999, billId: bill2.id, billLineId: jack.id });
+  const forklift = bill2.line_items.find((l) => /forklift/i.test(l.description));
+  r = await mk({ assetName: "Too dear", purchaseCost: 99999, billId: bill2.id, billLineId: forklift.id });
   ok("f3: a cost above the bill line is refused (422 LINK_INVALID)", r.status === 422 && r.json?.code === "LINK_INVALID", { s: r.status, j: r.json });
+  r = await mk({ assetName: "Second jack", purchaseCost: 100, billId: bill2.id, billLineId: jack.id });
+  ok("f3: creating a second asset from a bill line that already funds one is refused (409 LINE_ALREADY_LINKED)", r.status === 409 && r.json?.code === "LINE_ALREADY_LINKED", { s: r.status, j: r.json });
 
   // a journal line on 1290 (an opening balance, a card purchase)
   const jr = await C.journal(day(-15), [{ accountId: cost1290, debit: 3000, credit: 0 }, { accountId: bank.id, debit: 0, credit: 3000 }], { description: "Drill bought by card" });
@@ -255,7 +274,7 @@ async function linkSection() {
   // unlink and relink
   r = await api("DELETE", `/api/fixed-assets/${van.id}/link`, { token: C.token });
   reg = await register(C);
-  ok("f3: unlinking puts the asset back among the unlinked ones", r.status === 200 && r.json?.needs_capitalization_je === true && reg.json?.rows?.find((x) => x.assetId === van.id)?.linked === false && reg.json?.unlinked?.cost >= 80000, { s: r.status, u: reg.json?.unlinked });
+  ok("f3: unlinking returns the updated asset and puts it back among the unlinked ones", r.status === 200 && r.json?.needs_capitalization_je === true && r.json?.asset?.needs_capitalization_je === true && reg.json?.rows?.find((x) => x.assetId === van.id)?.linked === false && reg.json?.unlinked?.cost >= 80000, { s: r.status, u: reg.json?.unlinked });
   r = await C.post(`/api/fixed-assets/${van.id}/link`, { billId: bill.id });
   ok("f3: and it can be linked again", r.status === 200, { s: r.status, j: r.json });
   r = await other.post(`/api/fixed-assets/${van.id}/link`, { billId: foreignBill.id });

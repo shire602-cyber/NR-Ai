@@ -39,3 +39,20 @@ describe("notifications", () => {
     expect(ar("Invoice sent")).toBe("الفاتورة مرسلة");
   });
 });
+
+describe("purchase journals", () => {
+  it("translates bill, payment, vendor credit and receipt descriptions and keeps names and numbers", () => {
+    expect(ar("Vendor Bill BILL-001 - Gulf Cement")).toBe("فاتورة مشتريات BILL-001 - Gulf Cement");
+    expect(ar("A/P - Gulf Cement - Bill BILL-001")).toBe("الذمم الدائنة - Gulf Cement - فاتورة مشتريات BILL-001");
+    expect(ar("Input VAT - Bill BILL-001")).toBe("ضريبة المدخلات - فاتورة مشتريات BILL-001");
+    expect(ar("Bill BILL-002 - Sand 50 bags (clears goods received)")).toBe("فاتورة مشتريات BILL-002 - Sand 50 bags (تسوية البضاعة المستلمة)");
+    expect(ar("Payment - Bill BILL-001 - Gulf Cement")).toBe("دفعة - فاتورة مشتريات BILL-001 - Gulf Cement");
+    expect(ar("Settle A/P - Bill BILL-001 - Gulf Cement")).toBe("تسوية الذمم الدائنة - فاتورة مشتريات BILL-001 - Gulf Cement");
+    expect(ar("Payment to Gulf Cement - Bill BILL-001")).toBe("دفعة إلى Gulf Cement - فاتورة مشتريات BILL-001");
+    expect(ar("Vendor Credit VCN-2026-0001 - Gulf Cement")).toBe("إشعار دائن مورد VCN-2026-0001 - Gulf Cement");
+    expect(ar("Vendor credit VCN-1 - Return 10 bags")).toBe("إشعار دائن مورد VCN-1 - Return 10 bags");
+    expect(ar("Reversal: A/P - Gulf Cement - Vendor credit VCN-1")).toBe("عكس: الذمم الدائنة - Gulf Cement - إشعار دائن مورد VCN-1");
+    expect(ar("Receipt: DEWA - Utilities")).toBe("إيصال: DEWA - المرافق والخدمات");
+    expect(ar("Receipt: Lunch - Meals & Entertainment")).toBe("إيصال: Lunch - الوجبات والضيافة");
+  });
+});

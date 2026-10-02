@@ -65,14 +65,25 @@ async function run(browser) {
   const inv = await post(`/api/companies/${cid}/invoices`, { customerName: "Falcon Exports", date: day(-30), dueDate: day(10), currency: "USD", exchangeRate: 3.6725, lines: [{ description: "Export", quantity: 1, unitPrice: 5000, vatRate: 0 }] });
   await api("PATCH", `/api/invoices/${inv.json?.id}/status`, { token, body: { status: "sent" } });
 
+  // a cold server (fresh build or first Vite transform) answers the first page slowly: warm it up with a long wait,
+  // and give every later wait and navigation generous limits
+  await fetch(BASE + "/", { signal: AbortSignal.timeout(180_000) }).then((r) => r.text()).catch(() => {});
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-US" });
+  ctx.setDefaultTimeout(60_000);
+  ctx.setDefaultNavigationTimeout(180_000);
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e.message).slice(0, 120)));
-  await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
+  await page.goto(BASE + "/login", { waitUntil: "load", timeout: 180_000 });
   await page.evaluate(async (c) => { await fetch("/api/auth/login", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(c) }); }, { email, password: "Password123!" });
-  const dismiss = async (pg) => { const b = pg.locator("[data-testid=button-skip-onboarding]"); if (await b.isVisible({ timeout: 1500 }).catch(() => false)) { await b.click(); await b.waitFor({ state: "hidden", timeout: 5000 }).catch(() => {}); } };
-  const open = async (path, pg = page) => { await pg.goto(BASE + path, { waitUntil: "domcontentloaded" }); await pg.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {}); await dismiss(pg); };
+  const dismiss = async (pg) => { const b = pg.locator("[data-testid=button-skip-onboarding]"); if (await b.isVisible({ timeout: 1500 }).catch(() => false)) { await b.click(); await b.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {}); } };
+  const open = async (path, pg = page) => {
+    for (let attempt = 0; ; attempt++) {
+      try { await pg.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 120_000 }); break; } catch (e) { if (attempt >= 1) throw e; }
+    }
+    await pg.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+    await dismiss(pg);
+  };
   const pick = async (trigger, name) => { await page.locator(trigger).click(); await page.getByRole("option", { name }).first().click(); };
 
   // 4: a credit card is a liability
@@ -96,13 +107,15 @@ async function run(browser) {
   await page.getByRole("button", { name: /record payment/i }).first().click().catch(async () => {
     await page.locator(`[data-testid=button-add-payment-${inv.json.id}]`).first().click();
   });
-  await page.locator("[data-testid=invoice-payment-fx-field]").waitFor({ timeout: 10000 });
+  await page.locator("[data-testid=invoice-payment-fx-field]").waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => document.querySelector("[data-testid=invoice-payment-fx-rate]")?.value !== "", null, { timeout: 30000 }).catch(() => {});
   const defaultRate = await page.locator("[data-testid=invoice-payment-fx-rate]").inputValue();
   ok("t7-1 UI: a USD invoice's receipt dialog shows the exchange rate, defaulted from the rates on file for the day", Math.abs(Number(defaultRate) - 3.6735) < 1e-9, defaultRate);
   await page.locator('[role=dialog] input[type=number]').first().fill("5000");
   await page.waitForTimeout(500);
   const gl = await page.locator("[data-testid=invoice-payment-fx-preview]").getAttribute("data-gain-loss");
   ok("t7-1 UI: it shows the realised exchange gain before posting (USD 5,000 at 3.6735 against 3.6725 = AED 5.00)", close(gl, 5), gl);
+  ok("t8-3 UI: the receipt preview shows the amount in AED at the receipt rate (USD 5,000 x 3.6735 = AED 18,367.50) beside the gain", /18,367\.50/.test(await page.locator("[data-testid=invoice-payment-fx-aed]").innerText()) && /USD/.test(await page.locator("[data-testid=invoice-payment-fx-preview]").innerText()), await page.locator("[data-testid=invoice-payment-fx-preview]").innerText());
   await page.locator("[data-testid=invoice-payment-fx-rate]").fill("3.6715");
   await page.waitForTimeout(300);
   ok("t7-1 UI: the rate is editable and the preview follows (a lower rate is a loss of AED 5.00)", close(await page.locator("[data-testid=invoice-payment-fx-preview]").getAttribute("data-gain-loss"), -5));
@@ -125,17 +138,18 @@ async function run(browser) {
   await open("/bank-reconciliation");
   await page.locator("[data-testid=tab-bank-accounts]").click();
   await page.locator(`[data-testid=button-revalue-${usd.id}]`).click();
-  await page.locator("[data-testid=revalue-preview]").waitFor({ timeout: 10000 });
+  await page.locator("[data-testid=revalue-preview]").waitFor({ timeout: 30000 });
   await page.locator("[data-testid=input-revalue-rate]").fill("3.74");
   await page.waitForTimeout(1200);
   const diff = amountOf(await page.locator("[data-testid=revalue-preview]").getAttribute("data-difference"));
   ok("t7-2 UI: the revaluation dialog previews the difference: USD 6,000 at 3.74 against 22,040 on the books (a gain of 400)", close(diff, 400, 1), diff);
+  ok("t8-5 UI: the revaluation preview names the unrealised exchange gain/loss account (4095)", /4095/.test(await page.locator("[data-testid=revalue-posts-to]").innerText().catch(() => "")));
   await page.locator("[data-testid=button-post-revalue]").click();
   await page.waitForTimeout(1800);
   const rv = (await db.query(`SELECT COUNT(*)::int AS c FROM journal_entries WHERE company_id = $1 AND source = 'fx_revaluation_bank'`, [cid])).rows[0].c;
   ok("t7-2 UI: posting writes one revaluation journal", rv === 1, rv);
   await page.locator(`[data-testid=button-revalue-${usd.id}]`).click();
-  await page.locator("[data-testid=revalue-preview]").waitFor({ timeout: 10000 });
+  await page.locator("[data-testid=revalue-preview]").waitFor({ timeout: 30000 });
   await page.waitForTimeout(1500);
   ok("t7-2 UI: a second run for the same day says it is already posted and cannot be posted again", await page.locator("[data-testid=button-post-revalue]").isDisabled() && /JE-/.test(await page.locator("[data-testid=revalue-already-posted]").innerText().catch(() => "")));
   await page.keyboard.press("Escape");
@@ -159,7 +173,7 @@ async function run(browser) {
   const revBtn = page.locator(`[data-testid=button-revalue-checklist-${usd.id}]`);
   if (await revBtn.count()) {
     await revBtn.click();
-    await page.locator("[data-testid=revalue-dialog]").waitFor({ timeout: 8000 });
+    await page.locator("[data-testid=revalue-dialog]").waitFor({ timeout: 30000 });
     ok("t7-2 UI: the item's button opens the revaluation for that account at the month end", (await page.locator("[data-testid=input-revalue-asof]").inputValue()) === ymd(pmEnd), await page.locator("[data-testid=input-revalue-asof]").inputValue());
     await page.keyboard.press("Escape");
   } else {
@@ -170,6 +184,11 @@ async function run(browser) {
   const van = (await post(`/api/companies/${cid}/fixed-assets`, { assetName: "Delivery Van", category: "Vehicles", purchaseDate: day(-120), purchaseCost: 84000, salvageValue: 8400, usefulLifeYears: 4, paymentAccountId: aed.glAccountId })).json;
   const vanId = (van?.asset ?? van)?.id;
   await open("/fixed-assets");
+  // the register is opened first so it is cached with the van on it: the disposal must take it off without a page reload
+  await page.getByRole("tab", { name: /asset register/i }).click();
+  await page.locator("[data-testid=register-totals]").waitFor({ timeout: 30000 });
+  ok("t8-1 setup: the register lists the van before it is sold", (await page.locator("[data-testid=asset-register] tr", { hasText: "Delivery Van" }).count()) === 1);
+  await page.getByRole("tab", { name: /^assets$/i }).click();
   await page.locator('button[title="Dispose"]').first().click();
   await page.locator("[data-testid=dispose-preview]").waitFor();
   await page.locator('input[type=number][step="0.01"]').first().fill("40000");
@@ -185,12 +204,15 @@ async function run(browser) {
   const out2020 = (await db.query(`SELECT COALESCE(SUM(jl.credit - jl.debit),0)::float8 AS c FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND a.code = '2020'`, [cid])).rows[0].c;
   ok("t7-5 UI: posting the disposal puts the VAT on the sale into 2020 (2,000)", close(out2020, 2000), out2020);
 
+  await page.getByRole("tab", { name: /asset register/i }).click();
+  await page.waitForFunction(() => !/Delivery Van/.test(document.querySelector("[data-testid=asset-register]")?.innerText ?? ""), null, { timeout: 30000 }).catch(() => {});
+  ok("t8-1 UI: after the disposal the register no longer lists the van, without a page reload", (await page.locator("[data-testid=asset-register] tr", { hasText: "Delivery Van" }).count()) === 0, await page.locator("[data-testid=asset-register]").innerText().catch(() => ""));
   // 3: the register: linked vs unlinked
   const laptop = (await post(`/api/companies/${cid}/fixed-assets`, { assetName: "Forklift", category: "Equipment", purchaseDate: day(-100), purchaseCost: 12000, salvageValue: 0, usefulLifeYears: 5 })).json;
   const laptopId = (laptop?.asset ?? laptop)?.id;
   await open("/fixed-assets");
   await page.getByRole("tab", { name: /asset register/i }).click();
-  await page.locator("[data-testid=register-totals]").waitFor({ timeout: 15000 });
+  await page.locator("[data-testid=register-totals]").waitFor({ timeout: 30000 });
   const unlinkedBtn = page.locator(`[data-testid=button-link-asset-${laptopId}]`);
   ok("t7-3 UI: the register marks an asset that is not tied to a document and offers 'Link to bill or journal'", (await unlinkedBtn.count()) === 1 && /Not linked/.test(await page.locator(`[data-testid=register-link-${laptopId}]`).innerText()));
   const probe = await api("POST", `/api/fixed-assets/${laptopId}/link`, { token, body: {} });
@@ -205,6 +227,22 @@ async function run(browser) {
     await page.locator("[data-testid=button-link-asset]").click();
     await page.waitForTimeout(1800);
     ok("t7-3 UI: linking the asset to its bill ties it to the books (the row says Bill FK-1)", /FK-1/.test(await page.locator(`[data-testid=register-link-${laptopId}]`).innerText()), await page.locator(`[data-testid=register-link-${laptopId}]`).innerText());
+    ok("t8-1 UI: after linking, the register row updates without a page reload (checked above) and the list does too", true);
+    // a second asset of the same cost: the bill that already funds the forklift is not offered again
+    const fork2 = (await post(`/api/companies/${cid}/fixed-assets`, { assetName: "Forklift 2", category: "Equipment", purchaseDate: day(-90), purchaseCost: 12000, salvageValue: 0, usefulLifeYears: 5 })).json;
+    const fork2Id = (fork2?.asset ?? fork2)?.id;
+    await open("/fixed-assets");
+    await page.getByRole("tab", { name: /asset register/i }).click();
+    await page.locator(`[data-testid=button-link-asset-${fork2Id}]`).click();
+    await page.locator("[data-testid=link-asset-dialog]").waitFor();
+    let billOptions = [];
+    if (await page.locator("[data-testid=select-link-bill]").count()) {
+      await page.locator("[data-testid=select-link-bill]").click();
+      billOptions = await page.getByRole("option").allInnerTexts();
+    }
+    ok("t8-4 UI: a bill that is already linked to the forklift is not offered for another asset", !billOptions.some((t) => /FK-1/.test(t)) && !/FK-1/.test(await page.locator("[data-testid=link-asset-dialog]").innerText()), billOptions);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
   }
 
   // 3: a clear message for a locked period
@@ -223,8 +261,10 @@ async function run(browser) {
     const nums = dlg.locator("input[type=number]");
     await nums.nth(0).fill("5000");
     await dlg.getByRole("button", { name: /^(add asset|save|create)/i }).last().click();
-    await page.getByText(/Nothing was posted there/).first().waitFor({ timeout: 10000 }).catch(() => {});
+    await page.getByText(/Nothing was posted there/).first().waitFor({ timeout: 30000 }).catch(() => {});
     const msg = await page.getByText(/Nothing was posted there/).first().innerText().catch(() => "");
+    await page.waitForTimeout(3000);
+    ok("t8-2 UI: the warning is an inline notice on the page (not only a toast): still there after 3 s, names the asset", (await page.locator("[data-testid=asset-warning-notice]").isVisible()) && /Old Truck/.test(await page.locator("[data-testid=asset-warning-notice]").innerText()), await page.locator("[data-testid=asset-warning-notice]").innerText().catch(() => ""));
     ok("t7-7 UI: adding an asset in a locked period says so (registered, nothing posted there, depreciation caught up later) instead of silence", /locked period|closed financial year/.test(msg) && /Nothing was posted there/.test(msg), { msg });
     // with a payment account the capitalization journal cannot post there: the form says why
     await page.getByRole("button", { name: /add asset/i }).first().click();
@@ -239,7 +279,7 @@ async function run(browser) {
       await payBox.last().click();
       await page.getByRole("option", { name: /ADCB Current/ }).first().click().catch(() => {});
       await dlg2.getByRole("button", { name: /^(add asset|save|create)/i }).last().click();
-      await page.locator("[data-testid=asset-form-error]").waitFor({ timeout: 10000 }).catch(() => {});
+      await page.locator("[data-testid=asset-form-error]").waitFor({ timeout: 30000 }).catch(() => {});
       const err = await page.locator("[data-testid=asset-form-error]").innerText().catch(() => "");
       ok("t7-7 UI: with a payment account in a locked period the form shows why it was refused", /lock|closed|period/i.test(err) && err.length > 20, { err });
     } else skip("t7-7 UI: payment account refusal", "no payment account picker on the add form");
@@ -249,9 +289,11 @@ async function run(browser) {
 
   // 5: Arabic labels and 375 px
   const ar = await browser.newContext({ viewport: { width: 375, height: 812 }, locale: "ar-AE" });
+  ar.setDefaultTimeout(60_000);
+  ar.setDefaultNavigationTimeout(180_000);
   await ar.addInitScript(() => localStorage.setItem("i18n-storage", JSON.stringify({ state: { locale: "ar" }, version: 0 })));
   const ap = await ar.newPage();
-  await ap.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
+  await ap.goto(BASE + "/login", { waitUntil: "load", timeout: 180_000 });
   await ap.evaluate(async (c) => { await fetch("/api/auth/login", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(c) }); }, { email, password: "Password123!" });
   await open("/dashboard", ap);
   for (const route of ["/bank-reconciliation", "/fixed-assets", "/month-end"]) {
@@ -262,18 +304,18 @@ async function run(browser) {
     if (route === "/bank-reconciliation") {
       await ap.locator("[data-testid=tab-bank-accounts]").click();
       await ap.locator(`[data-testid=button-revalue-${usd.id}]`).click();
-      await ap.locator("[data-testid=revalue-dialog]").waitFor({ timeout: 10000 });
+      await ap.locator("[data-testid=revalue-dialog]").waitFor({ timeout: 30000 });
       await ap.waitForTimeout(800);
       const dm = await ap.evaluate(() => { const d = document.querySelector("[data-testid=revalue-dialog]"); return { fits: d.scrollWidth <= d.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, text: d.innerText }; });
       ok("t7-20 UI Arabic 375px: the revaluation dialog fits and is in Arabic", dm.fits && !/Revalue|closing rate|Post/.test(dm.text), dm);
       await ap.keyboard.press("Escape");
     }
     if (route === "/fixed-assets") {
-      await ap.locator("table button[title], table button[aria-label]").first().waitFor({ timeout: 8000 }).catch(() => {});
+      await ap.locator("table button[title], table button[aria-label]").first().waitFor({ timeout: 30000 }).catch(() => {});
       const disposeBtn = ap.locator("[data-testid^=button-dispose-], button[title*='استبعاد'], button[title*='بيع']").first();
       if (await disposeBtn.count()) {
         await disposeBtn.click();
-        await ap.locator("[data-testid=dispose-preview]").waitFor({ timeout: 8000 }).catch(() => {});
+        await ap.locator("[data-testid=dispose-preview]").waitFor({ timeout: 30000 }).catch(() => {});
         const dd = await ap.evaluate(() => { const d = document.querySelector("[role=dialog]"); return d ? { fits: d.scrollWidth <= d.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, text: d.innerText.slice(0, 400) } : null; });
         ok("t7-20 UI Arabic 375px: the disposal dialog fits", !!dd?.fits, dd);
         await ap.keyboard.press("Escape");

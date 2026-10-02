@@ -2,7 +2,7 @@
 //
 //   adjustment (AED) = balance in the account's currency x closing rate  -  what the ledger carries it at (AED)
 //
-// A gain is Dr bank / Cr 4090, a loss Dr 5140 / Cr bank. The entry moves AED only: its bank line carries the account's
+// A gain is Dr bank / Cr 4095, a loss Dr 4095 / Cr bank (4095: unrealised exchange gain/(loss), apart from the realised 4090 / 5140). The entry moves AED only: its bank line carries the account's
 // currency with an amount of 0, so in the reconciliation (which compares currency amounts) it is a rate difference and
 // never a deposit in transit. Like the open-document revaluation (exchange-rates.routes.ts) it is dated the as-of day
 // and reversed automatically the next day, so nothing stacks: every run recomputes against what the ledger carries now.
@@ -12,13 +12,13 @@ import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { AppError } from "../errors";
 import { storage } from "../storage";
-import { ACCOUNT_CODES } from "../constants";
 import { dubaiDaySql } from "./vat-dubai-day";
 import { uaeYmdParts } from "../utils/date";
 import { LOCK_NS, withDocumentLock } from "./document-lock";
 import { assertNotFutureDate, assertPeriodNotLocked } from "./period-lock.service";
 import { computeBankReconciliationStatement } from "./bank-reconciliation.service";
 import { bankRate } from "./bank-posting-common";
+import { ensureUnrealisedFxAccount } from "./fx-unrealised-account";
 
 export const BANK_REVALUATION_SOURCE = "fx_revaluation_bank";
 export const BANK_REVALUATION_REVERSAL_SOURCE = "fx_revaluation_bank_reversal";
@@ -131,9 +131,6 @@ export async function revalueBankAccount(args: { companyId: string; userId: stri
   await assertPeriodNotLocked(companyId, reversalDate);
 
   const { glAccountId, currency } = await requireForeignBank(companyId, bankAccountId);
-  const accounts = await storage.getAccountsByCompanyId(companyId);
-  const gain = accounts.find((a) => a.code === ACCOUNT_CODES.FX_GAIN);
-  const loss = accounts.find((a) => a.code === ACCOUNT_CODES.FX_LOSS);
 
   return await withDocumentLock(`${companyId}:${bankAccountId}:${asOf}`, LOCK_NS.BANK_REVALUATION, async (tx) => {
     const preview = await previewBankRevaluation(companyId, bankAccountId, asOf, args.exchangeRate);
@@ -144,8 +141,7 @@ export async function revalueBankAccount(args: { companyId: string; userId: stri
     if (Math.abs(adjustment) < 0.01) {
       return { ...preview, posted: false, journalEntryId: null, reversalEntryId: null, reversalDate: null, reason: "NO_DIFFERENCE" };
     }
-    if (adjustment > 0 && !gain) throw err(422, "FX_GAIN_ACCOUNT_MISSING", `Foreign Exchange Gain (${ACCOUNT_CODES.FX_GAIN}) is missing from the chart of accounts.`);
-    if (adjustment < 0 && !loss) throw err(422, "FX_LOSS_ACCOUNT_MISSING", `Foreign Exchange Loss (${ACCOUNT_CODES.FX_LOSS}) is missing from the chart of accounts.`);
+    const unrealisedId = await ensureUnrealisedFxAccount(companyId);
 
     const amount = Math.abs(adjustment);
     const label = `Unrealised FX ${adjustment > 0 ? "gain" : "loss"} - ${preview.bankAccountName} (${currency} ${preview.foreignBalance.toFixed(2)} at ${preview.closingRate})`;
@@ -162,8 +158,8 @@ export async function revalueBankAccount(args: { companyId: string; userId: stri
     });
     const lines =
       adjustment > 0
-        ? [bankLeg(amount, 0, label), { accountId: gain!.id, debit: 0, credit: amount, description: label }]
-        : [{ accountId: loss!.id, debit: amount, credit: 0, description: label }, bankLeg(0, amount, label)];
+        ? [bankLeg(amount, 0, label), { accountId: unrealisedId, debit: 0, credit: amount, description: label }]
+        : [{ accountId: unrealisedId, debit: amount, credit: 0, description: label }, bankLeg(0, amount, label)];
     const entry = await storage.createJournalEntry(
       {
         companyId,

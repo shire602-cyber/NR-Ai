@@ -1,3 +1,5 @@
+// ─── The process timezone is UTC before anything else loads ───
+import "./utc-timezone";
 // ─── Load environment variables first ────────────────────────
 import "dotenv/config";
 
@@ -146,6 +148,7 @@ app.get("/api/version", (_req, res) => {
     commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null,
     environment: env.NODE_ENV,
     uptime: process.uptime(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     monitoring: monitoringConfigured() ? "configured" : "not_configured",
     email: emailStatus().configured ? "configured" : "not_configured",
   });

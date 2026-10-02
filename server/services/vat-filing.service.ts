@@ -631,6 +631,8 @@ export async function overlayVatReturns(rows: VatReturn[]) {
             snapshotHash: filing.snapshotHash,
             evidenceCount: evidenceCounts.get(filing.id) ?? 0,
             settlement: buildSettlementView(filing.settlementNet, paymentSums.get(filing.id) ?? []),
+            // recorded with "Filed outside Muhasib": figures are zero, nothing was posted
+            filedElsewhere: (filing.snapshot as { filedElsewhere?: boolean } | null)?.filedElsewhere === true,
           }
         : null,
     };

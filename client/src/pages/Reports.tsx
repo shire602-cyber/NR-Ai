@@ -1,3 +1,4 @@
+import { localizeCreditSuffix } from "@/lib/journal-text";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -18992,7 +18993,7 @@ export default function Reports() {
                           <TableBody>
                             {receivableAgingRows.map((row) => (
                               <TableRow key={row.id}>
-                                <TableCell className="font-medium">{row.name}</TableCell>
+                                <TableCell className="font-medium">{localizeCreditSuffix(row.name, locale)}</TableCell>
                                 <TableCell className="text-end font-mono">
                                   {formatCurrency(row.current, "AED", locale)}
                                 </TableCell>
@@ -19591,7 +19592,7 @@ export default function Reports() {
                             {balanceReport.customers.map((row) => (
                               <TableRow key={`${row.name}-${row.currency}`}>
                                 <TableCell>
-                                  <div className="font-medium">{row.name}</div>
+                                  <div className="font-medium">{localizeCreditSuffix(row.name, locale)}</div>
                                   <Badge
                                     className="mt-1"
                                     variant={row.overdueBalanceAed > 0 ? "warning" : "success"}

@@ -71,6 +71,11 @@ export const SERVER_ERRORS_AR: Record<string, string> = {
   EXCEEDS_CREDIT_BALANCE: "المبلغ أكبر من رصيد العميل المتاح.",
   INVALID_AMOUNT: "يجب أن يكون المبلغ أكبر من صفر.",
   CUSTOMER_NOT_FOUND: "لم يُعثر على العميل.",
+  INVALID_VOID_DATE: "تاريخ العكس غير صالح.",
+  VOID_DATE_BEFORE_DOCUMENT: "لا يمكن أن يسبق تاريخ العكس تاريخ المستند نفسه.",
+  VOID_DATE_IN_FUTURE: "لا يمكن أن يكون تاريخ العكس في المستقبل.",
+  VOID_DATE_PERIOD_LOCKED: "شهر تاريخ العكس مقفل. اختر تاريخاً في شهر مفتوح.",
+  VOID_DATE_PERIOD_FILED: "يوجد إقرار ضريبي مقدّم يغطي هذا التاريخ. اختر تاريخاً بعده.",
   CREDIT_NOTE_HAS_REFUNDS: "هذا الإشعار الدائن عليه مبالغ مردودة. ألغِ الرد أولاً ثم ألغِ الإشعار الدائن.",
 };
 

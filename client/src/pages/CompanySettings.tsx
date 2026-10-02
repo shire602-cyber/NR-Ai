@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { VatBooksStartCard } from "@/components/vat/VatBooksStartCard";
 import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
 import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
 import { messages as pageMessages } from "./CompanySettings.i18n";
@@ -106,7 +107,10 @@ export default function CompanySettings() {
   useEffect(() => {
     const id = window.location.hash.slice(1);
     if (!id) return;
-    const timer = setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: "center" }), 500);
+    const timer = setTimeout(
+      () => document.getElementById(id)?.scrollIntoView({ block: "center" }),
+      500
+    );
     return () => clearTimeout(timer);
   }, [companyId]);
 
@@ -516,7 +520,10 @@ export default function CompanySettings() {
                   control={form.control}
                   name="inventoryCostingEnabled"
                   render={({ field }) => (
-                    <FormItem id="inventory-posting" className="md:col-span-2 flex scroll-mt-24 items-center justify-between rounded-md border p-3">
+                    <FormItem
+                      id="inventory-posting"
+                      className="md:col-span-2 flex scroll-mt-24 items-center justify-between rounded-md border p-3"
+                    >
                       <div className="space-y-0.5">
                         <FormLabel>{tr("postInventoryToLedgerCogs")}</FormLabel>
                         <FormDescription>{tr("postInventoryToLedgerCogsHint")}</FormDescription>
@@ -722,6 +729,8 @@ export default function CompanySettings() {
           </Card>
         </form>
       </Form>
+
+      {companyId ? <VatBooksStartCard companyId={companyId} /> : null}
     </div>
   );
 }

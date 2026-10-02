@@ -19,6 +19,7 @@ export function assetErrorText(tr: Tr, err: unknown): string | null {
   const period = lockedPeriodOf(err.message);
   if (err.status === 403 && period) return tr("errLockedPeriod", { period });
   if (err.code === "LINK_INVALID") return tr("errLinkInvalid");
+  if (err.code === "LINE_ALREADY_LINKED") return tr("errLineLinked");
   return null;
 }
 

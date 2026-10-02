@@ -262,7 +262,8 @@ function balanceRow(employee: EmployeeRef, type: any, asOfYmd: string, approved:
     takenInYear: (y) => takenIn(mine, y),
     overrides: overrides.get(`${employee.id}|${type.id}`) ?? new Map(),
     trackingStartYear: employee.trackingYear,
-    ...(employee.openingDays !== null && employee.openingDays !== undefined
+    // Opening days are annual leave only: sick, maternity, hajj... keep their statutory entitlements and their history.
+    ...(type.accrual === "monthly_service" && employee.openingDays !== null && employee.openingDays !== undefined
       ? { openingDays: employee.openingDays, openingAsOfYmd: employee.openingAsOf ?? `${employee.trackingYear - 1}-12-31` }
       : {}),
     takenBetween: (from, to) => mine.reduce((s, r) => s + daysInRange(r, from, to), 0),

@@ -78,7 +78,6 @@ export async function neverDeclaredAmong(ex: Executor, companyId: string, docs: 
   const out = new Set<string>();
   if (voided.length === 0) return out;
   const [filedReturns, cutover] = await Promise.all([loadFiledVatReturnRecords(ex, companyId), getVatDateRuleCutover(ex)]);
-  if (filedReturns.length === 0) return out;
   for (const d of voided) {
     if (
       voidedDocumentNeverDeclared({

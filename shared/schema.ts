@@ -364,6 +364,8 @@ export const companies = pgTable("companies", {
   // each registrant a stagger so quarterly periods may begin in Feb or Mar.
   vatAutoCalculate: boolean("vat_auto_calculate").notNull().default(true),
   vatPeriodStartMonth: integer("vat_period_start_month").notNull().default(1),
+  // Teardown 8 (0131): the first day of the first VAT period Muhasib books; Autopilot and the filing list trim to periods from here.
+  vatBooksStart: date("vat_books_start", { mode: "string" }),
 
   // Phase 6: when true, issuing an invoice also posts cost of goods sold (Dr 5200 / Cr 1070)
   // for lines sold from products that track inventory, at weighted-average cost.

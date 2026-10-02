@@ -45,6 +45,11 @@ export const messages = defineMessages(
       "The month has not ended: foreign-currency bank accounts are revalued at the month end",
     dFxDone: "{count} foreign-currency bank account(s) revalued at {date}",
     dFxOpen: "Not revalued at {date}: {names}",
+    dVatExists: "VAT return for {periodStart} – {periodEnd} exists ({status}).",
+    dVatNotLast:
+      "Not the last month of the VAT period; the return is due with the period ending {periodEnd}.",
+    dVatNoReturn:
+      "The VAT period ending {periodEnd} has no return yet. Create the return, or lock with an override.",
     dVatNotApplicable: "No VAT to report for this month (not VAT-registered, or no VAT postings)",
   },
   {
@@ -87,6 +92,10 @@ export const messages = defineMessages(
       "لم ينتهِ الشهر بعد: يُعاد تقييم الحسابات البنكية بالعملات الأجنبية في نهاية الشهر",
     dFxDone: "أُعيد تقييم {count} حساب بنكي بعملة أجنبية بتاريخ {date}",
     dFxOpen: "لم يُعَد التقييم بتاريخ {date}: {names}",
+    dVatExists: "يوجد إقرار ضريبي للفترة {periodStart} – {periodEnd} ({status}).",
+    dVatNotLast: "ليس آخر شهر في الفترة الضريبية؛ يستحق الإقرار مع الفترة المنتهية في {periodEnd}.",
+    dVatNoReturn:
+      "لا يوجد إقرار للفترة الضريبية المنتهية في {periodEnd} بعد. أنشئ الإقرار أو أقفل مع تجاوز.",
     dVatNotApplicable:
       "لا توجد ضريبة للإبلاغ عنها لهذا الشهر (غير مسجّل في الضريبة أو لا حركات ضريبية)",
   }

@@ -62,3 +62,21 @@ export function matchesCost(amount: number, cost: number): boolean {
 export function sortByCostMatch<T extends { date: string }>(items: T[], amountOf: (i: T) => number, cost: number): T[] {
   return [...items].sort((a, b) => Number(matchesCost(amountOf(b), cost)) - Number(matchesCost(amountOf(a), cost)) || b.date.localeCompare(a.date));
 }
+
+/** What the register already ties to each bill or journal: the cost of the other assets linked to it. */
+export function linkedCostByDocument(
+  rows: Array<{ assetId: string; cost: number; linkedDocument?: { id: string } | null }>,
+  excludeAssetId?: string,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.linkedDocument?.id || r.assetId === excludeAssetId) continue;
+    out.set(r.linkedDocument.id, r2((out.get(r.linkedDocument.id) ?? 0) + Number(r.cost || 0)));
+  }
+  return out;
+}
+
+/** A document is still a candidate when what is left on it, after the assets already linked, covers this asset. */
+export function hasRoomFor(docAmount: number, linkedCost: number, assetCost: number): boolean {
+  return docAmount - linkedCost >= assetCost - 0.005;
+}

@@ -36,6 +36,7 @@ import { assertPeriodNotLocked } from "./period-lock.service";
 import { syncInvoiceStatusFromBalance } from "./invoice-credit-status";
 import { countLiveRefunds } from "./customer-refund.service";
 import { uaeCalendarDate } from "../utils/date";
+import { resolveVoidDate } from "./void-date.service";
 import { restockForVoidInTx, undoCreditNoteRestockInTx } from "./inventory-costing.service";
 import { createLogger } from "../config/logger";
 import {
@@ -64,6 +65,8 @@ export async function voidOrCancelInvoice(args: {
   companyId: string;
   targetStatus: "void" | "cancelled";
   userId: string;
+  /** Reversal date asked for by the client (YYYY-MM-DD); default: the document's own date (void-date.service.ts). */
+  date?: unknown;
 }): Promise<VoidOutcome> {
   const { invoiceId, companyId, targetStatus, userId } = args;
 
@@ -88,12 +91,20 @@ export async function voidOrCancelInvoice(args: {
   // ledger reads dates), because that date decides which VAT period reports the cancellation
   // (vat-document-effect.ts). postedAt stays the real instant.
   const postedAtNow = new Date();
-  const reversalDate = uaeCalendarDate(postedAtNow);
+  // The document is undone on its OWN date when that period is still open (so the period that reported it stops
+  // reporting it); otherwise on the first open day after it. The client may name a date (void-date.service.ts).
+  const priorEntries = await storage.getJournalEntriesBySource(companyId, "invoice", invoiceId);
+  const hasPosting = priorEntries.some((e) => e.status === "posted");
+  const resolved = hasPosting
+    ? await resolveVoidDate({ companyId, documentDate: preliminary.date, requested: args.date })
+    : ({ ok: true, date: uaeCalendarDate(postedAtNow), ymd: "", documentYmd: "", moved: false } as const);
+  if (!resolved.ok) return fail(resolved.status, resolved.code, resolved.message);
+  const reversalDate = resolved.date;
+  const movedNote = resolved.moved ? ` (document dated ${resolved.documentYmd}; reversed on ${resolved.ymd}, the first open day)` : "";
   // Block reversal posting into a locked period - without this we could flip
   // status without writing the offsetting JE. Only needed when a JE will be
   // posted (an unposted draft has nothing to reverse).
-  const priorEntries = await storage.getJournalEntriesBySource(companyId, "invoice", invoiceId);
-  if (priorEntries.some((e) => e.status === "posted")) {
+  if (hasPosting) {
     await assertPeriodNotLocked(companyId, reversalDate);
   }
   // A credit note's lock key is its ORIGINAL invoice, the key credit-note creation uses.
@@ -213,13 +224,13 @@ export async function voidOrCancelInvoice(args: {
         {
           companyId,
           date: reversalDate,
-          memo: `Void Invoice ${invoice.number} - reversal of original posting`,
+          memo: `Void Invoice ${invoice.number} - reversal of original posting${movedNote}`,
           entryNumber: "PENDING", // assigned inside the transaction
           status: "posted",
           source: "invoice",
           sourceId: invoiceId,
           reversedEntryId: original.id,
-          reversalReason: `Invoice ${targetStatus}`,
+          reversalReason: `Invoice ${targetStatus}${movedNote}`,
           createdBy: userId,
           postedBy: userId,
           postedAt: postedAtNow,

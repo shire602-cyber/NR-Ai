@@ -469,7 +469,9 @@ async function uiChecks(browser) {
   await page.getByLabel(/show reconciled/i).click().catch(async () => { await page.locator("#show-reconciled").click(); });
   await page.waitForTimeout(500);
   await page.locator(`[data-testid=button-details-${loanLine.id}]:visible`).click();
-  await page.locator("[data-testid=matched-summary]").waitFor({ timeout: 8000 });
+  // the summary box appears with its heading ("Matched to") first; the entry and its lines arrive with a second request
+  await page.locator("[data-testid=matched-summary]").waitFor({ timeout: 30000 });
+  await page.locator("[data-testid=matched-summary]", { hasText: /Posted entry/ }).waitFor({ timeout: 30000 }).catch(() => {});
   ok("t4-9 UI: a matched line says what it was matched to: the entry number and its lines", /Posted entry/.test(await page.locator("[data-testid=matched-summary]").innerText()), await page.locator("[data-testid=matched-summary]").innerText());
   await closeMatch();
 

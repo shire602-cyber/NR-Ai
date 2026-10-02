@@ -43,7 +43,7 @@ export function AssetRegisterTab({ companyId }: { companyId: string }) {
 
   return (
     <div className="space-y-4" data-testid="asset-register">
-      <LinkAssetDialog open={!!linking} onOpenChange={(o) => !o && setLinking(null)} companyId={companyId} asset={linking} />
+      <LinkAssetDialog open={!!linking} onOpenChange={(o) => !o && setLinking(null)} companyId={companyId} asset={linking} registerRows={data?.rows} />
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-end justify-between gap-3">

@@ -61,22 +61,29 @@ export async function resolveSourceLink(args: {
   const lines = (
     await pool.query(
       `SELECT jl.id, jl.account_id, (jl.debit - jl.credit)::float8 AS cost,
-              COALESCE((SELECT SUM(fa.purchase_cost) FROM fixed_assets fa WHERE fa.source_journal_line_id = jl.id AND ($3::uuid IS NULL OR fa.id <> $3::uuid)), 0)::float8 AS used
+              COALESCE((SELECT SUM(fa.purchase_cost) FROM fixed_assets fa WHERE fa.source_journal_line_id = jl.id AND ($3::uuid IS NULL OR fa.id <> $3::uuid)), 0)::float8 AS used,
+              EXISTS (SELECT 1 FROM fixed_assets fa WHERE fa.source_journal_line_id = jl.id AND ($3::uuid IS NULL OR fa.id <> $3::uuid)) AS linked
          FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
         WHERE jl.entry_id = $1 AND a.company_id = $2 AND a.type = 'asset' AND a.code ~ '^12' AND a.code <> '1240' AND jl.debit - jl.credit > 0
         ORDER BY jl.id`,
       [entryId, companyId, args.excludeAssetId ?? null]
     )
-  ).rows.map((l: any): { id: string; accountId: string; cost: number; remaining: number } => ({ id: l.id as string, accountId: l.account_id as string, cost: Number(l.cost), remaining: r2(Number(l.cost) - Number(l.used)) }));
+  ).rows.map((l: any): { id: string; accountId: string; cost: number; remaining: number; linked: boolean } => ({ id: l.id as string, accountId: l.account_id as string, cost: Number(l.cost), remaining: r2(Number(l.cost) - Number(l.used)), linked: l.linked === true }));
   if (lines.length === 0) throw linkInvalid("NO_FIXED_ASSET_LINE", "That document puts nothing on a fixed-asset account (12xx). Code its line to Fixed Assets at Cost (1290).");
 
-  type Candidate = { id: string; accountId: string; cost: number; remaining: number };
+  type Candidate = { id: string; accountId: string; cost: number; remaining: number; linked: boolean };
   let pool2: Candidate[] = lines;
   if (accountFilter) pool2 = pool2.filter((l) => l.accountId === accountFilter);
   if (amountHint !== null) {
     const exact = pool2.filter((l) => Math.abs(l.cost - amountHint!) <= 0.01);
     if (exact.length > 0) pool2 = exact;
   }
+  // a line funds one asset: a line already linked to another asset is not offered and cannot be linked again
+  const open = pool2.filter((l) => !l.linked);
+  if (open.length === 0 && pool2.length > 0) {
+    throw new AppError({ message: "That line is already linked to another asset. A bill or journal line records one asset: unlink the other asset first, or choose another line.", statusCode: 409, code: "LINE_ALREADY_LINKED" });
+  }
+  pool2 = open;
   const fits = pool2.filter((l) => l.remaining >= cost - 0.005);
   if (fits.length === 0) {
     const best = Math.max(0, ...pool2.map((l) => l.remaining));
@@ -114,4 +121,21 @@ export async function unlinkAsset(companyId: string, assetId: string) {
   );
   if (res.rows.length === 0) throw new AppError({ message: "This asset is not linked to a document.", statusCode: 409, code: "ASSET_NOT_LINKED" });
   return res.rows[0];
+}
+
+/** Fixed-asset cost lines (12xx debits of posted entries) that no asset is linked to yet: what the link screens may offer. */
+export async function linkableLines(companyId: string) {
+  const res = await pool.query(
+    `SELECT jl.id AS line_id, je.id AS entry_id, je.entry_number, to_char(je.date, 'YYYY-MM-DD') AS day, je.memo, a.code AS account_code, (jl.debit - jl.credit)::float8 AS cost,
+            CASE WHEN je.source = 'bill' THEN je.source_id END AS bill_id, vb.bill_number
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+       LEFT JOIN vendor_bills vb ON je.source = 'bill' AND vb.id = je.source_id
+      WHERE je.company_id = $1 AND je.status = 'posted' AND a.company_id = $1 AND a.type = 'asset' AND a.code ~ '^12' AND a.code <> '1240'
+        AND jl.debit - jl.credit > 0 AND NOT EXISTS (SELECT 1 FROM fixed_assets fa WHERE fa.source_journal_line_id = jl.id)
+      ORDER BY je.date DESC, je.entry_number DESC LIMIT 500`,
+    [companyId]
+  );
+  return res.rows.map((r: any) => ({ lineId: r.line_id, journalEntryId: r.entry_id, entryNumber: r.entry_number, date: r.day, memo: r.memo, accountCode: r.account_code, cost: r2(Number(r.cost)), billId: r.bill_id ?? null, billNumber: r.bill_number ?? null }));
 }

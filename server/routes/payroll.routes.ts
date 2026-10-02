@@ -27,6 +27,7 @@ import { allowEmployee, hrCompanyAccess, hrFullAccess, hrReadScope } from "./hr-
 import { LOCK_NS, withDocumentLock } from "../services/document-lock";
 import { localWallDateToUtcMidnight } from "../utils/date";
 import { prorateComponents, prorateMonth, type Proration } from "../services/payroll-proration";
+import { employeeDayInput, employeeOut } from "../services/employee-dates";
 import { bookPriorServiceCatchup, priorServiceMissing, priorServiceWarning } from "../services/prior-service.service";
 import { ensureLeaveProvisionAccounts, leaveProvisionDeltas, leaveProvisionEnabled, recordRunProvisions } from "../services/leave-provision.service";
 import { loadApprovalDocument } from "../services/approval-queue.service";
@@ -102,9 +103,10 @@ const employeeCreateSchema = z.object({
   routingCode: z.string().trim().max(32).optional(),
   department: z.string().trim().max(128).optional(),
   designation: z.string().trim().max(128).optional(),
+  // A calendar day: "YYYY-MM-DD" is kept, an ISO instant becomes its Dubai day (employee-dates.ts).
   joinDate: z.preprocess(
-    (v) => (v === "" || v === null || v === undefined ? undefined : v),
-    z.coerce.date().optional()
+    (v) => (v === "" || v === null || v === undefined ? undefined : employeeDayInput(v) ?? "invalid"),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "The join date is not a real date").optional()
   ),
   basicSalary: z.coerce.number().positive(BASIC_SALARY_POSITIVE_MESSAGE),
   housingAllowance: z.coerce.number().nonnegative().default(0),
@@ -120,7 +122,10 @@ const employeeCreateSchema = z.object({
   // Prior service (0128): the leave days and leave-pay provision the company already held, as of a date.
   openingLeaveDays: z.coerce.number().nonnegative().max(1000).optional(),
   openingLeaveProvision: z.coerce.number().nonnegative().max(100_000_000).optional(),
-  openingProvisionsAsOf: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional()),
+  openingProvisionsAsOf: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : employeeDayInput(v) ?? "invalid"),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "The as-of date is not a real date").optional()
+  ),
 });
 
 /** 422 body when `userId` is not a member of the company; null when it is fine (or absent / cleared). */
@@ -245,6 +250,22 @@ class CalcAbort extends Error {
   }
 }
 
+const FIELD_CODE: Record<string, string> = { fullName: "FULL_NAME", employeeNumber: "EMPLOYEE_NUMBER", basicSalary: "BASIC_SALARY", joinDate: "JOIN_DATE", openingProvisionsAsOf: "AS_OF_DATE" };
+
+/** A refused employee body: the first problem as a code the client can translate (FULL_NAME_REQUIRED, ...) and its field. */
+function employeeValidationBody(issues: z.ZodIssue[]) {
+  const first = issues[0];
+  const field = String(first?.path?.[0] ?? "");
+  const base = FIELD_CODE[field] ?? field.replace(/([A-Z])/g, "_$1").toUpperCase();
+  const missing = first?.code === "invalid_type" || (first?.code === "too_small" && (first as any).minimum === 1);
+  return {
+    message: first?.message && first.message !== "Required" ? first.message : `${field || "A required field"} is required`,
+    code: field ? `${base}_${missing ? "REQUIRED" : "INVALID"}` : "VALIDATION_ERROR",
+    field: field || undefined,
+    errors: issues,
+  };
+}
+
 export function registerPayrollRoutes(app: Express) {
   // =============================================
   // EMPLOYEES
@@ -272,7 +293,7 @@ export function registerPayrollRoutes(app: Express) {
         : scope.employeeIds.length === 0
           ? []
           : await query("SELECT * FROM employees WHERE company_id = $1 AND id = ANY($2::uuid[]) ORDER BY created_at DESC", [companyId, scope.employeeIds]);
-      res.json(employees);
+      res.json(employees.map((row: any) => employeeOut(row)));
     })
   );
 
@@ -297,7 +318,7 @@ export function registerPayrollRoutes(app: Express) {
       const scope = await hrReadScope(req, res, employee.company_id);
       if (!scope || !allowEmployee(res, scope, employee.id)) return;
 
-      res.json(employee);
+      res.json(employeeOut(employee));
     })
   );
 
@@ -338,12 +359,7 @@ export function registerPayrollRoutes(app: Express) {
       Object.assign(moneyBody, allowances.values);
 
       const parsed = employeeCreateSchema.safeParse(moneyBody);
-      if (!parsed.success) {
-        return res.status(400).json({
-          message: "Validation error",
-          errors: parsed.error.errors,
-        });
-      }
+      if (!parsed.success) return res.status(400).json(employeeValidationBody(parsed.error.errors));
       const data = parsed.data;
       const linkProblem = await employeeUserLinkProblem(companyId, data.userId);
       if (linkProblem) return res.status(422).json(linkProblem);
@@ -399,7 +415,7 @@ export function registerPayrollRoutes(app: Express) {
       });
 
       log.info({ employeeId: employee.id, companyId }, "Employee created");
-      res.status(201).json(employee);
+      res.status(201).json(employeeOut(employee));
     })
   );
 
@@ -447,6 +463,18 @@ export function registerPayrollRoutes(app: Express) {
         return res.status(400).json({ message: "The MOHRE person code is 14 digits", code: "INVALID_MOL_PERSON_ID" });
       }
       if (req.body.molPersonId === "") req.body.molPersonId = null;
+      // Calendar days: date-only strings are kept, ISO instants become their Dubai day, nonsense is refused.
+      for (const key of ["joinDate", "openingProvisionsAsOf"] as const) {
+        const v = req.body[key];
+        if (v === undefined) continue;
+        if (v === null || v === "") {
+          req.body[key] = null;
+          continue;
+        }
+        const day = employeeDayInput(v);
+        if (!day) return res.status(400).json({ message: "That date does not exist.", code: "INVALID_DATE", field: key });
+        req.body[key] = day;
+      }
       if (req.body.openingGratuityProvision !== undefined) {
         const opening = Number(req.body.openingGratuityProvision);
         if (!Number.isFinite(opening) || opening < 0) {
@@ -543,7 +571,7 @@ export function registerPayrollRoutes(app: Express) {
       paramIndex++;
 
       if (setClauses.length === 0) {
-        return res.json(employee);
+        return res.json(employeeOut(employee));
       }
 
       values.push(id);
@@ -556,7 +584,7 @@ export function registerPayrollRoutes(app: Express) {
       });
 
       log.info({ employeeId: id }, "Employee updated");
-      res.json(updated);
+      res.json(employeeOut(updated));
     })
   );
 
@@ -1754,7 +1782,13 @@ export function registerPayrollRoutes(app: Express) {
         },
         periodMonth: run.period_month,
         periodYear: run.period_year,
-        payDate: run.approved_at ?? null,
+        // The payment's own date (what the bank paid on), not the day it was recorded; "-" until a payment is recorded.
+        payDate: (
+          await queryOne(
+            `SELECT to_char(date, 'YYYY-MM-DD') AS d FROM journal_entries WHERE company_id = $1 AND source = 'payroll_payment' AND source_id = $2 AND status = 'posted' ORDER BY created_at DESC LIMIT 1`,
+            [run.company_id, id]
+          )
+        )?.d ?? null,
         draft: run.status === "calculated" || run.status === "pending_approval",
         item: {
           basicSalary: row.basic_salary,

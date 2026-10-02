@@ -123,6 +123,7 @@ import { useCustomFieldDraft } from "@/components/sales/useCustomFieldDraft";
 import { useSalesAdjustments } from "@/components/sales/useSalesAdjustments";
 import { ApplyAdvanceDialog } from "@/components/sales/ApplyAdvanceDialog";
 import { Label } from "@/components/ui/label";
+import { VoidDocumentDialog, type VoidTarget } from "@/components/sales/VoidDocumentDialog";
 import { ContactPicker, usePriceListResolution } from "@/components/sales/ContactPicker";
 import { CustomerCreditDialog, CreditRefundList } from "@/components/sales/CustomerCreditDialog";
 import { EmirateSelect } from "@/components/sales/EmirateSelect";
@@ -224,6 +225,7 @@ export default function Invoices() {
   const [refundPaidAmount, setRefundPaidAmount] = useState<number | null>(null);
   const [creditBalanceContact, setCreditBalanceContact] = useState<{ id: string; name: string } | null>(null);
   const [rateText, setRateText] = useState("");
+  const [voidTarget, setVoidTarget] = useState<VoidTarget | null>(null);
   const canManageFinance = useCanManageFinance(selectedCompanyId);
   const [similarInvoices, setSimilarInvoices] = useState<any[]>([]);
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
@@ -417,13 +419,16 @@ export default function Invoices() {
       status,
       paymentAccountId,
       paymentDate,
+      date,
     }: {
       id: string;
       status: string;
       paymentAccountId?: string;
       paymentDate?: string;
+      /** Reversal date of a void (YYYY-MM-DD); left out, the server uses the document's own date or the first open day. */
+      date?: string;
     }) =>
-      apiRequest("PATCH", `/api/invoices/${id}/status`, { status, paymentAccountId, paymentDate }),
+      apiRequest("PATCH", `/api/invoices/${id}/status`, { status, paymentAccountId, paymentDate, ...(date ? { date } : {}) }),
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -567,6 +572,9 @@ export default function Invoices() {
       setInvoiceForPayment(invoice);
       setPaymentDateForPaid(new Date());
       setPaymentDialogOpen(true);
+    } else if (newStatus === "void" && invoice.status !== "void") {
+      // A void reverses the posting on a date: say which, and let the person change it.
+      setVoidTarget({ id: invoice.id, number: invoice.number, date: invoice.date as unknown as string, invoiceType: (invoice as { invoiceType?: string }).invoiceType });
     } else {
       // For other status changes, proceed directly
       updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
@@ -2216,6 +2224,13 @@ export default function Invoices() {
       </Tabs>
 
       {/* Similar Invoices Warning Dialog */}
+      <VoidDocumentDialog
+        target={voidTarget}
+        pending={updateStatusMutation.isPending}
+        onClose={() => setVoidTarget(null)}
+        onConfirm={(t, date) => updateStatusMutation.mutate({ id: t.id, status: "void", date }, { onSettled: () => setVoidTarget(null) })}
+      />
+
       {selectedCompanyId && (
         <CustomerCreditDialog companyId={selectedCompanyId} contact={creditBalanceContact} onClose={() => setCreditBalanceContact(null)} />
       )}
@@ -2514,7 +2529,7 @@ export default function Invoices() {
                 currency={invoiceForPaymentDetail.currency ?? "AED"}
                 date={toDateOnly(paymentDateForAdd)}
                 amount={parseFloat(paymentAmount) || 0}
-                bookRate={Number((invoiceForPaymentDetail as any).exchangeRate) || 1}
+                bookRate={Number((invoiceForPaymentDetail as any).exchangeRate) || undefined}
                 kind="receipt"
                 value={paymentRateText}
                 onChange={setPaymentRateText}

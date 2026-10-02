@@ -40,6 +40,7 @@ import {
 } from "@/lib/format";
 import { statusLabel } from "@/lib/enum-labels";
 import { useI18n } from "@/lib/i18n";
+import { FiledElsewhereDialog } from "@/components/vat/FiledElsewhereDialog";
 import { VatEmirateBreakdown } from "@/components/vat/VatEmirateBreakdown";
 import { PageHeader } from "@/components/ui/page-header";
 import DraftPreviewBanner from "@/components/vat/DraftPreviewBanner";
@@ -57,7 +58,7 @@ import { messages as pageMessages } from "./VATAutopilot.i18n";
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
 
-type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
+type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted" | "filed_elsewhere";
 
 interface DeadlineStatus {
   daysUntilDue: number;
@@ -139,6 +140,7 @@ const STATUS_VARIANT: Record<VatPeriodStatus, "default" | "secondary" | "destruc
     ready: "default",
     submitted: "secondary",
     accepted: "secondary",
+    filed_elsewhere: "secondary",
   };
 
 const LEVEL_BADGE: Record<DeadlineStatus["level"], { label: string; className: string }> = {
@@ -678,6 +680,19 @@ export default function VATAutopilot() {
                             {LEVEL_BADGE[p.deadline.level].label}
                           </Badge>
                         </div>
+                        {p.deadline.isOverdue &&
+                        p.status !== "submitted" &&
+                        p.status !== "accepted" &&
+                        p.status !== "filed_elsewhere" ? (
+                          <div className="mt-2">
+                            <FiledElsewhereDialog
+                              companyId={companyId}
+                              periodStart={p.periodStart}
+                              periodEnd={p.periodEnd}
+                              testIdSuffix={`autopilot-${p.periodStart.slice(0, 10)}`}
+                            />
+                          </div>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <Badge variant={STATUS_VARIANT[p.status]}>

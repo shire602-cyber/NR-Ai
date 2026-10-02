@@ -1,3 +1,4 @@
+import { recordFiledElsewhere } from "../services/vat-filed-elsewhere.service";
 import { currentVatFilingPeriod } from "../services/vat-autopilot.service";
 import type { Express, Request, Response } from "express";
 import { invalidateVatDueNext } from "../reports/kpis";
@@ -446,6 +447,27 @@ export function registerVATRoutes(app: Express) {
   // =====================================
 
   // Get VAT returns by company
+  // "Filed outside Muhasib": record a historical period as filed elsewhere (posts nothing, audit-logged, owner / accountant / CFO).
+  // Body: { periodStart, periodEnd, filingDate, reference? } (UAE-day strings).
+  app.post(
+    "/api/companies/:companyId/vat-returns/filed-elsewhere",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const u = (req as any).user;
+      const result = await recordFiledElsewhere({
+        user: { id: u.id, isAdmin: u.isAdmin === true, firmRole: u.firmRole ?? null },
+        companyId,
+        periodStart: req.body?.periodStart,
+        periodEnd: req.body?.periodEnd,
+        filingDate: req.body?.filingDate,
+        reference: req.body?.reference,
+        req,
+      });
+      res.status(201).json(result);
+    })
+  );
+
   // The period the VAT Filing page works on: the last ended period not yet filed (Q3 due 28 Oct while it is early October),
   // else the period that contains today. Never a quarter before the company's VAT start day.
   app.get(

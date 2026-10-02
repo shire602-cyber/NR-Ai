@@ -161,6 +161,37 @@ export function remainingLines(args: {
   return out;
 }
 
+/**
+ * Quantity of each original line that live credit notes already took back (the credit dialog's "creditable" column).
+ * Derived from the net still left per line (remainingLines); a voided credit note is simply not among `creditedLines`.
+ */
+export function creditedQuantityByLine(args: {
+  originalLines: Array<RemainderLine & { id?: string; quantity?: number | string | null }>;
+  creditedLines: RemainderLine[];
+  ctx: RevenueCtx;
+}): Record<string, number> {
+  const left = new Map(remainingLines(args).map((r) => [r.originalLineId, r.net]));
+  // A line's own discount is a derived negative child line; the customer paid the discounted price per unit, and a
+  // credit line is entered at that price, so the credited quantity is the credited net over the discounted unit net.
+  const discountOf = new Map<string, Decimal>();
+  for (const l of args.originalLines as Array<RemainderLine & { parentLineId?: string | null }>) {
+    if (l.parentLineId) discountOf.set(l.parentLineId, (discountOf.get(l.parentLineId) ?? new Decimal(0)).plus(netOf(l)));
+  }
+  const out: Record<string, number> = {};
+  for (const o of args.originalLines) {
+    if (!o.id) continue;
+    const signed = netOf(o);
+    const quantity = new Decimal(o.quantity ?? 0);
+    if (signed.isZero() || quantity.lte(0)) continue;
+    const creditedNet = signed.minus(new Decimal(left.get(o.id) ?? 0));
+    const unit = signed.plus(discountOf.get(o.id) ?? 0).div(quantity);
+    if (creditedNet.lte(0) || unit.lte(0)) continue;
+    const credited = Decimal.min(quantity, creditedNet.div(unit)).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber();
+    if (credited > 0) out[o.id] = credited;
+  }
+  return out;
+}
+
 export type CreditLineAccount =
   | { ok: true; accountId: string }
   | { ok: false; code: "INVALID_ORIGINAL_LINE"; message: string };

@@ -1,3 +1,4 @@
+import { accountName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
 import { messages as iconLabels } from "@/components/ui/button.i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -346,10 +347,8 @@ export default function AccountLedger() {
             >
               {isLoading ? (
                 <Skeleton className="h-8 w-48" />
-              ) : locale === "ar" && ledger?.account.nameAr ? (
-                ledger.account.nameAr
               ) : (
-                ledger?.account.nameEn || tr("accountLedger")
+                accountName(ledger?.account, locale) || tr("accountLedger")
               )}
             </h1>
             {isLoading ? (

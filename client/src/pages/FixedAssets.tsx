@@ -16,6 +16,7 @@ import {
   BarChart3,
   PlayCircle,
   FileText,
+  AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -208,6 +209,8 @@ export default function FixedAssets() {
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
   const [disposeDialogOpen, setDisposeDialogOpen] = useState(false);
   const [assetFormError, setAssetFormError] = useState("");
+  // an asset registered in a closed year or locked month: stays on the page until dismissed
+  const [assetNotice, setAssetNotice] = useState<string | null>(null);
   const [fromBillOpen, setFromBillOpen] = useState(false);
   const fromBillTr = fromBillMessages.useT();
   const [disposingAsset, setDisposingAsset] = useState<FixedAsset | null>(null);
@@ -289,6 +292,7 @@ export default function FixedAssets() {
       });
       // an asset bought in a closed year or a locked month is registered but nothing is posted there: say so, and keep the message up
       const warning = assetWarningText(fromBillTr, res);
+      setAssetNotice(warning ? `${(res as { asset_name?: string })?.asset_name ?? ""}${(res as { asset_name?: string })?.asset_name ? ": " : ""}${warning}` : null);
       toast({
         title: tr("assetCreated"),
         description: warning ?? tr("theFixedAssetHasBeenAdded"),
@@ -585,6 +589,17 @@ export default function FixedAssets() {
         </div>
       </div>
 
+      {assetNotice && (
+        <Alert className="mb-4" data-testid="asset-warning-notice">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>{assetNotice}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setAssetNotice(null)} data-testid="button-dismiss-asset-notice">
+              {fromBillTr("dismissNotice")}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       <Tabs defaultValue="assets">
         <div className="overflow-x-auto">
           <TabsList>

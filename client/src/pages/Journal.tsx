@@ -86,6 +86,7 @@ import { isPendingApprovalBody } from "@/lib/purchasing-hr";
 import { ListPager } from "@/components/ListPager";
 import { pageView } from "@/lib/list-paging";
 import { messages as pageMessages } from "./Journal.i18n";
+import { messages as salesMessages } from "@/components/sales/SalesShared.i18n";
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid(pageMessages.marker("pleaseSelectAnAccount")),
@@ -948,7 +949,18 @@ export default function Journal() {
                           </>
                         )}
 
-                        {isPosted && isManual && (
+                        {isPosted && entry.isReversed && entry.reversedById && (
+                          <Link
+                            href={`/journal/${entry.reversedById}`}
+                            className="text-sm text-muted-foreground underline"
+                            data-testid={`link-reversed-by-${entry.id}`}
+                          >
+                            {salesMessages.t("reversedByEntry", {
+                              number: entry.reversedByNumber ?? "",
+                            })}
+                          </Link>
+                        )}
+                        {isPosted && isManual && !entry.isReversed && !entry.reversalOfId && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button

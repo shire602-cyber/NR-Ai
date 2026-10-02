@@ -56,6 +56,8 @@ export function priorServiceWarning(missing: PriorServiceMissing[]): string | nu
 export interface CatchupEmployee {
   employeeId: string;
   name: string;
+  /** Service and leave are counted to this day (the day before the employee's own first payroll period). */
+  asOf: string;
   gratuity: number;
   leave: number;
   /** The annual leave balance (days) at the as-of date: becomes the employee's opening leave days. */
@@ -69,8 +71,18 @@ export async function bookPriorServiceCatchup(args: { companyId: string; runId: 
   if (missing.length === 0) {
     throw new AppError({ message: "Every employee with prior service already has opening provisions or a catch-up.", statusCode: 409, code: "NOTHING_TO_BOOK" });
   }
-  const first = (await firstPayrollPeriodStart(args.companyId))!;
-  const asOf = addDays(first, -1);
+  // Service is counted to the day before the employee's own first payroll period: the run that books the catch-up, or an
+  // earlier run that already carries them (it accrues from there), whichever is earlier.
+  const runStart = `${run.period_year}-${String(run.period_month).padStart(2, "0")}-01`;
+  const firstItem = await pool.query(
+    `SELECT pi.employee_id::text AS id, to_char(MIN(make_date(pr.period_year, pr.period_month, 1)), 'YYYY-MM-DD') AS d
+       FROM payroll_items pi JOIN payroll_runs pr ON pr.id = pi.payroll_run_id
+      WHERE pr.company_id = $1 AND pi.employee_id = ANY($2::uuid[]) GROUP BY pi.employee_id`,
+    [args.companyId, missing.map((m) => m.employeeId)]
+  );
+  const firstOf = new Map<string, string>(firstItem.rows.map((r: any) => [r.id, r.d]));
+  const asOfOf = (employeeId: string) => addDays([runStart, firstOf.get(employeeId) ?? runStart].sort()[0], -1);
+  const asOf = asOfOf(missing[0].employeeId);
   const emps = (
     await pool.query(
       `SELECT id::text AS id, full_name AS name, nationality, to_char(join_date, 'YYYY-MM-DD') AS join, basic_salary::float8 AS basic,
@@ -81,13 +93,14 @@ export async function bookPriorServiceCatchup(args: { companyId: string; runId: 
   ).rows;
   const done: CatchupEmployee[] = [];
   for (const e of emps) {
+    const asOf = asOfOf(e.id);
     let gratuity = 0;
     if (!isUaeOrGccNational(e.nationality)) {
       const unpaid = await unpaidServiceDays(args.companyId, e.id, e.join, asOf);
       gratuity = calculateGratuityForEmployee({ joinDate: new Date(`${e.join}T00:00:00Z`), endDate: new Date(`${asOf}T00:00:00Z`), basicSalary: e.basic, totalWage: e.wage, isGccNational: false, unpaidDays: unpaid }).totalGratuity;
     }
     const balance = (await getLeaveBalances(args.companyId, { asOfYmd: asOf, employeeId: e.id })).find((b) => b.code === "annual")?.balance ?? 0;
-    done.push({ employeeId: e.id, name: e.name, gratuity: r2(gratuity), leave: r2(Math.max(0, balance) * (e.basic / 30)), leaveDays: r2(Math.max(0, balance)) });
+    done.push({ employeeId: e.id, asOf, name: e.name, gratuity: r2(gratuity), leave: r2(Math.max(0, balance) * (e.basic / 30)), leaveDays: r2(Math.max(0, balance)) });
   }
   const gratuityTotal = r2(done.reduce((s, d) => s + d.gratuity, 0));
   const leaveTotal = r2(done.reduce((s, d) => s + d.leave, 0));
@@ -111,7 +124,7 @@ export async function bookPriorServiceCatchup(args: { companyId: string; runId: 
   // The gratuity becomes each employee's opening provision (settlements use opening + accruals); the leave goes on their
   // leave-provision ledger; both mark the employee as handled.
   for (const d of done) {
-    await pool.query(`UPDATE employees SET opening_gratuity_provision = opening_gratuity_provision + $2, opening_leave_days = $4, opening_provisions_as_of = $3::date, prior_service_catchup_at = NOW() WHERE id = $1`, [d.employeeId, d.gratuity, asOf, d.leaveDays]);
+    await pool.query(`UPDATE employees SET opening_gratuity_provision = opening_gratuity_provision + $2, opening_leave_days = $4, opening_provisions_as_of = $3::date, prior_service_catchup_at = NOW() WHERE id = $1`, [d.employeeId, d.gratuity, d.asOf, d.leaveDays]);
     if (d.leave > 0) await pool.query(`INSERT INTO employee_leave_provisions (company_id, employee_id, amount) VALUES ($1, $2, $3)`, [args.companyId, d.employeeId, d.leave]);
   }
   return { journalEntryId, asOf, gratuityTotal, leaveTotal, total: r2(gratuityTotal + leaveTotal), employees: done };

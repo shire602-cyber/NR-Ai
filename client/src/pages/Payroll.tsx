@@ -73,6 +73,8 @@ import { formatCurrency, formatDate, CALENDAR_DATE_SHORT_FORMAT } from "@/lib/fo
 import { getAuthHeaders } from "@/lib/auth";
 import { downloadPdf } from "@/lib/download-pdf";
 import { apiUrl } from "@/lib/api";
+import { uaeDayOf } from "@/lib/calendar-date";
+import { ApiError } from "@/lib/queryClient";
 import { LeaveTab } from "@/components/payroll/LeaveTab";
 import { LoansTab } from "@/components/payroll/LoansTab";
 import { useConfirmAction } from "@/components/ConfirmDialog";
@@ -262,6 +264,23 @@ export default function Payroll() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
+  // A refused employee form: the server answers FIELD_REQUIRED / FIELD_INVALID (FULL_NAME, EMPLOYEE_NUMBER, BASIC_SALARY,
+  // JOIN_DATE, AS_OF_DATE ...). Say which field, in the interface language.
+  const employeeErrorMessage = (error: unknown): string | undefined => {
+    const code = error instanceof ApiError ? error.code : undefined;
+    const match = code?.match(/^(.+)_(REQUIRED|INVALID)$/);
+    if (!match) return (error as Error)?.message;
+    const labels: Record<string, string> = {
+      FULL_NAME: tr("fieldFullName"),
+      EMPLOYEE_NUMBER: tr("fieldEmployeeNumber"),
+      BASIC_SALARY: tr("fieldBasicSalary"),
+      JOIN_DATE: tr("fieldJoinDate"),
+      AS_OF_DATE: tr("openingProvisionAsOf"),
+    };
+    const field = labels[match[1]] ?? (error as ApiError).details ?? (error as Error).message;
+    return match[2] === "REQUIRED" ? tr("fieldRequired", { field: String(field) }) : tr("fieldInvalid", { field: String(field) });
+  };
+
   // Dialog states
   const [employeeDialogOpen, setEmployeeDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -385,7 +404,7 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: employeeErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -403,7 +422,7 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: tr("error"), description: error?.message, variant: "destructive" });
+      toast({ title: tr("error"), description: employeeErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -602,10 +621,10 @@ export default function Payroll() {
       openingGratuityProvision: parseFloat(emp.opening_gratuity_provision ?? "0") || 0,
       openingLeaveDays: parseFloat(emp.opening_leave_days ?? "0") || 0,
       openingLeaveProvision: parseFloat(emp.opening_leave_provision ?? "0") || 0,
-      openingProvisionsAsOf: emp.opening_provisions_as_of ? String(emp.opening_provisions_as_of).slice(0, 10) : "",
+      openingProvisionsAsOf: uaeDayOf(emp.opening_provisions_as_of),
       department: emp.department || "",
       designation: emp.designation || "",
-      joinDate: emp.join_date ? emp.join_date.split("T")[0] : "",
+      joinDate: uaeDayOf(emp.join_date),
       basicSalary: parseFloat(emp.basic_salary) || 0,
       housingAllowance: parseFloat(emp.housing_allowance) || 0,
       transportAllowance: parseFloat(emp.transport_allowance) || 0,
@@ -618,8 +637,9 @@ export default function Payroll() {
 
   const handleEmployeeSubmit = (form: EmployeeFormData) => {
     // "none" in the picker means unlinked (null clears an existing link).
-    const { molPersonId, ...rest } = form;
-    const data = { ...rest, ...(molPersonId ? { molPersonId } : {}), userId: form.userId === "none" ? null : form.userId };
+    const { molPersonId, employeeNumber, ...rest } = form;
+    // An empty employee number is "not given" (the number is optional), not an empty string the server would refuse.
+    const data = { ...rest, ...(employeeNumber?.trim() ? { employeeNumber: employeeNumber.trim() } : {}), ...(molPersonId ? { molPersonId } : {}), userId: form.userId === "none" ? null : form.userId };
     if (editingEmployee) {
       updateEmployeeMutation.mutate({ id: editingEmployee.id, data });
     } else {

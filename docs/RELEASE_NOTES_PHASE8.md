@@ -225,3 +225,37 @@ saved and onboarding never blanks it.
 
 **Gate (fresh DB, full tree):** `npm run check` pass; vitest 3,504; 42 integration suites; crawl 77 routes / 0
 failures; build pass; 130 migrations.
+
+## Teardown 8 (re-verification of the Teardown 7 fixes)
+
+The same three accountants re-ran their scenarios on the fixed build
+(`docs/superpowers/plans/2026-10-02-teardown8-v{1,3,4}.md`). Every Teardown 7 finding was confirmed fixed and every
+re-tied figure (VAT 201, both bank reconciliations, trial balances, P&L, balance sheet, the final settlement) matched
+their own ledgers. Payroll: would sign. Banking: would sign the return, and the close on two conditions. Trader: two
+items still blocked signing. All of those, plus the smaller findings, are fixed here with failing tests first.
+Migration 0131.
+
+- **Journals:** a posted journal can no longer be reversed twice (409 `ALREADY_REVERSED`, per-entry lock, reversal
+  links on the API, Reverse hidden in the UI); a reversal can be voided to re-open the original; reversals take a date.
+- **Voids:** voiding an invoice or credit note reverses it on the document's own date (or the first open day after a
+  locked or filed period, named in the memo); a voided document leaves an unfiled return, workpaper, audit rows and the
+  credit dialog; in a filed period the void shows as a negative line in the reversal month and the filed snapshot is
+  untouched. "Credited", like paid and partial, is derived (400 `STATUS_DERIVED`).
+- **VAT periods:** the month-end checklist accepts a draft or filed return for the quarter and asks for the override
+  only when the period has ended with no return; historical periods can be marked "Filed outside Muhasib" (audit-logged,
+  posts nothing) and a "VAT books start" setting trims Autopilot and the filing list.
+- **Purchases and stock:** vendor credit lines take a product and show the resulting stock movement, so goods go back
+  to the supplier from the screen (420 → 410).
+- **Receivables:** customers with a credit balance appear as credit rows on the A/R ageing and customer balances
+  screens, so the screen totals equal 1040 less 2050.
+- **Payroll:** opening leave days apply to annual leave only; employee dates no longer shift a day on save; payslips
+  print the payment date; the prior-service catch-up counts to the day before each employee's first run; validation
+  returns field-specific codes; one register tie-out block; settlement rows in the approval queue show the net amount.
+- **Banking and assets:** unrealised exchange differences post to their own account 4095 (4090/5140 stay realised);
+  a bill or journal line funds one asset (409 `LINE_ALREADY_LINKED`); the register refreshes without a reload; the
+  closed-year warning is an inline notice; the receipt preview shows the AED value at the receipt rate and the gain or
+  loss line.
+- **Platform:** the server and migrator pin the process timezone to UTC before anything loads, so DATE columns never
+  shift on a non-UTC host; `/api/version` reports it.
+- **Arabic:** purchase, payment, vendor-credit and receipt journal text, standard account names, receipt categories
+  and the financial-year range now render in Arabic.

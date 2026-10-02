@@ -289,12 +289,86 @@ async function creditInAgeingAndForeignCurrency() {
   void b2;
 }
 
+// ───────── teardown 8 N1/N2: a void is dated on the document's own date; voided documents drop out ─────────
+async function voidDatedOnDocument() {
+  const C = await newCompany("t8void");
+  const { token, cid } = C;
+  const cust = await C.contact({ name: "Emirates Towers " + rnd, emirate: "dubai" });
+  // The report's Dubai sale: 400 x 35 less 5% = 13,300 + 200 shipping = 13,500 net, 675 VAT, dated 15 Jul.
+  const inv = await C.draft({ contactId: cust.id, customerName: cust.name, date: "2026-07-15", dueDate: "2026-08-14", lines: [
+    { description: "Cement", quantity: 400, unitPrice: 35, vatRate: 0.05, discountType: "percent", discountValue: 5 },
+    { description: "Delivery", quantity: 1, unitPrice: 200, vatRate: 0.05, lineKind: "shipping" },
+  ] });
+  await C.issue(inv.id);
+  const itemLine = (await C.getInvoice(inv.id)).lines.find((l) => l.description === "Cement");
+  const cnBody = (reason) => ({ date: "2026-08-28", reason, lines: [{ description: "20 bags", quantity: 20, unitPrice: 33.25, vatRate: 0.05, originalLineId: itemLine.id }] });
+  const cn1 = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: cnBody("no restock ticked") });
+  const cn1Id = cn1.json?.id ?? cn1.json?.creditNote?.id;
+  ok("T8 credit note 1 (28 Aug, 698.25) is issued", cn1.status === 201 || cn1.status === 200, cn1.text?.slice(0, 160));
+  let detail = await C.getInvoice(inv.id);
+  ok("T8 the credit dialog's numbers see it: credited 698.25 and 20 bags credited on the line", close(detail.creditedAmount, 698.25) && close(detail.creditedByLine?.[itemLine.id], 20), { c: detail.creditedAmount, by: detail.creditedByLine });
+
+  const bad = await api("PATCH", `/api/invoices/${cn1Id}/status`, { token, body: { status: "void", date: "2026-08-01" } });
+  ok("T8 a void date before the document is refused (400 VOID_DATE_BEFORE_DOCUMENT)", bad.status === 400 && bad.json?.code === "VOID_DATE_BEFORE_DOCUMENT", { s: bad.status, t: bad.text?.slice(0, 160) });
+  const future = await api("PATCH", `/api/invoices/${cn1Id}/status`, { token, body: { status: "void", date: addDays(today, 3) } });
+  ok("T8 a future void date is refused (400)", future.status === 400, future.status);
+
+  const voided = await api("PATCH", `/api/invoices/${cn1Id}/status`, { token, body: { status: "void" } });
+  ok("T8 voiding the credit note (no date given) succeeds", voided.status === 200, voided.text?.slice(0, 200));
+  const rev = (await db.query(`SELECT to_char(date, 'YYYY-MM-DD') AS d, reversal_reason FROM journal_entries WHERE company_id = $1 AND source = 'invoice' AND source_id = $2 AND reversed_entry_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [cid, cn1Id])).rows[0];
+  ok("T8 the reversal is dated 28 Aug (the credit note's own date), not today", rev?.d === "2026-08-28", rev);
+
+  detail = await C.getInvoice(inv.id);
+  ok("T8 after the void the dialog counts nothing credited (0 and no credited quantity)", close(detail.creditedAmount, 0) && !detail.creditedByLine?.[itemLine.id], { c: detail.creditedAmount, by: detail.creditedByLine });
+
+  const cn2 = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: cnBody("reissued") });
+  ok("T8 credit note 2 (the reissue) is issued", cn2.status === 201 || cn2.status === 200, cn2.text?.slice(0, 160));
+  const boxes = await C.vat201("2026-07-01", "2026-09-30");
+  ok("T8 the Q3 return counts only the live credit note: Dubai 12,835 / 641.75", close(boxes?.box1bDubaiAmount, 12835) || close(n(boxes?.box1bDubaiAmount) + n(boxes?.box1bDubaiAdj), 12835), { a: boxes?.box1bDubaiAmount, v: boxes?.box1bDubaiVat, adj: boxes?.box1bDubaiAdj });
+  ok("T8 box 14 is 641.75 payable (output 675 - 33.25 once; the report's 32.75 after its 879 input VAT)", close(boxes?.box14PayableTax, 641.75), { b14: boxes?.box14PayableTax });
+  const ar30 = (await db.query(`SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::float8 AS net FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id
+     WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '1040' AND ((je.date + INTERVAL '4 hours')::date) <= '2026-09-30'`, [cid])).rows[0].net;
+  const aging30 = (await api("GET", `/api/reports/${cid}/aging?asOf=2026-09-30`, { token })).json ?? [];
+  const ageTotal = r2(aging30.filter((r) => r.type === "receivable").reduce((a, r) => a + n(r.total), 0));
+  ok("T8 AR in the ledger at 30 Sep equals the receivables ageing at 30 Sep (13,476.75)", close(ar30, 13476.75) && close(ageTotal, 13476.75), { ar30, ageTotal });
+  const q4 = await C.vat201("2026-10-01", "2026-12-31");
+  ok("T8 nothing leaks into Q4 (no reversal line)", close(q4?.box14PayableTax, 0), { b14: q4?.box14PayableTax });
+
+  // explicit date: accepted inside an open month, used as the reversal date
+  const cn3 = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: { date: "2026-09-02", lines: [{ description: "x", quantity: 1, unitPrice: 10, vatRate: 0.05 }] } });
+  const cn3Id = cn3.json?.id ?? cn3.json?.creditNote?.id;
+  const v3 = await api("PATCH", `/api/invoices/${cn3Id}/status`, { token, body: { status: "void", date: "2026-09-10" } });
+  const r3 = (await db.query(`SELECT to_char(date, 'YYYY-MM-DD') AS d FROM journal_entries WHERE company_id = $1 AND source_id = $2 AND reversed_entry_id IS NOT NULL AND source = 'invoice' ORDER BY created_at DESC LIMIT 1`, [cid, cn3Id])).rows[0];
+  ok("T8 an explicit void date is used", v3.status === 200 && r3?.d === "2026-09-10", { s: v3.status, r3 });
+
+  // locked month: the default moves to the first open day and the reason notes the original date; an explicit date there is refused
+  const cn4 = await api("POST", `/api/companies/${cid}/invoices/${inv.id}/credit-note`, { token, body: { date: "2026-08-20", lines: [{ description: "y", quantity: 1, unitPrice: 10, vatRate: 0.05 }] } });
+  const cn4Id = cn4.json?.id ?? cn4.json?.creditNote?.id;
+  const lock = await api("POST", `/api/companies/${cid}/month-end/lock-period`, { token, body: { periodEnd: "2026-08-31", overrideVatCheck: true, overrideReason: "test: locking before the VAT return" } });
+  ok("T8 August is locked", lock.status === 200, lock.text?.slice(0, 160));
+  const lockedExplicit = await api("PATCH", `/api/invoices/${cn4Id}/status`, { token, body: { status: "void", date: "2026-08-25" } });
+  ok("T8 an explicit date in a locked month is refused (400 VOID_DATE_PERIOD_LOCKED)", lockedExplicit.status === 400 && lockedExplicit.json?.code === "VOID_DATE_PERIOD_LOCKED", { s: lockedExplicit.status, t: lockedExplicit.text?.slice(0, 160) });
+  const v4 = await api("PATCH", `/api/invoices/${cn4Id}/status`, { token, body: { status: "void" } });
+  const r4 = (await db.query(`SELECT to_char(date, 'YYYY-MM-DD') AS d, reversal_reason FROM journal_entries WHERE company_id = $1 AND source_id = $2 AND reversed_entry_id IS NOT NULL AND source = 'invoice' ORDER BY created_at DESC LIMIT 1`, [cid, cn4Id])).rows[0];
+  ok("T8 with the document's month locked the reversal takes the first open day (1 Sep) and notes the original date", v4.status === 200 && r4?.d === "2026-09-01" && /2026-08-20/.test(r4?.reversal_reason || ""), { s: v4.status, r4 });
+
+  // an invoice is undone on its own date too
+  const inv2 = await C.draft({ contactId: cust.id, customerName: cust.name, date: "2026-09-05", dueDate: "2026-10-05", lines: [{ description: "Misc", quantity: 1, unitPrice: 100, vatRate: 0.05 }] });
+  await C.issue(inv2.id);
+  const vi = await api("PATCH", `/api/invoices/${inv2.id}/status`, { token, body: { status: "void" } });
+  const ri = (await db.query(`SELECT to_char(date, 'YYYY-MM-DD') AS d FROM journal_entries WHERE company_id = $1 AND source_id = $2 AND reversed_entry_id IS NOT NULL AND source = 'invoice' ORDER BY created_at DESC LIMIT 1`, [cid, inv2.id])).rows[0];
+  ok("T8 a voided invoice is reversed on its own date (5 Sep)", vi.status === 200 && ri?.d === "2026-09-05", { s: vi.status, ri });
+
+  const credited = await api("PATCH", `/api/invoices/${inv.id}/status`, { token, body: { status: "credited" } });
+  ok("T8 'credited' cannot be set by hand (400 STATUS_DERIVED)", credited.status === 400 && credited.json?.code === "STATUS_DERIVED", { s: credited.status, c: credited.json?.code });
+}
+
 async function main() {
   db = new pg.Client({ connectionString: DB_URL });
   await db.connect();
   try {
     const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-    const sections = { refundIsPaymentSide, creditNoteReasonAndNumbering, emiratePerSupply, stockMovementDates, creditInAgeingAndForeignCurrency };
+    const sections = { refundIsPaymentSide, creditNoteReasonAndNumbering, emiratePerSupply, stockMovementDates, creditInAgeingAndForeignCurrency, voidDatedOnDocument };
     for (const [name, fn] of Object.entries(sections)) {
       if (only && !only.includes(name)) continue;
       try { await fn(); } catch (e) { fail++; fails.push(name + " threw " + e.message); console.log("FAIL  " + name + " threw " + e.stack); }

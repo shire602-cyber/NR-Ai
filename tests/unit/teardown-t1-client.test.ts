@@ -116,7 +116,10 @@ describe("the movement of stock and ledger accounts", () => {
   it("shows the Arabic name when the account has one", () => {
     expect(accountName({ nameEn: "Bank Accounts", nameAr: "الحسابات البنكية" }, "ar")).toBe("الحسابات البنكية");
     expect(accountName({ nameEn: "Bank Accounts", nameAr: "الحسابات البنكية" }, "en")).toBe("Bank Accounts");
-    expect(accountName({ nameEn: "Bank Accounts", nameAr: null }, "ar")).toBe("Bank Accounts");
+    // a standard name without its own Arabic name still reads in Arabic; a custom name stays as typed
+    expect(accountName({ nameEn: "Bank Accounts", nameAr: null }, "ar")).toBe("الحسابات البنكية");
+    expect(accountName({ nameEn: "Travel & Meals", nameAr: null }, "ar")).toBe("السفر والوجبات");
+    expect(accountName({ nameEn: "Falcon Escrow", nameAr: null }, "ar")).toBe("Falcon Escrow");
     expect(accountName(null, "ar")).toBe("");
   });
 });

@@ -106,6 +106,8 @@ export interface ApprovalQueueRow {
   status: string;
   canAct: boolean;
   createdAt: string | null;
+  /** A final settlement's net payable (null for other documents). */
+  netAmountAed?: number | null;
   /** Rejected requests: the reason and who rejected. */
   rejectionReason?: string | null;
   rejectedByName?: string | null;

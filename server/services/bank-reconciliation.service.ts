@@ -75,10 +75,10 @@ async function loadStatement(
              SUM(${aedOnlyExpr})::float8 AS a_net,
              EXISTS (SELECT 1 FROM journal_entries rv WHERE rv.reversed_entry_id = je.id AND rv.status = 'posted' AND ${sql.raw(dubaiDaySql("rv.date"))} <= ${asOf}::date) AS reversed,
              (je.reversed_entry_id IS NOT NULL) AS is_reversal,
-             -- every other line of the entry is an exchange gain or loss (4090 / 5140): a revaluation keyed by hand, a rate difference
-             (EXISTS (SELECT 1 FROM journal_lines jo JOIN accounts ao ON ao.id = jo.account_id WHERE jo.entry_id = je.id AND ao.code IN ('4090', '5140'))
+             -- every other line of the entry is an exchange gain or loss (4090 / 4095 / 5140): a revaluation keyed by hand, a rate difference
+             (EXISTS (SELECT 1 FROM journal_lines jo JOIN accounts ao ON ao.id = jo.account_id WHERE jo.entry_id = je.id AND ao.code IN ('4090', '4095', '5140'))
               AND NOT EXISTS (SELECT 1 FROM journal_lines jo JOIN accounts ao ON ao.id = jo.account_id
-                               WHERE jo.entry_id = je.id AND jo.account_id <> ${account.glAccountId} AND ao.code NOT IN ('4090', '5140'))) AS fx_only,
+                               WHERE jo.entry_id = je.id AND jo.account_id <> ${account.glAccountId} AND ao.code NOT IN ('4090', '4095', '5140'))) AS fx_only,
              EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.company_id = je.company_id AND ${linkedTo("bt", "je")}
                        AND bt.bank_statement_account_id = ${account.id} AND ${sql.raw(dubaiDaySql("bt.transaction_date"))} <= ${asOf}::date) AS cleared
         FROM journal_lines jl

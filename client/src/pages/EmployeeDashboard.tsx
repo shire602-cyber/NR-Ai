@@ -26,6 +26,12 @@ export default function EmployeeDashboard() {
   const { data: me } = useCurrentUser();
   const [busy, setBusy] = useState(false);
 
+  // Leave types give the names in the interface language (the balance rows carry only the code).
+  const leaveTypes = useQuery<Array<{ code: string; nameEn: string; nameAr: string }>>({ queryKey: ["/api/companies", companyId, "leave-types"], enabled: !!companyId });
+  const leaveName = (code: string) => {
+    const t = leaveTypes.data?.find((x) => x.code === code);
+    return t ? (tr.locale === "ar" ? t.nameAr : t.nameEn) : code;
+  };
   const balances = useQuery<BalanceLite[]>({ queryKey: ["/api/companies", companyId, "leave-balances"], enabled: !!companyId });
   const runs = useQuery<RunLite[]>({ queryKey: ["/api/companies", companyId, "payroll-runs"], enabled: !!companyId });
   const run = latestPayslipRun(runs.data);
@@ -67,7 +73,7 @@ export default function EmployeeDashboard() {
             <ul className="divide-y">
               {leave.map((l) => (
                 <li key={l.code} className="flex items-center justify-between py-2 text-sm">
-                  <span className="font-medium" dir="ltr">{l.code}</span>
+                  <span className="font-medium">{leaveName(l.code)}</span>
                   <span className="tabular-nums">{tr("daysLeft", { days: l.days })}</span>
                 </li>
               ))}

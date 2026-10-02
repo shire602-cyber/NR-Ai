@@ -54,6 +54,8 @@ export function FxRateField({ companyId, currency, date, amount, bookRate, kind,
   if (!foreign) return null;
   const rate = parseRate(value);
   const fx = rate && bookRate && bookRate > 0 ? realisedFx({ kind, amount, bookRate, paymentRate: rate }) : null;
+  // the amount in AED at the rate typed is worth showing even when the document's own rate is unknown
+  const aedAtRate = rate && amount > 0 ? Math.round((amount * rate + Number.EPSILON) * 100) / 100 : null;
   const money = (n: number) => formatCurrency(n, "AED", locale);
 
   return (
@@ -81,21 +83,31 @@ export function FxRateField({ companyId, currency, date, amount, bookRate, kind,
         )}
       </p>
       {value.trim() !== "" && !rate && <p className="text-xs text-destructive">{tr("invalid")}</p>}
-      {fx && (
-        <div className="text-xs space-y-0.5" data-testid={`${testId}-preview`} data-gain-loss={fx.gainLoss}>
+      {aedAtRate !== null && (
+        <div className="text-xs space-y-0.5" data-testid={`${testId}-preview`} data-gain-loss={fx ? fx.gainLoss : ""} data-aed-at-rate={aedAtRate}>
           <p className="flex justify-between gap-3">
-            <span>{tr("atDocument")}</span>
-            <span dir="ltr" className="font-mono">{money(fx.aedAtBook)}</span>
+            <span>{tr("amountLine")}</span>
+            <span dir="ltr" className="font-mono">{formatCurrency(amount, currency, locale)}</span>
           </p>
           <p className="flex justify-between gap-3">
-            <span>{tr("atPayment")}</span>
-            <span dir="ltr" className="font-mono">{money(fx.aedAtPayment)}</span>
+            <span>{tr("inAedAtRate")}</span>
+            <span dir="ltr" className="font-mono" data-testid={`${testId}-aed`}>{money(aedAtRate)}</span>
           </p>
-          <p className={`flex justify-between gap-3 font-medium ${fx.gainLoss > 0 ? "text-[hsl(var(--chart-5))]" : fx.gainLoss < 0 ? "text-destructive" : ""}`}>
-            <span>{fx.gainLoss > 0 ? tr("gain") : fx.gainLoss < 0 ? tr("loss") : tr("none")}</span>
-            <span dir="ltr" className="font-mono">{fx.gainLoss === 0 ? "" : money(Math.abs(fx.gainLoss))}</span>
-          </p>
-          {fx.gainLoss !== 0 && <p className="text-muted-foreground">{tr("booksTo", { account: fx.gainLoss > 0 ? tr("account4090") : tr("account5140") })}</p>}
+          {fx ? (
+            <>
+              <p className="flex justify-between gap-3">
+                <span>{tr("atDocument")}</span>
+                <span dir="ltr" className="font-mono">{money(fx.aedAtBook)}</span>
+              </p>
+              <p className={`flex justify-between gap-3 font-medium ${fx.gainLoss > 0 ? "text-[hsl(var(--chart-5))]" : fx.gainLoss < 0 ? "text-destructive" : ""}`} data-testid={`${testId}-gainloss`}>
+                <span>{fx.gainLoss > 0 ? tr("gain") : fx.gainLoss < 0 ? tr("loss") : tr("none")}</span>
+                <span dir="ltr" className="font-mono">{fx.gainLoss === 0 ? "" : money(Math.abs(fx.gainLoss))}</span>
+              </p>
+              {fx.gainLoss !== 0 && <p className="text-muted-foreground">{tr("booksTo", { account: fx.gainLoss > 0 ? tr("account4090") : tr("account5140") })}</p>}
+            </>
+          ) : (
+            <p className="text-muted-foreground">{tr("noDocRate")}</p>
+          )}
         </div>
       )}
     </div>

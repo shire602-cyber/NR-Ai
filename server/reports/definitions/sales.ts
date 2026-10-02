@@ -4,6 +4,7 @@
 
 import { asOfParams, invoiceOutstandingAsOfSql, receivableAgingAsOfSql, standingSql } from "../../services/aging-as-of.service";
 import { getRefundSummary } from "../../services/customer-refund.service";
+import { customerCreditsAsOf } from "../../services/customer-credit-refund.service";
 import { round2 } from "../../services/financial-statements";
 import { dayBounds, dayEndTs, ymdSql } from "../dates";
 import { SqlParams, money } from "../ledger";
@@ -45,7 +46,16 @@ export function agingRows(rows: any[], who: "customer" | "vendor"): ReportOutput
 
 async function arAging(ctx: ReportContext): Promise<ReportOutput> {
   const { rows } = await ctx.q.query(receivableAgingAsOfSql(), agingParams(ctx));
-  return { rows: agingRows(rows, "customer") };
+  // A customer's unrefunded credit (an overpayment held in 2050) is a negative line, so the report equals 1040 less 2050.
+  const credits = await customerCreditsAsOf(ctx.companyId, asOfOf(ctx));
+  const creditRows = credits.map((c) =>
+    detail(
+      `customer:${c.name.toLowerCase()}:credit`,
+      { customer: `${c.name} (credit)`, current: -c.amount, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0, total: -c.amount },
+      { target: "customer", id: c.name }
+    )
+  );
+  return { rows: [...agingRows(rows, "customer"), ...creditRows] };
 }
 
 registerReport({ id: "ar-aging", noFutureAsOf: true, columns: agingColumns("customer"), run: arAging });
@@ -76,10 +86,17 @@ async function customerBalances(ctx: ReportContext): Promise<ReportOutput> {
        FROM open_invoices GROUP BY name HAVING SUM(open_doc * rate) > 0 ORDER BY SUM(open_doc * rate) DESC, name`,
     agingParams(ctx)
   );
+  const credits = await customerCreditsAsOf(ctx.companyId, asOfOf(ctx));
   return {
-    rows: rows.map((r) =>
-      detail(`customer:${String(r.name).toLowerCase()}`, { customer: r.name, invoices: Number(r.open_count), invoiced: money(r.invoiced), open: money(r.open_aed), overdue: money(r.overdue_aed) }, { target: "customer", id: String(r.name) })
-    ),
+    rows: [
+      ...rows.map((r) =>
+        detail(`customer:${String(r.name).toLowerCase()}`, { customer: r.name, invoices: Number(r.open_count), invoiced: money(r.invoiced), open: money(r.open_aed), overdue: money(r.overdue_aed) }, { target: "customer", id: String(r.name) })
+      ),
+      // the credit a customer holds (overpayments in 2050) is a negative balance, so the total equals 1040 less 2050
+      ...credits.map((c) =>
+        detail(`customer:${c.name.toLowerCase()}:credit`, { customer: `${c.name} (credit)`, invoices: 0, invoiced: 0, open: -c.amount, overdue: 0 }, { target: "customer", id: c.name })
+      ),
+    ],
   };
 }
 

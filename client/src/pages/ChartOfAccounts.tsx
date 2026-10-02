@@ -1,3 +1,4 @@
+import { accountName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -295,9 +296,7 @@ export default function ChartOfAccounts() {
                                 <div className="flex items-center gap-3 min-w-0 flex-1">
                                   <div className="min-w-0">
                                     <p className="font-medium truncate">
-                                      {locale === "ar" && item.account.nameAr
-                                        ? item.account.nameAr
-                                        : item.account.nameEn}
+                                      {accountName(item.account, locale)}
                                     </p>
                                   </div>
                                   {!item.account.isActive && (

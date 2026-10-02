@@ -21,6 +21,7 @@ export const messages = defineMessages(
     linked: "Asset linked",
     linkedBody: "The register now counts it against the books.",
     failed: "Could not link the asset",
+    errLineLinked: "That line already funds another asset. Unlink the other asset first, or choose another document.",
     errLinkInvalid: "That document does not hold this asset's purchase.",
   },
   {
@@ -42,6 +43,7 @@ export const messages = defineMessages(
     linked: "تم ربط الأصل",
     linkedBody: "يحتسبه السجل الآن مقابل الدفاتر.",
     failed: "تعذّر ربط الأصل",
+    errLineLinked: "هذا البند يموّل أصلًا آخر بالفعل. افصل الأصل الآخر أولًا، أو اختر مستندًا آخر.",
     errLinkInvalid: "هذا المستند لا يحتوي على شراء هذا الأصل.",
   }
 );

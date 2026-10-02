@@ -1,3 +1,4 @@
+import "./utc-timezone";
 import "dotenv/config";
 
 import path from "path";

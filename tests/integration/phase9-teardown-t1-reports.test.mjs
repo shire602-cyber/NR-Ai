@@ -405,18 +405,19 @@ async function clientContracts() {
   b = await item(1, `${y}-09`);
   ok("UI checklist 1: a reopened session no longer counts", b?.status === "incomplete", b);
 
-  // checklist 7: a quarterly filer is not held up mid-quarter; the quarter-end month needs the return, which then covers all three months
+  // checklist 7 (teardown 8): satisfied when the month is not the last of its VAT period, or a return (draft, submitted or filed) exists for the
+  // period containing it; open only when the period has ended and no return exists
   let v = await item(7, `${y}-08`);
-  ok("UI checklist 7: August, inside an unfinished quarter, is not blocked by a missing VAT return", v?.status === "complete" && /not ended/i.test(v?.details ?? ""), v);
+  ok("UI checklist 7: August, inside an unfinished quarter, is not blocked by a missing VAT return", v?.status === "complete" && v?.details === `Not the last month of the VAT period; the return is due with the period ending ${y}-09-30.`, v);
   v = await item(7, `${y}-09`);
-  ok("UI checklist 7: September, the quarter's last month, needs the return", v?.status === "incomplete", v);
+  ok("UI checklist 7: September, the quarter's last month with no return, is open", v?.status === "incomplete" && v?.details === `The VAT period ending ${y}-09-30 has no return yet. Create the return, or lock with an override.`, v);
   const gen = await C.gen(`${y}-07-01`, `${y}-09-30`);
   v = await item(7, `${y}-09`);
-  ok("UI checklist 7: a draft return does not satisfy it", gen.status < 300 && v?.status === "incomplete", { g: gen.status, v });
+  ok("UI checklist 7: a draft return of the quarter satisfies it", gen.status < 300 && v?.status === "complete" && v?.details === `VAT return for ${y}-07-01 \u2013 ${y}-09-30 exists (draft).`, { g: gen.status, v });
   await db.query(`UPDATE vat_returns SET status = 'submitted' WHERE company_id = $1`, [C.cid]);
   v = await item(7, `${y}-09`);
   const vAug = await item(7, `${y}-08`);
-  ok("UI checklist 7: the submitted quarterly return covers September (and August)", v?.status === "complete" && /cover/i.test(v?.details ?? "") && vAug?.status === "complete", { sep: v, aug: vAug });
+  ok("UI checklist 7: the submitted quarterly return covers September (and August)", v?.status === "complete" && /exists \(submitted\)/.test(v?.details ?? "") && vAug?.status === "complete", { sep: v, aug: vAug });
 
   // checklist 6: depreciation counts the month's posted row
   const asset = await C.post(`/api/companies/${C.cid}/fixed-assets`, { assetName: "Laptop", category: "Equipment", purchaseDate: `${y}-08-15`, purchaseCost: 12000, salvageValue: 0, usefulLifeYears: 5, paymentAccountId: C.acct("1020").id });

@@ -35,6 +35,7 @@ import {
   resolveActor,
 } from "../services/approval-gate.service";
 import { calendarDayYmd, parseCalendarDay } from "../utils/date";
+import { NOT_REVERSED, findPostedReversal, reversalLinksFor } from "../services/journal-reversal.service";
 
 const log = createLogger("journal");
 
@@ -122,8 +123,12 @@ export function registerJournalRoutes(app: Express) {
         linesByEntryId.set(line.entryId, list);
       }
 
+      const reversalLinks = await reversalLinksFor(companyId, entries.map((e) => e.id));
       const entriesWithLines = entries.map((entry) => ({
         ...entry,
+        ...(reversalLinks.get(entry.id) ?? NOT_REVERSED),
+        isReversed: reversalLinks.has(entry.id),
+        reversalOfId: entry.source === "reversal" ? entry.reversedEntryId ?? null : null,
         lines: (linesByEntryId.get(entry.id) ?? []).map((line) => ({
           ...line,
           account: accountById.get(line.accountId),
@@ -332,10 +337,16 @@ export function registerJournalRoutes(app: Express) {
 
       // Get journal lines for this entry
       const lines = await storage.getJournalLinesByEntryId(id);
+      const reversal = await findPostedReversal(entry.companyId, id);
 
       res.json({
         ...entry,
         lines,
+        // the pair the ledger holds: this entry is reversed by a posted reversal entry (the original itself stays posted)
+        isReversed: !!reversal,
+        reversedById: reversal?.id ?? null,
+        reversedByNumber: reversal?.entryNumber ?? null,
+        reversalOfId: entry.source === "reversal" ? entry.reversedEntryId ?? null : null,
       });
     })
   );
@@ -672,6 +683,23 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: "Only posted entries can be reversed" });
       }
 
+      // A reversal is not reversed again: void it instead (POST /api/journal/:id/void-reversal), which re-opens the original.
+      if (entry.source === "reversal") {
+        return res.status(409).json({
+          message: "A reversal cannot be reversed. Void the reversal instead: that puts the original entry back in force.",
+          code: "REVERSAL_NOT_REVERSIBLE",
+        });
+      }
+      const alreadyReversed = await findPostedReversal(entry.companyId, id);
+      if (alreadyReversed) {
+        return res.status(409).json({
+          message: `This entry is already reversed by ${alreadyReversed.entryNumber}.`,
+          code: "ALREADY_REVERSED",
+          reversedById: alreadyReversed.id,
+          reversedByNumber: alreadyReversed.entryNumber,
+        });
+      }
+
       // The reversal posts a new JE on `now`. Block if today is in a locked
       // period — reversing a posted entry into a closed period must go through
       // an unlock-and-amend flow instead.
@@ -696,8 +724,6 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: "Cannot reverse an entry with no lines" });
       }
 
-      // Generate reversal entry number atomically via storage helper
-      const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
 
       // Build swapped lines and verify the original was balanced before persisting reversal
       const reversalLines = originalLines.map((line) => ({
@@ -715,24 +741,37 @@ export function registerJournalRoutes(app: Express) {
         });
       }
 
-      // Create reversing entry + lines atomically (storage re-validates balance inside transaction)
-      const reversalEntry = await storage.createJournalEntry(
-        {
-          companyId: entry.companyId,
-          date: now,
-          memo: `Reversal of ${entry.entryNumber}: ${reason || "No reason provided"}`,
-          entryNumber: reversalNumber,
-          status: "posted",
-          source: "reversal",
-          sourceId: id,
-          reversedEntryId: id,
-          reversalReason: reason || null,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
-        },
-        reversalLines
-      );
+      // One reversal of this entry at a time: under the entry's advisory lock the reversal is re-checked and posted, so two
+      // concurrent requests cannot both post one (the second sees the first and answers 409 ALREADY_REVERSED).
+      const posting = await withDocumentLock(id, LOCK_NS.JOURNAL_REVERSAL, async () => {
+        const raced = await findPostedReversal(entry.companyId, id);
+        if (raced) return { raced } as const;
+        // Generate reversal entry number atomically via storage helper
+        const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
+        // Create reversing entry + lines atomically (storage re-validates balance inside transaction)
+        const created = await storage.createJournalEntry(
+          {
+            companyId: entry.companyId,
+            date: now,
+            memo: `Reversal of ${entry.entryNumber}: ${reason || "No reason provided"}`,
+            entryNumber: reversalNumber,
+            status: "posted",
+            source: "reversal",
+            sourceId: id,
+            reversedEntryId: id,
+            reversalReason: reason || null,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          },
+          reversalLines
+        );
+        return { created } as const;
+      });
+      if ("raced" in posting && posting.raced) {
+        return res.status(409).json({ message: `This entry is already reversed by ${posting.raced.entryNumber}.`, code: "ALREADY_REVERSED", reversedById: posting.raced.id, reversedByNumber: posting.raced.entryNumber });
+      }
+      const reversalEntry = (posting as Exclude<typeof posting, { raced: unknown }>).created;
 
       // The ORIGINAL STAYS POSTED and is not touched again. Reversal accounting offsets the original
       // with an equal-and-opposite posted entry — voiding the original as
@@ -765,6 +804,49 @@ export function registerJournalRoutes(app: Express) {
         reversalNumber: reversalEntry.entryNumber,
         message: "Entry reversed successfully",
       });
+    })
+  );
+
+  // Customer-only: Void a reversal entry. A reversal is never reversed again; voiding it takes it out of the ledger and puts the
+  // original entry back in force (it is "reversed" only while a POSTED reversal points at it). Refused into a locked month.
+  app.post(
+    "/api/journal/:id/void-reversal",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { reason } = req.body ?? {};
+
+      const entry = await findJournalEntryForUser(userId, id);
+      if (!entry) return res.status(404).json({ message: "Journal entry not found" });
+      if (entry.source !== "reversal" || !entry.reversedEntryId) {
+        return res.status(409).json({ message: "Only a reversal entry can be voided here.", code: "NOT_A_REVERSAL" });
+      }
+      const original = await originalOf(entry);
+      const refused = reversalRefusal(entry, original);
+      if (refused) return res.status(409).json({ message: refused.message, code: refused.code, source: refused.source });
+      if (entry.status !== "posted") {
+        return res.status(409).json({ message: "This reversal is already void.", code: "REVERSAL_ALREADY_VOID" });
+      }
+
+      await withDocumentLock(entry.reversedEntryId, LOCK_NS.JOURNAL_REVERSAL, async () => {
+        // storage re-checks the month lock of the reversal's date (a posted entry cannot be changed in a locked month)
+        await storage.updateJournalEntry(id, entry.companyId, { status: "void" } as any);
+      });
+
+      await recordAudit({
+        userId,
+        companyId: entry.companyId,
+        action: "journal.void_reversal",
+        entityType: "journal_entry",
+        entityId: id,
+        before: { status: "posted", entryNumber: entry.entryNumber },
+        after: { status: "void", reopenedEntryId: entry.reversedEntryId },
+        req,
+        extra: { reason: typeof reason === "string" ? reason : null },
+      });
+      res.json({ id, status: "void", reopenedEntryId: entry.reversedEntryId, message: "Reversal voided: the original entry is back in force." });
     })
   );
 

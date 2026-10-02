@@ -11,7 +11,10 @@
 //   a. F0 recorded before the cutover (old rule) and on or after the void  -> NEVER DECLARED
 //   b. F0 recorded before the void (old or new rule)                        -> declared
 //   c. F0 recorded at or after the cutover (new rule: included the document) -> declared
-//   d. no filed return covers the document date (live computation)           -> declared
+//   d. no filed return covers the document date (the period is still unfiled) -> NEVER DECLARED: the live computation of
+//      that period leaves the document out altogether (a return is only a draft until filed, and a filing recomputes from the
+//      books), and the later void is not reported negatively in the period of the void either. When the period is filed
+//      (a, b, c) the void surfaces in the period containing the void date, as an adjustment (reverse_in_period).
 //
 // "Recorded" is the time the return was recorded in the system (its figures frozen), not the
 // user-entered FTA filing date: what matters is what the computation saw. With amendments, the
@@ -54,7 +57,7 @@ export function voidedDocumentNeverDeclared(args: {
 }): boolean {
   const doc = periodYmd(args.documentDate);
   const covering = args.filedReturns.filter((r) => periodYmd(r.periodStart) <= doc && doc <= periodYmd(r.periodEnd));
-  if (covering.length === 0) return false; // (d)
+  if (covering.length === 0) return true; // (d): the period of the document is not filed: it was never declared
 
   // Earliest recording. An unknown time counts as cutover - 1 ms and remembers that it was unknown.
   let earliest = Infinity;

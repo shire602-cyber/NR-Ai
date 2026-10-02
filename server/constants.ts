@@ -69,10 +69,12 @@ export const ACCOUNT_CODES = {
   GATEWAY_FEES: "5110",
   /** Employee Reimbursements Payable (owed to staff for approved expense claims). */
   EMP_REIMBURSEMENT_PAYABLE: "2045",
-  /** Foreign-exchange gain (income) — realised + unrealised FX differences. */
+  /** Foreign-exchange gain (income) — REALISED FX differences (settlements). */
   FX_GAIN: "4090",
-  /** Foreign-exchange loss (expense) — realised + unrealised FX differences. */
+  /** Foreign-exchange loss (expense) — REALISED FX differences (settlements). */
   FX_LOSS: "5140",
+  /** Unrealised exchange gain / (loss), one income account (credit = gain, debit = loss): revaluations only. Created on demand. */
+  FX_UNREALISED: "4095",
 } as const;
 
 /**

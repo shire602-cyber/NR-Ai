@@ -32,9 +32,11 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { CALENDAR_DATE_SHORT_FORMAT, formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PageHeader } from "@/components/ui/page-header";
-import { CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
+import { Package, CheckCircle, Edit, FileText, MoreHorizontal, Plus, Trash2, Undo2 } from "lucide-react";
 import { VendorPicker } from "@/components/purchases/VendorPicker";
 import { useConfirmAction } from "@/components/ConfirmDialog";
+import { LineProductPicker, type PickerProduct } from "@/components/sales/LineProductPicker";
+import { VendorCreditStockDialog } from "@/components/purchases/VendorCreditStockDialog";
 import { messages as pageMessages } from "./VendorCredits.i18n";
 
 // ===========================
@@ -62,6 +64,7 @@ interface VendorCredit {
 }
 
 interface CreditLine {
+  product_id: string;
   description: string;
   quantity: string;
   unit_price: string;
@@ -76,6 +79,7 @@ interface CreditDetail extends VendorCredit {
     unit_price: string;
     vat_rate: string;
     account_id: string | null;
+    product_id?: string | null;
   }>;
 }
 
@@ -92,7 +96,7 @@ interface BillRow {
   reverse_charge?: boolean;
 }
 
-const EMPTY_LINE: CreditLine = { description: "", quantity: "1", unit_price: "", vat_rate: "5", account_id: "" };
+const EMPTY_LINE: CreditLine = { product_id: "", description: "", quantity: "1", unit_price: "", vat_rate: "5", account_id: "" };
 const NO_BILL = "none";
 const OPEN_BILL_STATUSES = ["approved", "partial", "overdue"];
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -123,6 +127,7 @@ export default function VendorCredits() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [applying, setApplying] = useState<VendorCredit | null>(null);
+  const [stockFor, setStockFor] = useState<VendorCredit | null>(null);
 
   const base = `/api/companies/${companyId}/vendor-credits`;
   const statusLabel = (s: "draft" | "approved" | "void") => tr(s);
@@ -297,6 +302,12 @@ export default function VendorCredits() {
                               </DropdownMenuItem>
                             </>
                           )}
+                          {c.status !== "draft" && (
+                            <DropdownMenuItem onClick={() => setStockFor(c)} data-testid={`menu-credit-stock-${c.id}`}>
+                              <Package className="w-4 h-4 me-2" />
+                              {tr("viewStockMovement")}
+                            </DropdownMenuItem>
+                          )}
                           {c.status === "approved" && Number(c.remaining_amount) > 0 && (
                             <DropdownMenuItem onClick={() => setApplying(c)}>
                               <Undo2 className="w-4 h-4 me-2" />
@@ -348,6 +359,7 @@ export default function VendorCredits() {
           onApplied={refresh}
         />
       )}
+      {companyId && <VendorCreditStockDialog companyId={companyId} credit={stockFor} onClose={() => setStockFor(null)} />}
       {confirmDialog}
     </div>
   );
@@ -380,6 +392,12 @@ function CreditFormDialog(props: {
   const [reverseCharge, setReverseCharge] = useState(false);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<CreditLine[]>([{ ...EMPTY_LINE }]);
+  // Stock items can be returned to the supplier on a line: approving the credit takes the quantity out of stock.
+  const { data: allProducts = [] } = useQuery<Array<PickerProduct>>({
+    queryKey: ["/api/companies", companyId, "products"],
+    enabled: !!companyId,
+  });
+  const stockItems = allProducts.filter((p) => p.trackInventory && p.isActive !== false);
 
   useQuery<CreditDetail>({
     queryKey: ["/api/companies", companyId, "vendor-credits", editingId],
@@ -395,6 +413,7 @@ function CreditFormDialog(props: {
       setNotes(d.notes ?? "");
       setLines(
         d.lines.map((l) => ({
+          product_id: l.product_id ?? "",
           description: l.description,
           quantity: String(Number(l.quantity)),
           unit_price: String(Number(l.unit_price)),
@@ -447,6 +466,7 @@ function CreditFormDialog(props: {
         reverse_charge: reverseCharge,
         notes: notes.trim() || null,
         line_items: lines.map((l) => ({
+          product_id: l.product_id || null,
           description: l.description,
           quantity: l.quantity || "1",
           unit_price: l.unit_price,
@@ -589,6 +609,25 @@ function CreditFormDialog(props: {
                   value={line.unit_price}
                   onChange={(e) => updateLine(index, { unit_price: e.target.value })}
                 />
+                {stockItems.length > 0 && (
+                  <div className="col-span-12 order-first" data-testid={`credit-line-stock-${index}`}>
+                    <LineProductPicker
+                      products={stockItems}
+                      value={line.product_id || null}
+                      testId={`select-credit-line-product-${index}`}
+                      onPick={(picked) => {
+                        if (!picked) return updateLine(index, { product_id: "" });
+                        updateLine(index, {
+                          product_id: picked.id,
+                          description: locale === "ar" && picked.nameAr ? picked.nameAr : picked.name,
+                          ...(Number(picked.costPrice) > 0 ? { unit_price: String(Number(picked.costPrice)) } : {}),
+                          vat_rate: String(Math.round(Number(picked.vatRate ?? 0.05) * 100)),
+                        });
+                      }}
+                    />
+                    {line.product_id && <p className="mt-1 text-xs text-muted-foreground">{tr("stockReturnHint")}</p>}
+                  </div>
+                )}
                 <Select value={line.vat_rate} onValueChange={(v) => updateLine(index, { vat_rate: v })}>
                   <SelectTrigger className="col-span-4 sm:col-span-2" aria-label={tr("vatPercent")}>
                     <SelectValue />

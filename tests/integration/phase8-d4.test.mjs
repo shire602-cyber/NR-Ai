@@ -248,7 +248,8 @@ async function documentsAndPayables() {
   const sameMonth = await W.invoice(today, 700, { customerName: "Voided Same Month" });
   await W.invoice(prevMid, 300, { customerName: "Kept" });
   for (const id of [lateVoid.id, sameMonth.id]) {
-    const v = await api("PATCH", `/api/invoices/${id}/status`, { token: W.token, body: { status: "void" } });
+    // (teardown 8: a void is dated the document's own date unless the client names a later one)
+    const v = await api("PATCH", `/api/invoices/${id}/status`, { token: W.token, body: { status: "void", date: today } });
     if (v.status !== 200) throw new Error("void failed " + v.status + " " + v.text.slice(0, 200));
   }
   r = await W.run("revenue-customer", `from=${prevStart}&to=${prevEnd}`);
@@ -1080,7 +1081,7 @@ async function fixRound() {
   const p1 = await B.run("general-ledger", `from=${y - 1}-01-01&to=${today}&limit=100&offset=0`);
   const p2 = await B.run("general-ledger", `from=${y - 1}-01-01&to=${today}&limit=100&offset=100`);
   const p12 = await B.run("general-ledger", `from=${y - 1}-01-01&to=${today}&limit=200&offset=0`);
-  ok("fix 7: consecutive pages are exactly the same rows as one bigger page (keys, running balances)", JSON.stringify([...p1.json.rows, ...p2.json.rows]) === JSON.stringify(p12.json.rows), p1.json?.rows?.length);
+  ok("fix 7: consecutive pages are exactly the same rows as one bigger page (keys, running balances)", JSON.stringify([...(p1.json?.rows ?? []), ...(p2.json?.rows ?? [])]) === JSON.stringify(p12.json?.rows) && p1.status === 200, { s: [p1.status, p2.status, p12.status], c: p1.json?.code ?? p2.json?.code ?? p12.json?.code, n: p1.json?.rows?.length });
   const last = await B.run("general-ledger", `from=${y - 1}-01-01&to=${today}&limit=100&offset=${r.json?.page?.total - 3}`);
   ok("fix 7: the last page ends with the closing balance row of the last account", last.json?.rows?.at(-1)?.key?.startsWith("close:") && last.json.rows.length === 3, last.json?.rows?.map((x) => x.key.slice(0, 8)));
   const at = await B.run("account-transactions", `from=${y - 1}-01-01&to=${today}&limit=50`);

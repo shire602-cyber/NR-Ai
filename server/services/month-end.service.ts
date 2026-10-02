@@ -1,4 +1,4 @@
-import { normaliseVatFrequency, vatChecklistVerdict } from "./month-end-checklist-rules";
+import { isLastMonthOfVatPeriod, normaliseVatFrequency } from "./month-end-checklist-rules";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { acquirePeriodLockExclusive } from "./posting-lock";
@@ -286,23 +286,16 @@ export async function getCloseChecklist(
         : `${depPosted}/${depTotal} assets depreciated through ${periodEnd.slice(0, 7)}`,
   });
 
-  // 7. VAT return prepared: a submitted or filed return (a draft does not satisfy it) that COVERS the month (a monthly return inside it, or the
-  // quarterly / annual return it belongs to). A quarterly filer is not held up mid-quarter: the return exists once the quarter ends.
-  // A company that is not VAT-registered, or has no VAT in the month, has nothing to prepare.
+  // 7. VAT return: satisfied when the month is not the last month of its VAT period, or a return (draft, submitted or filed) exists
+  // for the period that contains the month; open only when that period has ended and no return exists. A company that is not
+  // VAT-registered, or has no VAT in the month, has nothing to prepare.
   const vat = await vatItemStatus(companyId, periodStart, periodEnd);
   checklist.push({
     id: 7,
     title: "VAT Return Prepared",
     description: "VAT 201 return has been prepared or filed for the period",
     status: vat.open ? "incomplete" : "complete",
-    details:
-      vat.reason === "covered"
-        ? `${vat.coveringReturns} VAT return(s) cover this period`
-        : vat.reason === "period_not_ended"
-          ? "This month falls inside a VAT period that has not ended: its return is prepared after the period closes"
-          : vat.reason === "not_applicable"
-            ? "No VAT to report for this month (not VAT-registered, or no VAT postings)"
-            : "No VAT return prepared for this period",
+    details: vat.details,
   });
 
   // 8. Foreign-currency bank balances revalued at the period end (Teardown 7 F2): an unrealised gain or loss is booked and
@@ -321,30 +314,56 @@ export async function getCloseChecklist(
 
 export interface VatItemStatus {
   open: boolean;
-  reason: "covered" | "period_not_ended" | "not_applicable" | "missing";
+  reason: "covered" | "period_not_ended" | "not_last_month" | "not_applicable" | "missing";
   coveringReturns: number;
+  /** The sentence the checklist shows (English; the screen words it in the user's language from `reason`). */
+  details: string;
+  /** Last day of the VAT period that contains the month (YYYY-MM-DD). */
+  vatPeriodEnd: string;
+}
+
+const lastDayOf = (year: number, month0: number): string => new Date(Date.UTC(year, month0 + 1, 0)).toISOString().slice(0, 10);
+
+/** Last day of the VAT period containing `monthStart` (YYYY-MM-01) for a filer on `frequency` whose periods start in `startMonth`. */
+export function vatPeriodEndOf(monthStart: string, frequency: "monthly" | "quarterly" | "annually", startMonth: number): string {
+  const length = frequency === "monthly" ? 1 : frequency === "annually" ? 12 : 3;
+  const year = Number(monthStart.slice(0, 4));
+  const month0 = Number(monthStart.slice(5, 7)) - 1;
+  const start0 = Math.min(12, Math.max(1, Math.trunc(startMonth) || 1)) - 1;
+  const offset = (((month0 - start0) % 12) + 12) % 12;
+  const remaining = length - 1 - (offset % length);
+  const end0 = month0 + remaining;
+  return lastDayOf(year + Math.floor(end0 / 12), end0 % 12);
 }
 
 /**
- * Is the month's VAT item open? Open only when the company reports VAT for the month, the month ends a VAT period and no return
- * (submitted or filed; a draft does not count, nor a voided one) covers it. The month-end checklist shows it and the lock refuses while it is open.
+ * Is the month's VAT item open? Open only when the company reports VAT for the month, the month is the last of its VAT period, that period
+ * has ended and no return (draft, submitted or filed; never a voided one) exists for the period containing the month. The month-end
+ * checklist shows it and the lock refuses while it is open (unless the user overrides, audit-logged).
  */
 export async function vatItemStatus(companyId: string, periodStart: string, periodEnd: string): Promise<VatItemStatus> {
-  const vatResult = await pool.query(
-    `SELECT COUNT(*) AS total FROM vat_returns
-      WHERE company_id = $1 AND period_start <= $3::date AND period_end >= $2::date AND status NOT IN ('draft', 'void', 'cancelled')`,
+  const company = await pool.query(`SELECT vat_filing_frequency, vat_period_start_month, trn_vat_number FROM companies WHERE id = $1`, [companyId]);
+  const frequency = normaliseVatFrequency(company.rows[0]?.vat_filing_frequency);
+  const startMonth = Number(company.rows[0]?.vat_period_start_month ?? 1);
+  const vatPeriodEnd = vatPeriodEndOf(periodStart, frequency, startMonth);
+  const covering = await pool.query(
+    `SELECT to_char(period_start, 'YYYY-MM-DD') AS ps, to_char(period_end, 'YYYY-MM-DD') AS pe, status FROM vat_returns
+      WHERE company_id = $1 AND period_start <= $3::date AND period_end >= $2::date AND status NOT IN ('void', 'cancelled')
+      ORDER BY (status = 'filed') DESC, created_at DESC`,
     [companyId, periodStart, periodEnd]
   );
-  const coveringReturns = parseInt(vatResult.rows[0]?.total || "0");
-  if (coveringReturns > 0) return { open: false, reason: "covered", coveringReturns };
-  const company = await pool.query(`SELECT vat_filing_frequency, vat_period_start_month, trn_vat_number FROM companies WHERE id = $1`, [companyId]);
-  const verdict = vatChecklistVerdict({
-    coveringReturns,
-    frequency: normaliseVatFrequency(company.rows[0]?.vat_filing_frequency),
-    periodStartMonth: Number(company.rows[0]?.vat_period_start_month ?? 1),
-    month: parseInt(periodEnd.slice(5, 7)),
-  });
-  if (verdict.complete) return { open: false, reason: "period_not_ended", coveringReturns };
+  const coveringReturns = covering.rows.length;
+  if (coveringReturns > 0) {
+    const r = covering.rows[0];
+    return { open: false, reason: "covered", coveringReturns, vatPeriodEnd, details: `VAT return for ${r.ps} – ${r.pe} exists (${r.status}).` };
+  }
+  if (!isLastMonthOfVatPeriod(frequency, startMonth, parseInt(periodEnd.slice(5, 7)))) {
+    return { open: false, reason: "not_last_month", coveringReturns, vatPeriodEnd, details: `Not the last month of the VAT period; the return is due with the period ending ${vatPeriodEnd}.` };
+  }
+  const todayUae = new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10);
+  if (vatPeriodEnd >= todayUae) {
+    return { open: false, reason: "period_not_ended", coveringReturns, vatPeriodEnd, details: `The VAT period ending ${vatPeriodEnd} has not ended yet; its return is prepared after it ends.` };
+  }
   const activity = await pool.query(
     `SELECT 1 FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
@@ -354,8 +373,10 @@ export async function vatItemStatus(companyId: string, periodStart: string, peri
         AND a.company_id = $1 AND a.code IN ('1050', '2020') LIMIT 1`,
     [companyId, periodStart, periodEnd]
   );
-  if (!company.rows[0]?.trn_vat_number || activity.rows.length === 0) return { open: false, reason: "not_applicable", coveringReturns };
-  return { open: true, reason: "missing", coveringReturns };
+  if (!company.rows[0]?.trn_vat_number || activity.rows.length === 0) {
+    return { open: false, reason: "not_applicable", coveringReturns, vatPeriodEnd, details: "No VAT to report for this month (not VAT-registered, or no VAT postings)." };
+  }
+  return { open: true, reason: "missing", coveringReturns, vatPeriodEnd, details: `The VAT period ending ${vatPeriodEnd} has no return yet. Create the return, or lock with an override.` };
 }
 
 export interface MonthEndClosingResult {

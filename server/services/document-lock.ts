@@ -77,6 +77,8 @@ export const LOCK_NS = {
   FX_REVALUATION: 1003,
   /** Per company-month: shared by postings, exclusive for whoever locks the month (posting-lock.ts). */
   PERIOD_POSTING: 1004,
+  /** One reversal of one journal entry at a time: two concurrent reverses cannot both post. */
+  JOURNAL_REVERSAL: 1007,
   /** Phase 8 D1: a quote's state change (send, accept, decline, revise, convert) one at a time. */
   QUOTE: 1005,
   /** Phase 8 D1: a gateway payment (one Stripe payment intent / charge) is settled and refunded one at a time. */

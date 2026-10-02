@@ -13,7 +13,8 @@ import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { messages as common } from "@/components/banking/BankingCommon.i18n";
 import { bankingErrorText } from "@/components/banking/banking-common";
 import { messages } from "./LinkAssetDialog.i18n";
-import { journalCostCandidates, matchesCost, sortByCostMatch, type JournalLike } from "./asset-link";
+import type { AssetRegisterRow } from "@/lib/banking-api-types";
+import { hasRoomFor, journalCostCandidates, linkedCostByDocument, matchesCost, sortByCostMatch, type JournalLike } from "./asset-link";
 
 interface BillRow {
   id: string;
@@ -30,10 +31,12 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   companyId: string;
   asset: { assetId: string; name: string; cost: number } | null;
+  /** The register rows: documents they are already linked to are not offered again. */
+  registerRows?: AssetRegisterRow[];
 }
 
 /** Link an asset that is already on the register to the bill or journal that bought it. */
-export function LinkAssetDialog({ open, onOpenChange, companyId, asset }: Props) {
+export function LinkAssetDialog({ open, onOpenChange, companyId, asset, registerRows = [] }: Props) {
   const tr = messages.useT();
   const trc = common.useT();
   const locale = useI18n((s) => s.locale);
@@ -53,8 +56,15 @@ export function LinkAssetDialog({ open, onOpenChange, companyId, asset }: Props)
   const { data: journals = [] } = useQuery<JournalLike[]>({ queryKey: ["/api/companies", companyId, "journal"], enabled: open && !!companyId });
   const cost = asset?.cost ?? 0;
   const money = (n: number) => formatCurrency(n, "AED", locale);
-  const billChoices = useMemo(() => sortByCostMatch(bills.filter((b) => b.status !== "draft" && b.status !== "void").map((b) => ({ ...b, date: b.bill_date })), (b) => Number(b.total_amount), cost), [bills, cost]);
-  const journalChoices = useMemo(() => sortByCostMatch(journalCostCandidates(journals), (j) => j.cost, cost), [journals, cost]);
+  const linkedCost = useMemo(() => linkedCostByDocument(registerRows, asset?.assetId), [registerRows, asset?.assetId]);
+  const billChoices = useMemo(
+    () => sortByCostMatch(bills.filter((b) => b.status !== "draft" && b.status !== "void" && hasRoomFor(Number(b.total_amount), linkedCost.get(b.id) ?? 0, cost)).map((b) => ({ ...b, date: b.bill_date })), (b) => Number(b.total_amount), cost),
+    [bills, cost, linkedCost],
+  );
+  const journalChoices = useMemo(
+    () => sortByCostMatch(journalCostCandidates(journals).filter((j) => hasRoomFor(j.cost, linkedCost.get(j.id) ?? 0, cost)), (j) => j.cost, cost),
+    [journals, cost, linkedCost],
+  );
 
   const link = useMutation({
     mutationFn: () => apiRequest("POST", `/api/fixed-assets/${asset!.assetId}/link`, tab === "bill" ? { billId } : { journalEntryId: journalId }),
@@ -64,7 +74,7 @@ export function LinkAssetDialog({ open, onOpenChange, companyId, asset }: Props)
       onOpenChange(false);
     },
     onError: (err: unknown) =>
-      toast({ variant: "destructive", title: tr("failed"), description: err instanceof ApiError && err.code === "LINK_INVALID" ? tr("errLinkInvalid") : bankingErrorText(trc, err, locale) }),
+      toast({ variant: "destructive", title: tr("failed"), description: err instanceof ApiError && err.code === "LINK_INVALID" ? tr("errLinkInvalid") : err instanceof ApiError && err.code === "LINE_ALREADY_LINKED" ? tr("errLineLinked") : bankingErrorText(trc, err, locale) }),
   });
 
   const ready = tab === "bill" ? !!billId : !!journalId;

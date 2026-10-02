@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { todayYmd as uaeToday } from "@/lib/calendar-date";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-const todayYmd = () => new Date().toISOString().slice(0, 10);
+const todayYmd = () => uaeToday();
 
 /** The step after approval: the bank has paid, so Salaries Payable (2030) is cleared against the chosen bank account. */
 export function RecordPaymentDialog({ companyId, runId, onClose }: Props) {

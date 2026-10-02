@@ -71,6 +71,9 @@ async function main() {
     await lockAndFile();
     await periodsAndAutopilot();
     await journalReversalDate();
+    await journalReversalLinks();
+    await voidedDocuments();
+    await filedElsewhereAndBooksStart();
     await assetDisposalVat();
   } finally {
     await db.end();
@@ -149,6 +152,9 @@ async function lockAndFile() {
   // the month is locked: the return is still prepared, computed and put in a workpaper
   const gen = await C.gen();
   ok("T7-6 'Create official draft' works in the locked month (200/201 with an id)", [200, 201].includes(gen.status) && !!gen.json?.id, { s: gen.status, t: gen.text?.slice(0, 200) });
+  const checklist2 = await C.get(`/api/companies/${C.cid}/month-end/checklist?period=${prevMonthKey}`);
+  const vatItem2 = (checklist2.json?.checklist ?? []).find((x) => x.id === 7);
+  ok("T8 once the draft exists the VAT item is satisfied: VAT return for <period> exists (draft)", vatItem2?.status === "complete" && vatItem2?.details === `VAT return for ${prevStart} \u2013 ${prevEnd} exists (draft).`, vatItem2);
   const again = await C.gen();
   ok("T7-6 'Compute return' (regenerate) works too", [200, 201].includes(again.status), { s: again.status, t: again.text?.slice(0, 200) });
   const wp = await C.post(`/api/companies/${C.cid}/vat-workpapers`, { periodStart: prevStart, periodEnd: prevEnd });
@@ -269,6 +275,151 @@ async function assetDisposalVat() {
   ok("v4 the P&L revenue line does not include the disposal proceeds", !(close(revenue, 10000)), { revenue });
   const summary = await C.run("vat-summary", `from=${prevStart}&to=${prevEnd}`);
   ok("v4 the VAT summary output VAT equals box 12 (500)", close((summary.json?.rows ?? []).find((r) => r.key === "sales")?.cells?.vat, 500) && close(gen.json?.box12TotalDueTax, 500), { s: summary.json?.rows?.find((r) => r.key === "sales")?.cells, b12: gen.json?.box12TotalDueTax });
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// v4 N1: a reversed entry is shown as reversed, cannot be reversed twice, and a reversal is only voided
+// ═════════════════════════════════════════════════════════════════════════════
+async function journalReversalLinks() {
+  const C = await newCompany("t7revlink", { emirate: "sharjah" });
+  const entry = async (amount) => {
+    const r = await C.post(`/api/companies/${C.cid}/journal`, { date: prevMid, status: "posted", description: "Accrual", lines: [{ accountId: C.acct("1010").id, debit: amount, credit: 0 }, { accountId: C.acct("4010").id, debit: 0, credit: amount }] });
+    if (![200, 201].includes(r.status) || !r.json?.id) throw new Error("journal failed " + r.status + " " + r.text.slice(0, 200));
+    return r.json.id;
+  };
+  const postedReversals = async (id) => (await db.query(`SELECT count(*)::int AS c FROM journal_entries WHERE company_id = $1 AND source = 'reversal' AND status = 'posted' AND reversed_entry_id = $2`, [C.cid, id])).rows[0].c;
+  const e1 = await entry(100);
+  const before = (await C.get(`/api/journal/${e1}`)).json;
+  ok("N1 a journal that is not reversed says so (isReversed false, no link)", before?.isReversed === false && before?.reversedById === null, { r: before?.isReversed });
+  const rev = await C.post(`/api/journal/${e1}/reverse`, { reason: "Wrong", date: prevMid });
+  ok("N1 reversing posts the reversal (200)", rev.status === 200 && !!rev.json?.reversalId, { s: rev.status, j: rev.json });
+  const orig = (await C.get(`/api/journal/${e1}`)).json;
+  const reversal = (await C.get(`/api/journal/${rev.json.reversalId}`)).json;
+  ok("N1 the original now exposes isReversed with the link to its reversal; the reversal links back to it", orig?.isReversed === true && orig?.reversedById === rev.json.reversalId && reversal?.reversalOfId === e1 && orig?.status === "posted", { o: [orig?.isReversed, orig?.reversedById, orig?.status], r: reversal?.reversalOfId });
+  const list = (await C.get(`/api/companies/${C.cid}/journal`)).json ?? [];
+  const listed = list.find((x) => x.id === e1);
+  ok("N1 the journal list carries the same link (so the screen can hide Reverse)", listed?.isReversed === true && listed?.reversedById === rev.json.reversalId && list.find((x) => x.id === rev.json.reversalId)?.reversalOfId === e1, { l: [listed?.isReversed, listed?.reversedById] });
+  const second = await C.post(`/api/journal/${e1}/reverse`, { reason: "Again" });
+  ok("N1 a second reverse is refused (409 ALREADY_REVERSED) and posts nothing", second.status === 409 && second.json?.code === "ALREADY_REVERSED" && (await postedReversals(e1)) === 1, { s: second.status, j: second.json, n: await postedReversals(e1) });
+  const rr = await C.post(`/api/journal/${rev.json.reversalId}/reverse`, { reason: "Reverse the reversal" });
+  ok("N1 a reversal cannot be reversed (409 REVERSAL_NOT_REVERSIBLE)", rr.status === 409 && rr.json?.code === "REVERSAL_NOT_REVERSIBLE", { s: rr.status, j: rr.json });
+  const voided = await C.post(`/api/journal/${rev.json.reversalId}/void-reversal`, { reason: "Reversed by mistake" });
+  const reopened = (await C.get(`/api/journal/${e1}`)).json;
+  ok("N1 voiding the reversal re-opens the original (isReversed false) and takes the reversal out of the ledger", voided.status === 200 && reopened?.isReversed === false && (await postedReversals(e1)) === 0, { s: voided.status, j: voided.json, r: reopened?.isReversed });
+  const bal = (await db.query(`SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '1010'`, [C.cid])).rows[0].net;
+  ok("N1 the ledger holds the original again (1010 = +100)", close(bal, 100), bal);
+  const again = await C.post(`/api/journal/${e1}/reverse`, { reason: "Properly this time", date: prevMid });
+  ok("N1 the re-opened original can be reversed again (200)", again.status === 200, { s: again.status, j: again.json });
+  const audit = (await db.query(`SELECT count(*)::int AS c FROM audit_logs WHERE company_id = $1 AND action = 'journal.void_reversal'`, [C.cid])).rows[0].c;
+  ok("N1 the void is audit-logged", audit === 1, audit);
+
+  // two reverses at the same moment: exactly one posts
+  const e2 = await entry(40);
+  const [a, b] = await Promise.all([C.post(`/api/journal/${e2}/reverse`, { reason: "Race A", date: prevMid }), C.post(`/api/journal/${e2}/reverse`, { reason: "Race B", date: prevMid })]);
+  const statuses = [a.status, b.status].sort();
+  ok("N1 two concurrent reverses: one 200, one 409 ALREADY_REVERSED, one reversal posted", statuses[0] === 200 && statuses[1] === 409 && [a, b].some((x) => x.json?.code === "ALREADY_REVERSED") && (await postedReversals(e2)) === 1, { statuses, n: await postedReversals(e2) });
+
+  // voiding a reversal dated in a locked month is refused
+  const e3 = await entry(25);
+  const r3 = await C.post(`/api/journal/${e3}/reverse`, { reason: "To lock", date: prevMid });
+  await db.query(`INSERT INTO month_end_close (company_id, period_end, status, closed_by, closed_at) VALUES ($1, $2::date, 'locked', $3, now()) ON CONFLICT DO NOTHING`, [C.cid, prevEnd, C.userId]);
+  const lockedVoid = await C.post(`/api/journal/${r3.json?.reversalId}/void-reversal`, { reason: "Locked month" });
+  ok("N1 voiding a reversal in a locked month is refused (403)", lockedVoid.status === 403, { s: lockedVoid.status, t: lockedVoid.text?.slice(0, 150) });
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Teardown 8 N1: a document voided after its period leaves an unfiled return; for a filed one it is an adjustment
+// ═════════════════════════════════════════════════════════════════════════════
+async function voidedDocuments() {
+  const monthStart = today.slice(0, 8) + "01";
+  const monthEnd = ymd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)));
+  const box = (g) => ({ vat: n(g?.box8TotalVat), amount: n(g?.box8TotalAmount) });
+
+  // unfiled period: the credit note voided today (dated last month) is not in the return, the audit rows or the workpaper
+  const C = await newCompany("t8void", { emirate: "sharjah" });
+  const inv = await C.invoice(prevMid, [{ description: "Sale", quantity: 1, unitPrice: 1000, vatRate: 0.05 }]);
+  const cn = await C.post(`/api/companies/${C.cid}/invoices/${inv.id}/credit-note`, { date: prevMid, lines: [{ description: "Returned", quantity: 1, unitPrice: 200, vatRate: 0.05 }] });
+  const cnId = cn.json?.creditNote?.id ?? cn.json?.id;
+  const before = await C.gen();
+  ok("T8 (setup) with the credit note the return holds 1,000 - 200 = 800 / VAT 40", close(box(before.json).amount, 800) && close(box(before.json).vat, 40), box(before.json));
+  const voidCn = await api("PATCH", `/api/invoices/${cnId}/status`, { token: C.token, body: { status: "void" } });
+  ok("T8 (setup) the credit note is voided today", voidCn.status === 200, { s: voidCn.status, t: voidCn.text?.slice(0, 200) });
+  const after = await C.gen();
+  ok("T8 the voided credit note is out of the unfiled return: 1,000 / VAT 50", close(box(after.json).amount, 1000) && close(box(after.json).vat, 50), box(after.json));
+  const audit = await C.run("vat-audit-sales", `from=${prevStart}&to=${prevEnd}`);
+  ok("T8 ... out of the VAT Audit sales rows (one row, 1,000 / 50)", detailRows(audit).length === 1 && close(audit.json?.totals?.vat, 50), { rows: detailRows(audit).length, t: audit.json?.totals });
+  const wp = await C.post(`/api/companies/${C.cid}/vat-workpapers`, { periodStart: prevStart, periodEnd: prevEnd });
+  await C.post(`/api/companies/${C.cid}/vat-workpapers/${wp.json?.id}/pull-from-books`, {});
+  const wpRows = ((await C.get(`/api/companies/${C.cid}/vat-workpapers/${wp.json?.id}`)).json?.rows ?? []).filter((r) => /standard/i.test(String(r.rowCategory)));
+  ok("T8 ... and out of the workpaper pulled from the books (one standard row, 1,000)", wpRows.length === 1 && close(wpRows[0]?.taxableAmount, 1000), wpRows.map((r) => [r.rowCategory, r.taxableAmount]));
+  const thisMonth = await C.gen(monthStart, monthEnd);
+  ok("T8 ... and not a negative line in this month either (the sale was never declared)", close(box(thisMonth.json).vat, 0), box(thisMonth.json));
+  const ap = await C.get(`/api/vat/autopilot/calculate/${C.cid}?periodStart=${prevStart}&periodEnd=${prevEnd}&persist=false`);
+  ok("T8 the Autopilot ledger tie agrees with the return (no mismatch)", ap.json?.reconciliation?.hasDiscrepancy === false, ap.json?.reconciliation);
+
+  // filed period: the later void surfaces in the month of the void (the existing adjustment path), the filed figures stay
+  const F = await newCompany("t8filed", { emirate: "sharjah" });
+  await F.invoice(prevMid, [{ description: "Sale", quantity: 1, unitPrice: 1000, vatRate: 0.05 }]);
+  const second = await F.invoice(prevMid, [{ description: "Second sale", quantity: 1, unitPrice: 500, vatRate: 0.05 }]);
+  const gen = await F.gen();
+  const filedReturn = await F.file(gen.json?.id);
+  ok("T8 (setup) last month's return (1,500 / 75) is filed", filedReturn.status === 201 && close(box(gen.json).vat, 75), { s: filedReturn.status, b: box(gen.json) });
+  const voidSecond = await api("PATCH", `/api/invoices/${second.id}/status`, { token: F.token, body: { status: "void" } });
+  const reGen = await F.gen(monthStart, monthEnd);
+  ok("T8 a void after the filing reverses in the month of the void (this month: -500 / -25)", voidSecond.status === 200 && close(box(reGen.json).vat, -25) && close(box(reGen.json).amount, -500), { s: voidSecond.status, b: box(reGen.json) });
+  const stillFiled = await F.vatReturn(gen.json?.id);
+  ok("T8 ... and the filed return keeps its figures (75)", stillFiled?.status === "filed" && close(stillFiled?.box12TotalDueTax, 75), { st: stillFiled?.status, b12: stillFiled?.box12TotalDueTax });
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Teardown 8: "Filed outside Muhasib" and "Muhasib books start from <period>"
+// ═════════════════════════════════════════════════════════════════════════════
+async function filedElsewhereAndBooksStart() {
+  const C = await newCompany("t8elsewhere", { emirate: "sharjah" });
+  await db.query(`UPDATE companies SET tax_registration_date = '2025-01-01' WHERE id = $1`, [C.cid]); // registered long ago: older periods are due
+  const monthStartOf = (back) => ymd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1)));
+  const monthEndOf = (back) => ymd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back + 1, 0)));
+  const old = { periodStart: monthStartOf(3), periodEnd: monthEndOf(3), filingDate: monthEndOf(3).slice(0, 8) + "28" > today ? today : monthEndOf(3) };
+  const url = `/api/companies/${C.cid}/vat-returns/filed-elsewhere`;
+  const ok1 = await C.post(url, { ...old, reference: "EMT-2026-0042" });
+  ok("T8 'Filed outside Muhasib' records a historical period (201, status filed_elsewhere, dates and reference echoed)", ok1.status === 201 && ok1.json?.status === "filed_elsewhere" && ok1.json?.periodStart === old.periodStart && ok1.json?.periodEnd === old.periodEnd && ok1.json?.filingDate === old.filingDate && ok1.json?.reference === "EMT-2026-0042" && !!ok1.json?.id, { s: ok1.status, j: ok1.json });
+  const dup = await C.post(url, { ...old, reference: "EMT-2" });
+  ok("T8 the same period again is 409 PERIOD_ALREADY_FILED", dup.status === 409 && dup.json?.code === "PERIOD_ALREADY_FILED", { s: dup.status, j: dup.json });
+  const open = await C.post(url, { periodStart: monthStartOf(0), periodEnd: monthEndOf(0), filingDate: today });
+  ok("T8 a period that has not ended is 422 PERIOD_NOT_ENDED", open.status === 422 && open.json?.code === "PERIOD_NOT_ENDED", { s: open.status, j: open.json });
+  const offGrid = await C.post(url, { periodStart: monthStartOf(5).slice(0, 8) + "05", periodEnd: monthEndOf(5), filingDate: today });
+  ok("T8 a range that is not one of the company's VAT periods is 422 INVALID_PERIOD", offGrid.status === 422 && offGrid.json?.code === "INVALID_PERIOD", { s: offGrid.status, j: offGrid.json });
+  const entries = (await db.query(`SELECT count(*)::int AS c FROM journal_entries WHERE company_id = $1`, [C.cid])).rows[0].c;
+  ok("T8 recording it posts nothing", entries === 0, entries);
+  const audit = (await db.query(`SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'vat_return.filed_elsewhere'`, [C.cid])).rows;
+  ok("T8 it is audit-logged with the period, date and reference", audit.length === 1 && /EMT-2026-0042/.test(JSON.stringify(audit[0].details)), audit);
+  const list = ((await C.get(`/api/companies/${C.cid}/vat-returns`)).json ?? []).find((r) => r.id === ok1.json?.id);
+  ok("T8 the return list shows it as filed, marked filed outside Muhasib", list?.status === "filed" && list?.filing?.filedElsewhere === true && list?.filing?.referenceNumber === "EMT-2026-0042", { st: list?.status, f: list?.filing });
+  const outsider = await newCompany("t8outsider", { emirate: "sharjah" });
+  const denied = await api("POST", url, { token: outsider.token, body: old });
+  ok("T8 someone without access to the company is refused (403)", denied.status === 403, denied.status);
+
+  const periods = await C.get(`/api/vat/autopilot/periods/${C.cid}`);
+  const plist = Array.isArray(periods.json) ? periods.json : (periods.json?.periods ?? []);
+  const row = plist.find((p) => String(p.periodEnd).slice(0, 10) === old.periodEnd);
+  ok("T8 Autopilot shows that period as filed (accepted), never overdue", row?.filed === true && row?.filedElsewhere === true && row?.status === "accepted" && row?.deadline?.isOverdue === false, row);
+  const others = plist.filter((p) => String(p.periodEnd).slice(0, 10) !== old.periodEnd && p.deadline?.isOverdue);
+  ok("T8 (control) older periods that are not filed are still overdue", others.length > 0, plist.map((p) => [String(p.periodEnd).slice(0, 10), p.deadline?.level, p.filed]));
+
+  // books start: the setting trims Autopilot and the filing period server-side
+  const patch = await api("PATCH", `/api/companies/${C.cid}`, { token: C.token, body: { vatBooksStart: monthStartOf(1) } });
+  const company = (await C.get(`/api/companies/${C.cid}`)).json;
+  ok("T8 the company carries vatBooksStart (PATCH writes it, GET reads it)", [200, 201].includes(patch.status) && String(company?.vatBooksStart).slice(0, 10) === monthStartOf(1), { s: patch.status, v: company?.vatBooksStart });
+  const trimmed = await C.get(`/api/vat/autopilot/periods/${C.cid}`);
+  const tlist = Array.isArray(trimmed.json) ? trimmed.json : (trimmed.json?.periods ?? []);
+  ok("T8 Autopilot lists only periods starting on or after it", tlist.length > 0 && tlist.every((p) => String(p.periodStart).slice(0, 10) >= monthStartOf(1)), tlist.map((p) => String(p.periodStart).slice(0, 10)));
+  const due = await C.get(`/api/vat/autopilot/due-dates?companyId=${C.cid}`);
+  ok("T8 the due-dates list shows the first unfiled period from there (last month)", due.status === 200 && String(due.json?.[0]?.periodEnd).slice(0, 10) === monthEndOf(1), due.json);
+  const cur = await C.get(`/api/companies/${C.cid}/vat-returns/current-period`);
+  ok("T8 the filing page's period respects it (last month, unfiled)", cur.json?.periodStart === monthStartOf(1) && cur.json?.earlierUnfiled?.length === 0, cur.json);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

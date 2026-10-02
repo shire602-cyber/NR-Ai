@@ -42,6 +42,9 @@ export type CheckKey =
   | "dVatCovered"
   | "dNoVat"
   | "dVatNotEnded"
+  | "dVatExists"
+  | "dVatNotLast"
+  | "dVatNoReturn"
   | "dBankDone"
   | "dBankLoose"
   | "dNoForeign"
@@ -88,6 +91,21 @@ const PATTERNS: Array<[RegExp, CheckKey, string[]]> = [
   [/^(\d+) (?:items|classifications) pending review$/, "dAiPending", ["count"]],
   [/^(\d+)\/(\d+) assets depreciated through (\S+)$/, "dAssets", ["done", "total", "month"]],
   [/^(\d+) VAT return\(s\) cover this period$/, "dVatCovered", ["count"]],
+  [
+    /^VAT return for (\S+) – (\S+) exists \((.+)\)\.$/,
+    "dVatExists",
+    ["periodStart", "periodEnd", "status"],
+  ],
+  [
+    /^Not the last month of the VAT period; the return is due with the period ending (\S+)\.$/,
+    "dVatNotLast",
+    ["periodEnd"],
+  ],
+  [
+    /^The VAT period ending (\S+) has no return yet\. Create the return, or lock with an override\.$/,
+    "dVatNoReturn",
+    ["periodEnd"],
+  ],
   [/^(\d+)\/(\d+) bank accounts reconciled as at (\S+)$/, "dBankDone", ["done", "total", "date"]],
   [/^(\d+) lines without a bank account are unreconciled$/, "dBankLoose", ["count"]],
   [/^(\d+) foreign-currency bank account\(s\) revalued at (\S+)$/, "dFxDone", ["count", "date"]],

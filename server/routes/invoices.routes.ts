@@ -71,6 +71,7 @@ import { assertSalesOrderQuantitiesForEdit } from "../services/sales-order.servi
 import { pdfFieldsFor } from "../services/custom-fields.service";
 import { onlinePaymentView } from "../services/payment-gateway/checkout.service";
 import { issueCreditNote, revenueContextOf } from "../services/credit-note-issue.service";
+import { creditedQuantityByLine } from "../services/credit-note-remainder.service";
 import {
   MAX_DOCUMENT_TOTAL,
   invoiceLinesInputSchema,
@@ -198,11 +199,29 @@ export function registerInvoiceRoutes(app: Express) {
       const balance = await getInvoiceBalance(invoice.companyId, id);
 
       const advanceApplications = await loadAdvanceApplicationsForInvoice(invoice.companyId, id);
+      // Quantity already credited per line by LIVE credit notes only (a voided credit note credits nothing).
+      let creditedByLine: Record<string, number> = {};
+      if (invoice.invoiceType !== "credit_note") {
+        const notes = (
+          await db
+            .select()
+            .from(invoicesTable)
+            .where(and(eq(invoicesTable.companyId, invoice.companyId), eq(invoicesTable.originalInvoiceId, id), eq(invoicesTable.invoiceType, "credit_note")))
+        ).filter((c: any) => c.status !== "void" && c.status !== "cancelled");
+        if (notes.length > 0) {
+          const ctx = revenueContextOf(await storage.getAccountsByCompanyId(invoice.companyId));
+          if (ctx) {
+            const creditedLines = (await Promise.all(notes.map((c: any) => storage.getInvoiceLinesByInvoiceId(c.id)))).flat();
+            creditedByLine = creditedQuantityByLine({ originalLines: lines as any[], creditedLines: creditedLines as any[], ctx });
+          }
+        }
+      }
       res.json({
         ...invoice,
         ...invoiceBalanceFields(invoice, balance),
         itemsSubtotal: itemsSubtotalOf(lines),
         advanceApplications,
+        creditedByLine,
         lines,
       });
     })
@@ -934,18 +953,14 @@ export function registerInvoiceRoutes(app: Express) {
             "Invalid status. Must be one of: draft, sent, posted, partial, paid, void, cancelled",
         });
       }
-      // 'credited' is derived from the credit notes; it cannot be set by hand.
-      if (status === "credited") {
-        return res.status(422).json({
-          message: "An invoice becomes 'credited' automatically when credit notes cover its full amount.",
-          code: "CREDITED_IS_AUTOMATIC",
-        });
-      }
-      // 'paid' and 'partial' are derived from the payments: nobody can mark an invoice paid with no payment.
-      // The status endpoint only issues (draft -> sent/posted) and voids or cancels.
-      if (status === "paid" || status === "partial") {
+      // 'paid', 'partial' and 'credited' are derived (from the payments and the credit notes): nobody can set them by
+      // hand. The status endpoint only issues (draft -> sent/posted) and voids or cancels.
+      if (status === "paid" || status === "partial" || status === "credited") {
         return res.status(400).json({
-          message: `An invoice becomes '${status}' by itself when payments are recorded against it. Record the payment instead of setting the status.`,
+          message:
+            status === "credited"
+              ? "An invoice becomes 'credited' by itself when a credit note is issued against it for its full amount. Issue a credit note instead of setting the status."
+              : `An invoice becomes '${status}' by itself when payments are recorded against it. Record the payment instead of setting the status.`,
           code: "STATUS_DERIVED",
         });
       }
@@ -1004,6 +1019,7 @@ export function registerInvoiceRoutes(app: Express) {
             companyId: invoice.companyId,
             targetStatus: status,
             userId,
+            date: req.body.date,
           });
           if (!outcome.ok) {
             return res.status(outcome.status).json({ message: outcome.message, code: outcome.code });
